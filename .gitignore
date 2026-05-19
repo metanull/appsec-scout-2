@@ -1,0 +1,6 @@
+# Corporate SSL inspection CA — do not commit
+netskope-ca.crt
+*.crt
+
+# Docker override
+docker-compose.override.yml

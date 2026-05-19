@@ -1,0 +1,59 @@
+name: Laravel CI
+
+on:
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: appsec_scout_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: intl, pdo_mysql, bcmath, zip, pcntl
+          coverage: none
+
+      - name: Install dependencies
+        working-directory: app-laravel
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Copy .env
+        working-directory: app-laravel
+        run: cp .env.example .env
+
+      - name: Generate app key
+        working-directory: app-laravel
+        run: php artisan key:generate
+
+      - name: Lint (Pint)
+        working-directory: app-laravel
+        run: vendor/bin/pint --test
+
+      - name: Static analysis (PHPStan)
+        working-directory: app-laravel
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+
+      - name: Test (Pest)
+        working-directory: app-laravel
+        run: vendor/bin/pest --parallel
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ":memory:"
