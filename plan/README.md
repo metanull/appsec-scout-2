@@ -49,16 +49,35 @@ Single image (Debian-slim based) running:
 
 `docker-compose.yml` for local dev: `app` + `mysql` + `redis`.
 
-## Cross-Cutting Rules (apply to every story)
+## Cross-Cutting Rules
 
-- **Framework first** — never re-implement what Laravel/Filament/Fortify already provides.
-- **No regex for parsing** — use AST parsers (`league/commonmark`, `symfony/dom-crawler`, `nikic/php-parser`) and structured deserializers.
-- **Pint clean, Pest green** — verified per story before merge.
-- **Single-responsibility classes**, **methods ≤25 lines**, **no fallbacks**, **fail fast**.
-- **No comments unless nonobvious** — code must be self-explanatory.
-- **Realistic test data** — built from real recorded API responses, not placeholder/dummy.
-- **Audit on every write** — `App\Audit\Recorder` invoked explicitly (never by magic interceptor).
-- **Proxy honored on every outbound call** — clients obtain Guzzle from the shared factory only.
+* **Fail-fast, no degradation, no implicit/hidden fallbacks**
+  The application must be reliable and transparent. It is strictly prohibited to swallow, hide, or disguise errors.
+  * All errors **must be logged**.
+  * All errors **must be surfaced to the user** in a clear and actionable way.
+
+* **Strict dependency management**
+  * No outdated, vulnerable, unmaintained, or marginally used dependencies.
+  * Any new dependency **must be explicitly justified and validated with the user before being introduced**.
+
+* **Framework-first approach**
+  Always prioritize:
+
+  1. Built-in framework features
+  2. Official extensions and components
+  3. Vendor best practices
+
+  Custom development must be avoided unless absolutely necessary.
+
+* **Security must not be self-implemented**
+  All security-related mechanisms (authentication, authorization, session handling, etc.) must rely exclusively on **framework-provided and well-maintained components**.
+
+* Prefer **framework-managed implementations** over custom code for common concerns
+
+* Use **framework APIs** for operating system interactions
+  * Direct execution of OS commands from the application is prohibited
+
+* **Pint clean, Pest green** — verified per story before merge.
 
 ## Reference Patterns from Prior Iterations
 

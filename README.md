@@ -1,14 +1,25 @@
 # AppSec Scout
 
-Ground-up rewrite in **PHP 8.4 / Laravel 13 / Filament 5 / MySQL**, packaged as a containerized Linux application.
+AppSec Scout is a tool designed to simplify the management of application security alerts. It consolidates alerts from multiple sources into a single interface, making it easier to triage, track, and resolve security issues efficiently.
 
-## Purpose
+## What It Does
 
-AppSec Scout aggregates application-security alerts from multiple upstream sources — **AppScan on Cloud (ASoC)**, **Azure DevOps Advanced Security (AzDO)**, **Detectify**, and **Microsoft Defender for Cloud > DevOps** — into a single local database. Operators triage alerts, propagate state changes back upstream, and create remediation work items in **Jira** or **GitHub Issues**, all from one interface.
+- **Aggregates Alerts**: Collects security alerts from sources like AppScan on Cloud (ASoC), Azure DevOps Advanced Security (AzDO), Detectify, and Microsoft Defender for Cloud > DevOps.
+- **Streamlines Triage**: Provides a unified interface to review, update, and manage alert statuses.
+- **Facilitates Remediation**: Enables the creation of remediation tasks in Jira or GitHub Issues directly from the app.
 
-## Background
+## Why It Matters
 
-Previous iterations were built in Node.js (TUI, per-source) and then .NET (CLI + WinUI 3, then Avalonia). Each delivered value but faced deployment friction on corporate machines due to security and network policies. This rewrite starts fresh, consolidates all lessons learned, and targets a **Docker-first deployment model** that works under corporate constraints (HTTP proxy, restricted installs) without compromise.
+Managing security alerts from multiple tools can be overwhelming and time-consuming. AppSec Scout simplifies this process by providing a centralized platform, reducing the need to switch between different systems and ensuring that all alerts are handled consistently.
+
+## Key Features
+
+- Centralized alert management
+- Integration with popular security tools
+- Support for creating remediation tasks
+- Audit logging for all actions
+
+AppSec Scout is built to work seamlessly in environments with strict security and network policies, leveraging a Docker-first deployment model for easy setup and operation.
 
 ## Stack
 
@@ -16,13 +27,8 @@ Previous iterations were built in Node.js (TUI, per-source) and then .NET (CLI +
 | ------------- | ----------------------------------------------------- |
 | Language      | PHP 8.4                                               |
 | Framework     | Laravel 13                                            |
-| UI            | Filament 5 (single panel at `/`, not admin-only)      |
+| UI            | Filament 5      |
 | Database      | MySQL 8.0+                                            |
-| Queue / Cache | Redis                                                 |
-| Auth          | Laravel Fortify — email/password + mandatory TOTP 2FA |
-| Authorization | `spatie/laravel-permission`                           |
-| Testing       | Pest (parallel)                                       |
-| Linting       | Laravel Pint                                          |
 
 ## Operating Model
 
@@ -41,38 +47,38 @@ Previous iterations were built in Node.js (TUI, per-source) and then .NET (CLI +
 | **Plan**   | Reader + link alerts to work items, create Jira/GitHub stories    |
 | **Admin**  | Manage users, integrations, queues, system PATs, audit/error logs |
 
-Roles are combinable (Reader / Triage / Sync / Plan may be stacked). Admin cannot be combined with operational roles but implicitly includes Reader.
-
-## Architecture & Deployment
-
-The application is designed from day one as a **containerized Linux application**:
-
-- Single Docker image bundling PHP-FPM, Nginx, Supervisor, and all triage binaries (Trivy, BFG, JRE, git).
-- `docker compose up` starts the application, MySQL, and Redis.
-- HTTP proxy configured once via environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`) and honored by every outbound HTTP client.
-- VS Code runs inside the container during development.
-
-## Milestones
-
-| #   | Milestone                                                                       | Scope                                                                                                                                                     |
-| --- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M1  | [Foundation](plan/M1-foundation.md)                                             | Laravel + Filament scaffold, Docker image, MySQL, HTTP proxy, audit log, error log, authentication, 5 roles                                               |
-| M2  | [Sources read-only + Reader UI](plan/M2-sources-and-reader.md)                  | Domain model, source plugin contract, AzDO / ASoC / Detectify sources, sync orchestrator, Reader UI, composite software systems                           |
-| M3  | [Triage + Sync roles](plan/M3-triage-and-sync.md)                               | Local state edits, comments, bulk triage, pending-sync review page, upstream propagation job                                                              |
-| M4  | [Plan role + Jira/GitHub trackers](plan/M4-plan-and-trackers.md)                | Tracker plugin contract, description builder, Jira tracker, GitHub tracker, work-item creation (single + grouped), tracker refresh, credential management |
-| M5  | [Defender for Cloud + Triage commands](plan/M5-defender-and-triage-commands.md) | Defender source (Service Principal auth), `triage:trivy`, `triage:bfg`, `triage:codesearch` Artisan commands, event attachments                           |
-| M6  | [Admin polish + packaging](plan/M6-admin-polish.md)                             | Queue/schedule UI, integration management, user management + 2FA reset, image hardening, end-to-end Pest suite, operator documentation                    |
 
 See [plan/README.md](plan/README.md) for the full decision log and epic/story breakdown.
 
 ## Development Rules
 
-- **Fail-fast** — errors are logged, surfaced to the user, never swallowed.
-- **Framework-first** — built-in Laravel/Filament features take priority over custom code; security primitives (auth, sessions, authz) are never re-implemented.
-- **No regex for parsing** — use proper parsers and library APIs.
-- **Strict dependency management** — no new dependency without justification.
-- **Quality gates**: `vendor/bin/pint --test` and `vendor/bin/pest` must pass with zero warnings or failures before any story is considered done.
-- **Tests** cover business logic only; each test is self-sufficient, independent, and deterministic.
+* **Fail-fast, no degradation, no implicit/hidden fallbacks**
+  The application must be reliable and transparent. It is strictly prohibited to swallow, hide, or disguise errors.
+  * All errors **must be logged**.
+  * All errors **must be surfaced to the user** in a clear and actionable way.
+
+* **Strict dependency management**
+  * No outdated, vulnerable, unmaintained, or marginally used dependencies.
+  * Any new dependency **must be explicitly justified and validated with the user before being introduced**.
+
+* **Framework-first approach**
+  Always prioritize:
+
+  1. Built-in framework features
+  2. Official extensions and components
+  3. Vendor best practices
+
+  Custom development must be avoided unless absolutely necessary.
+
+* **Security must not be self-implemented**
+  All security-related mechanisms (authentication, authorization, session handling, etc.) must rely exclusively on **framework-provided and well-maintained components**.
+
+* Prefer **framework-managed implementations** over custom code for common concerns
+
+* Use **framework APIs** for operating system interactions
+  * Direct execution of OS commands from the application is prohibited
+
+* **Pint clean, Pest green** — verified per story before merge.
 
 ## Sources Supported
 
