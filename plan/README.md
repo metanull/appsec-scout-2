@@ -81,21 +81,21 @@ Single image (Debian-slim based) running:
 
 ## Reference Patterns from Prior Iterations
 
-Use the prior iterations as **read-only reference** when implementing each story.
+The prior iterations of AppSec Scout are available as **read-only reference** in the [`legacy-code`](../legacy-code/) submodule (do not modify). Use them when implementing each story to understand historical data models, API integration patterns, and business logic.
 
 | Concern | Reference file(s) |
 |---|---|
-| Canonical event shape | [core/src/models/security-event.js](../core/src/models/security-event.js) |
-| ASoC client + auth retry + pagination | [plugins/source/siem-source-asoc/src/asoc-client.js](../plugins/source/siem-source-asoc/src/asoc-client.js) |
-| ASoC typed-issue dispatch | [plugins/source/siem-source-asoc/src/asoc-normalizer.js](../plugins/source/siem-source-asoc/src/asoc-normalizer.js) + [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs](../dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs) |
-| ASoC focused-article URL resolution | [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs](../dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs) |
-| AzDO alert types | [plugins/source/siem-source-azdo/](../plugins/source/siem-source-azdo/) |
-| Detectify findings | [plugins/source/siem-source-detectify/](../plugins/source/siem-source-detectify/) |
-| Defender ARG sub-assessments + posture | [plugins/source/siem-source-defender/](../plugins/source/siem-source-defender/) + [dotnet/src/AppSecScout.Core/Sources/Defender/](../dotnet/src/AppSecScout.Core/Sources/Defender/) |
-| Jira tracker + Markdown→ADF | [plugins/tracker/siem-tracker-jira/](../plugins/tracker/siem-tracker-jira/) |
-| GitHub tracker (state_reason handling) | [plugins/tracker/siem-tracker-github/](../plugins/tracker/siem-tracker-github/) |
-| Grouped work-item description builder | [core/src/work-items/description-builder.js](../core/src/work-items/description-builder.js) |
-| Composite system data model | [changelog/20260205T075700Z-composite-system.md](../changelog/20260205T075700Z-composite-system.md) |
+| Canonical event shape | [legacy-code/core/src/models/security-event.js](../legacy-code/core/src/models/security-event.js) |
+| ASoC client + auth retry + pagination | [legacy-code/plugins/source/siem-source-asoc/src/asoc-client.js](../legacy-code/plugins/source/siem-source-asoc/src/asoc-client.js) |
+| ASoC typed-issue dispatch | [legacy-code/plugins/source/siem-source-asoc/src/asoc-normalizer.js](../legacy-code/plugins/source/siem-source-asoc/src/asoc-normalizer.js) + [legacy-code/dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs](../legacy-code/dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs) |
+| ASoC focused-article URL resolution | [legacy-code/dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs](../legacy-code/dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs) |
+| AzDO alert types | [legacy-code/plugins/source/siem-source-azdo/](../legacy-code/plugins/source/siem-source-azdo/) |
+| Detectify findings | [legacy-code/plugins/source/siem-source-detectify/](../legacy-code/plugins/source/siem-source-detectify/) |
+| Defender ARG sub-assessments + posture | [legacy-code/plugins/source/siem-source-defender/](../legacy-code/plugins/source/siem-source-defender/) + [legacy-code/dotnet/src/AppSecScout.Core/Sources/Defender/](../legacy-code/dotnet/src/AppSecScout.Core/Sources/Defender/) |
+| Jira tracker + Markdown→ADF | [legacy-code/plugins/tracker/siem-tracker-jira/](../legacy-code/plugins/tracker/siem-tracker-jira/) |
+| GitHub tracker (state_reason handling) | [legacy-code/plugins/tracker/siem-tracker-github/](../legacy-code/plugins/tracker/siem-tracker-github/) |
+| Grouped work-item description builder | [legacy-code/core/src/work-items/description-builder.js](../legacy-code/core/src/work-items/description-builder.js) |
+| Composite system data model | [legacy-code/changelog/20260205T075700Z-composite-system.md](../legacy-code/changelog/20260205T075700Z-composite-system.md) |
 
 ## Verification per Milestone
 
