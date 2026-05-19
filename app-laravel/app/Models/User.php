@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable(['name', 'email', 'password'])]
@@ -35,7 +36,7 @@ class User extends Authenticatable
     protected static function booted(): void
     {
         static::created(function (self $user) {
-            if (! $user->hasAnyRole() && \Spatie\Permission\Models\Role::where('name', 'Reader')->where('guard_name', 'web')->exists()) {
+            if (! $user->hasAnyRole() && Role::where('name', 'Reader')->where('guard_name', 'web')->exists()) {
                 $user->assignRole('Reader');
             }
         });
