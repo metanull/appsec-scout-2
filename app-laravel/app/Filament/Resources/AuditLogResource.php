@@ -29,6 +29,11 @@ class AuditLogResource extends Resource
         return false;
     }
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('admin.audit') ?? false;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);

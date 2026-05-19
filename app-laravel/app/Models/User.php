@@ -28,6 +28,16 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (self $user) {
+            if (! $user->hasAnyRole() && \Spatie\Permission\Models\Role::where('name', 'Reader')->where('guard_name', 'web')->exists()) {
+                $user->assignRole('Reader');
+            }
+        });
     }
 }
