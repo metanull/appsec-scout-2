@@ -27,6 +27,10 @@ class TwoFactorSetupController extends Controller
             $user->refresh();
         }
 
+        if ($user->two_factor_secret === null) {
+            abort(500, 'Two-factor secret could not be initialised.');
+        }
+
         return view('auth.two-factor-setup', [
             'qrCodeSvg' => $user->twoFactorQrCodeSvg(),
             'secretKey' => decrypt($user->two_factor_secret),
@@ -58,6 +62,10 @@ class TwoFactorSetupController extends Controller
 
         if ($user->two_factor_confirmed_at === null) {
             return redirect()->route('two-factor.setup');
+        }
+
+        if ($user->two_factor_recovery_codes === null) {
+            abort(500, 'Recovery codes are not available.');
         }
 
         return view('auth.two-factor-recovery-codes', [
