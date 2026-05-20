@@ -76,6 +76,10 @@ RUN printf 'memory_limit=512M\n' > /usr/local/etc/php/conf.d/appsec-scout-memory
 # Redis extension via PECL
 RUN pecl install redis && docker-php-ext-enable redis
 
+# Expose container environment variables to PHP-FPM workers so Laravel can
+# resolve APP_URL/DB_* from Compose env at request time.
+RUN printf "[www]\nclear_env = no\n" > /usr/local/etc/php-fpm.d/zz-appsec-env.conf
+
 # PHP-FPM config: use www-data (uid 33) — already exists in Debian-based PHP images
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf

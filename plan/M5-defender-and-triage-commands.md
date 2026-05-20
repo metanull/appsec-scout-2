@@ -22,7 +22,7 @@
 - Pest test for token caching (one call → cached, second call → no HTTP).
 - Pest test for token re-fetch on expiry.
 - Pest test for paginated ARG queries via `skipToken`.
-**Relevant files**: [plugins/source/siem-source-defender/](../plugins/source/siem-source-defender/), [dotnet/src/AppSecScout.Core/Sources/Defender/](../dotnet/src/AppSecScout.Core/Sources/Defender/).
+**Relevant files**: [plugins/source/siem-source-defender/](../legacy-code/plugins/source/siem-source-defender/), [dotnet/src/AppSecScout.Core/Sources/Defender/](../legacy-code/dotnet/src/AppSecScout.Core/Sources/Defender/).
 
 ### S2 — Defender: sub-assessments → Code / Dependency / Secret
 **Goal**: Fetch DevOps-category sub-assessments and normalize into the three primary types.

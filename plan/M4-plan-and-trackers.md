@@ -46,7 +46,7 @@
 - Pest tests for every supported node type (input md fixture → expected ADF JSON fixture).
 - Pest snapshot test on a real 10-event grouped description.
 - Property test: round-trip stability (same input twice produces identical output).
-**Relevant files**: [plugins/tracker/siem-tracker-jira/src/markdown-to-adf.js](../plugins/tracker/siem-tracker-jira/src/markdown-to-adf.js).
+**Relevant files**: [plugins/tracker/siem-tracker-jira/src/markdown-to-adf.js](../legacy-code/plugins/tracker/siem-tracker-jira/src/markdown-to-adf.js).
 
 ### S3 — Description builder (single + grouped)
 **Goal**: Generate the markdown body of work items.
@@ -64,7 +64,7 @@
 **Definition of Done**:
 - Pest snapshot tests for single + grouped fixtures (3 types × multiple events).
 - Length cap test asserts ≤16 KB even with 50 events.
-**Relevant files**: [core/src/work-items/description-builder.js](../core/src/work-items/description-builder.js).
+**Relevant files**: [core/src/work-items/description-builder.js](../legacy-code/core/src/work-items/description-builder.js).
 
 ---
 
@@ -91,7 +91,7 @@
 - Pest tests against recorded fixtures for create / get / transition.
 - Test for parent linking via `fields.parent.key`.
 - Test for label set including `security`, `appsec-scout`, source id, severity, type.
-**Relevant files**: [plugins/tracker/siem-tracker-jira/src/jira-tracker.js](../plugins/tracker/siem-tracker-jira/src/jira-tracker.js).
+**Relevant files**: [plugins/tracker/siem-tracker-jira/src/jira-tracker.js](../legacy-code/plugins/tracker/siem-tracker-jira/src/jira-tracker.js).
 
 ---
 
@@ -116,7 +116,7 @@
 **Definition of Done**:
 - Pest tests for create / get / update.
 - Test that `state_reason=not_planned` produces `work_item_state = "Closed (not planned)"` cached on the link row.
-**Relevant files**: [plugins/tracker/siem-tracker-github/src/github-tracker.js](../plugins/tracker/siem-tracker-github/src/github-tracker.js).
+**Relevant files**: [plugins/tracker/siem-tracker-github/src/github-tracker.js](../legacy-code/plugins/tracker/siem-tracker-github/src/github-tracker.js).
 
 ---
 

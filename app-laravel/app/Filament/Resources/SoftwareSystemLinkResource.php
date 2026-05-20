@@ -25,7 +25,7 @@ class SoftwareSystemLinkResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        return Auth::user()?->can('admin.integrations') ?? false;
     }
 
     public static function form(Schema $schema): Schema
