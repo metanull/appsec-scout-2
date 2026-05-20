@@ -1,14 +1,7 @@
 ---
 name: 'Laravel Filament Compliance'
 description: 'Use when writing or modifying Laravel 13, Filament 5, Fortify, Spatie Permission, Eloquent, migrations, seeders, queues, jobs, policies, Blade, Pest, PHPStan, or Pint code in app-laravel. Enforces framework-first implementation, security delegation, fail-fast behavior, and repo quality gates.'
-applyTo:
-  - 'app-laravel/app/**/*.php'
-  - 'app-laravel/bootstrap/**/*.php'
-  - 'app-laravel/config/**/*.php'
-  - 'app-laravel/database/**/*.php'
-  - 'app-laravel/resources/**/*.blade.php'
-  - 'app-laravel/routes/**/*.php'
-  - 'app-laravel/tests/**/*.php'
+applyTo: 'app-laravel/app/**/*.php,app-laravel/bootstrap/**/*.php,app-laravel/config/**/*.php,app-laravel/database/**/*.php,app-laravel/resources/**/*.blade.php,app-laravel/routes/**/*.php,app-laravel/tests/**/*.php'
 ---
 
 # Laravel 13 And Filament 5 Compliance
@@ -19,6 +12,7 @@ These instructions are hard project rules for `app-laravel/`.
 
 - Prefer Laravel 13, Filament 5, Fortify, Spatie Laravel Permission, Eloquent, queues, jobs, events, validation, policies, form requests, casts, notifications, and config APIs before custom code.
 - Treat Filament as the primary application UI, not a secondary admin panel. Build operator workflows as Filament resources, pages, actions, tables, forms, and widgets where they fit.
+- All valid authenticated users must be able to reach the Filament application shell after satisfying authentication and mandatory 2FA. Do not use Filament panel access as a substitute for role or feature authorization.
 - Keep the Filament panel mounted at `/` through `App\Providers\Filament\AppSecScoutPanelProvider` unless a story explicitly changes the product route model.
 - Use vendor-supported extension points instead of overriding internals or duplicating framework behavior.
 - Do not introduce new packages unless the dependency is necessary, maintained, non-vulnerable, and explicitly approved by the user.
@@ -28,7 +22,10 @@ These instructions are hard project rules for `app-laravel/`.
 - Never self-implement authentication, authorization, sessions, password handling, CSRF protection, encryption, rate limiting, or two-factor flows.
 - Use Fortify for authentication flows and mandatory TOTP 2FA.
 - Use Spatie Permission for roles and permissions. Preserve the cumulative role model: Reader, Triage, Plan, Sync, Admin.
-- Gate every protected action through policies, permissions, Filament authorization hooks, middleware, or Laravel authorization APIs.
+- Gate every protected action through Laravel policies, Spatie permissions, Filament resource/page/action authorization hooks, middleware, or Laravel authorization APIs.
+- Prefer Filament and Laravel policy best practices for UI authorization: resources, pages, relation managers, table actions, bulk actions, form actions, navigation visibility, and data queries must enforce permissions at their own boundary.
+- `User::canAccessPanel()` may only decide whether a legitimate authenticated account can enter the Filament application shell. It must not encode Reader/Triage/Plan/Sync/Admin feature access, deny users merely because they lack a role, or replace policies and permissions. Use this hook only for whole-account concerns such as disabled/suspended accounts when that behavior is explicitly required and tested.
+- Mandatory 2FA must be enforced before users can interact with protected Filament UI. Do not bypass Fortify or replace it with custom security logic.
 - Store PATs and other secrets through the approved encrypted Laravel model casts and credential flows. Never log secrets or expose them in UI text, exceptions, tests, or seed data.
 
 ## Reliability Rules
@@ -61,15 +58,18 @@ These instructions are hard project rules for `app-laravel/`.
 - Test business behavior and project rules, not Laravel, Filament, Pest, or third-party internals.
 - Use realistic test data based on real source or tracker shapes when integrating with AzDO, ASoC, Detectify, Defender, Jira, or GitHub.
 - Do not skip tests or mark incomplete tests as a substitute for implementation.
-- Before reporting code work complete, run the relevant narrow test plus the required verification set from `app-laravel/`:
+- Before reporting code work complete, run the relevant narrow test plus the required Docker-based verification set from the repository root:
 
-```bash
-vendor/bin/pint --test
-vendor/bin/phpstan analyse --no-progress
-vendor/bin/pest --no-coverage
+```powershell
+$env:APP_BUILD_TARGET = 'dev'
+docker compose build app
+docker compose run --rm app vendor/bin/pint --test
+docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+docker compose run --rm app vendor/bin/pest --no-coverage
+Remove-Item Env:\APP_BUILD_TARGET
 ```
 
-- If local PHP or Composer is unavailable, run the documented Composer Docker-image equivalents from the repository root.
+- Do not require host PHP, Composer, Node.js, Java, Trivy, or BFG for app development or verification. If a required tool is missing, fix the Docker image or Compose configuration.
 
 ## Style
 
