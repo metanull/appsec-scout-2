@@ -1,0 +1,149 @@
+{
+  "count": 4,
+  "value": [
+    {
+      "alertId": 2001,
+      "alertType": "dependency",
+      "severity": "high",
+      "state": "active",
+      "title": "lodash has known prototype pollution vulnerability",
+      "alertUri": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/2001",
+      "firstSeenDate": "2026-02-01T12:00:00Z",
+      "lastSeenDate": "2026-02-03T11:00:00Z",
+      "logicalLocations": [
+        {
+          "fullyQualifiedName": "package.json",
+          "kind": "file"
+        }
+      ],
+      "tools": [
+        {
+          "name": "AdvancedSecurity-Dependency-Scanning",
+          "version": "1.0.0",
+          "rules": [
+            {
+              "id": "CVE-2020-8203",
+              "opaqueId": "SCA-CVE-2020-8203",
+              "description": "Prototype pollution vulnerability in lodash before 4.17.20",
+              "helpMessage": "Upgrade lodash to version 4.17.21 or later."
+            }
+          ]
+        }
+      ],
+      "additionalData": {
+        "packageName": "lodash",
+        "packageVersion": "4.17.19",
+        "ecosystem": "npm",
+        "cveId": "CVE-2020-8203"
+      }
+    },
+    {
+      "alertId": 2002,
+      "alertType": "dependency",
+      "severity": "critical",
+      "state": "active",
+      "title": "log4j-core Remote Code Execution vulnerability",
+      "alertUri": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/2002",
+      "firstSeenDate": "2026-01-20T10:00:00Z",
+      "lastSeenDate": "2026-02-05T09:00:00Z",
+      "logicalLocations": [
+        {
+          "fullyQualifiedName": "pom.xml",
+          "kind": "file"
+        }
+      ],
+      "tools": [
+        {
+          "name": "AdvancedSecurity-Dependency-Scanning",
+          "version": "1.0.0",
+          "rules": [
+            {
+              "id": "CVE-2021-44228",
+              "opaqueId": "SCA-CVE-2021-44228",
+              "description": "Remote code execution in Log4Shell",
+              "helpMessage": "Upgrade log4j-core to 2.17.1 or later."
+            }
+          ]
+        }
+      ],
+      "additionalData": {
+        "packageName": "log4j-core",
+        "packageVersion": "2.14.1",
+        "ecosystem": "maven",
+        "cveId": "CVE-2021-44228"
+      }
+    },
+    {
+      "alertId": 2003,
+      "alertType": "dependency",
+      "severity": "high",
+      "state": "active",
+      "title": "Pillow SSRF vulnerability",
+      "alertUri": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/2003",
+      "firstSeenDate": "2026-02-01T08:00:00Z",
+      "lastSeenDate": "2026-02-04T16:00:00Z",
+      "logicalLocations": [
+        {
+          "fullyQualifiedName": "requirements.txt",
+          "kind": "file"
+        }
+      ],
+      "tools": [
+        {
+          "name": "AdvancedSecurity-Dependency-Scanning",
+          "version": "1.0.0",
+          "rules": [
+            {
+              "id": "CVE-2023-44271",
+              "opaqueId": "SCA-CVE-2023-44271",
+              "description": "Uncontrolled resource consumption in Pillow",
+              "helpMessage": "Upgrade Pillow to 10.0.1 or later."
+            }
+          ]
+        }
+      ],
+      "additionalData": {
+        "packageName": "Pillow",
+        "packageVersion": "9.5.0",
+        "ecosystem": "pip",
+        "cveId": "CVE-2023-44271"
+      }
+    },
+    {
+      "alertId": 2004,
+      "alertType": "dependency",
+      "severity": "medium",
+      "state": "active",
+      "title": "Newtonsoft.Json ReDoS vulnerability",
+      "alertUri": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/2004",
+      "firstSeenDate": "2026-01-10T12:00:00Z",
+      "lastSeenDate": "2026-02-01T10:00:00Z",
+      "logicalLocations": [
+        {
+          "fullyQualifiedName": "project.csproj",
+          "kind": "file"
+        }
+      ],
+      "tools": [
+        {
+          "name": "AdvancedSecurity-Dependency-Scanning",
+          "version": "1.0.0",
+          "rules": [
+            {
+              "id": "CVE-2024-21907",
+              "opaqueId": "SCA-CVE-2024-21907",
+              "description": "Regular expression denial of service in Newtonsoft.Json",
+              "helpMessage": "Upgrade Newtonsoft.Json to 13.0.3 or later."
+            }
+          ]
+        }
+      ],
+      "additionalData": {
+        "packageName": "Newtonsoft.Json",
+        "packageVersion": "13.0.1",
+        "ecosystem": "nuget",
+        "cveId": "CVE-2024-21907"
+      }
+    }
+  ]
+}

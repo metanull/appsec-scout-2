@@ -1,0 +1,29 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "id": "repo-001",
+      "name": "backend-api",
+      "url": "https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-001",
+      "project": {
+        "id": "project-001",
+        "name": "SecurityProject"
+      },
+      "defaultBranch": "refs/heads/main",
+      "remoteUrl": "https://testorg@dev.azure.com/testorg/SecurityProject/_git/backend-api",
+      "webUrl": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api"
+    },
+    {
+      "id": "repo-002",
+      "name": "frontend-app",
+      "url": "https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-002",
+      "project": {
+        "id": "project-001",
+        "name": "SecurityProject"
+      },
+      "defaultBranch": "refs/heads/main",
+      "remoteUrl": "https://testorg@dev.azure.com/testorg/SecurityProject/_git/frontend-app",
+      "webUrl": "https://dev.azure.com/testorg/SecurityProject/_git/frontend-app"
+    }
+  ]
+}
