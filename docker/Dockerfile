@@ -83,7 +83,8 @@ WORKDIR /var/www/html
 COPY --from=composer-deps /app ./
 COPY --from=assets /app/public/build ./public/build
 
-RUN chown -R www-data:www-data storage bootstrap/cache
+RUN touch .env \
+    && chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 8080
 
