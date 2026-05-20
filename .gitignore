@@ -7,7 +7,3 @@ netskope-ca.crt
 
 # Docker override
 docker-compose.override.yml
-
-# Local development binaries downloaded to the repo root (not committed)
-/bfg.jar
-/composer.phar
