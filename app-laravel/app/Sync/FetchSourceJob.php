@@ -2,6 +2,7 @@
 
 namespace App\Sync;
 
+use App\Events\SyncRunFinished;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
@@ -119,6 +120,8 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                 'counts_json' => $counts,
                 'error_message' => null,
             ]);
+
+            event(new SyncRunFinished($run));
         } catch (\Throwable $e) {
             $run->update([
                 'finished_at' => now(),
@@ -126,6 +129,8 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                 'counts_json' => $counts,
                 'error_message' => $e->getMessage(),
             ]);
+
+            event(new SyncRunFinished($run));
 
             throw $e;
         }

@@ -1,0 +1,67 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Filament\Resources\SecurityContainerResource\Pages\ListSecurityContainers;
+use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer;
+use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
+use App\Models\SecurityContainer;
+use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
+
+class SecurityContainerResource extends Resource
+{
+    protected static ?string $model = SecurityContainer::class;
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-archive-box';
+
+    protected static string|\UnitEnum|null $navigationGroup = 'Reader';
+
+    protected static ?string $navigationLabel = 'Containers';
+
+    public static function canViewAny(): bool
+    {
+        return Auth::user()?->can('alerts.view') ?? false;
+    }
+
+    public static function form(Schema $schema): Schema
+    {
+        return $schema->components([]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
+                'events as open_events_count' => fn (Builder $events) => $events->whereRaw("state = 'open'"),
+            ]))
+            ->columns([
+                TextColumn::make('name')->searchable()->sortable(),
+                TextColumn::make('kind')->badge(),
+                TextColumn::make('softwareSystem.name')->label('System')->searchable(),
+                TextColumn::make('open_events_count')->label('Open')->sortable(),
+                TextColumn::make('last_seen_at')->label('Last seen')->since(),
+            ])
+            ->recordUrl(fn (SecurityContainer $record): string => static::getUrl('view', ['record' => $record]))
+            ->paginated([25, 50, 100]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            EventsRelationManager::class,
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => ListSecurityContainers::route('/'),
+            'view' => ViewSecurityContainer::route('/{record}'),
+        ];
+    }
+}
