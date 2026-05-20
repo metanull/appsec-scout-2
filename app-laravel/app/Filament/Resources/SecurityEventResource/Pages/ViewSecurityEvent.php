@@ -4,20 +4,32 @@ namespace App\Filament\Resources\SecurityEventResource\Pages;
 
 use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventType;
+use App\Models\EventComment;
 use App\Models\SecurityEvent;
+use App\Models\User;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
+use App\Triage\CommentManager;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class ViewSecurityEvent extends ViewRecord
 {
     protected static string $resource = SecurityEventResource::class;
 
     protected string $view = 'filament.resources.security-event-resource.pages.view-security-event';
+
+    public string $newCommentBody = '';
+
+    public ?int $editingCommentId = null;
+
+    public string $editingCommentBody = '';
 
     /**
      * @return array<Action>
@@ -62,6 +74,104 @@ class ViewSecurityEvent extends ViewRecord
         $this->refreshFormData([]);
 
         Notification::make()->title('Secret occurrences loaded')->success()->send();
+    }
+
+    /**
+     * @return Collection<int, EventComment>
+     */
+    public function comments(): Collection
+    {
+        $comments = $this->eventRecord()
+            ->comments()
+            ->with('author')
+            ->get();
+
+        return $comments;
+    }
+
+    public function addComment(): void
+    {
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if (! $user?->can('alerts.edit')) {
+            abort(403);
+        }
+
+        try {
+            app(CommentManager::class)->add($this->eventRecord(), $user, $this->newCommentBody);
+        } catch (ValidationException $exception) {
+            $this->addError('newCommentBody', $exception->errors()['comment'][0] ?? 'Unable to add comment.');
+
+            return;
+        }
+
+        $this->newCommentBody = '';
+        $this->editingCommentId = null;
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Comment added')->success()->send();
+    }
+
+    public function startEditingComment(int $commentId): void
+    {
+        $comment = $this->commentById($commentId);
+
+        if ($comment === null || ! $this->canEditComment($comment)) {
+            abort(403);
+        }
+
+        $this->editingCommentId = $comment->id;
+        $this->editingCommentBody = $comment->body;
+        $this->resetErrorBag('editingCommentBody');
+    }
+
+    public function cancelEditingComment(): void
+    {
+        $this->editingCommentId = null;
+        $this->editingCommentBody = '';
+        $this->resetErrorBag('editingCommentBody');
+    }
+
+    public function saveCommentEdit(): void
+    {
+        $comment = $this->editingCommentId === null ? null : $this->commentById($this->editingCommentId);
+
+        if ($comment === null || ! $this->canEditComment($comment)) {
+            abort(403);
+        }
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        try {
+            app(CommentManager::class)->update($comment, $user, $this->editingCommentBody);
+        } catch (ValidationException $exception) {
+            $this->addError('editingCommentBody', $exception->errors()['comment'][0] ?? 'Unable to save the comment.');
+
+            return;
+        }
+
+        $this->cancelEditingComment();
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Comment updated')->success()->send();
+    }
+
+    public function canEditComment(EventComment $comment): bool
+    {
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        return app(CommentManager::class)->canEdit($comment, $user, now());
     }
 
     /**
@@ -174,5 +284,10 @@ class ViewSecurityEvent extends ViewRecord
     private function eventType(SecurityEvent $record): EventType
     {
         return EventType::from((string) $record->type);
+    }
+
+    private function commentById(int $commentId): ?EventComment
+    {
+        return $this->eventRecord()->comments()->with('author')->find($commentId);
     }
 }

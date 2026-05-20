@@ -15,6 +15,18 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordCommentAdded(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('comment_added', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordCommentEdited(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('comment_edited', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordSyncPush(string $subjectType, string $subjectId, array $payload = []): void
     {
         $this->write('sync_push', $subjectType, $subjectId, $payload);

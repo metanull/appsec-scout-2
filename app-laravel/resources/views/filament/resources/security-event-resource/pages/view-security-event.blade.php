@@ -122,14 +122,68 @@
         </x-filament::section>
 
         <x-filament::section heading="Comments">
-            @forelse ($record->comments as $comment)
-                <div class="mb-3 rounded border p-3 text-sm">
-                    <div class="text-xs text-gray-500">{{ optional($comment->created_at)->toDateTimeString() }}</div>
-                    <div>{{ $comment->body }}</div>
-                </div>
-            @empty
-                <div class="text-sm text-gray-500">No comments yet.</div>
-            @endforelse
+            <div class="space-y-4">
+                @can('alerts.edit')
+                    <div class="rounded border border-dashed p-4">
+                        <label class="mb-2 block text-sm font-medium text-gray-700" for="new-comment-body">Add local comment</label>
+                        <textarea
+                            id="new-comment-body"
+                            wire:model="newCommentBody"
+                            rows="4"
+                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm"
+                        ></textarea>
+                        @error('newCommentBody')
+                            <div class="mt-2 text-sm text-danger-600">{{ $message }}</div>
+                        @enderror
+                        <div class="mt-3 flex justify-end">
+                            <x-filament::button wire:click="addComment" size="sm">Add comment</x-filament::button>
+                        </div>
+                    </div>
+                @endcan
+
+                @forelse ($this->comments() as $comment)
+                    <div class="rounded border p-3 text-sm">
+                        <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                            <span>{{ optional($comment->created_at)->toDateTimeString() }}</span>
+                            @if ($comment->upstream_comment_id)
+                                <x-filament::badge color="gray">From source</x-filament::badge>
+                            @elseif ($comment->author)
+                                <x-filament::badge color="info">{{ $comment->author->name }}</x-filament::badge>
+                            @else
+                                <x-filament::badge color="gray">Local</x-filament::badge>
+                            @endif
+                            @if ($this->canEditComment($comment))
+                                <span>Editable for 5 minutes</span>
+                            @endif
+                        </div>
+
+                        @if ($editingCommentId === $comment->id)
+                            <textarea
+                                wire:model="editingCommentBody"
+                                rows="4"
+                                class="w-full rounded-lg border-gray-300 text-sm shadow-sm"
+                            ></textarea>
+                            @error('editingCommentBody')
+                                <div class="mt-2 text-sm text-danger-600">{{ $message }}</div>
+                            @enderror
+                            <div class="mt-3 flex justify-end gap-2">
+                                <x-filament::button wire:click="cancelEditingComment" color="gray" size="sm">Cancel</x-filament::button>
+                                <x-filament::button wire:click="saveCommentEdit" size="sm">Save</x-filament::button>
+                            </div>
+                        @else
+                            <div>{{ $comment->body }}</div>
+
+                            @if ($this->canEditComment($comment))
+                                <div class="mt-3 flex justify-end">
+                                    <x-filament::button wire:click="startEditingComment({{ $comment->id }})" color="gray" size="sm">Edit</x-filament::button>
+                                </div>
+                            @endif
+                        @endif
+                    </div>
+                @empty
+                    <div class="text-sm text-gray-500">No comments yet.</div>
+                @endforelse
+            </div>
         </x-filament::section>
 
         <x-filament::section heading="Audit History">
