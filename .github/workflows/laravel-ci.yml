@@ -14,17 +14,17 @@ jobs:
       - name: Prepare Docker environment
         run: |
           cp app-laravel/.env.example .env
-          cat >> .env <<EOF
-          APP_BUILD_TARGET=dev
-          APP_ENV=testing
-          APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          APP_DEBUG=false
-          DB_DATABASE=appsec_scout_test
-          DB_PASSWORD=password
-          CACHE_STORE=redis
-          SESSION_DRIVER=redis
-          QUEUE_CONNECTION=redis
-          EOF
+          printf '%s\n' \
+            'APP_BUILD_TARGET=dev' \
+            'APP_ENV=testing' \
+            'APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
+            'APP_DEBUG=false' \
+            'DB_DATABASE=appsec_scout_test' \
+            'DB_PASSWORD=password' \
+            'CACHE_STORE=redis' \
+            'SESSION_DRIVER=redis' \
+            'QUEUE_CONNECTION=redis' \
+            >> .env
 
       - name: Build Docker development image
         run: docker compose build app

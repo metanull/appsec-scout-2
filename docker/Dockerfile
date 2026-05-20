@@ -71,6 +71,8 @@ RUN mkdir -p /opt/bfg \
 # PHP extensions
 RUN docker-php-ext-install -j"$(nproc)" pdo_mysql intl bcmath zip pcntl opcache
 
+RUN printf 'memory_limit=512M\n' > /usr/local/etc/php/conf.d/appsec-scout-memory-limit.ini
+
 # Redis extension via PECL
 RUN pecl install redis && docker-php-ext-enable redis
 
@@ -83,7 +85,15 @@ WORKDIR /var/www/html
 COPY --from=composer-deps /app ./
 COPY --from=assets /app/public/build ./public/build
 
-RUN touch .env \
+RUN mkdir -p \
+        storage/app/private \
+        storage/app/public \
+        storage/framework/cache/data \
+        storage/framework/sessions \
+        storage/framework/testing \
+        storage/framework/views \
+        storage/logs \
+    && touch .env \
     && chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 8080
