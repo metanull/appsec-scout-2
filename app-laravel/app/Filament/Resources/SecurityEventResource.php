@@ -9,6 +9,8 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
+use App\Models\SoftwareSystemLink;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -94,11 +96,12 @@ class SecurityEventResource extends Resource
                     ->multiple()
                     ->options(fn () => SecurityEvent::query()->distinct()->pluck('source_id', 'source_id')->all())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applySources($query, self::stringArray($data['values'] ?? []))),
-                SelectFilter::make('software_system_id')
-                    ->label('Software system')
-                    ->relationship('softwareSystem', 'name')
+                SelectFilter::make('system_scope')
+                    ->label('System')
+                    ->multiple()
                     ->searchable()
-                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applySystem($query, self::nullableInt($data['value'] ?? null))),
+                    ->options(fn (): array => self::systemScopeOptions())
+                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applySystemScopes($query, self::stringArray($data['values'] ?? []))),
                 SelectFilter::make('container_id')
                     ->label('Container')
                     ->relationship('container', 'name')
@@ -161,6 +164,24 @@ class SecurityEventResource extends Resource
         }
 
         return (int) $value;
+    }
+
+    /** @return array<string, string> */
+    private static function systemScopeOptions(): array
+    {
+        $physical = SoftwareSystem::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SoftwareSystem $system): array => ['physical:' . $system->id => '[System] ' . $system->name])
+            ->all();
+
+        $virtual = SoftwareSystemLink::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SoftwareSystemLink $link): array => ['virtual:' . $link->id => '[Virtual] ' . $link->name])
+            ->all();
+
+        return array_merge($physical, $virtual);
     }
 
     /** @return list<string> */
