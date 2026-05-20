@@ -1,0 +1,37 @@
+{
+  "results": [
+    {
+      "uuid": "finding-001",
+      "title": "SQL injection",
+      "severity": "high",
+      "status": "active",
+      "cwe": "CWE-89",
+      "definition": {
+        "description": "SQL injection in login endpoint",
+        "remediation": "Use prepared statements"
+      },
+      "links": {
+        "details_page": "https://app.detectify.com/finding-001"
+      },
+      "created_at": "2026-02-01T10:00:00Z",
+      "updated_at": "2026-02-01T10:00:30Z"
+    },
+    {
+      "uuid": "finding-002",
+      "title": "Exposed admin endpoint",
+      "severity": "medium",
+      "status": "accepted_risk",
+      "category": "misconfiguration",
+      "cwe": "CWE-16",
+      "definition": {
+        "description": "Administrative endpoint exposed to internet",
+        "remediation": "Restrict access"
+      },
+      "links": {
+        "details_page": "https://app.detectify.com/finding-002"
+      },
+      "created_at": "2026-02-01T11:00:00Z",
+      "updated_at": "2026-02-01T11:00:30Z"
+    }
+  ]
+}

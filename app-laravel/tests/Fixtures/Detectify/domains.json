@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "token": "domain-001",
+      "name": "example.com",
+      "url": "https://example.com"
+    },
+    {
+      "token": "domain-002",
+      "name": "api.example.com",
+      "url": "https://api.example.com"
+    }
+  ]
+}
