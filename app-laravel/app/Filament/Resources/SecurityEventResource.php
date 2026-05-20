@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Resources\Resource;
@@ -24,6 +25,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 
 class SecurityEventResource extends Resource
@@ -170,6 +172,31 @@ class SecurityEventResource extends Resource
                             (string) $data['comment'],
                         );
                     }),
+            ])
+            ->bulkActions([
+                BulkAction::make('changeStateBulk')
+                    ->label('Change state (bulk)')
+                    ->icon('heroicon-o-pencil-square')
+                    ->requiresConfirmation()
+                    ->visible(fn (): bool => Auth::user()?->can('alerts.bulk-edit') ?? false)
+                    ->form(self::stateChangeForm())
+                    ->action(function (Collection $records, array $data): void {
+                        /** @var Collection<int, SecurityEvent> $records */
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(StateChanger::class)->changeMany(
+                            $records,
+                            $user,
+                            EventState::from((string) $data['new_state']),
+                            (string) $data['comment'],
+                        );
+                    })
+                    ->deselectRecordsAfterCompletion(),
             ])
             ->recordUrl(fn (SecurityEvent $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultPaginationPageOption(25)
