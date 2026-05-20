@@ -1,6 +1,13 @@
+# Env
+.env
+
 # Corporate SSL inspection CA — do not commit
 netskope-ca.crt
 *.crt
 
 # Docker override
 docker-compose.override.yml
+
+# Docker installed binaries
+bfg.jar
+composer.phar

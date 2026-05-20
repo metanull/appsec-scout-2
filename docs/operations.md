@@ -89,21 +89,21 @@ No local PHP installation is required. Tests run inside the official Composer Do
 ```bash
 # Code style check (Pint)
 docker run --rm \
-  -v "$(pwd)/app-laravel:/workspace" \
+  -v "${PWD}/app-laravel:/workspace" \
   -w /workspace \
   composer:2 \
   vendor/bin/pint --test
 
 # Static analysis (PHPStan level 8 via Larastan)
 docker run --rm \
-  -v "$(pwd)/app-laravel:/workspace" \
+  -v "${PWD}/app-laravel:/workspace" \
   -w /workspace \
   composer:2 \
   vendor/bin/phpstan analyse --no-progress
 
 # Feature and unit tests (Pest, SQLite in-memory)
 docker run --rm \
-  -v "$(pwd)/app-laravel:/workspace" \
+  -v "${PWD}/app-laravel:/workspace" \
   -w /workspace \
   composer:2 \
   vendor/bin/pest --no-coverage

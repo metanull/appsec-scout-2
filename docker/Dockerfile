@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libicu-dev \
     libzip-dev \
-    openjdk-21-jre-headless \
+    openjdk-17-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Trivy
@@ -55,7 +55,7 @@ RUN mkdir -p /opt/bfg \
     && curl -fsSL \
        "https://repo1.maven.org/maven2/com/madgag/bfg/1.15.0/bfg-1.15.0.jar" \
        -o /opt/bfg/bfg.jar \
-    && echo "9e3ea0b9c4f9f7e4c88df74faaede0f12ebbedb55d7d38cd3c3eb3b0fd3c6e4f  /opt/bfg/bfg.jar" \
+    && echo "dfe2885adc2916379093f02a80181200536856c9a987bf21c492e452adefef7a  /opt/bfg/bfg.jar" \
        | sha256sum --check --status
 
 # PHP extensions
