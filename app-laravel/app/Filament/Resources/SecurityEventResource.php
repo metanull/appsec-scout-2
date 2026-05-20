@@ -11,6 +11,11 @@ use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
+use App\Models\User;
+use App\Triage\StateChanger;
+use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -123,6 +128,28 @@ class SecurityEventResource extends Resource
                     ->options(fn () => self::availableTags())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyTags($query, self::stringArray($data['values'] ?? []))),
             ])
+            ->actions([
+                Action::make('changeState')
+                    ->label('Change state')
+                    ->icon('heroicon-o-pencil-square')
+                    ->visible(fn (): bool => Auth::user()?->can('alerts.edit') ?? false)
+                    ->form(self::stateChangeForm())
+                    ->action(function (SecurityEvent $record, array $data): void {
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(StateChanger::class)->change(
+                            $record,
+                            $user,
+                            EventState::from((string) $data['new_state']),
+                            (string) $data['comment'],
+                        );
+                    }),
+            ])
             ->recordUrl(fn (SecurityEvent $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultPaginationPageOption(25)
             ->paginated([25, 50, 100]);
@@ -192,5 +219,29 @@ class SecurityEventResource extends Resource
         }
 
         return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+    }
+
+    /** @return array<int, Select|Textarea> */
+    public static function stateChangeForm(): array
+    {
+        return [
+            Select::make('new_state')
+                ->label('New state')
+                ->required()
+                ->options(self::eventStateOptions()),
+            Textarea::make('comment')
+                ->label('Comment')
+                ->required()
+                ->minLength(10)
+                ->rows(4),
+        ];
+    }
+
+    /** @return array<string, string> */
+    public static function eventStateOptions(): array
+    {
+        return collect(EventState::cases())
+            ->mapWithKeys(fn (EventState $state): array => [$state->value => str($state->value)->replace('_', ' ')->title()->toString()])
+            ->all();
     }
 }

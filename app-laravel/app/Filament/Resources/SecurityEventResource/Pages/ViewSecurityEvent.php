@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SecurityEventResource\Pages;
 
 use App\Filament\Resources\SecurityEventResource;
+use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\EventComment;
 use App\Models\SecurityEvent;
@@ -10,6 +11,7 @@ use App\Models\User;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
 use App\Triage\CommentManager;
+use App\Triage\StateChanger;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
@@ -37,6 +39,15 @@ class ViewSecurityEvent extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('changeState')
+                ->label('Change state')
+                ->icon('heroicon-o-pencil-square')
+                ->visible(fn (): bool => Gate::allows('alerts.edit'))
+                ->form(SecurityEventResource::stateChangeForm())
+                ->action(fn (array $data): bool => $this->changeState(
+                    EventState::from((string) $data['new_state']),
+                    (string) $data['comment'],
+                )),
             Action::make('reloadFromSource')
                 ->label('Reload from source')
                 ->icon('heroicon-o-arrow-path')
@@ -111,6 +122,25 @@ class ViewSecurityEvent extends ViewRecord
         $this->refreshFormData([]);
 
         Notification::make()->title('Comment added')->success()->send();
+    }
+
+    public function changeState(EventState $newState, string $comment): bool
+    {
+        Gate::authorize('alerts.edit');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        app(StateChanger::class)->change($this->eventRecord(), $user, $newState, $comment);
+        $this->refreshFormData([]);
+
+        Notification::make()->title('State change queued for sync review')->success()->send();
+
+        return true;
     }
 
     public function startEditingComment(int $commentId): void
@@ -283,7 +313,9 @@ class ViewSecurityEvent extends ViewRecord
 
     private function eventType(SecurityEvent $record): EventType
     {
-        return EventType::from((string) $record->type);
+        $type = $record->getAttribute('type');
+
+        return $type instanceof EventType ? $type : EventType::from((string) $type);
     }
 
     private function commentById(int $commentId): ?EventComment
