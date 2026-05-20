@@ -1,0 +1,87 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "alertId": 1003,
+      "alertType": "code",
+      "severity": "high",
+      "state": "active",
+      "title": "SQL Injection vulnerability detected",
+      "alertUri": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/1003",
+      "firstSeenDate": "2026-02-01T12:00:00Z",
+      "lastSeenDate": "2026-02-04T08:00:00Z",
+      "physicalLocations": [
+        {
+          "filePath": "src/db/queries.js",
+          "region": {
+            "startLine": 42,
+            "endLine": 45,
+            "snippet": {
+              "text": "const query = `SELECT * FROM users WHERE id = '${userId}'`;"
+            }
+          },
+          "versionControl": {
+            "commitHash": "def789ghi012",
+            "branch": "main",
+            "itemUrl": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api?path=src/db/queries.js&version=GCdef789ghi012"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "CodeQL",
+          "version": "2.14.0",
+          "rules": [
+            {
+              "id": "CWE-89",
+              "opaqueId": "SAST-CWE-89",
+              "friendlyName": "SQL Injection",
+              "description": "User input is directly concatenated into SQL query without sanitization",
+              "helpMessage": "Use parameterized queries or prepared statements to prevent SQL injection.",
+              "helpUri": "https://cwe.mitre.org/data/definitions/89.html"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "alertId": 1008,
+      "alertType": "code",
+      "severity": "medium",
+      "state": "dismissed",
+      "title": "Cross-Site Scripting (XSS) vulnerability",
+      "alertUri": "https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/1008",
+      "firstSeenDate": "2026-01-15T09:00:00Z",
+      "lastSeenDate": "2026-02-01T14:00:00Z",
+      "physicalLocations": [
+        {
+          "filePath": "src/views/user-profile.js",
+          "region": {
+            "startLine": 156,
+            "endLine": 160
+          },
+          "versionControl": {
+            "commitHash": "aabbcc1122",
+            "branch": "main"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "CodeQL",
+          "version": "2.14.0",
+          "rules": [
+            {
+              "id": "CWE-79",
+              "opaqueId": "SAST-CWE-79",
+              "friendlyName": "Cross-Site Scripting",
+              "description": "User-supplied data rendered without encoding",
+              "helpMessage": "Encode output when rendering user-supplied data in HTML context.",
+              "helpUri": "https://cwe.mitre.org/data/definitions/79.html"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

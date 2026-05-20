@@ -1,0 +1,19 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "id": "project-001",
+      "name": "SecurityProject",
+      "description": "Security testing project for unit tests",
+      "url": "https://dev.azure.com/testorg/_apis/projects/project-001",
+      "state": "wellFormed"
+    },
+    {
+      "id": "project-002",
+      "name": "AppDevProject",
+      "description": "Application development project",
+      "url": "https://dev.azure.com/testorg/_apis/projects/project-002",
+      "state": "wellFormed"
+    }
+  ]
+}
