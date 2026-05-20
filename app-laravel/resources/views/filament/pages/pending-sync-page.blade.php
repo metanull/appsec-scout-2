@@ -49,6 +49,12 @@
                                                 <div>Last editor: {{ $row['last_editor_name'] ?? 'Unknown' }}</div>
                                                 <div>Last edited: {{ optional($row['last_edited_at'])->toDateTimeString() ?? 'n/a' }}</div>
                                                 <div>Comment: {{ \Illuminate\Support\Str::limit((string) ($event->pending_comment ?? ''), 120) ?: 'n/a' }}</div>
+                                                @if ($row['last_error'])
+                                                    <div class="mt-2 flex flex-wrap gap-2">
+                                                        <x-filament::badge color="danger">Last error</x-filament::badge>
+                                                        <span class="text-danger-600">{{ $row['last_error'] }} @if (($row['retry_count'] ?? 0) > 0) (retry {{ $row['retry_count'] }}/3) @endif</span>
+                                                    </div>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>

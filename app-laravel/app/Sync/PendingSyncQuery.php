@@ -45,7 +45,13 @@ final class PendingSyncQuery
             ->map(function (SecurityEvent $event) use ($auditMap, $userNames): array {
                 $audit = $auditMap->get((string) $event->id);
                 $lastEditorName = null;
+                $metadata = $event->getAttribute('metadata');
 
+                if (! is_array($metadata)) {
+                    $metadata = [];
+                }
+
+                /** @var array<string, mixed> $metadata */
                 if ($audit !== null && $audit->user_id !== null) {
                     $lastEditorName = $userNames->get($audit->user_id, 'User #' . $audit->user_id);
                 }
@@ -54,6 +60,8 @@ final class PendingSyncQuery
                     'event' => $event,
                     'last_editor_name' => $lastEditorName,
                     'last_edited_at' => $audit !== null ? $audit->created_at : $event->updated_at,
+                    'last_error' => is_string($metadata['lastPushError'] ?? null) ? $metadata['lastPushError'] : null,
+                    'retry_count' => (int) ($metadata['pushRetryCount'] ?? 0),
                 ];
             })
             ->groupBy(fn (array $row): string => $row['event']->source_id)

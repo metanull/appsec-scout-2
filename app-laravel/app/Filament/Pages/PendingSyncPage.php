@@ -2,12 +2,14 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Sync\PendingSyncQuery;
 use App\Sync\PushEventStatesJob;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
 class PendingSyncPage extends Page
@@ -29,7 +31,8 @@ class PendingSyncPage extends Page
 
     public static function canAccess(): bool
     {
-        $user = auth()->user();
+        /** @var User|null $user */
+        $user = Auth::user();
 
         if (! $user instanceof User) {
             return false;
@@ -57,7 +60,16 @@ class PendingSyncPage extends Page
             return;
         }
 
-        PushEventStatesJob::dispatch($eventIds);
+        SecurityEvent::query()
+            ->whereIn('id', $eventIds)
+            ->get(['id', 'source_id'])
+            ->groupBy('source_id')
+            ->each(function ($events): void {
+                $ids = $events->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
+
+                /** @var list<int> $ids */
+                PushEventStatesJob::dispatch($ids);
+            });
 
         $this->selectedEventIds = [];
 

@@ -30,6 +30,8 @@ final class FakeSource implements Source
 
     public string $lastPushedState = '';
 
+    public int $pushCalls = 0;
+
     public function id(): string
     {
         return 'fake';
@@ -82,6 +84,8 @@ final class FakeSource implements Source
 
     public function pushEventState(SecurityEvent $event): PushResult
     {
+        $this->pushCalls++;
+
         if ($this->pushOk) {
             $this->lastPushedState = $event->pending_state?->value ?? '';
         }
