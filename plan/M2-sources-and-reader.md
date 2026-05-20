@@ -34,7 +34,7 @@
 - Eloquent models `SoftwareSystem`, `SecurityContainer`, `SecurityEvent`, `EventComment`, `SoftwareSystemLink` with casts (enums, JSON, dates) and relations.
 - Factories produce realistic rows for tests (built from real-recorded source fixtures).
 - Pest tests for cast round-trips and unique constraints.
-**Relevant files**: [core/src/models/security-event.js](../core/src/models/security-event.js), [dotnet/src/AppSecScout.Core/Models/](../dotnet/src/AppSecScout.Core/Models/).
+**Relevant files**: [core/src/models/security-event.js](../legacy-code/core/src/models/security-event.js), [dotnet/src/AppSecScout.Core/Models/](../legacy-code/dotnet/src/AppSecScout.Core/Models/).
 
 ---
 
@@ -85,7 +85,7 @@
 - Pest tests for `fetchSystems`, `fetchContainers`, `fetchEvents(code)` against fixtures.
 - Incremental fetch via `criteria.modifiedSince` cursor (Pest test).
 - Idempotent: second fetch produces zero inserts and exact zero updates when nothing changed.
-**Relevant files**: [plugins/source/siem-source-azdo/](../plugins/source/siem-source-azdo/).
+**Relevant files**: [plugins/source/siem-source-azdo/](../legacy-code/plugins/source/siem-source-azdo/).
 
 ### S4 — AzDO source: dependency alerts
 **Goal**: Same client extended to `alertType=dependency`.
@@ -95,7 +95,7 @@
 **Definition of Done**:
 - Fixtures cover npm / maven / pip / nuget variants.
 - Pest test asserts fingerprint stable across re-fetches when alert content unchanged.
-**Relevant files**: [plugins/source/siem-source-azdo/](../plugins/source/siem-source-azdo/).
+**Relevant files**: [plugins/source/siem-source-azdo/](../legacy-code/plugins/source/siem-source-azdo/).
 
 ### S5 — AzDO source: secret alerts + on-demand enrichment
 **Goal**: Secret alerts with `truncatedSecret`, `validationFingerprints`.
@@ -106,7 +106,7 @@
 **Definition of Done**:
 - Pest tests against fixtures for secret alerts.
 - Assertion that the `truncatedSecret` is never present in any log line (using `assertLogDoesntContain`).
-**Relevant files**: [plugins/source/siem-source-azdo/](../plugins/source/siem-source-azdo/).
+**Relevant files**: [plugins/source/siem-source-azdo/](../legacy-code/plugins/source/siem-source-azdo/).
 
 ### S6 — AzDO source: `pushEventState`
 **Goal**: Upstream state propagation (consumed by M3 Sync).
@@ -116,7 +116,7 @@
 **Definition of Done**:
 - Pest mock test verifies request shape.
 - `pushEventState` never called outside the `PushEventStatesJob` (PHPStan rule or architecture test via `pestphp/pest-plugin-arch`).
-**Relevant files**: [plugins/source/siem-source-azdo/](../plugins/source/siem-source-azdo/).
+**Relevant files**: [plugins/source/siem-source-azdo/](../legacy-code/plugins/source/siem-source-azdo/).
 
 ---
 
@@ -133,7 +133,7 @@
 **Definition of Done**:
 - Pest tests for token cache, 401 retry, pagination across two pages.
 - Proxy honored (test injects fake proxy URL and asserts request routed through it).
-**Relevant files**: [plugins/source/siem-source-asoc/src/asoc-client.js](../plugins/source/siem-source-asoc/src/asoc-client.js), [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs](../dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs).
+**Relevant files**: [plugins/source/siem-source-asoc/src/asoc-client.js](../legacy-code/plugins/source/siem-source-asoc/src/asoc-client.js), [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs](../legacy-code/dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs).
 
 ### S8 — ASoC source: typed issue fetch + normalization
 **Goal**: Handle all ASoC issue variants: SAST, SCA, Secret, DAST/API, Misconfig.
@@ -151,7 +151,7 @@
 **Definition of Done**:
 - Recorded fixtures committed for each of the 5 variants under `tests/Fixtures/Asoc/`.
 - Pest tests parameterized over all 5 variants asserting normalized output.
-**Relevant files**: [plugins/source/siem-source-asoc/src/asoc-normalizer.js](../plugins/source/siem-source-asoc/src/asoc-normalizer.js), [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs](../dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs).
+**Relevant files**: [plugins/source/siem-source-asoc/src/asoc-normalizer.js](../legacy-code/plugins/source/siem-source-asoc/src/asoc-normalizer.js), [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs](../legacy-code/dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCNormalizer.cs).
 
 ### S9 — ASoC source: `pushEventState`
 **Goal**: Update issue status + add comment upstream.
@@ -161,7 +161,7 @@
 - Status map: local `open → New`, `in_progress → InProgress`, `resolved → Fixed`, `dismissed → Noise` (with comment carrying the dismissal reason).
 **Definition of Done**:
 - Pest mock test verifying request body shape and odataFilter quoting.
-**Relevant files**: [plugins/source/siem-source-asoc/](../plugins/source/siem-source-asoc/).
+**Relevant files**: [plugins/source/siem-source-asoc/](../legacy-code/plugins/source/siem-source-asoc/).
 
 ### S10 — ASoC source: focused remediation article enrichment
 **Goal**: Fetch and cache the most precise remediation article for each event type.
@@ -179,7 +179,7 @@
 - Pest tests using committed HTML fixtures for: SAST general, SCA with CveId, DAST/API with focused `ApiVulnName`.
 - Cache-hit test: second call does not invoke HTTP.
 - Sanitization test: script tag removed.
-**Relevant files**: [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs](../dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs) (`BuildArticleUrl`, `GetFocusedArticleUrlAsync`, `ConvertHtmlToMarkdown`).
+**Relevant files**: [dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs](../legacy-code/dotnet/src/AppSecScout.Core/Sources/ASoC/ASoCClient.cs) (`BuildArticleUrl`, `GetFocusedArticleUrlAsync`, `ConvertHtmlToMarkdown`).
 
 ---
 
@@ -196,7 +196,7 @@
 **Definition of Done**:
 - Pest tests using recorded fixtures from the prior iteration.
 - `pushEventState` integration tested with mock.
-**Relevant files**: [plugins/source/siem-source-detectify/](../plugins/source/siem-source-detectify/).
+**Relevant files**: [plugins/source/siem-source-detectify/](../legacy-code/plugins/source/siem-source-detectify/).
 
 ---
 
