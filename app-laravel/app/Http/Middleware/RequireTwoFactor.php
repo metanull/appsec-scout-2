@@ -23,11 +23,7 @@ class RequireTwoFactor
             return $next($request);
         }
 
-        if ($this->hasTwoFactorEnabled($user) && ! $this->isTwoFactorConfirmed($request)) {
-            return redirect()->route('two-factor.login');
-        }
-
-        if (! $this->hasTwoFactorEnabled($user)) {
+        if (! $this->hasTwoFactorEnrolled($user)) {
             return redirect()->route('two-factor.setup');
         }
 
@@ -39,13 +35,9 @@ class RequireTwoFactor
         return in_array(TwoFactorAuthenticatable::class, class_uses_recursive($user), true);
     }
 
-    private function hasTwoFactorEnabled(mixed $user): bool
+    private function hasTwoFactorEnrolled(mixed $user): bool
     {
-        return $user->two_factor_secret !== null;
-    }
-
-    private function isTwoFactorConfirmed(Request $request): bool
-    {
-        return $request->session()->has('auth.two_factor_confirmed');
+        return $user->two_factor_secret !== null
+            && $user->two_factor_confirmed_at !== null;
     }
 }

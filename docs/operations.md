@@ -6,6 +6,9 @@
 # Build the application image (run from the repository root)
 docker compose build
 
+# Build the development/CI image with dev dependencies included
+APP_BUILD_TARGET=dev docker compose build app
+
 # Build and start all services in detached mode
 docker compose up --build -d
 ```
@@ -84,34 +87,38 @@ docker compose logs -f mysql
 
 ## Development: run the test suite
 
-No local PHP installation is required. Tests run inside the official Composer Docker image.
+No local PHP, Composer, Node.js, Java, Trivy, or BFG installation is required. Build the development image from this repository's Dockerfile, then run checks inside that container.
 
 ```bash
+# Build the app image with dev dependencies once per dependency change
+APP_BUILD_TARGET=dev docker compose build app
+
 # Code style check (Pint)
-docker run --rm \
-  -v "$(pwd)/app-laravel:/workspace" \
-  -w /workspace \
-  composer:2 \
-  vendor/bin/pint --test
+APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pint --test
 
 # Static analysis (PHPStan level 8 via Larastan)
-docker run --rm \
-  -v "$(pwd)/app-laravel:/workspace" \
-  -w /workspace \
-  composer:2 \
-  vendor/bin/phpstan analyse --no-progress
+APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/phpstan analyse --no-progress
 
-# Feature and unit tests (Pest, SQLite in-memory)
-docker run --rm \
-  -v "$(pwd)/app-laravel:/workspace" \
-  -w /workspace \
-  composer:2 \
-  vendor/bin/pest --no-coverage
+# Feature and unit tests (Pest, MySQL + Redis from Docker Compose)
+APP_BUILD_TARGET=dev docker compose up -d mysql redis
+APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pest --no-coverage
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:APP_BUILD_TARGET = 'dev'
+docker compose build app
+docker compose run --rm app vendor/bin/pint --test
+docker compose run --rm app vendor/bin/phpstan analyse --no-progress
+docker compose up -d mysql redis
+docker compose run --rm app vendor/bin/pest --no-coverage
+Remove-Item Env:\APP_BUILD_TARGET
 ```
 
 All three commands must pass with zero errors before merging any change.
 
-> **Corporate proxy / SSL inspection**: If your network intercepts HTTPS, prepend the CA certificate copy step to each Docker `run` command (see [install.md](install.md#corporate-proxy--ssl-inspection)).
+> **Corporate proxy / SSL inspection**: If your network intercepts HTTPS, use the Docker Compose override shown in [install.md](install.md#corporate-proxy--ssl-inspection) so the app image receives the corporate CA and proxy settings.
 
 ## Scheduled tasks
 

@@ -47,7 +47,7 @@
 - `docker/Dockerfile` multi-stage:
   - Stage `composer-deps`: `composer:2` resolves vendor.
   - Stage `assets`: `node:22-alpine` builds Filament assets (`npm ci && npm run build`).
-  - Final stage: `php:8.4-fpm-bookworm`. apt-installs: `nginx`, `supervisor`, `git`, `openjdk-21-jre-headless`, `ca-certificates`, `curl`, `unzip`, `libicu-dev`, PHP extensions via `docker-php-ext-install`: `pdo_mysql`, `intl`, `bcmath`, `opcache`, `zip`, `pcntl`, `redis` (via pecl).
+  - Final stage: `php:8.4-fpm-trixie`. apt-installs: `nginx`, `supervisor`, `git`, `openjdk-21-jre-headless`, `ca-certificates`, `curl`, `unzip`, `libicu-dev`, PHP extensions via `docker-php-ext-install`: `pdo_mysql`, `intl`, `bcmath`, `opcache`, `zip`, `pcntl`, `redis` (via pecl).
   - Install Trivy via official apt repo.
   - Download BFG 1.15.0 jar (verified SHA-256) to `/opt/bfg/bfg.jar`.
   - Non-root user `www-data` (uid 33).

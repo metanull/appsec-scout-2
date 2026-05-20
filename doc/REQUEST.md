@@ -202,7 +202,7 @@ Purpose: gather new alerts, alert updates, alert metadata, and resolution data.
 
 Purpose: gather status updates on linked stories.
 
-## Development Rules for the new system
+## Development Rules
 
 ### Core Principles
 
@@ -249,6 +249,7 @@ Purpose: gather status updates on linked stories.
 * Code must pass:
   * **Linting (Laravel Pint)** → no warnings, no errors
   * **Testing (Pest)** → all tests passing, no skipped or unstable tests
+  * **Static analysis (phpstan)** → no warnings, no errors
 
 * No code is considered complete unless all quality checks are satisfied.
 
@@ -265,17 +266,12 @@ All development must comply with established secure coding practices, with a str
 * Use **framework APIs** for operating system interactions
   * Direct execution of OS commands from the application is prohibited
 
-* Implement proper **synchronization mechanisms** to prevent race conditions
-
-* Protect all shared resources and variables against **concurrent access issues**
+* Protect all shared resources and variables against **concurrent access issues** using framework's **synchronization mechanisms**.
 
 * Always:
   * Explicitly initialize variables and data stores
   * Avoid implicit or undefined states
-
-* When elevated privileges are required:
-  * **Grant them as late as possible**
-  * **Drop them as early as possible**
+  * Avoid implicit or null-coalescing fallback, use explicit logic gates instead.
 
 * Avoid calculation and precision issues by understanding the underlying data representation of the language
 

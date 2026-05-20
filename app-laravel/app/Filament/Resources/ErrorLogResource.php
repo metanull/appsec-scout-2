@@ -29,6 +29,11 @@ class ErrorLogResource extends Resource
         return false;
     }
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('admin.errors') ?? false;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);

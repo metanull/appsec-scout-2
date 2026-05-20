@@ -1,3 +1,13 @@
+# Env
+.env
+
+# Local binary/tool artifacts belong in Docker images, not the repository
+bfg.jar
+**/bfg*.jar
+composer.phar
+**/composer*.phar
+*.phar
+
 # Corporate SSL inspection CA — do not commit
 netskope-ca.crt
 *.crt

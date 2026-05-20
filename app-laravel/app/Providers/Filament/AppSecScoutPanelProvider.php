@@ -36,7 +36,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([AccountWidget::class, FilamentInfoWidget::class])
             ->middleware($this->webMiddleware())
-            ->authMiddleware([Authenticate::class, RequireTwoFactor::class]);
+            ->authMiddleware([RequireTwoFactor::class, Authenticate::class]);
     }
 
     /** @return list<class-string> */
