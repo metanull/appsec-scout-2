@@ -8,52 +8,35 @@ jobs:
   ci:
     runs-on: ubuntu-latest
 
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: password
-          MYSQL_DATABASE: appsec_scout_test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
 
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.4"
-          extensions: intl, pdo_mysql, bcmath, zip, pcntl
-          coverage: none
+      - name: Prepare Docker environment
+        run: |
+          cp app-laravel/.env.example .env
+          cat >> .env <<EOF
+          APP_BUILD_TARGET=dev
+          APP_ENV=testing
+          APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          APP_DEBUG=false
+          DB_DATABASE=appsec_scout_test
+          DB_PASSWORD=password
+          CACHE_STORE=redis
+          SESSION_DRIVER=redis
+          QUEUE_CONNECTION=redis
+          EOF
 
-      - name: Install dependencies
-        working-directory: app-laravel
-        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Build Docker development image
+        run: docker compose build app
 
-      - name: Copy .env
-        working-directory: app-laravel
-        run: cp .env.example .env
-
-      - name: Generate app key
-        working-directory: app-laravel
-        run: php artisan key:generate
+      - name: Start backing services
+        run: docker compose up -d mysql redis
 
       - name: Lint (Pint)
-        working-directory: app-laravel
-        run: vendor/bin/pint --test
+        run: docker compose run --rm app vendor/bin/pint --test
 
       - name: Static analysis (PHPStan)
-        working-directory: app-laravel
-        run: vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+        run: docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 
       - name: Test (Pest)
-        working-directory: app-laravel
-        run: vendor/bin/pest --parallel
-        env:
-          DB_CONNECTION: sqlite
-          DB_DATABASE: ":memory:"
+        run: docker compose run --rm app vendor/bin/pest --no-coverage

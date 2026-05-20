@@ -8,6 +8,8 @@
 | Docker Compose | v2 (plugin) |
 | MySQL | 8.0+ (provided via Docker) |
 
+No local PHP, Composer, Node.js, Java, Trivy, or BFG installation is required. The application image builds and carries the runtime tools it needs.
+
 ## Quick start
 
 ```bash
@@ -17,7 +19,7 @@ cd appsec-scout-2
 
 # 2. Copy environment file and fill in secrets
 cp app-laravel/.env.example .env
-$EDITOR .env          # Set APP_KEY, DB_PASSWORD, etc.
+$EDITOR .env          # Set APP_KEY and replace default local passwords before shared use.
 
 # 3. Generate the Laravel app key (if APP_KEY is empty)
 #    This can be done inside the container after first boot:
@@ -45,7 +47,7 @@ docker compose exec app php artisan tinker
 |---|---|---|---|
 | `APP_KEY` | Yes | — | Laravel encryption key (run `php artisan key:generate`) |
 | `APP_URL` | Yes | `http://localhost:8080` | Public URL of the application |
-| `DB_PASSWORD` | Yes | — | MySQL password for the `appsec_scout` user |
+| `DB_PASSWORD` | Yes | `password` | MySQL password for the `appsec_scout` user |
 | `DB_ROOT_PASSWORD` | No | `rootpassword` | MySQL root password |
 | `HTTP_PROXY` | No | — | Corporate HTTP proxy URL |
 | `HTTPS_PROXY` | No | — | Corporate HTTPS proxy URL |
@@ -82,10 +84,10 @@ curl http://localhost:8080/up
 
 | Tool | Location |
 |---|---|
-| Trivy (SBOM/vulnerability scanner) | `/usr/local/bin/trivy` |
+| Trivy (SBOM/vulnerability scanner) | `/usr/bin/trivy` |
 | BFG Repo Cleaner 1.15.0 | `/opt/bfg/bfg.jar` |
 | Git | `/usr/bin/git` |
-| Java 17 (JRE) | `/usr/bin/java` |
+| Java 21 (JRE) | `/usr/bin/java` |
 
 ## Security scan baseline
 

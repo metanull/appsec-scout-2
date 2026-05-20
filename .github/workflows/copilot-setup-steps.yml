@@ -23,61 +23,12 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v4
 
-            # ── PHP 8.4 + extensions ──────────────────────────────────────────
-            - name: Set up PHP 8.4
-              uses: shivammathur/setup-php@v2
-              with:
-                  php-version: "8.4"
-                  extensions: intl, pdo_mysql, bcmath, zip, pcntl, redis
-                  coverage: none
+            - name: Build Docker development image
+              run: APP_BUILD_TARGET=dev docker compose build app
 
-            - name: Cache Composer dependencies
-              uses: actions/cache@v4
-              with:
-                  path: app-laravel/vendor
-                  key: ${{ runner.os }}-composer-${{ hashFiles('app-laravel/composer.lock') }}
-                  restore-keys: |
-                      ${{ runner.os }}-composer-
-
-            - name: Install Composer dependencies
-              working-directory: app-laravel
-              run: composer install --no-interaction --prefer-dist --no-progress
-
-            # ── Node.js 22 + npm dependencies ─────────────────────────────────
-            - name: Set up Node.js 22
-              uses: actions/setup-node@v4
-              with:
-                  node-version: "22"
-                  cache: "npm"
-                  cache-dependency-path: app-laravel/package-lock.json
-
-            - name: Install Node.js dependencies
-              working-directory: app-laravel
-              run: npm ci --ignore-scripts
-
-            # ── Java 17 (required for BFG) ────────────────────────────────────
-            - name: Set up Java 17
-              uses: actions/setup-java@v4
-              with:
-                  distribution: temurin
-                  java-version: "17"
-
-            # ── BFG 1.15.0 ───────────────────────────────────────────────────
-            - name: Download BFG 1.15.0
+            - name: Verify container-owned tools
               run: |
-                  sudo mkdir -p /opt/bfg
-                  sudo curl -fsSL \
-                      "https://repo1.maven.org/maven2/com/madgag/bfg/1.15.0/bfg-1.15.0.jar" \
-                      -o /opt/bfg/bfg.jar
-                  echo "dfe2885adc2916379093f02a80181200536856c9a987bf21c492e452adefef7a  /opt/bfg/bfg.jar" \
-                      | sha256sum --check --status
-                  printf '#!/bin/sh\nexec java -jar /opt/bfg/bfg.jar "$@"\n' \
-                      | sudo tee /usr/local/bin/bfg > /dev/null
-                  sudo chmod +x /usr/local/bin/bfg
-
-            # ── Trivy ─────────────────────────────────────────────────────────
-            - name: Install Trivy
-              run: |
-                  curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-                      | sh -s -- -b /usr/local/bin
-                  trivy --version
+                  APP_BUILD_TARGET=dev docker compose run --rm app trivy --version
+                  APP_BUILD_TARGET=dev docker compose run --rm app java -version
+                  APP_BUILD_TARGET=dev docker compose run --rm app git --version
+                  APP_BUILD_TARGET=dev docker compose run --rm app test -f /opt/bfg/bfg.jar

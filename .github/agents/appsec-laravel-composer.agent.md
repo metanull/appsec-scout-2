@@ -19,7 +19,7 @@ You are an expert on the **AppSec Scout Laravel** stack in this workspace. Your 
 
 | Layer | Choice |
 | --- | --- |
-| Language | PHP 8.3+ / Docker image runtime |
+| Language | PHP 8.4 / Docker image runtime |
 | Framework | Laravel 13 |
 | Admin UI | Filament 5 |
 | Auth | Laravel Fortify |
@@ -49,7 +49,7 @@ You are an expert on the **AppSec Scout Laravel** stack in this workspace. Your 
 1. Read the relevant files before editing.
 2. Work from `app-laravel/` for Composer, Pint, PHPStan, Pest, Artisan, and npm commands.
 3. Work from the repository root for `docker compose` commands.
-4. Prefer Docker-based commands when local PHP, Composer, MySQL, or Redis are unavailable.
+4. Prefer Docker-based commands for all build, development, and verification work; do not require local PHP, Composer, Node.js, Java, Trivy, BFG, MySQL, or Redis.
 5. Preserve user changes in the working tree. Never revert unrelated edits.
 6. Use `.env.example`, `.env.testing`, docs, and existing config as sources of truth for environment behavior.
 7. Treat secrets carefully. Never print real credentials or tokens.
@@ -59,32 +59,19 @@ You are an expert on the **AppSec Scout Laravel** stack in this workspace. Your 
 
 Use these commands as the default verification path unless the user asks for a narrower check or the change clearly requires a different command.
 
-From `app-laravel/` with local PHP and Composer available:
-
-```bash
-composer install
-vendor/bin/pint --test
-vendor/bin/phpstan analyse --no-progress
-vendor/bin/pest --no-coverage
-```
-
-From the repository root without local PHP, use the official Composer image as documented:
-
-```bash
-docker run --rm -v "$(pwd)/app-laravel:/workspace" -w /workspace composer:2 composer install
-docker run --rm -v "$(pwd)/app-laravel:/workspace" -w /workspace composer:2 vendor/bin/pint --test
-docker run --rm -v "$(pwd)/app-laravel:/workspace" -w /workspace composer:2 vendor/bin/phpstan analyse --no-progress
-docker run --rm -v "$(pwd)/app-laravel:/workspace" -w /workspace composer:2 vendor/bin/pest --no-coverage
-```
-
-On PowerShell, prefer `${PWD}` for the mounted repository path:
+From the repository root, use the Dockerfile development target for quality gates:
 
 ```powershell
-docker run --rm -v "${PWD}/app-laravel:/workspace" -w /workspace composer:2 composer install
-docker run --rm -v "${PWD}/app-laravel:/workspace" -w /workspace composer:2 vendor/bin/pint --test
-docker run --rm -v "${PWD}/app-laravel:/workspace" -w /workspace composer:2 vendor/bin/phpstan analyse --no-progress
-docker run --rm -v "${PWD}/app-laravel:/workspace" -w /workspace composer:2 vendor/bin/pest --no-coverage
+$env:APP_BUILD_TARGET = 'dev'
+docker compose build app
+docker compose run --rm app vendor/bin/pint --test
+docker compose run --rm app vendor/bin/phpstan analyse --no-progress
+docker compose up -d mysql redis
+docker compose run --rm app vendor/bin/pest --no-coverage
+Remove-Item Env:\APP_BUILD_TARGET
 ```
+
+Do not download `composer.phar`, BFG, Trivy, Java, PHP, or Node.js into the workspace or copy locally-installed tools into a running container. If a tool is missing, fix `docker/Dockerfile` or `docker-compose.yml` so the image provides it.
 
 All three verification checks must pass before reporting code work as complete:
 

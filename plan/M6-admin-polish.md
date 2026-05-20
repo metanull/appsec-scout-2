@@ -69,7 +69,7 @@
 - Multi-stage build:
   - `composer-deps` (composer:2) → vendor/
   - `assets` (node:22-alpine) → public/build/
-  - Final `php:8.4-fpm-bookworm-slim` with only runtime deps copied in.
+  - Final `php:8.4-fpm-trixie` with only runtime deps copied in.
 - Image size target: < 600 MB (verified in CI).
 - SBOM via `trivy image --format cyclonedx --output sbom.json` attached to release artifacts.
 - CI gate: `trivy image appsec-scout:{tag}` must report 0 Critical, 0 High.
