@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
+use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -14,7 +15,7 @@ it('new user is automatically assigned the Reader role', function () {
 });
 
 it('new user does not get Reader role when none exists yet', function () {
-    \Spatie\Permission\Models\Role::where('name', 'Reader')->delete();
+    Role::where('name', 'Reader')->delete();
 
     $user = User::factory()->create();
 
