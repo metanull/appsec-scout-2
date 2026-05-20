@@ -45,6 +45,12 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordRefetch(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('event_refetched', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordWorkItemCreated(string $subjectType, string $subjectId, array $payload = []): void
     {
         $this->write('work_item_created', $subjectType, $subjectId, $payload);

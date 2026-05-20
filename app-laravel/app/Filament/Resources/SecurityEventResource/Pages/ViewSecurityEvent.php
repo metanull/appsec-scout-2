@@ -11,6 +11,7 @@ use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
+use App\Sync\RefetchEventJob;
 use App\Triage\CommentManager;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
@@ -62,7 +63,11 @@ class ViewSecurityEvent extends ViewRecord
             Action::make('reloadFromSource')
                 ->label('Reload from source')
                 ->icon('heroicon-o-arrow-path')
-                ->visible(fn (): bool => Gate::allows('sources.push-state'))
+                ->visible(fn (): bool => Gate::allows('work-items.sync'))
+                ->requiresConfirmation()
+                ->modalDescription(fn (): string => $this->eventRecord()->is_dirty
+                    ? 'Local pending changes will be preserved; upstream metadata will be refreshed.'
+                    : 'Reload this alert from its source now?')
                 ->action(fn () => $this->reloadFromSource()),
         ];
     }
@@ -264,20 +269,9 @@ class ViewSecurityEvent extends ViewRecord
 
     private function reloadFromSource(): void
     {
-        $record = $this->eventRecord();
-        $source = app(Registry::class)->find($record->source_id);
+        RefetchEventJob::dispatch($this->eventRecord()->id);
 
-        if ($source === null) {
-            Notification::make()->title('Source is not enabled')->danger()->send();
-
-            return;
-        }
-
-        $dto = $source->fetchRawEvent($record);
-        $this->applyEventDto($record, $dto);
-        $this->refreshFormData([]);
-
-        Notification::make()->title('Alert refreshed from source')->success()->send();
+        Notification::make()->title('Alert refresh queued')->success()->send();
     }
 
     private function applyEventDto(SecurityEvent $record, EventDto $dto): void

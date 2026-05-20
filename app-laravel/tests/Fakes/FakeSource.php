@@ -24,6 +24,8 @@ final class FakeSource implements Source
     /** @var list<EventDto> */
     private array $events = [];
 
+    private ?EventDto $rawEvent = null;
+
     private bool $connectionOk = true;
 
     private bool $pushOk = true;
@@ -95,6 +97,10 @@ final class FakeSource implements Source
 
     public function fetchRawEvent(SecurityEvent $event): EventDto
     {
+        if ($this->rawEvent instanceof EventDto) {
+            return $this->rawEvent;
+        }
+
         return new EventDto(
             sourceEventId: $event->source_event_id,
             sourceSystemId: (string) $event->software_system_id,
@@ -127,6 +133,13 @@ final class FakeSource implements Source
     public function withEvents(EventDto ...$events): self
     {
         $this->events = $events;
+
+        return $this;
+    }
+
+    public function withRawEvent(EventDto $event): self
+    {
+        $this->rawEvent = $event;
 
         return $this;
     }
