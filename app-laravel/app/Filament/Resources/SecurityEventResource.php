@@ -12,6 +12,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
 use App\Models\User;
+use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -149,6 +150,26 @@ class SecurityEventResource extends Resource
                             (string) $data['comment'],
                         );
                     }),
+                Action::make('changeSeverity')
+                    ->label('Change severity')
+                    ->icon('heroicon-o-adjustments-horizontal')
+                    ->visible(fn (): bool => Auth::user()?->can('alerts.edit') ?? false)
+                    ->form(self::severityChangeForm())
+                    ->action(function (SecurityEvent $record, array $data): void {
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(SeverityChanger::class)->change(
+                            $record,
+                            $user,
+                            EventSeverity::from((string) $data['new_severity']),
+                            (string) $data['comment'],
+                        );
+                    }),
             ])
             ->recordUrl(fn (SecurityEvent $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultPaginationPageOption(25)
@@ -242,6 +263,30 @@ class SecurityEventResource extends Resource
     {
         return collect(EventState::cases())
             ->mapWithKeys(fn (EventState $state): array => [$state->value => str($state->value)->replace('_', ' ')->title()->toString()])
+            ->all();
+    }
+
+    /** @return array<int, Select|Textarea> */
+    public static function severityChangeForm(): array
+    {
+        return [
+            Select::make('new_severity')
+                ->label('New severity')
+                ->required()
+                ->options(self::eventSeverityOptions()),
+            Textarea::make('comment')
+                ->label('Comment')
+                ->required()
+                ->minLength(10)
+                ->rows(4),
+        ];
+    }
+
+    /** @return array<string, string> */
+    public static function eventSeverityOptions(): array
+    {
+        return collect(EventSeverity::cases())
+            ->mapWithKeys(fn (EventSeverity $severity): array => [$severity->value => ucfirst($severity->value)])
             ->all();
     }
 }

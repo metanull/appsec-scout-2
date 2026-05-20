@@ -15,6 +15,12 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordSeverityChange(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('severity_change', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordCommentAdded(string $subjectType, string $subjectId, array $payload = []): void
     {
         $this->write('comment_added', $subjectType, $subjectId, $payload);

@@ -48,6 +48,7 @@ class SecurityEventFactory extends Factory
             'updated_at' => now(),
             'is_dirty' => false,
             'pending_state' => null,
+            'pending_severity' => null,
             'pending_comment' => null,
         ];
     }

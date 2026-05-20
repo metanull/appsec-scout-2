@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SecurityEventResource\Pages;
 
 use App\Filament\Resources\SecurityEventResource;
+use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\EventComment;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
 use App\Triage\CommentManager;
+use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -46,6 +48,15 @@ class ViewSecurityEvent extends ViewRecord
                 ->form(SecurityEventResource::stateChangeForm())
                 ->action(fn (array $data): bool => $this->changeState(
                     EventState::from((string) $data['new_state']),
+                    (string) $data['comment'],
+                )),
+            Action::make('changeSeverity')
+                ->label('Change severity')
+                ->icon('heroicon-o-adjustments-horizontal')
+                ->visible(fn (): bool => Gate::allows('alerts.edit'))
+                ->form(SecurityEventResource::severityChangeForm())
+                ->action(fn (array $data): bool => $this->changeSeverity(
+                    EventSeverity::from((string) $data['new_severity']),
                     (string) $data['comment'],
                 )),
             Action::make('reloadFromSource')
@@ -139,6 +150,25 @@ class ViewSecurityEvent extends ViewRecord
         $this->refreshFormData([]);
 
         Notification::make()->title('State change queued for sync review')->success()->send();
+
+        return true;
+    }
+
+    public function changeSeverity(EventSeverity $newSeverity, string $comment): bool
+    {
+        Gate::authorize('alerts.edit');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        app(SeverityChanger::class)->change($this->eventRecord(), $user, $newSeverity, $comment);
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Severity change queued for sync review')->success()->send();
 
         return true;
     }

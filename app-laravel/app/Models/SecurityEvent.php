@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'file_path', 'start_line', 'end_line', 'snippet', 'commit_sha', 'branch', 'version_control_url',
     'source_data', 'metadata',
     'first_seen_at', 'last_seen_at', 'synced_at', 'updated_at',
-    'is_dirty', 'pending_state', 'pending_comment',
+    'is_dirty', 'pending_state', 'pending_severity', 'pending_comment',
 ])]
 class SecurityEvent extends Model
 {
@@ -37,6 +37,7 @@ class SecurityEvent extends Model
             'state' => EventState::class,
             'type' => EventType::class,
             'pending_state' => EventState::class,
+            'pending_severity' => EventSeverity::class,
             'metadata' => 'array',
             'is_dirty' => 'boolean',
             'first_seen_at' => 'datetime',
