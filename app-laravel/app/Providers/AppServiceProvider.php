@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Sources\Asoc\AsocSource;
+use App\Sources\AzDo\AzDoSource;
+use App\Sources\Detectify\DetectifySource;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -11,7 +14,19 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(AzDoSource::class);
+        $this->app->singleton(AsocSource::class);
+        $this->app->singleton(DetectifySource::class);
+
+        $this->app->alias(AzDoSource::class, 'appsec-scout.source.azdo');
+        $this->app->alias(AsocSource::class, 'appsec-scout.source.asoc');
+        $this->app->alias(DetectifySource::class, 'appsec-scout.source.detectify');
+
+        $this->app->tag([
+            AzDoSource::class,
+            AsocSource::class,
+            DetectifySource::class,
+        ], 'appsec-scout.source');
     }
 
     /**

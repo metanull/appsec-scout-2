@@ -1,0 +1,81 @@
+{
+  "Items": [
+    {
+      "Id": "1001",
+      "ApplicationId": "app-001",
+      "ScanId": "scan-001",
+      "IssueType": "SAST",
+      "IssueTypeId": "sast.01",
+      "Title": "SQL injection in repository",
+      "IssueDescription": "Unsanitized input used in SQL query",
+      "Severity": "High",
+      "Status": "Open",
+      "Classification": "Code",
+      "SourceFile": "src/Repositories/UserRepo.php",
+      "Line": 42,
+      "Language": "php",
+      "Scanner": "SAST Engine",
+      "Cwe": "CWE-89",
+      "FixGroupId": "fg-1",
+      "LastUpdated": "2026-02-01T10:00:00Z"
+    },
+    {
+      "Id": "1002",
+      "ApplicationId": "app-001",
+      "ScanId": "scan-001",
+      "IssueType": "SCA",
+      "IssueTypeId": "sca.01",
+      "Title": "Vulnerable dependency",
+      "Severity": "Critical",
+      "Status": "New",
+      "Classification": "Dependency",
+      "Scanner": "SCA Engine",
+      "CveId": "CVE-2024-9999",
+      "Fingerprint": "dep-fp-1",
+      "LastUpdated": "2026-02-01T10:01:00Z"
+    },
+    {
+      "Id": "1003",
+      "ApplicationId": "app-001",
+      "ScanId": "scan-001",
+      "IssueType": "Secret",
+      "IssueTypeId": "secret.01",
+      "Title": "Hardcoded token",
+      "Severity": "Medium",
+      "Status": "Reopened",
+      "Classification": "Secret Detection",
+      "Scanner": "Secret Detection",
+      "Fingerprint": "sec-fp-1",
+      "LastUpdated": "2026-02-01T10:02:00Z"
+    },
+    {
+      "Id": "1004",
+      "ApplicationId": "app-001",
+      "ScanId": "scan-001",
+      "IssueType": "DAST",
+      "IssueTypeId": "dast.01",
+      "Title": "Missing security header",
+      "Severity": "Low",
+      "Status": "InProgress",
+      "Classification": "API",
+      "Location": "https://api.example.test/v1/orders",
+      "Api": "Orders API",
+      "ApiVulnName": "Missing HSTS",
+      "Scanner": "DAST Scanner",
+      "LastUpdated": "2026-02-01T10:03:00Z"
+    },
+    {
+      "Id": "1005",
+      "ApplicationId": "app-001",
+      "ScanId": "scan-001",
+      "IssueType": "Misconfiguration",
+      "IssueTypeId": "misconfig.01",
+      "Title": "Public bucket",
+      "Severity": "Informational",
+      "Status": "Noise",
+      "Classification": "Misconfiguration",
+      "Scanner": "Config Scanner",
+      "LastUpdated": "2026-02-01T10:04:00Z"
+    }
+  ]
+}
