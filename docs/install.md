@@ -85,7 +85,7 @@ curl http://localhost:8080/up
 | Trivy (SBOM/vulnerability scanner) | `/usr/local/bin/trivy` |
 | BFG Repo Cleaner 1.15.0 | `/opt/bfg/bfg.jar` |
 | Git | `/usr/bin/git` |
-| Java 21 (JRE) | `/usr/bin/java` |
+| Java 17 (JRE) | `/usr/bin/java` |
 
 ## Security scan baseline
 
