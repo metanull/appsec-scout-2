@@ -3,14 +3,24 @@
 namespace App\Credentials;
 
 use App\Audit\Recorder;
+use App\Sync\CredentialResolver;
 
 class Vault
 {
-    public function __construct(private readonly Recorder $recorder) {}
+    private bool $hasScopedOwner = false;
 
-    public function get(string $key, ?int $userId): ?string
+    private ?int $scopedOwnerId = null;
+
+    private bool $scopedOwnerIsStrict = false;
+
+    public function __construct(
+        private readonly Recorder $recorder,
+        private readonly CredentialResolver $resolver,
+    ) {}
+
+    public function get(string $key, ?int $userId, bool $strict = false): ?string
     {
-        $credential = $this->findCredential($key, $userId);
+        $credential = $this->resolveCredential($key, $userId, $strict);
 
         return $credential?->value;
     }
@@ -29,9 +39,9 @@ class Vault
         $this->recorder->recordCredentialChange($key, $actor, 'set');
     }
 
-    public function test(string $key, ?int $userId, callable $probe): TestResult
+    public function test(string $key, ?int $userId, callable $probe, bool $strict = false): TestResult
     {
-        $credential = $this->findCredential($key, $userId);
+        $credential = $this->resolveCredential($key, $userId, $strict);
 
         if ($credential === null) {
             return TestResult::missing();
@@ -49,12 +59,60 @@ class Vault
         }
     }
 
-    private function findCredential(string $key, ?int $userId): ?Credential
+    /**
+     * @param  list<string>  $keys
+     */
+    public function markTestedKeys(array $keys, ?int $userId, bool $ok, ?string $error): void
     {
-        return Credential::query()
-            ->where('integration_key', $key)
-            ->where('owner_user_id', $userId)
-            ->first();
+        foreach ($keys as $key) {
+            $credential = $this->resolver->exact($key, $userId);
+
+            if ($credential instanceof Credential) {
+                $this->markTested($credential, $ok, $error);
+            }
+        }
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  callable(): TReturn  $callback
+     * @return TReturn
+     */
+    public function runAsOwner(?int $ownerId, callable $callback, bool $strict = true): mixed
+    {
+        $previousHasScopedOwner = $this->hasScopedOwner;
+        $previousScopedOwnerId = $this->scopedOwnerId;
+        $previousScopedOwnerIsStrict = $this->scopedOwnerIsStrict;
+
+        $this->hasScopedOwner = true;
+        $this->scopedOwnerId = $ownerId;
+        $this->scopedOwnerIsStrict = $strict;
+
+        try {
+            return $callback();
+        } finally {
+            $this->hasScopedOwner = $previousHasScopedOwner;
+            $this->scopedOwnerId = $previousScopedOwnerId;
+            $this->scopedOwnerIsStrict = $previousScopedOwnerIsStrict;
+        }
+    }
+
+    private function resolveCredential(string $key, ?int $userId, bool $strict): ?Credential
+    {
+        if ($userId !== null) {
+            return $this->resolver->exact($key, $userId);
+        }
+
+        if ($this->hasScopedOwner) {
+            return $this->scopedOwnerIsStrict || $strict
+                ? $this->resolver->exact($key, $this->scopedOwnerId)
+                : $this->resolver->resolve($key, $this->scopedOwnerId);
+        }
+
+        return $strict
+            ? $this->resolver->exact($key, null)
+            : $this->resolver->resolve($key);
     }
 
     private function markTested(Credential $credential, bool $ok, ?string $error): void

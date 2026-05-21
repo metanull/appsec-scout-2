@@ -21,6 +21,8 @@ final class AsocSource implements Source
 {
     private ?AsocClient $client = null;
 
+    private ?string $clientFingerprint = null;
+
     public function __construct(private readonly Vault $vault) {}
 
     public function id(): string
@@ -223,12 +225,18 @@ final class AsocSource implements Source
 
     private function getClient(): AsocClient
     {
-        if ($this->client === null) {
-            $keyId = $this->vault->get('asoc.keyId', null) ?? throw new \RuntimeException('ASoC keyId is not configured');
-            $keySecret = $this->vault->get('asoc.keySecret', null) ?? throw new \RuntimeException('ASoC keySecret is not configured');
-            $baseUrl = $this->vault->get('asoc.baseUrl', null) ?? 'https://cloud.appscan.com';
+        if ($this->client instanceof AsocClient && $this->clientFingerprint === null) {
+            return $this->client;
+        }
 
+        $keyId = $this->vault->get('asoc.keyId', null) ?? throw new \RuntimeException('ASoC keyId is not configured');
+        $keySecret = $this->vault->get('asoc.keySecret', null) ?? throw new \RuntimeException('ASoC keySecret is not configured');
+        $baseUrl = $this->vault->get('asoc.baseUrl', null) ?? 'https://cloud.appscan.com';
+        $fingerprint = hash('sha256', implode('|', [$keyId, $keySecret, $baseUrl]));
+
+        if ($this->client === null || $this->clientFingerprint !== $fingerprint) {
             $this->client = new AsocClient($keyId, $keySecret, $baseUrl);
+            $this->clientFingerprint = $fingerprint;
         }
 
         return $this->client;

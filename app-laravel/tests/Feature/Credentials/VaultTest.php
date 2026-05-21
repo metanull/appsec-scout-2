@@ -5,12 +5,13 @@ use App\Audit\Recorder;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Models\User;
+use App\Sync\CredentialResolver;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     $this->recorder = new Recorder;
-    $this->vault = new Vault($this->recorder);
+    $this->vault = new Vault($this->recorder, app(CredentialResolver::class));
 });
 
 it('stores value encrypted in the database', function () {
@@ -88,4 +89,24 @@ it('system and user credentials are stored separately', function () {
 
     expect($this->vault->get('azdo.pat', null))->toBe('system-token')
         ->and($this->vault->get('azdo.pat', $user->id))->toBe('user-token');
+});
+
+it('prefers the authenticated user credential when resolving without an explicit owner', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $this->vault->set('azdo.pat', null, 'system-token');
+    $this->vault->set('azdo.pat', $user->id, 'user-token');
+
+    expect($this->vault->get('azdo.pat', null))->toBe('user-token');
+});
+
+it('supports strict owner scoping for integration tests', function () {
+    $user = User::factory()->create();
+    $this->vault->set('azdo.pat', null, 'system-token');
+    $this->vault->set('azdo.pat', $user->id, 'user-token');
+
+    $resolved = $this->vault->runAsOwner(null, fn (): ?string => $this->vault->get('azdo.pat', null));
+
+    expect($resolved)->toBe('system-token');
 });

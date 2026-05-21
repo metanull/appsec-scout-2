@@ -32,6 +32,30 @@ it('recordWorkItemCreated writes a work_item_created row', function () {
     expect($log->action)->toBe('work_item_created');
 });
 
+it('recordWorkItemLinked writes a work_item_linked row', function () {
+    $recorder = new Recorder;
+    $recorder->recordWorkItemLinked('App\\Models\\Alert', '7', ['tracker' => 'github']);
+
+    $log = AuditLog::first();
+    expect($log->action)->toBe('work_item_linked');
+});
+
+it('recordWorkItemUnlinked writes a work_item_unlinked row', function () {
+    $recorder = new Recorder;
+    $recorder->recordWorkItemUnlinked('App\\Models\\Alert', '7', ['tracker' => 'github']);
+
+    $log = AuditLog::first();
+    expect($log->action)->toBe('work_item_unlinked');
+});
+
+it('recordTrackerStateChanged writes a tracker_state_changed row', function () {
+    $recorder = new Recorder;
+    $recorder->recordTrackerStateChanged('App\\Models\\Alert', '7', ['from' => 'Open', 'to' => 'Closed']);
+
+    $log = AuditLog::first();
+    expect($log->action)->toBe('tracker_state_changed');
+});
+
 it('recordAdminAction writes a custom action row', function () {
     $recorder = new Recorder;
     $recorder->recordAdminAction('user.role_changed', ['role' => 'Admin']);

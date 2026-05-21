@@ -8,6 +8,7 @@ use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
+use App\Models\WorkItemLink;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -115,6 +116,57 @@ it('creates event comment linked to event', function () {
     EventComment::factory()->create(['event_id' => $event->id, 'body' => 'Test comment']);
 
     expect($event->comments->first()->body)->toBe('Test comment');
+});
+
+it('cascades work item links when event is removed', function () {
+    $event = SecurityEvent::factory()->create();
+
+    WorkItemLink::query()->create([
+        'event_id' => $event->id,
+        'tracker_id' => 'github',
+        'work_item_id' => 'octo-org/appsec-scout#101',
+        'work_item_url' => 'https://github.test/octo-org/appsec-scout/issues/101',
+        'work_item_title' => 'Grouped secret findings',
+        'work_item_state' => 'Open',
+    ]);
+
+    $event->delete();
+
+    expect(WorkItemLink::count())->toBe(0);
+});
+
+it('loads grouped work item links by tracker and work item id', function () {
+    $events = SecurityEvent::factory()->count(3)->create();
+
+    $primary = WorkItemLink::query()->create([
+        'event_id' => $events[0]->id,
+        'tracker_id' => 'jira',
+        'work_item_id' => 'APP-42',
+        'work_item_url' => 'https://jira.test/browse/APP-42',
+        'work_item_title' => 'Shared tracker item',
+        'work_item_state' => 'Open',
+    ]);
+
+    WorkItemLink::query()->create([
+        'event_id' => $events[1]->id,
+        'tracker_id' => 'jira',
+        'work_item_id' => 'APP-42',
+        'work_item_url' => 'https://jira.test/browse/APP-42',
+        'work_item_title' => 'Shared tracker item',
+        'work_item_state' => 'Open',
+    ]);
+
+    WorkItemLink::query()->create([
+        'event_id' => $events[2]->id,
+        'tracker_id' => 'github',
+        'work_item_id' => 'APP-42',
+        'work_item_url' => 'https://github.test/octo-org/appsec-scout/issues/42',
+        'work_item_title' => 'Different tracker item',
+        'work_item_state' => 'Open',
+    ]);
+
+    expect($primary->groupedLinks()->pluck('event_id')->all())
+        ->toBe([$events[0]->id, $events[1]->id]);
 });
 
 // --- SoftwareSystemLink ---

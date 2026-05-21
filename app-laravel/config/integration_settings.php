@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'service_user_id' => env('INTEGRATION_SERVICE_USER_ID') !== null
+        ? (int) env('INTEGRATION_SERVICE_USER_ID')
+        : null,
     'azdo' => [
         'enabled' => (bool) env('SOURCE_AZDO_ENABLED', false),
         'interval_minutes' => (int) env('SOURCE_AZDO_INTERVAL_MINUTES', 30),

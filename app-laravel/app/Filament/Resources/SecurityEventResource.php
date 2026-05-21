@@ -12,12 +12,16 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
 use App\Models\User;
+use App\Trackers\CreateWorkItemJob;
+use App\Trackers\WorkItemFormOptions;
+use App\Trackers\WorkItemService;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -40,7 +44,7 @@ class SecurityEventResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        return self::currentUserCan('alerts.view');
     }
 
     public static function form(Schema $schema): Schema
@@ -52,6 +56,7 @@ class SecurityEventResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query
+                ->with('workItemLinks')
                 ->orderByRaw("FIELD(severity, 'critical', 'high', 'medium', 'low', 'informational') DESC")
                 ->orderByDesc('last_seen_at'))
             ->columns([
@@ -74,8 +79,17 @@ class SecurityEventResource extends Resource
                         default => 'danger',
                     }),
                 TextColumn::make('source_id')->label('Source')->badge(),
-                TextColumn::make('metadata.work_item_id')
+                TextColumn::make('work_item_state')
                     ->label('Tracker')
+                    ->state(function (SecurityEvent $record): ?string {
+                        $link = $record->workItemLinks->first();
+
+                        if (! $link) {
+                            return null;
+                        }
+
+                        return $link->work_item_state ?? $link->work_item_id;
+                    })
                     ->badge()
                     ->placeholder('-'),
                 TextColumn::make('title')
@@ -135,7 +149,7 @@ class SecurityEventResource extends Resource
                 Action::make('changeState')
                     ->label('Change state')
                     ->icon('heroicon-o-pencil-square')
-                    ->visible(fn (): bool => Auth::user()?->can('alerts.edit') ?? false)
+                    ->visible(fn (): bool => self::currentUserCan('alerts.edit'))
                     ->form(self::stateChangeForm())
                     ->action(function (SecurityEvent $record, array $data): void {
                         /** @var User|null $user */
@@ -155,7 +169,7 @@ class SecurityEventResource extends Resource
                 Action::make('changeSeverity')
                     ->label('Change severity')
                     ->icon('heroicon-o-adjustments-horizontal')
-                    ->visible(fn (): bool => Auth::user()?->can('alerts.edit') ?? false)
+                    ->visible(fn (): bool => self::currentUserCan('alerts.edit'))
                     ->form(self::severityChangeForm())
                     ->action(function (SecurityEvent $record, array $data): void {
                         /** @var User|null $user */
@@ -172,13 +186,62 @@ class SecurityEventResource extends Resource
                             (string) $data['comment'],
                         );
                     }),
+                Action::make('createWorkItem')
+                    ->label('Create work item')
+                    ->icon('heroicon-o-ticket')
+                    ->visible(fn (): bool => self::currentUserCan('work-items.create'))
+                    ->form(fn (SecurityEvent $record): array => app(WorkItemFormOptions::class)->createSchema([$record]))
+                    ->action(function (SecurityEvent $record, array $data): void {
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        CreateWorkItemJob::dispatch(
+                            eventIds: [$record->id],
+                            userId: $user->id,
+                            trackerId: (string) $data['tracker'],
+                            projectKey: (string) $data['project'],
+                            itemType: (string) $data['item_type'],
+                            labels: self::stringArray($data['labels'] ?? []),
+                            priority: self::nullableString($data['priority'] ?? null),
+                            assigneeId: self::nullableString($data['assignee_id'] ?? null),
+                            parentId: self::nullableString($data['parent_id'] ?? null),
+                        );
+
+                        Notification::make()->title('Work item creation queued')->success()->send();
+                    }),
+                Action::make('linkExistingWorkItem')
+                    ->label('Link existing')
+                    ->icon('heroicon-o-link')
+                    ->visible(fn (): bool => self::currentUserCan('work-items.link'))
+                    ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                    ->action(function (SecurityEvent $record, array $data): void {
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(WorkItemService::class)->linkExisting(
+                            eventIds: [$record->id],
+                            userId: $user->id,
+                            trackerId: (string) $data['tracker'],
+                            workItemId: (string) $data['selected_work_item'],
+                        );
+
+                        Notification::make()->title('Work item linked')->success()->send();
+                    }),
             ])
             ->bulkActions([
                 BulkAction::make('changeStateBulk')
                     ->label('Change state (bulk)')
                     ->icon('heroicon-o-pencil-square')
                     ->requiresConfirmation()
-                    ->visible(fn (): bool => Auth::user()?->can('alerts.bulk-edit') ?? false)
+                    ->visible(fn (): bool => self::currentUserCan('alerts.bulk-edit'))
                     ->form(self::stateChangeForm())
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, SecurityEvent> $records */
@@ -195,6 +258,59 @@ class SecurityEventResource extends Resource
                             EventState::from((string) $data['new_state']),
                             (string) $data['comment'],
                         );
+                    })
+                    ->deselectRecordsAfterCompletion(),
+                BulkAction::make('createGroupedWorkItem')
+                    ->label('Create grouped work item')
+                    ->icon('heroicon-o-ticket')
+                    ->visible(fn (): bool => self::currentUserCan('work-items.create'))
+                    ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema())
+                    ->action(function (Collection $records, array $data): void {
+                        /** @var Collection<int, SecurityEvent> $records */
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        CreateWorkItemJob::dispatch(
+                            eventIds: array_values($records->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()),
+                            userId: $user->id,
+                            trackerId: (string) $data['tracker'],
+                            projectKey: (string) $data['project'],
+                            itemType: (string) $data['item_type'],
+                            labels: self::stringArray($data['labels'] ?? []),
+                            priority: self::nullableString($data['priority'] ?? null),
+                            assigneeId: self::nullableString($data['assignee_id'] ?? null),
+                            parentId: self::nullableString($data['parent_id'] ?? null),
+                        );
+
+                        Notification::make()->title('Grouped work item creation queued')->success()->send();
+                    })
+                    ->deselectRecordsAfterCompletion(),
+                BulkAction::make('linkExistingWorkItemBulk')
+                    ->label('Link existing')
+                    ->icon('heroicon-o-link')
+                    ->visible(fn (): bool => self::currentUserCan('work-items.link'))
+                    ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                    ->action(function (Collection $records, array $data): void {
+                        /** @var Collection<int, SecurityEvent> $records */
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(WorkItemService::class)->linkExisting(
+                            eventIds: array_values($records->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()),
+                            userId: $user->id,
+                            trackerId: (string) $data['tracker'],
+                            workItemId: (string) $data['selected_work_item'],
+                        );
+
+                        Notification::make()->title('Existing work item linked')->success()->send();
                     })
                     ->deselectRecordsAfterCompletion(),
             ])
@@ -241,6 +357,15 @@ class SecurityEventResource extends Resource
         return (int) $value;
     }
 
+    private static function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return trim($value);
+    }
+
     /** @return array<string, string> */
     private static function systemScopeOptions(): array
     {
@@ -260,13 +385,20 @@ class SecurityEventResource extends Resource
     }
 
     /** @return list<string> */
-    private static function stringArray(mixed $value): array
+    public static function stringArray(mixed $value): array
     {
         if (! is_array($value)) {
             return [];
         }
 
         return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+    }
+
+    private static function currentUserCan(string $ability): bool
+    {
+        $user = Auth::user();
+
+        return $user instanceof User ? $user->can($ability) : false;
     }
 
     /** @return array<int, Select|Textarea> */
