@@ -278,7 +278,7 @@
                                     <td class="px-2 py-2">{{ $row['location'] }}</td>
                                     <td class="px-2 py-2">
                                         @if ($row['snippet'] !== '')
-                                            <pre class="overflow-x-auto rounded bg-gray-950 p-3 text-xs text-white"><code>{{ $row['snippet'] }}</code></pre>
+                                            <div class="overflow-x-auto rounded border border-gray-200 bg-white p-3 text-xs shadow-sm">{!! $row['snippet_html'] !!}</div>
                                         @else
                                             <span class="text-gray-500">n/a</span>
                                         @endif

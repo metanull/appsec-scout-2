@@ -12,7 +12,8 @@
         "laravel/fortify": "^1.37",
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0",
-        "spatie/laravel-permission": "^6.0"
+        "spatie/laravel-permission": "^6.0",
+        "tempest/highlight": "^2.25"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

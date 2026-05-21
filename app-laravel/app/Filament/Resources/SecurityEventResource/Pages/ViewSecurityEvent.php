@@ -37,6 +37,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\WithFileUploads;
+use Tempest\Highlight\Highlighter;
+use Tempest\Highlight\Themes\InlineTheme;
 
 class ViewSecurityEvent extends ViewRecord
 {
@@ -216,7 +218,7 @@ class ViewSecurityEvent extends ViewRecord
             ->get();
     }
 
-    /** @return list<array{rule_id:string,severity:string,location:string,snippet:string}> */
+    /** @return list<array{rule_id:string,severity:string,location:string,snippet:string,snippet_html:string}> */
     public function sarifRows(): array
     {
         $attachment = $this->attachments()->firstWhere('kind', 'trivy-sarif');
@@ -276,6 +278,7 @@ class ViewSecurityEvent extends ViewRecord
                     'severity' => is_string($result['level'] ?? null) ? $result['level'] : 'n/a',
                     'location' => $location,
                     'snippet' => $snippet,
+                    'snippet_html' => $this->highlightSnippet($snippet, $location),
                 ];
             }
         }
@@ -623,6 +626,50 @@ class ViewSecurityEvent extends ViewRecord
         $value = $metadata['repository_url'] ?? null;
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function highlightSnippet(string $snippet, string $location): string
+    {
+        if (trim($snippet) === '') {
+            return '';
+        }
+
+        return self::snippetHighlighter()->parse($snippet, $this->snippetLanguage($location));
+    }
+
+    private function snippetLanguage(string $location): string
+    {
+        $path = trim(strtok($location, ':') ?: '');
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        return match ($extension) {
+            'php' => 'php',
+            'js', 'jsx' => 'javascript',
+            'ts', 'tsx' => 'typescript',
+            'json' => 'json',
+            'yml', 'yaml' => 'yaml',
+            'sh', 'bash' => 'bash',
+            'sql' => 'sql',
+            'css' => 'css',
+            'html' => 'html',
+            'xml' => 'xml',
+            default => 'text',
+        };
+    }
+
+    private static function snippetHighlighter(): Highlighter
+    {
+        static $highlighter = null;
+
+        if ($highlighter instanceof Highlighter) {
+            return $highlighter;
+        }
+
+        $highlighter = new Highlighter(
+            theme: new InlineTheme(base_path('vendor/tempest/highlight/src/Themes/Css/github-light.css')),
+        );
+
+        return $highlighter;
     }
 
     private function applyEventDto(SecurityEvent $record, EventDto $dto): void
