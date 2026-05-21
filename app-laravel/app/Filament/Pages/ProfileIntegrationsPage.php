@@ -1,0 +1,47 @@
+<?php
+
+namespace App\Filament\Pages;
+
+use App\Filament\Pages\Concerns\ManagesIntegrationCredentials;
+use Filament\Pages\Page;
+use Illuminate\Support\Facades\Auth;
+
+class ProfileIntegrationsPage extends Page
+{
+    use ManagesIntegrationCredentials;
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-key';
+
+    protected static ?string $slug = 'profile/integrations';
+
+    protected static bool $shouldRegisterNavigation = false;
+
+    protected string $view = 'filament.pages.integration-credentials-page';
+
+    public function mount(): void
+    {
+        $this->mountManagesIntegrationCredentials();
+    }
+
+    public static function canAccess(): bool
+    {
+        return Auth::check();
+    }
+
+    public function heading(): string
+    {
+        return 'Profile integrations';
+    }
+
+    public function subheading(): string
+    {
+        return 'Manage the personal credentials used for tracker and source actions you run from the UI.';
+    }
+
+    protected function credentialOwnerId(): ?int
+    {
+        $userId = Auth::id();
+
+        return is_int($userId) ? $userId : null;
+    }
+}

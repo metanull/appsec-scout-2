@@ -20,6 +20,8 @@ final class AzDoSource implements Source
 {
     private ?AzDoClient $client = null;
 
+    private ?string $clientFingerprint = null;
+
     public function __construct(private readonly Vault $vault) {}
 
     public function id(): string
@@ -244,12 +246,18 @@ final class AzDoSource implements Source
 
     private function getClient(): AzDoClient
     {
-        if ($this->client === null) {
-            $pat = $this->vault->get('azdo.pat', null) ?? throw new \RuntimeException('AzDO PAT not configured');
-            $organization = $this->vault->get('azdo.organization', null) ?? throw new \RuntimeException('AzDO organization not configured');
-            $baseUrl = $this->vault->get('azdo.baseUrl', null) ?? 'https://dev.azure.com';
+        if ($this->client instanceof AzDoClient && $this->clientFingerprint === null) {
+            return $this->client;
+        }
 
+        $pat = $this->vault->get('azdo.pat', null) ?? throw new \RuntimeException('AzDO PAT not configured');
+        $organization = $this->vault->get('azdo.organization', null) ?? throw new \RuntimeException('AzDO organization not configured');
+        $baseUrl = $this->vault->get('azdo.baseUrl', null) ?? 'https://dev.azure.com';
+        $fingerprint = hash('sha256', implode('|', [$organization, $pat, $baseUrl]));
+
+        if ($this->client === null || $this->clientFingerprint !== $fingerprint) {
             $this->client = new AzDoClient($organization, $pat, $baseUrl);
+            $this->clientFingerprint = $fingerprint;
         }
 
         return $this->client;

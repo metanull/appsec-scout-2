@@ -19,6 +19,8 @@ final class DetectifySource implements Source
 {
     private ?DetectifyClient $client = null;
 
+    private ?string $clientFingerprint = null;
+
     public function __construct(private readonly Vault $vault) {}
 
     public function id(): string
@@ -144,11 +146,17 @@ final class DetectifySource implements Source
 
     private function getClient(): DetectifyClient
     {
-        if ($this->client === null) {
-            $apiKey = $this->vault->get('detectify.apiKey', null) ?? throw new \RuntimeException('Detectify API key is not configured');
-            $baseUrl = $this->vault->get('detectify.baseUrl', null) ?? 'https://api.detectify.com';
+        if ($this->client instanceof DetectifyClient && $this->clientFingerprint === null) {
+            return $this->client;
+        }
 
+        $apiKey = $this->vault->get('detectify.apiKey', null) ?? throw new \RuntimeException('Detectify API key is not configured');
+        $baseUrl = $this->vault->get('detectify.baseUrl', null) ?? 'https://api.detectify.com';
+        $fingerprint = hash('sha256', implode('|', [$apiKey, $baseUrl]));
+
+        if ($this->client === null || $this->clientFingerprint !== $fingerprint) {
             $this->client = new DetectifyClient($apiKey, $baseUrl);
+            $this->clientFingerprint = $fingerprint;
         }
 
         return $this->client;

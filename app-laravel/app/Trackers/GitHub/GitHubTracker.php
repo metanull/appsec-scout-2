@@ -14,6 +14,8 @@ final class GitHubTracker implements Tracker
 {
     private ?GitHubClient $client = null;
 
+    private ?string $clientFingerprint = null;
+
     public function __construct(private readonly Vault $vault) {}
 
     public function id(): string
@@ -92,11 +94,19 @@ final class GitHubTracker implements Tracker
 
     private function getClient(): GitHubClient
     {
-        if ($this->client instanceof GitHubClient) {
+        if ($this->client instanceof GitHubClient && $this->clientFingerprint === null) {
             return $this->client;
         }
 
         $token = $this->vault->get('github.token', null) ?? throw new \RuntimeException('Missing GitHub credential: github.token');
+
+        $fingerprint = hash('sha256', $token);
+
+        if ($this->client instanceof GitHubClient && $this->clientFingerprint === $fingerprint) {
+            return $this->client;
+        }
+
+        $this->clientFingerprint = $fingerprint;
 
         return $this->client = new GitHubClient($token);
     }
