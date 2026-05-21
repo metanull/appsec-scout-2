@@ -3,7 +3,7 @@
 ## Prerequisites
 
 | Requirement | Version |
-|---|---|
+| --- | --- |
 | Docker Engine | 24+ |
 | Docker Compose | v2 (plugin) |
 | MySQL | 8.0+ (provided via Docker) |
@@ -44,7 +44,7 @@ docker compose exec app php artisan tinker
 ## Environment variables
 
 | Variable | Required | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `APP_KEY` | Yes | — | Laravel encryption key (run `php artisan key:generate`) |
 | `APP_URL` | Yes | `http://localhost:8080` | Public URL of the application |
 | `DB_PASSWORD` | Yes | `password` | MySQL password for the `appsec_scout` user |
@@ -58,9 +58,46 @@ docker compose exec app php artisan tinker
 
 If your network uses SSL inspection (e.g. Netskope, Zscaler):
 
-1. Export the corporate CA certificate as PEM.
-2. Mount it into the container and set `SSL_CERT_FILE` to its path.
-3. Set `HTTPS_PROXY` to the proxy URL.
+1. Export the host trust store into the repo-local Docker cert directory.
+2. Set `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` in your shell.
+3. Build the image normally with Docker Compose.
+
+PowerShell on Windows:
+
+```powershell
+./scripts/export-host-ca.ps1
+```
+
+POSIX shell on Linux/macOS:
+
+```sh
+./scripts/export-host-ca.sh
+```
+
+Both helpers write PEM `.crt` files under `.docker/certs/`. The Docker build copies those certificates into every stage before Composer, npm, curl, or the final app image make outbound TLS connections, so `docker compose build` and the running container trust the same local root CAs.
+
+Set the proxy variables in the same shell before building:
+
+```bash
+export HTTP_PROXY=http://proxy.corp.example.com:3128
+export HTTPS_PROXY=http://proxy.corp.example.com:3128
+export NO_PROXY=localhost,127.0.0.1,mysql,redis
+docker compose build
+```
+
+```powershell
+$env:HTTP_PROXY = 'http://proxy.corp.example.com:3128'
+$env:HTTPS_PROXY = 'http://proxy.corp.example.com:3128'
+$env:NO_PROXY = 'localhost,127.0.0.1,mysql,redis'
+docker compose build
+```
+
+If you prefer a manual path, you can still place one or more PEM-encoded `.crt` files under `.docker/certs/` yourself before building.
+
+Limitations:
+
+- This repo-local flow fixes TLS inside the Docker build and inside the application container.
+- It does not reconfigure Docker Desktop or the Docker daemon's own trust store for image pulls or registry access. If base image pulls fail before the Dockerfile starts, you must also configure Docker Desktop's proxy and CA trust on the host.
 
 ```yaml
 # docker-compose.override.yml
@@ -83,7 +120,7 @@ curl http://localhost:8080/up
 ## Included triage tools
 
 | Tool | Location |
-|---|---|
+| --- | --- |
 | Trivy (SBOM/vulnerability scanner) | `/usr/bin/trivy` |
 | BFG Repo Cleaner 1.15.0 | `/opt/bfg/bfg.jar` |
 | Git | `/usr/bin/git` |

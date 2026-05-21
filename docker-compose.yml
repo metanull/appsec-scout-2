@@ -4,6 +4,10 @@ services:
             context: .
             dockerfile: docker/Dockerfile
             target: "${APP_BUILD_TARGET:-final}"
+            args:
+                HTTP_PROXY: "${HTTP_PROXY:-}"
+                HTTPS_PROXY: "${HTTPS_PROXY:-}"
+                NO_PROXY: "${NO_PROXY:-}"
         image: appsec-scout:latest
         depends_on:
             mysql:

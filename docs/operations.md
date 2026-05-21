@@ -3,6 +3,10 @@
 ## Build
 
 ```bash
+# Export host-trusted root/intermediate CAs first when using a corporate MITM proxy
+./scripts/export-host-ca.sh   # Linux/macOS
+./scripts/export-host-ca.ps1  # PowerShell on Windows
+
 # Build the application image (run from the repository root)
 docker compose build
 
@@ -25,7 +29,7 @@ docker compose down -v        # Stop and remove containers and volumes (destruct
 ## Access the application
 
 | URL | What |
-|---|---|
+| --- | --- |
 | `http://localhost:8080/` | Filament admin panel (login page) |
 | `http://localhost:8080/up` | Health check endpoint — returns `ok` when ready |
 
@@ -119,6 +123,8 @@ Remove-Item Env:\APP_BUILD_TARGET
 All three commands must pass with zero errors before merging any change.
 
 > **Corporate proxy / SSL inspection**: If your network intercepts HTTPS, use the Docker Compose override shown in [install.md](install.md#corporate-proxy--ssl-inspection) so the app image receives the corporate CA and proxy settings.
+
+The helper scripts above export your locally trusted root/intermediate CAs into `.docker/certs/`, which is consumed automatically by the Docker build. Build-time proxy variables must still be set in your shell so Composer, npm, apt, and curl can reach the network through the corporate proxy.
 
 ## Scheduled tasks
 
