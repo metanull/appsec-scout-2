@@ -48,6 +48,14 @@ it('recordWorkItemUnlinked writes a work_item_unlinked row', function () {
     expect($log->action)->toBe('work_item_unlinked');
 });
 
+it('recordTrackerStateChanged writes a tracker_state_changed row', function () {
+    $recorder = new Recorder;
+    $recorder->recordTrackerStateChanged('App\\Models\\Alert', '7', ['from' => 'Open', 'to' => 'Closed']);
+
+    $log = AuditLog::first();
+    expect($log->action)->toBe('tracker_state_changed');
+});
+
 it('recordAdminAction writes a custom action row', function () {
     $recorder = new Recorder;
     $recorder->recordAdminAction('user.role_changed', ['role' => 'Admin']);

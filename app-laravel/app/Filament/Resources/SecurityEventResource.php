@@ -56,6 +56,7 @@ class SecurityEventResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query
+                ->with('workItemLinks')
                 ->orderByRaw("FIELD(severity, 'critical', 'high', 'medium', 'low', 'informational') DESC")
                 ->orderByDesc('last_seen_at'))
             ->columns([
@@ -78,8 +79,17 @@ class SecurityEventResource extends Resource
                         default => 'danger',
                     }),
                 TextColumn::make('source_id')->label('Source')->badge(),
-                TextColumn::make('metadata.work_item_id')
+                TextColumn::make('work_item_state')
                     ->label('Tracker')
+                    ->state(function (SecurityEvent $record): ?string {
+                        $link = $record->workItemLinks->first();
+
+                        if (! $link) {
+                            return null;
+                        }
+
+                        return $link->work_item_state ?? $link->work_item_id;
+                    })
                     ->badge()
                     ->placeholder('-'),
                 TextColumn::make('title')
