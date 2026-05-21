@@ -25,7 +25,7 @@
 
 ### S2 — State edit (Triage)
 **Goal**: Triage operator changes alert state.
-**Context**: Severity remains read-only because no upstream source accepts severity changes (per capabilities).
+**Context**: State changes remain the primary triage workflow and always require an operator justification that Sync can review and propagate upstream.
 **Solution**:
 - Filament action "Change state" on alert detail page + inline action on alerts list:
   - Form: `new_state` (enum dropdown), `comment` (required textarea, min 10 chars).
@@ -38,7 +38,26 @@
 - Pest tests for happy path, comment required, permission denied for Reader.
 - UI smoke.
 
-### S3 — Bulk triage on alerts list
+### S3 — Severity edit (Triage)
+**Goal**: Triage operator changes alert severity locally using the same reviewed workflow as state changes.
+**Context**: Some upstream sources support severity updates and some do not, but the local database must preserve operator-requested severity changes so Sync can later decide whether to propagate or retain them locally.
+**Solution**:
+- Add local pending-severity support to `security_events` alongside the existing pending-state fields.
+- Filament action "Change severity" on alert detail page + inline action on alerts list:
+  - Form: `new_severity` (enum dropdown), `comment` (required textarea, min 10 chars).
+  - On submit:
+    1. Set `pending_severity = new_severity`, `pending_comment = comment`, `is_dirty = true`.
+    2. Insert local comment with body `[Severity change: <severity>] <comment>`.
+    3. Audit `recordSeverityChange`.
+- Reuse a dedicated `App\Triage\SeverityChanger` service so the change is implemented once and can later be consumed by Sync.
+- Authorization: requires `alerts.edit` permission (Triage+).
+**Definition of Done**:
+- Pest tests for happy path, comment required, and permission denied for Reader.
+- Local event row preserves the current synced severity until a later sync accepts the pending severity.
+- UI smoke.
+- Relevant files: `E:\appsec-scout-2\legacy-code\core\src\models\security-event.js`, `E:\appsec-scout-2\legacy-code\dotnet\src\AppSecScout.Core\Models\`, `E:\appsec-scout-2\legacy-code\plugins\source\siem-source-asoc\src\asoc-normalizer.js`, `E:\appsec-scout-2\legacy-code\dotnet\src\AppSecScout.Core\Sources\ASoC\ASoCNormalizer.cs`
+
+### S4 — Bulk triage on alerts list
 **Goal**: Apply same state + comment to N selected alerts.
 **Context**: Common pattern — closing multiple "false positive" findings of the same rule at once.
 **Solution**:
@@ -56,20 +75,21 @@
 
 ## Epic E2 — Upstream Propagation (Sync)
 
-### S4 — Pending-sync review page
+### S5 — Pending-sync review page
 **Goal**: Sync operator sees a queue of pending changes grouped by source.
 **Context**: Sync is a deliberate, reviewed action — not an auto-push.
 **Solution**:
 - Filament page `/sync/pending` listing events where `is_dirty = true`, grouped by `source_id`, sorted by `updated_at` desc.
-- Each row displays: current upstream `state` (from last sync), `pending_state`, `pending_comment` preview, last editor, last edited at.
-- Diff section shows current vs pending state visually (color-coded).
+- Each row displays: current upstream `state` and `severity` (from last sync), `pending_state`, `pending_severity`, `pending_comment` preview, last editor, last edited at.
+- Diff section shows current vs pending state and severity visually (color-coded).
+- Rows with a pending severity change remain reviewable in this queue even when upstream severity propagation is not yet executed in M3.
 - Bulk select + bulk action "Push to source".
 - Authorization: requires `work-items.sync` and `sources.push-state` permissions (Sync+).
 **Definition of Done**:
 - Pest tests for the listing query and grouping.
 - UI smoke with a mix of clean and dirty events.
 
-### S5 — `PushEventStatesJob`
+### S6 — `PushEventStatesJob`
 **Goal**: Queued job that pushes selected dirty events upstream.
 **Solution**:
 - `App\Sync\PushEventStatesJob` accepts `array $eventIds`. For each:
@@ -84,14 +104,16 @@
      - Record error in `error_logs` and in `sync_runs` (running per push session).
      - Audit `recordSyncPush(failure, error)`.
      - On 3rd failure: stop retrying automatically; surface in pending-sync page with a "Last error" badge.
-- Job is dispatched by the "Push to source" bulk action from S4.
+- In M3, `pending_severity` is preserved as local pending data and is not cleared by this job; severity propagation rules remain a later Sync refinement per source capability.
+- Job is dispatched by the "Push to source" bulk action from S5.
 - Throttled per source (1 concurrent job per source via `WithoutOverlapping`).
 **Definition of Done**:
 - Pest integration test with fake source returning success → dirty cleared, audit row, state synced.
 - Pest test with fake source returning failure → dirty preserved, retry count incremented, error logged.
+- Pest test with `pending_severity` set asserts the field is preserved after a successful state push.
 - Pest test asserts retry stops at 3.
 
-### S6 — Reload single event from source
+### S7 — Reload single event from source
 **Goal**: Force re-fetch of one event from its source (when upstream changed externally).
 **Context**: Operator may know that another team modified an alert directly in AzDO; this action refreshes the local copy without waiting for the scheduled sync.
 **Solution**:
@@ -108,7 +130,7 @@
 
 ## Definition of Done — Milestone M3
 
-- Triage operator can change state (single + bulk) and add comments.
+- Triage operator can change state, change severity, apply bulk state edits, and add comments.
 - Sync operator can review pending changes and push them upstream via job.
 - Failed pushes do not lose pending state; capped retry visible to operator.
 - `vendor/bin/pint --test` clean; `vendor/bin/pest` green.
