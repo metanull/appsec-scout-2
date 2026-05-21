@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "type": "doc",
+  "content": [
+    {
+      "type": "codeBlock",
+      "attrs": {
+        "language": "php"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "echo 'hi';\n"
+        }
+      ]
+    }
+  ]
+}
