@@ -11,6 +11,13 @@ use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
+use App\Models\User;
+use App\Triage\SeverityChanger;
+use App\Triage\StateChanger;
+use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -18,6 +25,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 
 class SecurityEventResource extends Resource
@@ -123,6 +131,73 @@ class SecurityEventResource extends Resource
                     ->options(fn () => self::availableTags())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyTags($query, self::stringArray($data['values'] ?? []))),
             ])
+            ->actions([
+                Action::make('changeState')
+                    ->label('Change state')
+                    ->icon('heroicon-o-pencil-square')
+                    ->visible(fn (): bool => Auth::user()?->can('alerts.edit') ?? false)
+                    ->form(self::stateChangeForm())
+                    ->action(function (SecurityEvent $record, array $data): void {
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(StateChanger::class)->change(
+                            $record,
+                            $user,
+                            EventState::from((string) $data['new_state']),
+                            (string) $data['comment'],
+                        );
+                    }),
+                Action::make('changeSeverity')
+                    ->label('Change severity')
+                    ->icon('heroicon-o-adjustments-horizontal')
+                    ->visible(fn (): bool => Auth::user()?->can('alerts.edit') ?? false)
+                    ->form(self::severityChangeForm())
+                    ->action(function (SecurityEvent $record, array $data): void {
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(SeverityChanger::class)->change(
+                            $record,
+                            $user,
+                            EventSeverity::from((string) $data['new_severity']),
+                            (string) $data['comment'],
+                        );
+                    }),
+            ])
+            ->bulkActions([
+                BulkAction::make('changeStateBulk')
+                    ->label('Change state (bulk)')
+                    ->icon('heroicon-o-pencil-square')
+                    ->requiresConfirmation()
+                    ->visible(fn (): bool => Auth::user()?->can('alerts.bulk-edit') ?? false)
+                    ->form(self::stateChangeForm())
+                    ->action(function (Collection $records, array $data): void {
+                        /** @var Collection<int, SecurityEvent> $records */
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        app(StateChanger::class)->changeMany(
+                            $records,
+                            $user,
+                            EventState::from((string) $data['new_state']),
+                            (string) $data['comment'],
+                        );
+                    })
+                    ->deselectRecordsAfterCompletion(),
+            ])
             ->recordUrl(fn (SecurityEvent $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultPaginationPageOption(25)
             ->paginated([25, 50, 100]);
@@ -192,5 +267,53 @@ class SecurityEventResource extends Resource
         }
 
         return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+    }
+
+    /** @return array<int, Select|Textarea> */
+    public static function stateChangeForm(): array
+    {
+        return [
+            Select::make('new_state')
+                ->label('New state')
+                ->required()
+                ->options(self::eventStateOptions()),
+            Textarea::make('comment')
+                ->label('Comment')
+                ->required()
+                ->minLength(10)
+                ->rows(4),
+        ];
+    }
+
+    /** @return array<string, string> */
+    public static function eventStateOptions(): array
+    {
+        return collect(EventState::cases())
+            ->mapWithKeys(fn (EventState $state): array => [$state->value => str($state->value)->replace('_', ' ')->title()->toString()])
+            ->all();
+    }
+
+    /** @return array<int, Select|Textarea> */
+    public static function severityChangeForm(): array
+    {
+        return [
+            Select::make('new_severity')
+                ->label('New severity')
+                ->required()
+                ->options(self::eventSeverityOptions()),
+            Textarea::make('comment')
+                ->label('Comment')
+                ->required()
+                ->minLength(10)
+                ->rows(4),
+        ];
+    }
+
+    /** @return array<string, string> */
+    public static function eventSeverityOptions(): array
+    {
+        return collect(EventSeverity::cases())
+            ->mapWithKeys(fn (EventSeverity $severity): array => [$severity->value => ucfirst($severity->value)])
+            ->all();
     }
 }

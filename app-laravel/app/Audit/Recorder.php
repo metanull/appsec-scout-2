@@ -15,9 +15,39 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordBulkStateChange(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('bulk_state_change', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordSeverityChange(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('severity_change', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordCommentAdded(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('comment_added', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordCommentEdited(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('comment_edited', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordSyncPush(string $subjectType, string $subjectId, array $payload = []): void
     {
         $this->write('sync_push', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordRefetch(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('event_refetched', $subjectType, $subjectId, $payload);
     }
 
     /** @param array<string, mixed> $payload */

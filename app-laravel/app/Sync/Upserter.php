@@ -72,6 +72,7 @@ final class Upserter
             SecurityEvent::query()->create(array_merge($payload, [
                 'is_dirty' => false,
                 'pending_state' => null,
+                'pending_severity' => null,
                 'pending_comment' => null,
             ]));
 
@@ -80,6 +81,7 @@ final class Upserter
 
         $payload['is_dirty'] = $existing->is_dirty;
         $payload['pending_state'] = $existing->pending_state;
+        $payload['pending_severity'] = $existing->pending_severity;
         $payload['pending_comment'] = $existing->pending_comment;
 
         $existing->update($payload);

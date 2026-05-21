@@ -3,15 +3,26 @@
 namespace App\Filament\Resources\SecurityEventResource\Pages;
 
 use App\Filament\Resources\SecurityEventResource;
+use App\Models\Enums\EventSeverity;
+use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\Models\EventComment;
 use App\Models\SecurityEvent;
+use App\Models\User;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
+use App\Sync\RefetchEventJob;
+use App\Triage\CommentManager;
+use App\Triage\SeverityChanger;
+use App\Triage\StateChanger;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class ViewSecurityEvent extends ViewRecord
 {
@@ -19,16 +30,44 @@ class ViewSecurityEvent extends ViewRecord
 
     protected string $view = 'filament.resources.security-event-resource.pages.view-security-event';
 
+    public string $newCommentBody = '';
+
+    public ?int $editingCommentId = null;
+
+    public string $editingCommentBody = '';
+
     /**
      * @return array<Action>
      */
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('changeState')
+                ->label('Change state')
+                ->icon('heroicon-o-pencil-square')
+                ->visible(fn (): bool => Gate::allows('alerts.edit'))
+                ->form(SecurityEventResource::stateChangeForm())
+                ->action(fn (array $data): bool => $this->changeState(
+                    EventState::from((string) $data['new_state']),
+                    (string) $data['comment'],
+                )),
+            Action::make('changeSeverity')
+                ->label('Change severity')
+                ->icon('heroicon-o-adjustments-horizontal')
+                ->visible(fn (): bool => Gate::allows('alerts.edit'))
+                ->form(SecurityEventResource::severityChangeForm())
+                ->action(fn (array $data): bool => $this->changeSeverity(
+                    EventSeverity::from((string) $data['new_severity']),
+                    (string) $data['comment'],
+                )),
             Action::make('reloadFromSource')
                 ->label('Reload from source')
                 ->icon('heroicon-o-arrow-path')
-                ->visible(fn (): bool => Gate::allows('sources.push-state'))
+                ->visible(fn (): bool => Gate::allows('work-items.sync'))
+                ->requiresConfirmation()
+                ->modalDescription(fn (): string => $this->eventRecord()->is_dirty
+                    ? 'Local pending changes will be preserved; upstream metadata will be refreshed.'
+                    : 'Reload this alert from its source now?')
                 ->action(fn () => $this->reloadFromSource()),
         ];
     }
@@ -65,6 +104,142 @@ class ViewSecurityEvent extends ViewRecord
     }
 
     /**
+     * @return Collection<int, EventComment>
+     */
+    public function comments(): Collection
+    {
+        $comments = $this->eventRecord()
+            ->comments()
+            ->with('author')
+            ->get();
+
+        return $comments;
+    }
+
+    public function addComment(): void
+    {
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if (! $user?->can('alerts.edit')) {
+            abort(403);
+        }
+
+        try {
+            app(CommentManager::class)->add($this->eventRecord(), $user, $this->newCommentBody);
+        } catch (ValidationException $exception) {
+            $this->addError('newCommentBody', $exception->errors()['comment'][0] ?? 'Unable to add comment.');
+
+            return;
+        }
+
+        $this->newCommentBody = '';
+        $this->editingCommentId = null;
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Comment added')->success()->send();
+    }
+
+    public function changeState(EventState $newState, string $comment): bool
+    {
+        Gate::authorize('alerts.edit');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        app(StateChanger::class)->change($this->eventRecord(), $user, $newState, $comment);
+        $this->refreshFormData([]);
+
+        Notification::make()->title('State change queued for sync review')->success()->send();
+
+        return true;
+    }
+
+    public function changeSeverity(EventSeverity $newSeverity, string $comment): bool
+    {
+        Gate::authorize('alerts.edit');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        app(SeverityChanger::class)->change($this->eventRecord(), $user, $newSeverity, $comment);
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Severity change queued for sync review')->success()->send();
+
+        return true;
+    }
+
+    public function startEditingComment(int $commentId): void
+    {
+        $comment = $this->commentById($commentId);
+
+        if ($comment === null || ! $this->canEditComment($comment)) {
+            abort(403);
+        }
+
+        $this->editingCommentId = $comment->id;
+        $this->editingCommentBody = $comment->body;
+        $this->resetErrorBag('editingCommentBody');
+    }
+
+    public function cancelEditingComment(): void
+    {
+        $this->editingCommentId = null;
+        $this->editingCommentBody = '';
+        $this->resetErrorBag('editingCommentBody');
+    }
+
+    public function saveCommentEdit(): void
+    {
+        $comment = $this->editingCommentId === null ? null : $this->commentById($this->editingCommentId);
+
+        if ($comment === null || ! $this->canEditComment($comment)) {
+            abort(403);
+        }
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        try {
+            app(CommentManager::class)->update($comment, $user, $this->editingCommentBody);
+        } catch (ValidationException $exception) {
+            $this->addError('editingCommentBody', $exception->errors()['comment'][0] ?? 'Unable to save the comment.');
+
+            return;
+        }
+
+        $this->cancelEditingComment();
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Comment updated')->success()->send();
+    }
+
+    public function canEditComment(EventComment $comment): bool
+    {
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        return app(CommentManager::class)->canEdit($comment, $user, now());
+    }
+
+    /**
      * @return list<string>
      */
     public static function sectionsForType(EventType $type): array
@@ -94,20 +269,9 @@ class ViewSecurityEvent extends ViewRecord
 
     private function reloadFromSource(): void
     {
-        $record = $this->eventRecord();
-        $source = app(Registry::class)->find($record->source_id);
+        RefetchEventJob::dispatch($this->eventRecord()->id);
 
-        if ($source === null) {
-            Notification::make()->title('Source is not enabled')->danger()->send();
-
-            return;
-        }
-
-        $dto = $source->fetchRawEvent($record);
-        $this->applyEventDto($record, $dto);
-        $this->refreshFormData([]);
-
-        Notification::make()->title('Alert refreshed from source')->success()->send();
+        Notification::make()->title('Alert refresh queued')->success()->send();
     }
 
     private function applyEventDto(SecurityEvent $record, EventDto $dto): void
@@ -173,6 +337,13 @@ class ViewSecurityEvent extends ViewRecord
 
     private function eventType(SecurityEvent $record): EventType
     {
-        return EventType::from((string) $record->type);
+        $type = $record->getAttribute('type');
+
+        return $type instanceof EventType ? $type : EventType::from((string) $type);
+    }
+
+    private function commentById(int $commentId): ?EventComment
+    {
+        return $this->eventRecord()->comments()->with('author')->find($commentId);
     }
 }
