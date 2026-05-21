@@ -75,6 +75,24 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordAttachmentCreated(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('attachment_created', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordAttachmentDeleted(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('attachment_deleted', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordTriageRun(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('triage_run', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordAdminAction(string $action, array $payload = []): void
     {
         $this->write($action, null, null, $payload);

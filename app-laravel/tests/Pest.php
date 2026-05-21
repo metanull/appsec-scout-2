@@ -8,6 +8,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class)->in('Feature');
@@ -16,6 +17,18 @@ uses(TestCase::class)->in('Unit');
 function trackerFixtureText(string $path): string
 {
     return str_replace("\r\n", "\n", trim(file_get_contents(base_path('tests/Fixtures/Trackers/' . $path))));
+}
+
+/** @return list<string> */
+function triageWorkspaceDirectories(): array
+{
+    $path = storage_path('app/triage');
+
+    if (! is_dir($path)) {
+        return [];
+    }
+
+    return array_values(File::directories($path));
 }
 
 /** @param array<string, mixed> $overrides */

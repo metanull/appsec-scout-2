@@ -9,9 +9,11 @@
         $tags = is_array($metadata['tags'] ?? null) ? $metadata['tags'] : [];
         $auditRows = $this->auditRows();
         $workItemLinks = $this->workItemLinks();
+        $attachments = $this->attachments();
+        $sarifRows = $this->sarifRows();
     @endphp
 
-    <div class="space-y-6">
+    <div class="space-y-6" wire:poll.3s>
         <x-filament::section heading="Alert Summary">
             <div class="grid gap-4 md:grid-cols-2">
                 <div>
@@ -228,6 +230,63 @@
                     @foreach ($tags as $tag)
                         <x-filament::badge color="gray">{{ $tag }}</x-filament::badge>
                     @endforeach
+                </div>
+            @endif
+        </x-filament::section>
+
+        <x-filament::section heading="Attachments">
+            @if ($attachments->isEmpty())
+                <div class="text-sm text-gray-500">No attachments yet.</div>
+            @else
+                <div class="space-y-3">
+                    @foreach ($attachments as $attachment)
+                        <div class="rounded border p-3 text-sm">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-medium">{{ $attachment->name }}</span>
+                                <x-filament::badge color="gray">{{ $attachment->kind }}</x-filament::badge>
+                                <span class="text-gray-500">{{ $attachment->mime }}</span>
+                                <span class="text-gray-500">{{ $this->formatBytes($attachment->size_bytes) }}</span>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-500">{{ optional($attachment->created_at)->toDateTimeString() }}</div>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                <a class="text-primary-600 underline" href="{{ $this->downloadAttachmentUrl($attachment) }}">Download</a>
+                                @can('work-items.create')
+                                    <x-filament::button wire:click="deleteAttachment({{ $attachment->id }})" color="gray" size="sm">Delete</x-filament::button>
+                                @endcan
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+
+            @if ($sarifRows !== [])
+                <div class="mt-4 overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-gray-500">
+                                <th class="px-2 py-1">Rule</th>
+                                <th class="px-2 py-1">Severity</th>
+                                <th class="px-2 py-1">Location</th>
+                                <th class="px-2 py-1">Snippet</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($sarifRows as $row)
+                                <tr class="border-t align-top">
+                                    <td class="px-2 py-2">{{ $row['rule_id'] }}</td>
+                                    <td class="px-2 py-2">{{ $row['severity'] }}</td>
+                                    <td class="px-2 py-2">{{ $row['location'] }}</td>
+                                    <td class="px-2 py-2">
+                                        @if ($row['snippet'] !== '')
+                                            <pre class="overflow-x-auto rounded bg-gray-950 p-3 text-xs text-white"><code>{{ $row['snippet'] }}</code></pre>
+                                        @else
+                                            <span class="text-gray-500">n/a</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                 </div>
             @endif
         </x-filament::section>

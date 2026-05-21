@@ -56,6 +56,30 @@ it('recordTrackerStateChanged writes a tracker_state_changed row', function () {
     expect($log->action)->toBe('tracker_state_changed');
 });
 
+it('recordAttachmentCreated writes an attachment_created row', function () {
+    $recorder = new Recorder;
+    $recorder->recordAttachmentCreated('App\\Models\\Alert', '7', ['kind' => 'trivy-sarif']);
+
+    $log = AuditLog::first();
+    expect($log->action)->toBe('attachment_created');
+});
+
+it('recordAttachmentDeleted writes an attachment_deleted row', function () {
+    $recorder = new Recorder;
+    $recorder->recordAttachmentDeleted('App\\Models\\Alert', '7', ['attachment_id' => 11]);
+
+    $log = AuditLog::first();
+    expect($log->action)->toBe('attachment_deleted');
+});
+
+it('recordTriageRun writes a triage_run row', function () {
+    $recorder = new Recorder;
+    $recorder->recordTriageRun('App\\Models\\Alert', '7', ['command' => 'codesearch']);
+
+    $log = AuditLog::first();
+    expect($log->action)->toBe('triage_run');
+});
+
 it('recordAdminAction writes a custom action row', function () {
     $recorder = new Recorder;
     $recorder->recordAdminAction('user.role_changed', ['role' => 'Admin']);
