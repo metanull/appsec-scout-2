@@ -73,6 +73,12 @@ class SecurityEvent extends Model
         return $this->hasMany(WorkItemLink::class, 'event_id')->orderByDesc('created_at');
     }
 
+    /** @return HasMany<EventAttachment, $this> */
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(EventAttachment::class, 'event_id')->orderByDesc('created_at');
+    }
+
     /**
      * Scope to events belonging to a virtual (linked) system.
      *

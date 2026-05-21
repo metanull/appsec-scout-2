@@ -7,6 +7,7 @@ use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\Models\EventAttachment;
 use App\Models\EventComment;
 use App\Models\SecurityEvent;
 use App\Models\User;
@@ -17,10 +18,17 @@ use App\Sync\RefetchEventJob;
 use App\Trackers\CreateWorkItemJob;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
+use App\Triage\AttachmentService;
 use App\Triage\CommentManager;
+use App\Triage\RunBfgJob;
+use App\Triage\RunCodesearchJob;
+use App\Triage\RunTrivyJob;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Database\Eloquent\Collection;
@@ -28,9 +36,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\WithFileUploads;
 
 class ViewSecurityEvent extends ViewRecord
 {
+    use WithFileUploads;
+
     protected static string $resource = SecurityEventResource::class;
 
     protected string $view = 'filament.resources.security-event-resource.pages.view-security-event';
@@ -41,9 +52,7 @@ class ViewSecurityEvent extends ViewRecord
 
     public string $editingCommentBody = '';
 
-    /**
-     * @return array<Action>
-     */
+    /** @return array<Action|ActionGroup> */
     protected function getHeaderActions(): array
     {
         return [
@@ -86,6 +95,51 @@ class ViewSecurityEvent extends ViewRecord
                 ->visible(fn (): bool => Gate::allows('work-items.link'))
                 ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
                 ->action(fn (array $data): bool => $this->linkExistingWorkItem($data)),
+            ActionGroup::make([
+                Action::make('runTrivy')
+                    ->label('Run Trivy')
+                    ->icon('heroicon-o-bug-ant')
+                    ->visible(fn (): bool => Gate::allows('triage.run-trivy'))
+                    ->form([
+                        TextInput::make('git_url')
+                            ->label('Repository URL')
+                            ->default(fn (): ?string => $this->repositoryUrl())
+                            ->required(),
+                    ])
+                    ->action(fn (array $data): bool => $this->dispatchTrivy($data)),
+                Action::make('runBfg')
+                    ->label('Run BFG')
+                    ->icon('heroicon-o-wrench-screwdriver')
+                    ->visible(fn (): bool => Gate::allows('triage.run-bfg'))
+                    ->form([
+                        TextInput::make('git_url')
+                            ->label('Repository URL')
+                            ->default(fn (): ?string => $this->repositoryUrl())
+                            ->required(),
+                        FileUpload::make('secret_list_file')
+                            ->label('Secret list')
+                            ->disk('local')
+                            ->directory('triage-uploads')
+                            ->required(),
+                    ])
+                    ->action(fn (array $data): bool => $this->dispatchBfg($data)),
+                Action::make('runCodesearch')
+                    ->label('Run Code Search')
+                    ->icon('heroicon-o-magnifying-glass')
+                    ->visible(fn (): bool => Gate::allows('triage.run-codesearch'))
+                    ->form([
+                        TextInput::make('query')
+                            ->label('Query')
+                            ->required(),
+                        TextInput::make('scope')
+                            ->label('Scope')
+                            ->helperText('Optional. Use project:<name> or repo:<name>.')
+                            ->nullable(),
+                    ])
+                    ->action(fn (array $data): bool => $this->dispatchCodesearch($data)),
+            ])
+                ->label('Run triage')
+                ->icon('heroicon-o-play'),
         ];
     }
 
@@ -133,6 +187,15 @@ class ViewSecurityEvent extends ViewRecord
         return $comments;
     }
 
+    /** @return Collection<int, EventAttachment> */
+    public function attachments(): Collection
+    {
+        return $this->eventRecord()
+            ->attachments()
+            ->with('createdBy')
+            ->get();
+    }
+
     /** @return Collection<int, WorkItemLink> */
     public function workItemLinks(): Collection
     {
@@ -151,6 +214,103 @@ class ViewSecurityEvent extends ViewRecord
             ->latest('created_at')
             ->limit(20)
             ->get();
+    }
+
+    /** @return list<array{rule_id:string,severity:string,location:string,snippet:string}> */
+    public function sarifRows(): array
+    {
+        $attachment = $this->attachments()->firstWhere('kind', 'trivy-sarif');
+
+        if (! $attachment instanceof EventAttachment) {
+            return [];
+        }
+
+        /** @var mixed $decoded */
+        $decoded = json_decode($attachment->payload, true);
+
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $runs = $decoded['runs'] ?? [];
+
+        if (! is_array($runs)) {
+            return [];
+        }
+
+        $rows = [];
+
+        foreach ($runs as $run) {
+            if (! is_array($run)) {
+                continue;
+            }
+
+            $results = $run['results'] ?? [];
+
+            if (! is_array($results)) {
+                continue;
+            }
+
+            foreach ($results as $result) {
+                if (! is_array($result)) {
+                    continue;
+                }
+
+                $location = 'n/a';
+                $snippet = '';
+                $locations = $result['locations'] ?? [];
+
+                if (is_array($locations) && isset($locations[0]) && is_array($locations[0])) {
+                    $physicalLocation = $locations[0]['physicalLocation'] ?? [];
+                    $artifact = is_array($physicalLocation) ? ($physicalLocation['artifactLocation'] ?? []) : [];
+                    $region = is_array($physicalLocation) ? ($physicalLocation['region'] ?? []) : [];
+                    $path = is_array($artifact) ? ($artifact['uri'] ?? 'n/a') : 'n/a';
+                    $line = is_array($region) ? ($region['startLine'] ?? 'n/a') : 'n/a';
+                    $location = sprintf('%s:%s', $path, $line);
+                    $snippetValue = is_array($region) ? ($region['snippet']['text'] ?? '') : '';
+                    $snippet = is_string($snippetValue) ? $snippetValue : '';
+                }
+
+                $rows[] = [
+                    'rule_id' => is_string($result['ruleId'] ?? null) ? $result['ruleId'] : 'n/a',
+                    'severity' => is_string($result['level'] ?? null) ? $result['level'] : 'n/a',
+                    'location' => $location,
+                    'snippet' => $snippet,
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    public function downloadAttachmentUrl(EventAttachment $attachment): string
+    {
+        return route('alerts.attachments.download', [
+            'event' => $this->eventRecord()->id,
+            'attachment' => $attachment->id,
+        ]);
+    }
+
+    public function deleteAttachment(int $attachmentId): void
+    {
+        Gate::authorize('work-items.create');
+
+        $attachment = $this->eventRecord()->attachments()->findOrFail($attachmentId);
+        app(AttachmentService::class)->delete($attachment);
+        Notification::make()->title('Attachment deleted')->success()->send();
+    }
+
+    public function formatBytes(int $bytes): string
+    {
+        if ($bytes < 1024) {
+            return $bytes . ' B';
+        }
+
+        if ($bytes < 1048576) {
+            return number_format($bytes / 1024, 1) . ' KB';
+        }
+
+        return number_format($bytes / 1048576, 1) . ' MB';
     }
 
     public function addComment(): void
@@ -325,6 +485,70 @@ class ViewSecurityEvent extends ViewRecord
     }
 
     /** @param array<string, mixed> $data */
+    private function dispatchTrivy(array $data): bool
+    {
+        Gate::authorize('triage.run-trivy');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        RunTrivyJob::dispatch($this->eventRecord()->id, (string) $data['git_url'], $user->id);
+
+        Notification::make()->title('Trivy run queued')->success()->send();
+
+        return true;
+    }
+
+    /** @param array<string, mixed> $data */
+    private function dispatchBfg(array $data): bool
+    {
+        Gate::authorize('triage.run-bfg');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        $secretListPath = storage_path('app/' . (string) $data['secret_list_file']);
+
+        RunBfgJob::dispatch($this->eventRecord()->id, (string) $data['git_url'], $secretListPath, $user->id);
+
+        Notification::make()->title('BFG run queued')->success()->send();
+
+        return true;
+    }
+
+    /** @param array<string, mixed> $data */
+    private function dispatchCodesearch(array $data): bool
+    {
+        Gate::authorize('triage.run-codesearch');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        RunCodesearchJob::dispatch(
+            $this->eventRecord()->id,
+            (string) $data['query'],
+            $this->nullableString($data['scope'] ?? null),
+            $user->id,
+        );
+
+        Notification::make()->title('Code search queued')->success()->send();
+
+        return true;
+    }
+
+    /** @param array<string, mixed> $data */
     private function queueCreateWorkItem(array $data): bool
     {
         Gate::authorize('work-items.create');
@@ -385,6 +609,20 @@ class ViewSecurityEvent extends ViewRecord
         }
 
         return trim($value);
+    }
+
+    private function repositoryUrl(): ?string
+    {
+        /** @var array<string, mixed>|null $metadata */
+        $metadata = $this->eventRecord()->getAttribute('metadata');
+
+        if ($metadata === null) {
+            return null;
+        }
+
+        $value = $metadata['repository_url'] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     private function applyEventDto(SecurityEvent $record, EventDto $dto): void
