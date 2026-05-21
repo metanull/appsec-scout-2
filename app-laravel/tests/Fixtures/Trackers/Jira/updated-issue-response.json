@@ -1,0 +1,29 @@
+{
+  "id": "10001",
+  "key": "APP-101",
+  "fields": {
+    "summary": "Grouped secret findings (remediating)",
+    "status": {
+      "name": "Resolved"
+    },
+    "issuetype": {
+      "name": "Bug"
+    },
+    "labels": [
+      "security",
+      "appsec-scout",
+      "resolved"
+    ],
+    "priority": {
+      "name": "Highest"
+    },
+    "assignee": {
+      "accountId": "acct-2",
+      "displayName": "Sync Operator",
+      "emailAddress": "sync@example.test"
+    },
+    "parent": {
+      "key": "APP-7"
+    }
+  }
+}

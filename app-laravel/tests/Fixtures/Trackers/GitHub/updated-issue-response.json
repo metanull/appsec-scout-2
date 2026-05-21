@@ -1,0 +1,15 @@
+{
+  "number": 101,
+  "title": "Grouped secret findings (dismissed)",
+  "state": "closed",
+  "state_reason": "not_planned",
+  "html_url": "https://github.com/octo-org/appsec-scout/issues/101",
+  "labels": [
+    { "name": "security" },
+    { "name": "dismissed" }
+  ],
+  "assignees": [
+    { "login": "octocat" }
+  ],
+  "body": "The finding does not require further action."
+}

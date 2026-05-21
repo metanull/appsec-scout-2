@@ -1,0 +1,31 @@
+{
+  "id": "10001",
+  "key": "APP-101",
+  "fields": {
+    "summary": "Grouped secret findings",
+    "status": {
+      "name": "In Progress"
+    },
+    "issuetype": {
+      "name": "Bug"
+    },
+    "labels": [
+      "security",
+      "appsec-scout",
+      "github",
+      "critical",
+      "secret"
+    ],
+    "priority": {
+      "name": "High"
+    },
+    "assignee": {
+      "accountId": "acct-1",
+      "displayName": "Plan Operator",
+      "emailAddress": "ops@example.test"
+    },
+    "parent": {
+      "key": "APP-7"
+    }
+  }
+}

@@ -13,4 +13,12 @@ return [
         'enabled' => (bool) env('SOURCE_DETECTIFY_ENABLED', false),
         'interval_minutes' => (int) env('SOURCE_DETECTIFY_INTERVAL_MINUTES', 30),
     ],
+    'jira' => [
+        'enabled' => (bool) env('TRACKER_JIRA_ENABLED', false),
+        'interval_minutes' => (int) env('TRACKER_JIRA_INTERVAL_MINUTES', 30),
+    ],
+    'github' => [
+        'enabled' => (bool) env('TRACKER_GITHUB_ENABLED', false),
+        'interval_minutes' => (int) env('TRACKER_GITHUB_INTERVAL_MINUTES', 30),
+    ],
 ];
