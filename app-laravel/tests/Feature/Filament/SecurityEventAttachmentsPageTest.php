@@ -51,6 +51,7 @@ it('renders attachments and inline sarif rows on the alert detail page', functio
         ->assertSee('trivy-results.sarif')
         ->assertSee('TRIVY-001')
         ->assertSee('src/Auth.php:12')
+        ->assertSee('<span style="color:', false)
         ->assertSee('Run Trivy')
         ->assertSee('Run BFG')
         ->assertSee('Run Code Search');
