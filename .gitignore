@@ -11,6 +11,9 @@ composer.phar
 # Corporate SSL inspection CA — do not commit
 netskope-ca.crt
 *.crt
+.docker/certs/
+!.docker/certs/
+!.docker/certs/.gitkeep
 
 # Docker override
 docker-compose.override.yml

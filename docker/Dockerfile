@@ -3,11 +3,35 @@
 # ── Stage 1: resolve Composer dependencies ───────────────────────────────────
 FROM composer:2 AS composer-deps
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY} \
+    http_proxy=${HTTP_PROXY} \
+    https_proxy=${HTTPS_PROXY} \
+    no_proxy=${NO_PROXY}
+
 WORKDIR /app
+
+COPY .docker/certs/ /tmp/appsec-scout-certs/
+
+RUN if find /tmp/appsec-scout-certs -type f -name '*.crt' -print -quit | grep -q .; then \
+        find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
+            -exec cp {} /usr/local/share/ca-certificates/ \; ; \
+        update-ca-certificates; \
+    fi
 
 COPY app-laravel/composer.json app-laravel/composer.lock ./
 
-RUN composer install \
+RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
+        export SSL_CERT_FILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+        export CURL_CA_BUNDLE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+        export COMPOSER_CAFILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+    fi; \
+    composer install \
     --no-dev \
     --no-scripts \
     --no-autoloader \
@@ -21,22 +45,62 @@ RUN composer dump-autoload --no-dev --optimize --no-scripts
 # ── Stage 2: build Filament/Vite assets ──────────────────────────────────────
 FROM node:22-alpine AS assets
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY} \
+    http_proxy=${HTTP_PROXY} \
+    https_proxy=${HTTPS_PROXY} \
+    no_proxy=${NO_PROXY}
+
 WORKDIR /app
+
+COPY .docker/certs/ /tmp/appsec-scout-certs/
+
+RUN if find /tmp/appsec-scout-certs -type f -name '*.crt' -print -quit | grep -q .; then \
+    cat /tmp/appsec-scout-certs/host-ca-bundle.crt >> /etc/ssl/certs/ca-certificates.crt; \
+    cat /tmp/appsec-scout-certs/host-ca-bundle.crt >> /etc/ssl/cert.pem; \
+    fi
 
 COPY app-laravel/package.json app-laravel/package-lock.json* ./
 
-RUN npm ci --ignore-scripts
+RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
+        export SSL_CERT_FILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+        export NODE_EXTRA_CA_CERTS=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+        export NPM_CONFIG_CAFILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+    fi; \
+    npm ci --ignore-scripts
 
 COPY app-laravel/ ./
 COPY --from=composer-deps /app/vendor ./vendor
 
-RUN npm run build
+RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
+        export SSL_CERT_FILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+        export NODE_EXTRA_CA_CERTS=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+        export NPM_CONFIG_CAFILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
+    fi; \
+    npm run build
 
 # ── Stage 3: production PHP-FPM image ────────────────────────────────────────
 FROM php:8.4-fpm-trixie AS final
 
 ARG BFG_VERSION=1.15.0
 ARG BFG_SHA256=dfe2885adc2916379093f02a80181200536856c9a987bf21c492e452adefef7a
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY} \
+    http_proxy=${HTTP_PROXY} \
+    https_proxy=${HTTPS_PROXY} \
+    no_proxy=${NO_PROXY}
+
+COPY .docker/certs/ /tmp/appsec-scout-certs/
 
 # System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -49,6 +113,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libicu-dev \
     libzip-dev \
+    && if find /tmp/appsec-scout-certs -type f -name '*.crt' -print -quit | grep -q .; then \
+        find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
+            -exec cp {} /usr/local/share/ca-certificates/ \; ; \
+        update-ca-certificates; \
+    fi \
     && install -d -m 0755 /etc/apt/keyrings \
     && curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key \
         | gpg --dearmor -o /etc/apt/keyrings/trivy.gpg \
