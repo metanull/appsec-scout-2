@@ -17,4 +17,8 @@ return [
         'enabled' => (bool) env('TRACKER_JIRA_ENABLED', false),
         'interval_minutes' => (int) env('TRACKER_JIRA_INTERVAL_MINUTES', 30),
     ],
+    'github' => [
+        'enabled' => (bool) env('TRACKER_GITHUB_ENABLED', false),
+        'interval_minutes' => (int) env('TRACKER_GITHUB_INTERVAL_MINUTES', 30),
+    ],
 ];

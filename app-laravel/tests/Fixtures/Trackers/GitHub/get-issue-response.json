@@ -1,0 +1,16 @@
+{
+  "number": 101,
+  "title": "Grouped secret findings",
+  "state": "open",
+  "state_reason": null,
+  "html_url": "https://github.com/octo-org/appsec-scout/issues/101",
+  "labels": [
+    { "name": "security" },
+    { "name": "appsec-scout" },
+    { "name": "secret" }
+  ],
+  "assignees": [
+    { "login": "octocat" }
+  ],
+  "body": "Parent: octo-org/platform#7\n\nTracked from AppSec Scout."
+}
