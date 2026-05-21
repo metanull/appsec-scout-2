@@ -57,6 +57,24 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordWorkItemLinked(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('work_item_linked', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordWorkItemUnlinked(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('work_item_unlinked', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordTrackerStateChanged(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('tracker_state_changed', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordAdminAction(string $action, array $payload = []): void
     {
         $this->write($action, null, null, $payload);

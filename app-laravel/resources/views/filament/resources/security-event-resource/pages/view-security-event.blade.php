@@ -7,12 +7,8 @@
         $validation = is_array($metadata['validationFingerprints'] ?? null) ? $metadata['validationFingerprints'] : [];
         $occurrences = is_array($metadata['occurrences'] ?? null) ? $metadata['occurrences'] : [];
         $tags = is_array($metadata['tags'] ?? null) ? $metadata['tags'] : [];
-        $auditRows = \App\Audit\AuditLog::query()
-            ->where('subject_type', \App\Models\SecurityEvent::class)
-            ->where('subject_id', (string) $record->id)
-            ->latest('created_at')
-            ->limit(20)
-            ->get();
+        $auditRows = $this->auditRows();
+        $workItemLinks = $this->workItemLinks();
     @endphp
 
     <div class="space-y-6">
@@ -198,10 +194,33 @@
         </x-filament::section>
 
         <x-filament::section heading="Work Items">
-            @if (! empty($metadata['work_item_id']))
-                <div class="text-sm">Linked work item: {{ $metadata['work_item_id'] }}</div>
-            @else
+            @if ($workItemLinks->isEmpty())
                 <div class="text-sm text-gray-500">No linked work item.</div>
+            @else
+                <div class="space-y-3">
+                    @foreach ($workItemLinks as $link)
+                        <div class="rounded border p-3 text-sm">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <x-filament::badge color="gray">{{ $link->tracker_id }}</x-filament::badge>
+                                @if ($link->work_item_state)
+                                    <x-filament::badge color="info">{{ $link->work_item_state }}</x-filament::badge>
+                                @endif
+                                <span class="font-medium">{{ $link->work_item_title ?? $link->work_item_id }}</span>
+                            </div>
+                            <div class="mt-2 text-gray-500">{{ $link->work_item_id }}</div>
+                            @if ($link->work_item_url)
+                                <div class="mt-2">
+                                    <a class="text-primary-600 underline" href="{{ $link->work_item_url }}" target="_blank" rel="noopener">Open work item</a>
+                                </div>
+                            @endif
+                            @can('work-items.link')
+                                <div class="mt-3 flex justify-end">
+                                    <x-filament::button wire:click="unlinkWorkItem({{ $link->id }})" color="gray" size="sm">Unlink</x-filament::button>
+                                </div>
+                            @endcan
+                        </div>
+                    @endforeach
+                </div>
             @endif
 
             @if ($tags !== [])

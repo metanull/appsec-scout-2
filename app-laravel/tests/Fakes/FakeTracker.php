@@ -13,6 +13,12 @@ use App\Trackers\ValueObjects\TrackerCapabilities;
 
 final class FakeTracker implements Tracker
 {
+    public int $createCalls = 0;
+
+    public int $getCalls = 0;
+
+    public int $searchCalls = 0;
+
     /** @var list<ProjectDto> */
     private array $projects = [];
 
@@ -83,11 +89,14 @@ final class FakeTracker implements Tracker
 
     public function createWorkItem(CreateWorkItemRequest $request): WorkItemDto
     {
+        $this->createCalls++;
+
         $workItem = new WorkItemDto(
             id: sprintf('%s#%d', $request->projectKey, count($this->workItems) + 1),
             projectKey: $request->projectKey,
             title: $request->title,
             state: 'Open',
+            url: sprintf('https://tracker.test/%s', rawurlencode(sprintf('%s#%d', $request->projectKey, count($this->workItems) + 1))),
             itemType: $request->itemType,
             priority: $request->priority,
             parentId: $request->parentId,
@@ -102,6 +111,8 @@ final class FakeTracker implements Tracker
 
     public function getWorkItem(string $workItemKey): ?WorkItemDto
     {
+        $this->getCalls++;
+
         return $this->workItems[$workItemKey] ?? null;
     }
 
@@ -131,6 +142,8 @@ final class FakeTracker implements Tracker
     /** @return iterable<WorkItemDto> */
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): iterable
     {
+        $this->searchCalls++;
+
         return array_slice(array_values(array_filter(
             $this->workItems,
             fn (WorkItemDto $workItem): bool => $workItem->projectKey === $projectKey
@@ -162,6 +175,13 @@ final class FakeTracker implements Tracker
     public function withConnectionFailure(): self
     {
         $this->connectionOk = false;
+
+        return $this;
+    }
+
+    public function withExistingWorkItem(WorkItemDto $workItem): self
+    {
+        $this->workItems[$workItem->id] = $workItem;
 
         return $this;
     }

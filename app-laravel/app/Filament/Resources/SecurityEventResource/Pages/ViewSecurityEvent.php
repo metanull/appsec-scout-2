@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SecurityEventResource\Pages;
 
+use App\Audit\AuditLog;
 use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -9,9 +10,13 @@ use App\Models\Enums\EventType;
 use App\Models\EventComment;
 use App\Models\SecurityEvent;
 use App\Models\User;
+use App\Models\WorkItemLink;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
 use App\Sync\RefetchEventJob;
+use App\Trackers\CreateWorkItemJob;
+use App\Trackers\WorkItemFormOptions;
+use App\Trackers\WorkItemService;
 use App\Triage\CommentManager;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
@@ -69,6 +74,18 @@ class ViewSecurityEvent extends ViewRecord
                     ? 'Local pending changes will be preserved; upstream metadata will be refreshed.'
                     : 'Reload this alert from its source now?')
                 ->action(fn () => $this->reloadFromSource()),
+            Action::make('createWorkItem')
+                ->label('Create work item')
+                ->icon('heroicon-o-ticket')
+                ->visible(fn (): bool => Gate::allows('work-items.create'))
+                ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema([$this->eventRecord()]))
+                ->action(fn (array $data): bool => $this->queueCreateWorkItem($data)),
+            Action::make('linkExisting')
+                ->label('Link existing')
+                ->icon('heroicon-o-link')
+                ->visible(fn (): bool => Gate::allows('work-items.link'))
+                ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                ->action(fn (array $data): bool => $this->linkExistingWorkItem($data)),
         ];
     }
 
@@ -114,6 +131,26 @@ class ViewSecurityEvent extends ViewRecord
             ->get();
 
         return $comments;
+    }
+
+    /** @return Collection<int, WorkItemLink> */
+    public function workItemLinks(): Collection
+    {
+        return $this->eventRecord()
+            ->workItemLinks()
+            ->with('createdBy')
+            ->get();
+    }
+
+    /** @return Collection<int, AuditLog> */
+    public function auditRows(): Collection
+    {
+        return AuditLog::query()
+            ->where('subject_type', SecurityEvent::class)
+            ->where('subject_id', (string) $this->eventRecord()->id)
+            ->latest('created_at')
+            ->limit(20)
+            ->get();
     }
 
     public function addComment(): void
@@ -227,6 +264,19 @@ class ViewSecurityEvent extends ViewRecord
         Notification::make()->title('Comment updated')->success()->send();
     }
 
+    public function unlinkWorkItem(int $linkId): void
+    {
+        Gate::authorize('work-items.link');
+
+        $link = $this->eventRecord()->workItemLinks()->findOrFail($linkId);
+
+        app(WorkItemService::class)->unlink($link);
+
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Work item unlinked')->success()->send();
+    }
+
     public function canEditComment(EventComment $comment): bool
     {
         /** @var User|null $user */
@@ -272,6 +322,69 @@ class ViewSecurityEvent extends ViewRecord
         RefetchEventJob::dispatch($this->eventRecord()->id);
 
         Notification::make()->title('Alert refresh queued')->success()->send();
+    }
+
+    /** @param array<string, mixed> $data */
+    private function queueCreateWorkItem(array $data): bool
+    {
+        Gate::authorize('work-items.create');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        CreateWorkItemJob::dispatch(
+            eventIds: [$this->eventRecord()->id],
+            userId: $user->id,
+            trackerId: (string) $data['tracker'],
+            projectKey: (string) $data['project'],
+            itemType: (string) $data['item_type'],
+            labels: SecurityEventResource::stringArray($data['labels'] ?? []),
+            priority: $this->nullableString($data['priority'] ?? null),
+            assigneeId: $this->nullableString($data['assignee_id'] ?? null),
+            parentId: $this->nullableString($data['parent_id'] ?? null),
+        );
+
+        Notification::make()->title('Work item creation queued')->success()->send();
+
+        return true;
+    }
+
+    /** @param array<string, mixed> $data */
+    private function linkExistingWorkItem(array $data): bool
+    {
+        Gate::authorize('work-items.link');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        app(WorkItemService::class)->linkExisting(
+            eventIds: [$this->eventRecord()->id],
+            userId: $user->id,
+            trackerId: (string) $data['tracker'],
+            workItemId: (string) $data['selected_work_item'],
+        );
+
+        $this->refreshFormData([]);
+        Notification::make()->title('Work item linked')->success()->send();
+
+        return true;
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return trim($value);
     }
 
     private function applyEventDto(SecurityEvent $record, EventDto $dto): void
