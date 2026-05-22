@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Http\Middleware\EnsureUserIsEnabled;
 use App\Http\Middleware\RequireTwoFactor;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -36,7 +37,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([AccountWidget::class, FilamentInfoWidget::class])
             ->middleware($this->webMiddleware())
-            ->authMiddleware([RequireTwoFactor::class, Authenticate::class]);
+            ->authMiddleware([EnsureUserIsEnabled::class, RequireTwoFactor::class, Authenticate::class]);
     }
 
     /** @return list<class-string> */

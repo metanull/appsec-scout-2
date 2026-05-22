@@ -37,11 +37,11 @@ trait ManagesIntegrationCredentials
     {
         $integrations = [];
 
-        foreach (app(SourceRegistry::class)->enabled() as $source) {
+        foreach (app(SourceRegistry::class)->all() as $source) {
             $integrations[] = $this->integrationDescriptor('source', $source->id(), $source->displayName(), $source->requiredCredentialKeys());
         }
 
-        foreach (app(TrackerRegistry::class)->enabled() as $tracker) {
+        foreach (app(TrackerRegistry::class)->all() as $tracker) {
             $integrations[] = $this->integrationDescriptor('tracker', $tracker->id(), $tracker->displayName(), $tracker->requiredCredentialKeys());
         }
 
@@ -148,14 +148,14 @@ trait ManagesIntegrationCredentials
     {
         $integrations = [];
 
-        foreach (app(SourceRegistry::class)->enabled() as $source) {
+        foreach (app(SourceRegistry::class)->all() as $source) {
             $integrations[] = array_merge(
                 $this->integrationDescriptor('source', $source->id(), $source->displayName(), $source->requiredCredentialKeys()),
                 ['instance' => $source],
             );
         }
 
-        foreach (app(TrackerRegistry::class)->enabled() as $tracker) {
+        foreach (app(TrackerRegistry::class)->all() as $tracker) {
             $integrations[] = array_merge(
                 $this->integrationDescriptor('tracker', $tracker->id(), $tracker->displayName(), $tracker->requiredCredentialKeys()),
                 ['instance' => $tracker],

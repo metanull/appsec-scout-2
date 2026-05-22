@@ -1,111 +1,174 @@
 # AppSec Scout — Operations Reference
 
-## Build
+This guide covers day-2 operations for the implemented M1 to M6 Laravel app.
+
+Related documents:
+
+- [docs/install.md](install.md)
+- [docs/admin.md](admin.md)
+- [docs/security.md](security.md)
+- [docs/roles/admin.md](roles/admin.md)
+
+## Build And Start
 
 ```bash
-# Export host-trusted root/intermediate CAs first when using a corporate MITM proxy
-./scripts/export-host-ca.sh   # Linux/macOS
-./scripts/export-host-ca.ps1  # PowerShell on Windows
+# Export host-trusted CAs first when needed
+./scripts/export-host-ca.sh
+./scripts/export-host-ca.ps1
 
-# Build the application image (run from the repository root)
+# Build the default application image
 docker compose build
 
-# Build the development/CI image with dev dependencies included
+# Build the development image with dev dependencies
 APP_BUILD_TARGET=dev docker compose build app
 
-# Build and start all services in detached mode
+# Start the full stack
 docker compose up --build -d
 ```
 
-## Start / stop
+Start and stop commands:
 
 ```bash
-docker compose up -d          # Start all services (app, mysql, redis)
-docker compose stop           # Stop without removing containers
-docker compose down           # Stop and remove containers (data volumes are preserved)
-docker compose down -v        # Stop and remove containers and volumes (destructive)
+docker compose up -d
+docker compose stop
+docker compose down
+docker compose down -v
 ```
 
-## Access the application
+## Health And Access
 
-| URL | What |
+| URL | Purpose |
 | --- | --- |
-| `http://localhost:8080/` | Filament admin panel (login page) |
-| `http://localhost:8080/up` | Health check endpoint — returns `ok` when ready |
+| `http://localhost:8080/` | Filament application shell and login |
+| `http://localhost:8080/up` | Health endpoint |
 
-The port can be changed by setting `APP_PORT` in the environment before starting:
+Quick checks:
 
 ```bash
-APP_PORT=9090 docker compose up -d
+docker compose ps
+curl http://localhost:8080/up
+docker compose logs -f app
 ```
 
-## Database migrations and seeding
-
-Run these once after first boot and after any release that includes new migrations.
+## Database, Migrations, And Seeding
 
 ```bash
-# Apply all pending migrations
 docker compose exec app php artisan migrate --force
-
-# Seed roles, permissions, and default configuration
 docker compose exec app php artisan db:seed
 ```
 
-## Create the first admin user
+Bootstrap the first Admin account:
 
 ```bash
-docker compose exec app php artisan tinker --execute="
-\$user = \App\Models\User::factory()->create([
-    'name'     => 'Admin',
-    'email'    => 'admin@example.com',
-    'password' => bcrypt('changeme'),
-]);
-\$user->assignRole('Admin');
-echo 'Created: ' . \$user->email . PHP_EOL;
-"
+docker compose exec app php artisan appsec:bootstrap-admin \
+    --name="Admin" \
+    --email="admin@example.com" \
+    --password="changeme-now"
 ```
 
-Change the password immediately after first login.
+The command refuses to run after the first user exists.
 
-## Queue worker
+## Queue And Scheduler Model
 
-The application uses Laravel queues for background jobs (audit log pruning, error log pruning). In the Docker setup the queue worker is managed by Supervisor inside the container and starts automatically. To inspect or restart it:
+The single `app` container runs all application processes through Supervisor:
+
+- `nginx`
+- `php-fpm`
+- `php artisan schedule:work`
+- `php artisan queue:work --tries=3 --max-time=3600`
+
+Runtime backends in Compose:
+
+- queue: Redis
+- cache: Redis
+- sessions: Redis
+
+The scheduler uses one minutely dispatcher entry, `integrations:dispatch-due`, to decide which source fetch or tracker refresh jobs are due from database-backed integration settings.
+
+Manual checks:
 
 ```bash
 docker compose exec app supervisorctl status
-docker compose exec app supervisorctl restart laravel-worker:*
+docker compose exec app php artisan schedule:run
+docker compose exec app php artisan queue:work --once
 ```
 
-## Logs
+## Operations Page
+
+The Admin `Operations` page is the main operator surface for background activity.
+
+It shows:
+
+- queued job count
+- failed job count
+- recent failed jobs with redacted payload previews
+- recent sync runs
+- recent error records
+- the AppSec Scout schedule entries managed in the container
+
+It supports the following actions:
+
+- dispatch due integrations now
+- queue a selected source fetch
+- queue a selected tracker refresh
+- prune audit logs
+- prune error logs
+- queue a Trivy DB update
+- retry one failed job
+- forget one failed job
+
+Every action emits an audit row.
+
+## Failed Jobs
+
+Failed jobs are stored in Laravel's `failed_jobs` table using UUID identifiers.
+
+From the Operations page, Admin users can:
+
+- retry a failed job, which requeues the stored payload and removes the failed row
+- forget a failed job, which deletes the failed row without retrying it
+
+If a failed job needs deeper inspection, review the payload preview in the page and then check application logs for the full exception context.
+
+## Logs And Error Records
+
+Preferred operational log views:
 
 ```bash
-# Application log (real-time)
-docker compose exec app tail -f storage/logs/laravel.log
-
-# Container stdout (Nginx + PHP-FPM + Supervisor)
 docker compose logs -f app
-
-# MySQL slow query / error log
 docker compose logs -f mysql
+docker compose logs -f redis
 ```
 
-## Development: run the test suite
+Application errors are also copied into the `error_logs` table and exposed in the Admin `Errors` resource.
 
-No local PHP, Composer, Node.js, Java, Trivy, or BFG installation is required. Build the development image from this repository's Dockerfile, then run checks inside that container.
+Audit records are written to `audit_logs` and exposed in the Admin `Audit Log` resource.
+
+## Credentials And Integrations
+
+Admin operators manage integration configuration from three places:
+
+- `Admin -> System credentials` for shared system-owned credentials
+- `Profile integrations` for the signed-in user's personal credentials
+- `Admin -> Integrations` for enablement, interval, service user selection, and connection tests
+
+Background resolution order now depends on the integration setting:
+
+1. explicit preferred user if a flow provides one
+2. authenticated user's personal credential for interactive actions
+3. integration-specific service user credential when configured
+4. system credential
+
+## Development Verification
+
+Run all checks from the repository root after rebuilding the dev image:
 
 ```bash
-# Build the app image with dev dependencies once per dependency change
 APP_BUILD_TARGET=dev docker compose build app
-
-# Code style check (Pint)
 APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pint --test
-
-# Static analysis (PHPStan level 8 via Larastan)
-APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/phpstan analyse --no-progress
-
-# Feature and unit tests (Pest, MySQL + Redis from Docker Compose)
-APP_BUILD_TARGET=dev docker compose up -d mysql redis
+APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pest --no-coverage
+APP_BUILD_TARGET=dev docker compose run --rm app composer smoke
 ```
 
 PowerShell equivalent:
@@ -114,30 +177,34 @@ PowerShell equivalent:
 $env:APP_BUILD_TARGET = 'dev'
 docker compose build app
 docker compose run --rm app vendor/bin/pint --test
-docker compose run --rm app vendor/bin/phpstan analyse --no-progress
-docker compose up -d mysql redis
+docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 docker compose run --rm app vendor/bin/pest --no-coverage
+docker compose run --rm app composer smoke
 Remove-Item Env:\APP_BUILD_TARGET
 ```
 
-All three commands must pass with zero errors before merging any change.
+CI intentionally stops at the existing Laravel quality gates. It does not build a production image, generate an SBOM, or run Trivy image scans.
 
-> **Corporate proxy / SSL inspection**: If your network intercepts HTTPS, use the Docker Compose override shown in [install.md](install.md#corporate-proxy--ssl-inspection) so the app image receives the corporate CA and proxy settings.
+## Optional Local Image Checks
 
-The helper scripts above export your locally trusted root/intermediate CAs into `.docker/certs/`, which is consumed automatically by the Docker build. Build-time proxy variables must still be set in your shell so Composer, npm, apt, and curl can reach the network through the corporate proxy.
+The runtime image includes Trivy for supported triage commands, but release-style image scanning is optional and local only.
 
-## Scheduled tasks
-
-Laravel's scheduler runs inside the container via a Supervisor-managed `schedule:work` process. Jobs registered in `app/Console/Kernel.php` (audit log pruning, error log pruning) fire automatically. No cron setup is needed on the host.
-
-To trigger a specific job manually:
+Examples:
 
 ```bash
-docker compose exec app php artisan schedule:run
-docker compose exec app php artisan queue:work --once
+docker compose exec app trivy --version
+docker image inspect appsec-scout:latest --format '{{.Size}}'
 ```
 
-## Upgrade procedure
+## Backup, Upgrade, And Rollback Notes
+
+Back up before destructive changes:
+
+- MySQL data volume
+- Redis if queue state must be preserved
+- `.env`
+
+Upgrade flow:
 
 ```bash
 git pull
@@ -145,3 +212,22 @@ docker compose build
 docker compose up -d
 docker compose exec app php artisan migrate --force
 ```
+
+Rollback guidance:
+
+1. restore the previous repository revision and `.env`
+2. rebuild and restart the stack
+3. restore the database backup if the reverted version is not schema-compatible
+
+## Milestone Mapping
+
+The current operator flow reflects the planned sequence in `plan/README.md`:
+
+- M1 foundation
+- M2 sources and reader UI
+- M3 triage and sync
+- M4 planning and trackers
+- M5 triage commands and attachments
+- M6 admin polish and documentation
+
+Defender-specific operations remain deferred from M6.

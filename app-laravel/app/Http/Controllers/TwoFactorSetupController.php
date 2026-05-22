@@ -15,7 +15,7 @@ class TwoFactorSetupController extends Controller
         $user = $request->user();
 
         if ($user === null) {
-            return redirect()->route('login');
+            return redirect('/user/login');
         }
 
         if ($user->two_factor_confirmed_at !== null) {
@@ -42,7 +42,7 @@ class TwoFactorSetupController extends Controller
         $user = $request->user();
 
         if ($user === null) {
-            return redirect()->route('login');
+            return redirect('/user/login');
         }
 
         $request->validate(['code' => ['required', 'string']]);
@@ -57,7 +57,7 @@ class TwoFactorSetupController extends Controller
         $user = $request->user();
 
         if ($user === null) {
-            return redirect()->route('login');
+            return redirect('/user/login');
         }
 
         if ($user->two_factor_confirmed_at === null) {

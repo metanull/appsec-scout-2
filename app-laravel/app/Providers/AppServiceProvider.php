@@ -4,11 +4,13 @@ namespace App\Providers;
 
 use App\Events\SyncRunFinished;
 use App\Listeners\BustDashboardCache;
+use App\Models\User;
 use App\Sources\Asoc\AsocSource;
 use App\Sources\AzDo\AzDoSource;
 use App\Sources\Detectify\DetectifySource;
 use App\Trackers\GitHub\GitHubTracker;
 use App\Trackers\Jira\JiraTracker;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
@@ -49,5 +51,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Event::listen(SyncRunFinished::class, BustDashboardCache::class);
+        Event::listen(Login::class, function (Login $event): void {
+            if ($event->user instanceof User) {
+                $event->user->forceFill(['last_login_at' => now()])->save();
+            }
+        });
     }
 }

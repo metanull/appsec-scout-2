@@ -3,6 +3,7 @@
 namespace App\Sync;
 
 use App\Events\SyncRunFinished;
+use App\Integrations\IntegrationSettingsRepository;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
@@ -26,8 +27,13 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
         return 'fetch-source:' . $this->sourceId;
     }
 
-    public function handle(Registry $registry, Upserter $upserter): void
-    {
+    public function handle(
+        Registry $registry,
+        Upserter $upserter,
+        ?IntegrationSettingsRepository $settings = null,
+    ): void {
+        $settings ??= app(IntegrationSettingsRepository::class);
+
         $run = SyncRun::query()->create([
             'source_id' => $this->sourceId,
             'started_at' => now(),
@@ -121,6 +127,8 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                 'error_message' => null,
             ]);
 
+            $settings->markSyncResult('source', $this->sourceId, true);
+
             event(new SyncRunFinished($run));
         } catch (\Throwable $e) {
             $run->update([
@@ -129,6 +137,8 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                 'counts_json' => $counts,
                 'error_message' => $e->getMessage(),
             ]);
+
+            $settings->markSyncResult('source', $this->sourceId, false, $e->getMessage());
 
             event(new SyncRunFinished($run));
 

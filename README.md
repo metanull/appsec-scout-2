@@ -21,6 +21,14 @@ Managing security alerts from multiple tools can be overwhelming and time-consum
 
 AppSec Scout is built to work seamlessly in environments with strict security and network policies, leveraging a Docker-first deployment model for easy setup and operation.
 
+Operator documentation:
+
+- [docs/install.md](docs/install.md)
+- [docs/operations.md](docs/operations.md)
+- [docs/admin.md](docs/admin.md)
+- [docs/security.md](docs/security.md)
+- [docs/architecture.md](docs/architecture.md)
+
 ## Stack
 
 | Layer         | Choice                                                |
