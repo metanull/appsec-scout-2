@@ -7,6 +7,7 @@ use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
+use Illuminate\Support\Carbon;
 
 beforeEach(function () {
     DashboardData::flushCache();
@@ -51,6 +52,11 @@ it('builds doughnut chart dataset from severity counts', function () {
 });
 
 it('returns the latest ten sync runs in descending order', function () {
+    DashboardData::flushCache();
+    SyncRun::query()->delete();
+
+    Carbon::setTestNow('2026-05-22 12:00:00');
+
     for ($i = 1; $i <= 12; $i++) {
         SyncRun::query()->create([
             'source_id' => 'azdo',
@@ -67,6 +73,8 @@ it('returns the latest ten sync runs in descending order', function () {
     expect($runs)->toHaveCount(10)
         ->and($runs->first()->counts_json['events_created'])->toBe(12)
         ->and($runs->last()->counts_json['events_created'])->toBe(3);
+
+    Carbon::setTestNow();
 });
 
 it('flushes dashboard cache when sync run finished event is dispatched', function () {

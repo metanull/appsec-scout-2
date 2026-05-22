@@ -1,5 +1,6 @@
 <?php
 
+use App\Integrations\IntegrationSettingsRepository;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry;
 use App\Trackers\ValueObjects\TestResult;
@@ -12,9 +13,13 @@ it('returns enabled trackers from registry', function () {
     $this->app->bind('appsec-scout.tracker.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
 
-    config(['integration_settings.fake-tracker.enabled' => true]);
+    app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
+        'enabled' => true,
+        'fetch_interval_minutes' => 30,
+        'service_user_id' => null,
+    ]);
 
-    $registry = new Registry($this->app);
+    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
 
     expect($registry->enabled())->toHaveCount(1)
         ->and($registry->enabled()[0]->id())->toBe('fake-tracker');
@@ -26,9 +31,13 @@ it('excludes disabled trackers', function () {
     $this->app->bind('appsec-scout.tracker.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
 
-    config(['integration_settings.fake-tracker.enabled' => false]);
+    app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
+        'enabled' => false,
+        'fetch_interval_minutes' => 30,
+        'service_user_id' => null,
+    ]);
 
-    $registry = new Registry($this->app);
+    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
 
     expect($registry->enabled())->toBeEmpty();
 });
@@ -39,9 +48,13 @@ it('finds tracker by id', function () {
     $this->app->bind('appsec-scout.tracker.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
 
-    config(['integration_settings.fake-tracker.enabled' => true]);
+    app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
+        'enabled' => true,
+        'fetch_interval_minutes' => 30,
+        'service_user_id' => null,
+    ]);
 
-    $registry = new Registry($this->app);
+    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
 
     expect($registry->find('fake-tracker'))->toBe($fake)
         ->and($registry->find('nonexistent'))->toBeNull();
@@ -53,9 +66,13 @@ it('registered trackers satisfy the tracker contract', function () {
     $this->app->bind('appsec-scout.tracker.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
 
-    config(['integration_settings.fake-tracker.enabled' => true]);
+    app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
+        'enabled' => true,
+        'fetch_interval_minutes' => 30,
+        'service_user_id' => null,
+    ]);
 
-    $registry = new Registry($this->app);
+    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
 
     foreach ($registry->enabled() as $tracker) {
         expect($tracker)->toBeInstanceOf(Tracker::class)
