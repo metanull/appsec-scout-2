@@ -3,6 +3,7 @@
 namespace App\Http;
 
 use GuzzleHttp\Client;
+use RuntimeException;
 
 class OutboundHttpFactory
 {
@@ -15,10 +16,10 @@ class OutboundHttpFactory
     /** @return array<string, mixed> */
     private static function proxyOptions(): array
     {
-        /** @var array{http_proxy: ?string, https_proxy: ?string, no_proxy: ?string, verify: bool|string} $proxy */
+        /** @var array{http_proxy: ?string, https_proxy: ?string, no_proxy: ?string, verify: bool|string|null} $proxy */
         $proxy = config('proxy');
 
-        $options = ['verify' => $proxy['verify']];
+        $options = ['verify' => self::verifyOption($proxy['verify'])];
 
         $proxyMap = array_filter([
             'http' => $proxy['http_proxy'],
@@ -31,6 +32,19 @@ class OutboundHttpFactory
         }
 
         return $options;
+    }
+
+    private static function verifyOption(bool|string|null $verify): bool|string
+    {
+        if ($verify === null || $verify === '') {
+            return true;
+        }
+
+        if (is_string($verify) && ! is_file($verify)) {
+            throw new RuntimeException("SSL CA bundle not found at [{$verify}].");
+        }
+
+        return $verify;
     }
 
     /** @return list<string>|null */

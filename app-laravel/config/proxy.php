@@ -4,5 +4,5 @@ return [
     'http_proxy' => env('HTTP_PROXY'),
     'https_proxy' => env('HTTPS_PROXY'),
     'no_proxy' => env('NO_PROXY'),
-    'verify' => env('SSL_CERT_FILE', true),
+    'verify' => env('SSL_CERT_FILE') ?: true,
 ];

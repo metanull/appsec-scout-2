@@ -66,6 +66,10 @@ System credentials are used when:
 
 Personal credentials are managed by each signed-in user from `Profile integrations`.
 
+Connection tests use the same outbound HTTP factory as source sync and tracker actions. In direct internet environments, leave proxy and custom CA settings empty. In corporate SSL-inspection environments, configure the proxy and mounted CA bundle as described in [docs/install.md](install.md#corporate-proxy-and-ssl-inspection).
+
+ASoC credentials require a regional base URL in addition to `keyId` and `keySecret`. Use `https://cloud.appscan.com/` for US tenants and `https://eu.cloud.appscan.com/` for EU tenants.
+
 ## Integrations
 
 Use `Admin -> Integrations` to manage every known source and tracker, including integrations that are currently disabled.

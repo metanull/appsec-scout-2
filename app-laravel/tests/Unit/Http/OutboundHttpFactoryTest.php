@@ -94,6 +94,25 @@ it('forwards verify option from config', function () {
     expect($options['verify'])->toBe('/etc/ssl/certs/ca-certificates.crt');
 });
 
+it('uses default ca discovery when SSL_CERT_FILE is empty', function () {
+    config(['proxy.http_proxy' => null, 'proxy.https_proxy' => null, 'proxy.no_proxy' => null, 'proxy.verify' => '']);
+
+    $reflection = new ReflectionClass(OutboundHttpFactory::class);
+    $method = $reflection->getMethod('proxyOptions');
+    $options = $method->invoke(null);
+
+    expect($options['verify'])->toBeTrue();
+});
+
+it('fails fast when SSL_CERT_FILE points to a missing bundle', function () {
+    config(['proxy.http_proxy' => null, 'proxy.https_proxy' => null, 'proxy.no_proxy' => null, 'proxy.verify' => '/missing/ca-bundle.crt']);
+
+    $reflection = new ReflectionClass(OutboundHttpFactory::class);
+    $method = $reflection->getMethod('proxyOptions');
+
+    expect(fn () => $method->invoke(null))->toThrow(RuntimeException::class, 'SSL CA bundle not found');
+});
+
 it('accepts custom defaults merged over proxy options', function () {
     config(['proxy.http_proxy' => null, 'proxy.https_proxy' => null, 'proxy.no_proxy' => null, 'proxy.verify' => true]);
 

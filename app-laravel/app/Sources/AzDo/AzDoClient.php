@@ -53,13 +53,9 @@ final class AzDoClient
 
     public function testConnection(): bool
     {
-        try {
-            $response = $this->http->get('_apis/projects', ['query' => ['$top' => 1, 'api-version' => '7.0']]);
+        $response = $this->http->get('_apis/projects', ['query' => ['$top' => 1, 'api-version' => '7.0']]);
 
-            return $response->getStatusCode() === 200;
-        } catch (\Throwable) {
-            return false;
-        }
+        return $response->getStatusCode() === 200;
     }
 
     /**

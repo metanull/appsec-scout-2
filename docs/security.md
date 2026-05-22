@@ -65,6 +65,8 @@ Controls:
 
 Outbound HTTPS behavior is expected to honor the configured proxy and CA settings.
 
+Direct internet environments should leave proxy variables and `SSL_CERT_FILE` unset or empty. In that mode, outbound clients use the container's default CA store.
+
 Supported operator flow:
 
 - export trusted host CAs into `.docker/certs/`
