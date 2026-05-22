@@ -28,13 +28,9 @@ final class AsocClient
 
     public function testConnection(): bool
     {
-        try {
-            $this->listApplications(1);
+        $this->listApplications(1);
 
-            return true;
-        } catch (\Throwable) {
-            return false;
-        }
+        return true;
     }
 
     /** @return list<array<string, mixed>> */

@@ -25,13 +25,9 @@ final class DetectifyClient
 
     public function testConnection(): bool
     {
-        try {
-            $this->listDomains();
+        $this->listDomains();
 
-            return true;
-        } catch (\Throwable) {
-            return false;
-        }
+        return true;
     }
 
     /** @return list<array<string, mixed>> */

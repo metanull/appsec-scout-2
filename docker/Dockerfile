@@ -161,6 +161,7 @@ COPY --from=composer-deps /app ./
 COPY --from=assets /app/public/build ./public/build
 
 RUN mkdir -p \
+        bootstrap/cache \
         storage/app/private \
         storage/app/public \
         storage/app/triage \
@@ -169,7 +170,16 @@ RUN mkdir -p \
         storage/framework/testing \
         storage/framework/views \
         storage/logs \
-    && touch .env \
+    && APP_ENV=production \
+        LOG_STACK=stderr \
+        CACHE_STORE=array \
+        SESSION_DRIVER=array \
+        QUEUE_CONNECTION=sync \
+        php artisan filament:assets --no-interaction \
+    && test -f public/css/filament/filament/app.css \
+    && test -f public/js/filament/filament/app.js
+
+RUN touch .env \
     && chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 8080

@@ -54,7 +54,7 @@ final class AsocSource implements Source
     /** @return list<string> */
     public function requiredCredentialKeys(): array
     {
-        return ['asoc.keyId', 'asoc.keySecret'];
+        return ['asoc.baseUrl', 'asoc.keyId', 'asoc.keySecret'];
     }
 
     public function testConnection(): TestResult

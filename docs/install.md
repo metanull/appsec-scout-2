@@ -37,11 +37,14 @@ cd appsec-scout-2
 # 2. Copy the environment file and set local secrets
 cp app-laravel/.env.example .env
 
-# 3. Generate an app key if APP_KEY is empty
+# 3. Generate an app key if APP_KEY is empty, then copy the output into .env
 docker compose run --rm app php artisan key:generate --show
+# Set APP_KEY=<printed value> in .env before starting the stack.
 
 # 4. Build and start the stack
 docker compose up --build -d
+docker compose ps
+# Wait until the app service reports healthy before continuing.
 
 # 5. Apply database migrations and seed roles and permissions
 docker compose exec app php artisan migrate --force
@@ -61,8 +64,10 @@ PowerShell equivalent:
 
 ```powershell
 Copy-Item app-laravel/.env.example .env
-docker compose run --rm app php artisan key:generate --show
+$appKey = docker compose run --rm app php artisan key:generate --show
+(Get-Content .env) -replace '^APP_KEY=.*', "APP_KEY=$appKey" | Set-Content .env
 docker compose up --build -d
+docker compose ps
 docker compose exec app php artisan migrate --force
 docker compose exec app php artisan db:seed
 docker compose exec app php artisan appsec:bootstrap-admin --name="Admin" --email="admin@example.com" --password="changeme-now"
@@ -84,6 +89,8 @@ Invoke-WebRequest http://localhost:8080/up
 | `HTTPS_PROXY` | No | — | Corporate HTTPS proxy |
 | `NO_PROXY` | No | — | Proxy bypass list |
 | `SSL_CERT_FILE` | No | — | Custom CA bundle path inside the container |
+
+For a direct internet connection, leave `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and `SSL_CERT_FILE` unset or empty. The app then uses the container's normal operating-system CA store.
 
 ## Corporate Proxy And SSL Inspection
 
@@ -114,6 +121,27 @@ docker compose build
 ```
 
 The build copies exported PEM `.crt` files into every stage so Composer, npm, apt, curl, and the running app trust the same CA chain.
+
+Only set `SSL_CERT_FILE` when a custom CA bundle is mounted inside the app container. If it is unset or empty, outbound HTTPS uses the default CA store.
+
+## Integration Credential Fields
+
+Use `Admin -> System credentials` for background jobs, or `Profile integrations` for credentials tied to your own user.
+
+Required fields:
+
+| Integration | Fields |
+| --- | --- |
+| Azure DevOps Advanced Security | `azdo.organization`, `azdo.pat` |
+| HCL AppScan on Cloud | `asoc.baseUrl`, `asoc.keyId`, `asoc.keySecret` |
+| Detectify | `detectify.apiKey` |
+| GitHub Issues | `github.token` |
+| Jira Cloud | `jira.host`, `jira.email`, `jira.api_token` |
+
+For ASoC, `asoc.baseUrl` must match the region where the API key was created:
+
+- US: `https://cloud.appscan.com/`
+- EU: `https://eu.cloud.appscan.com/`
 
 ## First Login
 

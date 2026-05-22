@@ -17,6 +17,12 @@ beforeEach(function () {
     cache()->forget('asoc.token');
 });
 
+it('requires the base url credential so operators can choose the ASoC region', function () {
+    $source = new AsocSource(app(Vault::class));
+
+    expect($source->requiredCredentialKeys())->toBe(['asoc.baseUrl', 'asoc.keyId', 'asoc.keySecret']);
+});
+
 function injectAsocClient(AsocSource $source, AsocClient $client): void
 {
     $reflection = new ReflectionClass($source);
