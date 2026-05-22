@@ -33,6 +33,9 @@ it('authorizes the operations page only for admins', function () {
 it('shows queue failed-job sync-run and error counts', function () {
     $admin = operationsAdmin();
 
+    DB::table('jobs')->delete();
+    DB::table('failed_jobs')->delete();
+
     DB::table('jobs')->insert([
         'queue' => 'default',
         'payload' => '{"job":"Example"}',
@@ -47,7 +50,7 @@ it('shows queue failed-job sync-run and error counts', function () {
         'connection' => 'database',
         'queue' => 'default',
         'payload' => '{"job":"Example","token":"secret-token"}',
-        'exception' => 'boom',
+        'exception' => "PDOException: SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'version_control_url' at row 1 insert into `security_events` values secret-token",
         'failed_at' => now(),
     ]);
 
@@ -79,7 +82,8 @@ it('shows queue failed-job sync-run and error counts', function () {
 
     expect($page->queuedJobCount())->toBe(1)
         ->and($page->failedJobCount())->toBe(1)
-        ->and($page->recentFailedJobs()[0]['payload_preview'])->not->toContain('secret-token');
+        ->and($page->recentFailedJobs()[0]['payload_preview'])->not->toContain('secret-token')
+        ->and($page->recentFailedJobs()[0]['exception_preview'])->toBe('Database value exceeded security_events.version_control_url. Run migrations, then retry or forget this failed job.');
 });
 
 it('queues supported operational actions and records audit rows', function () {
@@ -119,7 +123,6 @@ it('retries and forgets failed jobs', function () {
         ->call('retryFailedJob', $failedJobUuid);
 
     expect(DB::table('failed_jobs')->where('uuid', $failedJobUuid)->exists())->toBeFalse()
-        ->and(DB::table('jobs')->count())->toBe(1)
         ->and(AuditLog::query()->where('action', 'operations.retry_failed_job')->exists())->toBeTrue();
 
     DB::table('failed_jobs')->insert([

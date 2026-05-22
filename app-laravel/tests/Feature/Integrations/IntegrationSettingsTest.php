@@ -124,6 +124,25 @@ it('tests a connection with the selected service user credentials and records an
         ->and(AuditLog::query()->where('action', 'integration.connection_tested')->exists())->toBeTrue();
 });
 
+it('summarizes oversized database sync errors for the integrations table', function () {
+    $message = "SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'version_control_url' at row 1 (Connection: mysql, SQL: insert into `security_events` values (...very long upstream payload...))";
+
+    expect((new IntegrationSettingsPage)->statusMessageSummary($message))
+        ->toBe('Data too long for version_control_url. See Error Logs for the full database error.');
+});
+
+it('prunes settings for integrations that are no longer registered', function () {
+    IntegrationSetting::query()->updateOrCreate(
+        ['integration_kind' => 'source', 'integration_id' => 'stale-source'],
+        ['enabled' => true, 'fetch_interval_minutes' => 30],
+    );
+
+    app(IntegrationSettingsRepository::class)->syncKnown('source', ['fake']);
+
+    expect(IntegrationSetting::query()->where('integration_id', 'stale-source')->exists())->toBeFalse()
+        ->and(IntegrationSetting::query()->where('integration_id', 'fake')->exists())->toBeTrue();
+});
+
 function bindFakeIntegrationsForSettings(): void
 {
     config([
