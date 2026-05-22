@@ -14,6 +14,7 @@ use App\Trackers\Registry as TrackerRegistry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 /**
  * @phpstan-type IntegrationState array{enabled: bool, fetch_interval_minutes: int, service_user_id: ?int}
@@ -179,6 +180,25 @@ class IntegrationSettingsPage extends Page
             ->title($result->ok ? 'Connection successful' : 'Connection failed')
             ->color($result->ok ? 'success' : 'danger')
             ->send();
+    }
+
+    public function statusMessageSummary(?string $message): ?string
+    {
+        if ($message === null || trim($message) === '') {
+            return null;
+        }
+
+        if (str_contains($message, 'Data too long for column')) {
+            $column = Str::between($message, "Data too long for column '", "'");
+
+            return $column !== ''
+                ? "Data too long for {$column}. See Error Logs for the full database error."
+                : 'Database value exceeded the column size. See Error Logs for the full error.';
+        }
+
+        $normalized = preg_replace('/\s+/', ' ', trim($message)) ?? trim($message);
+
+        return Str::limit($normalized, 240);
     }
 
     private function loadState(): void

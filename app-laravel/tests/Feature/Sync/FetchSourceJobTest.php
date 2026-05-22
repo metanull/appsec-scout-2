@@ -169,3 +169,18 @@ it('marks the latest running sync as failed when the queued job fails outside ha
         ->and($run->finished_at)->not->toBeNull()
         ->and($run->error_message)->toContain('worker timeout');
 });
+
+it('stores concise sync failure messages for oversized database values', function () {
+    $run = SyncRun::query()->create([
+        'source_id' => 'azdo',
+        'started_at' => now()->subMinutes(5),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    (new FetchSourceJob('azdo'))->failed(new RuntimeException("SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'version_control_url' at row 1 insert into `security_events` values (...large payload...)"));
+
+    $run->refresh();
+
+    expect($run->error_message)->toBe('Source azdo sync failed: value too long for security_events.version_control_url. Run migrations and retry the source fetch.');
+});

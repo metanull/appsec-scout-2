@@ -13,6 +13,9 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Str;
+use RuntimeException;
+use Throwable;
 
 final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
 {
@@ -29,8 +32,10 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
         return 'fetch-source:' . $this->sourceId;
     }
 
-    public function failed(\Throwable $exception): void
+    public function failed(Throwable $exception): void
     {
+        $message = $this->syncErrorMessage($exception);
+
         $run = SyncRun::query()
             ->where('source_id', $this->sourceId)
             ->where('status', 'running')
@@ -44,10 +49,10 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
         $run->update([
             'finished_at' => now(),
             'status' => 'failure',
-            'error_message' => $exception->getMessage(),
+            'error_message' => $message,
         ]);
 
-        app(IntegrationSettingsRepository::class)->markSyncResult('source', $this->sourceId, false, $exception->getMessage());
+        app(IntegrationSettingsRepository::class)->markSyncResult('source', $this->sourceId, false, $message);
 
         event(new SyncRunFinished($run));
     }
@@ -79,7 +84,7 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
             $source = $registry->find($this->sourceId);
 
             if ($source === null) {
-                throw new \RuntimeException("Source {$this->sourceId} is not enabled");
+                throw new RuntimeException("Source {$this->sourceId} is not enabled");
             }
 
             $since = SyncRun::query()
@@ -155,19 +160,36 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
             $settings->markSyncResult('source', $this->sourceId, true);
 
             event(new SyncRunFinished($run));
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
+            $message = $this->syncErrorMessage($e);
+
             $run->update([
                 'finished_at' => now(),
                 'status' => 'failure',
                 'counts_json' => $counts,
-                'error_message' => $e->getMessage(),
+                'error_message' => $message,
             ]);
 
-            $settings->markSyncResult('source', $this->sourceId, false, $e->getMessage());
+            $settings->markSyncResult('source', $this->sourceId, false, $message);
 
             event(new SyncRunFinished($run));
 
-            throw $e;
+            throw new RuntimeException($message);
         }
+    }
+
+    private function syncErrorMessage(Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+
+        if (str_contains($message, 'Data too long for column')) {
+            $column = Str::between($message, "Data too long for column '", "'");
+
+            return $column !== ''
+                ? "Source {$this->sourceId} sync failed: value too long for security_events.{$column}. Run migrations and retry the source fetch."
+                : "Source {$this->sourceId} sync failed: an upstream value exceeded a database column size. Run migrations and retry the source fetch.";
+        }
+
+        return Str::limit(preg_replace('/\s+/', ' ', trim($message)) ?? trim($message), 1000);
     }
 }

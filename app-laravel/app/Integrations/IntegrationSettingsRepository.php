@@ -151,12 +151,23 @@ final class IntegrationSettingsRepository
             return;
         }
 
+        $knownIds = [];
+
         foreach ($integrationIds as $integrationId) {
             if ($integrationId === '') {
                 continue;
             }
 
+            $knownIds[] = $integrationId;
+
             $this->get($kind, $integrationId);
+        }
+
+        if ($knownIds !== []) {
+            IntegrationSetting::query()
+                ->where('integration_kind', $kind)
+                ->whereNotIn('integration_id', $knownIds)
+                ->delete();
         }
     }
 

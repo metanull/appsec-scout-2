@@ -65,13 +65,13 @@
                                         <div class="text-gray-500">Not run</div>
                                     @endif
 
-                                    @if ($integration['last_sync_message'])
-                                        <div class="mt-1 max-w-xs text-xs text-gray-500">{{ $integration['last_sync_message'] }}</div>
+                                    @if ($this->statusMessageSummary($integration['last_sync_message']))
+                                        <div class="mt-1 max-w-sm break-words text-xs text-gray-500">{{ $this->statusMessageSummary($integration['last_sync_message']) }}</div>
                                     @endif
 
                                     @if (($this->testResults[$integration['key']] ?? null) !== null)
-                                        <div class="mt-2 text-xs {{ $this->testResults[$integration['key']]['ok'] ? 'text-success-700' : 'text-danger-700' }}">
-                                            {{ $this->testResults[$integration['key']]['ok'] ? 'Connection test succeeded.' : 'Connection test failed: ' . ($this->testResults[$integration['key']]['error'] ?? 'Unknown error.') }}
+                                        <div class="mt-2 max-w-sm break-words text-xs {{ $this->testResults[$integration['key']]['ok'] ? 'text-success-700' : 'text-danger-700' }}">
+                                            {{ $this->testResults[$integration['key']]['ok'] ? 'Connection test succeeded.' : 'Connection test failed: ' . ($this->statusMessageSummary($this->testResults[$integration['key']]['error'] ?? null) ?? 'Unknown error.') }}
                                         </div>
                                     @endif
                                 </td>

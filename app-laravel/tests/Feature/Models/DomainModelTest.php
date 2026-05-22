@@ -109,6 +109,21 @@ it('loads relations: system and container', function () {
         ->and($loaded->container->id)->toBe($container->id);
 });
 
+it('stores long source and version-control urls for upstream alert locations', function () {
+    $longUrl = 'https://dev.azure.com:443/example/project/_git/repository?path=%2F' . str_repeat('nested%2F', 40) . 'appsettings.json&version=GC' . str_repeat('a', 40) . '&line=15&lineEnd=15&lineStartColumn=68&lineEndColumn=74&lineStyle=plain';
+
+    $event = SecurityEvent::factory()->create([
+        'url' => $longUrl,
+        'file_path' => str_repeat('src/deeply/nested/', 25) . 'appsettings.json',
+        'version_control_url' => $longUrl,
+    ]);
+
+    $event->refresh();
+
+    expect($event->url)->toBe($longUrl)
+        ->and($event->version_control_url)->toBe($longUrl);
+});
+
 // --- EventComment ---
 
 it('creates event comment linked to event', function () {

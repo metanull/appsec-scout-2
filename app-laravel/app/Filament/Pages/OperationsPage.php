@@ -79,7 +79,7 @@ class OperationsPage extends Page
                 'queue' => (string) $row->queue,
                 'failed_at' => (string) $row->failed_at,
                 'job' => $this->jobName((string) $row->payload),
-                'exception_preview' => Str::limit($this->redactString((string) $row->exception), 1000),
+                'exception_preview' => $this->exceptionPreview((string) $row->exception),
                 'payload_preview' => $this->payloadPreview((string) $row->payload),
             ])
             ->values()
@@ -241,6 +241,19 @@ class OperationsPage extends Page
         }
 
         return Str::limit($this->redactString($payload), 240);
+    }
+
+    private function exceptionPreview(string $exception): string
+    {
+        if (str_contains($exception, 'Data too long for column')) {
+            $column = Str::between($exception, "Data too long for column '", "'");
+
+            return $column !== ''
+                ? "Database value exceeded security_events.{$column}. Run migrations, then retry or forget this failed job."
+                : 'Database value exceeded a column size. Run migrations, then retry or forget this failed job.';
+        }
+
+        return Str::limit($this->redactString($exception), 1000);
     }
 
     private function jobName(string $payload): string
