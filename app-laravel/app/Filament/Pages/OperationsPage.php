@@ -18,6 +18,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 class OperationsPage extends Page
@@ -51,7 +52,12 @@ class OperationsPage extends Page
 
     public function queuedJobCount(): int
     {
-        return (int) DB::table('jobs')->count();
+        return max(Queue::size('default'), (int) DB::table('jobs')->count());
+    }
+
+    public function runningSyncCount(): int
+    {
+        return (int) SyncRun::query()->where('status', 'running')->count();
     }
 
     public function failedJobCount(): int
@@ -59,19 +65,21 @@ class OperationsPage extends Page
         return (int) DB::table('failed_jobs')->count();
     }
 
-    /** @return list<array{id: int, uuid: string, queue: string, failed_at: string, payload_preview: string}> */
+    /** @return list<array{id: int, uuid: string, queue: string, failed_at: string, job: string, exception_preview: string, payload_preview: string}> */
     public function recentFailedJobs(): array
     {
-        /** @var list<array{id: int, uuid: string, queue: string, failed_at: string, payload_preview: string}> $failedJobs */
+        /** @var list<array{id: int, uuid: string, queue: string, failed_at: string, job: string, exception_preview: string, payload_preview: string}> $failedJobs */
         $failedJobs = DB::table('failed_jobs')
             ->orderByDesc('failed_at')
             ->limit(10)
-            ->get(['id', 'uuid', 'queue', 'payload', 'failed_at'])
+            ->get(['id', 'uuid', 'queue', 'payload', 'exception', 'failed_at'])
             ->map(fn (object $row): array => [
                 'id' => (int) $row->id,
                 'uuid' => (string) $row->uuid,
                 'queue' => (string) $row->queue,
                 'failed_at' => (string) $row->failed_at,
+                'job' => $this->jobName((string) $row->payload),
+                'exception_preview' => Str::limit($this->redactString((string) $row->exception), 1000),
                 'payload_preview' => $this->payloadPreview((string) $row->payload),
             ])
             ->values()
@@ -233,6 +241,25 @@ class OperationsPage extends Page
         }
 
         return Str::limit($this->redactString($payload), 240);
+    }
+
+    private function jobName(string $payload): string
+    {
+        $decoded = json_decode($payload, true);
+
+        if (! is_array($decoded)) {
+            return 'Unknown job';
+        }
+
+        $displayName = $decoded['displayName'] ?? null;
+
+        if (is_string($displayName) && $displayName !== '') {
+            return $displayName;
+        }
+
+        $commandName = data_get($decoded, 'data.commandName');
+
+        return is_string($commandName) && $commandName !== '' ? $commandName : 'Unknown job';
     }
 
     /** @param array<string, mixed> $payload

@@ -48,6 +48,11 @@ class AuditLogResource extends Resource
                 TextColumn::make('action')->searchable(),
                 TextColumn::make('subject_type')->label('Subject type'),
                 TextColumn::make('subject_id')->label('Subject ID'),
+                TextColumn::make('payload_json')
+                    ->label('Payload')
+                    ->formatStateUsing(fn (mixed $state): string => json_encode($state, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '')
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('user_id')->label('User ID'),
                 TextColumn::make('ip')->label('IP'),
             ])

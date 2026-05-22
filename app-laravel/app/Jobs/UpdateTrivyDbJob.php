@@ -14,10 +14,18 @@ class UpdateTrivyDbJob implements ShouldQueue
 
     public function handle(BinaryResolver $binaries, ProcessRunner $runner): void
     {
+        $cacheDir = storage_path('app/trivy/cache');
+
+        if (! is_dir($cacheDir) && ! mkdir($cacheDir, 0775, true) && ! is_dir($cacheDir)) {
+            throw new \RuntimeException("Unable to create Trivy cache directory [{$cacheDir}].");
+        }
+
         $runner->run([
             $binaries->resolve('trivy'),
             'image',
             '--download-db-only',
+            '--cache-dir',
+            $cacheDir,
             '--quiet',
         ], timeoutSeconds: 300, outputLimitBytes: 10000000);
     }

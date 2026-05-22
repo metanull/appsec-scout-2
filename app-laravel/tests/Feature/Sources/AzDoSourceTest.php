@@ -113,6 +113,58 @@ it('returns stable dependency fingerprint across re-fetches', function () {
         ->and($first[1]->fingerprint)->toBe($second[1]->fingerprint);
 });
 
+it('hydrates sparse alert list items before building event dtos', function () {
+    $singleRepoResponse = json_encode([
+        'count' => 1,
+        'value' => [
+            [
+                'id' => 'repo-001',
+                'name' => 'backend-api',
+                'webUrl' => 'https://dev.azure.com/testorg/SecurityProject/_git/backend-api',
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    $detail = json_decode(azdoFixture('alerts-code.json'), true, 512, JSON_THROW_ON_ERROR)['value'][0];
+    $sparseList = json_encode([
+        'count' => 1,
+        'value' => [[
+            'alertId' => $detail['alertId'],
+            'alertType' => $detail['alertType'],
+            'severity' => $detail['severity'],
+            'state' => $detail['state'],
+            'title' => $detail['title'],
+        ]],
+    ], JSON_THROW_ON_ERROR);
+
+    $http = new Client([
+        'handler' => new MockHandler([
+            new Response(200, [], $singleRepoResponse),
+        ]),
+    ]);
+
+    $advSec = new Client([
+        'handler' => new MockHandler([
+            new Response(200, [], $sparseList),
+            new Response(200, [], json_encode($detail, JSON_THROW_ON_ERROR)),
+            new Response(200, [], '{"count":0,"value":[]}'),
+            new Response(200, [], '{"count":0,"value":[]}'),
+        ]),
+    ]);
+
+    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec);
+    $source = new AzDoSource(app(Vault::class));
+    injectAzDoClient($source, $client);
+
+    $events = iterator_to_array($source->fetchEvents(null, new SystemDto('project-001', 'SecurityProject')));
+
+    expect($events)->toHaveCount(1)
+        ->and($events[0]->description)->not->toBeNull()
+        ->and($events[0]->url)->not->toBeNull()
+        ->and($events[0]->filePath)->not->toBeNull()
+        ->and($events[0]->versionControlUrl)->not->toBeNull();
+});
+
 it('enriches secret event with occurrences list', function () {
     $http = new Client(['handler' => new MockHandler]);
     $advSec = new Client([

@@ -117,3 +117,21 @@ it('honors proxy options from outbound http factory', function () {
     expect($proxy)->toBeArray()
         ->and($proxy['https'])->toBe('http://proxy.local:8080');
 });
+
+it('uses unquoted guid syntax when filtering scans by app id', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(200, [], '{"Token":"token-1"}'),
+        new Response(200, [], '{"Items":[]}'),
+    ]));
+    $stack->push(Middleware::history($history));
+
+    $client = new AsocClient('key-id', 'key-secret', 'https://cloud.appscan.com', new Client(['handler' => $stack]));
+
+    $client->listScans('f1c993c8-65dc-4727-818a-07a7803741ce');
+
+    $uri = urldecode((string) $history[1]['request']->getUri());
+
+    expect($uri)->toContain('$filter=AppId eq f1c993c8-65dc-4727-818a-07a7803741ce')
+        ->and($uri)->not->toContain("AppId eq '");
+});

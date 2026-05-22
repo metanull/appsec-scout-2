@@ -43,7 +43,7 @@ final class AsocClient
     public function listScans(string $appId, int $pageSize = 100): array
     {
         return $this->fetchAllPages('api/v4/Scans', $pageSize, [
-            '$filter' => "AppId eq '{$appId}'",
+            '$filter' => "AppId eq {$appId}",
         ]);
     }
 

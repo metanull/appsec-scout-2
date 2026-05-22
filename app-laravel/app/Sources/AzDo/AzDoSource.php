@@ -22,6 +22,9 @@ final class AzDoSource implements Source
 
     private ?string $clientFingerprint = null;
 
+    /** @var array<string, AzDoAlert> */
+    private array $alertDetails = [];
+
     public function __construct(private readonly Vault $vault) {}
 
     public function id(): string
@@ -110,6 +113,8 @@ final class AzDoSource implements Source
                     $alerts = $client->listAlerts($system->sourceSystemId, $repo->id, $alertType, $sinceDate);
 
                     foreach ($alerts as $alert) {
+                        $alert = $this->fullAlert($client, $system->sourceSystemId, $repo->id, $alert);
+
                         yield $this->buildEventDto($alert, $system->sourceSystemId, $repo->id);
                     }
                 }
@@ -126,6 +131,8 @@ final class AzDoSource implements Source
                     $alerts = $client->listAlerts($project->id, $repo->id, $alertType, $sinceDate);
 
                     foreach ($alerts as $alert) {
+                        $alert = $this->fullAlert($client, $project->id, $repo->id, $alert);
+
                         yield $this->buildEventDto($alert, $project->id, $repo->id);
                     }
                 }
@@ -242,6 +249,21 @@ final class AzDoSource implements Source
             firstSeenAt: $dto->firstSeenAt,
             lastSeenAt: $dto->lastSeenAt,
         );
+    }
+
+    private function fullAlert(AzDoClient $client, string $projectId, string $repoId, AzDoAlert $alert): AzDoAlert
+    {
+        if ($alert->descriptionReady()) {
+            return $alert;
+        }
+
+        $cacheKey = implode(':', [$projectId, $repoId, $alert->alertId]);
+
+        if (! isset($this->alertDetails[$cacheKey])) {
+            $this->alertDetails[$cacheKey] = $client->getAlert($projectId, $repoId, $alert->alertId);
+        }
+
+        return $this->alertDetails[$cacheKey];
     }
 
     private function getClient(): AzDoClient
