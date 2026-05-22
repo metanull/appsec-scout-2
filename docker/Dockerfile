@@ -89,6 +89,7 @@ FROM php:8.4-fpm-trixie AS final
 
 ARG BFG_VERSION=1.15.0
 ARG BFG_SHA256=dfe2885adc2916379093f02a80181200536856c9a987bf21c492e452adefef7a
+ARG TRIVY_VERSION=0.70.0
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
@@ -126,7 +127,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         openjdk-21-jre-headless \
-        trivy \
+        trivy=${TRIVY_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
 # Download BFG 1.15.0 jar (SHA-256 verified)
@@ -145,12 +146,13 @@ RUN printf 'memory_limit=512M\n' > /usr/local/etc/php/conf.d/appsec-scout-memory
 # Redis extension via PECL
 RUN pecl install redis && docker-php-ext-enable redis
 
-# Expose container environment variables to PHP-FPM workers so Laravel can
-# resolve APP_URL/DB_* from Compose env at request time.
-RUN printf "[www]\nclear_env = no\n" > /usr/local/etc/php-fpm.d/zz-appsec-env.conf
+# Expose container environment variables to PHP-FPM workers and keep runtime
+# state in writable tmpfs-backed paths so the container can run read-only.
+RUN printf "[global]\ndaemonize = no\nerror_log = /proc/self/fd/2\npid = /tmp/php-fpm.pid\n\n[www]\nclear_env = no\nlisten = 127.0.0.1:9000\naccess.log = /proc/self/fd/2\ncatch_workers_output = yes\ndecorate_workers_output = no\n" > /usr/local/etc/php-fpm.d/zz-appsec-runtime.conf
 
 # PHP-FPM config: use www-data (uid 33) — already exists in Debian-based PHP images
-COPY docker/nginx.conf /etc/nginx/sites-available/default
+COPY docker/nginx-main.conf /etc/nginx/nginx.conf
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 WORKDIR /var/www/html
@@ -161,6 +163,7 @@ COPY --from=assets /app/public/build ./public/build
 RUN mkdir -p \
         storage/app/private \
         storage/app/public \
+        storage/app/triage \
         storage/framework/cache/data \
         storage/framework/sessions \
         storage/framework/testing \
@@ -171,10 +174,14 @@ RUN mkdir -p \
 
 EXPOSE 8080
 
+USER www-data
+
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
 
 # ── Stage 4: development / CI image ─────────────────────────────────────────
 FROM final AS dev
+
+USER root
 
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
@@ -183,3 +190,5 @@ RUN composer install \
     --prefer-dist \
     --no-progress \
     --no-scripts
+
+USER www-data

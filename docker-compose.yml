@@ -16,6 +16,9 @@ services:
                 condition: service_started
         ports:
             - "${APP_PORT:-8080}:8080"
+        read_only: true
+        cap_drop:
+            - ALL
         environment:
             APP_ENV: "${APP_ENV:-local}"
             APP_KEY: "${APP_KEY}"
@@ -30,14 +33,18 @@ services:
             CACHE_STORE: redis
             SESSION_DRIVER: redis
             QUEUE_CONNECTION: redis
+            LOG_STACK: "stderr,database"
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
             NO_PROXY: "${NO_PROXY:-}"
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
         volumes:
             - app_storage:/var/www/html/storage
+        tmpfs:
+            - /tmp:mode=1777,uid=33,gid=33
+            - /var/www/html/bootstrap/cache:mode=0775,uid=33,gid=33
         healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:8080/up"]
+            test: ["CMD-SHELL", "curl -fsS http://localhost:8080/up || exit 1"]
             interval: 30s
             timeout: 5s
             retries: 3

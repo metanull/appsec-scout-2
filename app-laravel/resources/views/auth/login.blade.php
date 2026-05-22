@@ -23,7 +23,7 @@
     <div class="card">
         <h1>{{ config('app.name') }}</h1>
 
-        <form method="POST" action="{{ route('login') }}">
+        <form method="POST" action="{{ url('/user/login') }}">
             @csrf
 
             <label for="email">Email</label>

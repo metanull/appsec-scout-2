@@ -3,9 +3,12 @@
 namespace App\Sync;
 
 use App\Credentials\Credential;
+use App\Integrations\IntegrationSettingsRepository;
 
 final class CredentialResolver
 {
+    public function __construct(private readonly IntegrationSettingsRepository $settings) {}
+
     public function exact(string $key, ?int $ownerUserId): ?Credential
     {
         return Credential::query()
@@ -30,16 +33,16 @@ final class CredentialResolver
             }
         }
 
+        $serviceUserId = $this->settings->serviceUserIdForCredentialKey($key);
+
+        if ($serviceUserId !== null) {
+            return $this->exact($key, $serviceUserId);
+        }
+
         $systemCredential = $this->exact($key, null);
 
         if ($systemCredential instanceof Credential) {
             return $systemCredential;
-        }
-
-        $serviceUserId = config('integration_settings.service_user_id');
-
-        if (is_int($serviceUserId) || (is_string($serviceUserId) && $serviceUserId !== '')) {
-            return $this->exact($key, (int) $serviceUserId);
         }
 
         return null;

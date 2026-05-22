@@ -1,132 +1,167 @@
 # AppSec Scout — Installation Guide
 
+This guide takes a clean Docker host to a working first Admin login without Tinker.
+
+Relevant follow-up guides:
+
+- [docs/admin.md](admin.md)
+- [docs/operations.md](operations.md)
+- [docs/security.md](security.md)
+- [docs/architecture.md](architecture.md)
+
+## Scope
+
+This installation flow documents the implemented M1 to M6 Laravel application.
+
+- The M6 Admin UI includes user lifecycle management, integration settings, queue and schedule visibility, system credentials, audit logs, and error logs.
+- Defender for Cloud remains deferred from M6 and is not part of the supported first-run flow.
+- CI does not enforce image vulnerability or SBOM gates. Local operators may run optional manual checks if needed.
+
 ## Prerequisites
 
 | Requirement | Version |
 | --- | --- |
 | Docker Engine | 24+ |
-| Docker Compose | v2 (plugin) |
-| MySQL | 8.0+ (provided via Docker) |
+| Docker Compose | v2 plugin |
+| Git | Current |
 
-No local PHP, Composer, Node.js, Java, Trivy, or BFG installation is required. The application image builds and carries the runtime tools it needs.
+No host PHP, Composer, Node.js, Java, Trivy, or BFG installation is required.
 
-## Quick start
+## Quick Start
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/metanull/appsec-scout-2.git
 cd appsec-scout-2
 
-# 2. Copy environment file and fill in secrets
+# 2. Copy the environment file and set local secrets
 cp app-laravel/.env.example .env
-$EDITOR .env          # Set APP_KEY and replace default local passwords before shared use.
 
-# 3. Generate the Laravel app key (if APP_KEY is empty)
-#    This can be done inside the container after first boot:
+# 3. Generate an app key if APP_KEY is empty
 docker compose run --rm app php artisan key:generate --show
-# Copy the output into .env as APP_KEY=...
 
-# 4. Build and start all services
+# 4. Build and start the stack
 docker compose up --build -d
 
-# 5. Run database migrations
+# 5. Apply database migrations and seed roles and permissions
 docker compose exec app php artisan migrate --force
-
-# 6. Seed roles and permissions
 docker compose exec app php artisan db:seed
 
-# 7. Create the first admin user
-docker compose exec app php artisan tinker
-# >>> \App\Models\User::factory()->create(['email' => 'admin@example.com', 'password' => bcrypt('changeme')]);
-# >>> $user->assignRole('Admin');
+# 6. Bootstrap the first admin account
+docker compose exec app php artisan appsec:bootstrap-admin \
+  --name="Admin" \
+  --email="admin@example.com" \
+  --password="changeme-now"
+
+# 7. Confirm the app is healthy
+curl http://localhost:8080/up
 ```
 
-## Environment variables
+PowerShell equivalent:
+
+```powershell
+Copy-Item app-laravel/.env.example .env
+docker compose run --rm app php artisan key:generate --show
+docker compose up --build -d
+docker compose exec app php artisan migrate --force
+docker compose exec app php artisan db:seed
+docker compose exec app php artisan appsec:bootstrap-admin --name="Admin" --email="admin@example.com" --password="changeme-now"
+Invoke-WebRequest http://localhost:8080/up
+```
+
+## Environment Variables
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `APP_KEY` | Yes | — | Laravel encryption key (run `php artisan key:generate`) |
-| `APP_URL` | Yes | `http://localhost:8080` | Public URL of the application |
-| `DB_PASSWORD` | Yes | `password` | MySQL password for the `appsec_scout` user |
+| `APP_KEY` | Yes | — | Laravel application key |
+| `APP_URL` | Yes | `http://localhost:8080` | External base URL |
+| `APP_PORT` | No | `8080` | Host port published by Docker Compose |
+| `DB_DATABASE` | No | `appsec_scout` | MySQL database name |
+| `DB_USERNAME` | No | `appsec_scout` | MySQL application user |
+| `DB_PASSWORD` | Yes | `password` | MySQL application password |
 | `DB_ROOT_PASSWORD` | No | `rootpassword` | MySQL root password |
-| `HTTP_PROXY` | No | — | Corporate HTTP proxy URL |
-| `HTTPS_PROXY` | No | — | Corporate HTTPS proxy URL |
-| `NO_PROXY` | No | — | Comma-separated list of hosts to bypass proxy |
-| `SSL_CERT_FILE` | No | — | Path to custom CA bundle inside the container |
+| `HTTP_PROXY` | No | — | Corporate HTTP proxy |
+| `HTTPS_PROXY` | No | — | Corporate HTTPS proxy |
+| `NO_PROXY` | No | — | Proxy bypass list |
+| `SSL_CERT_FILE` | No | — | Custom CA bundle path inside the container |
 
-## Corporate proxy / SSL inspection
+## Corporate Proxy And SSL Inspection
 
-If your network uses SSL inspection (e.g. Netskope, Zscaler):
+If outbound HTTPS is intercepted by a corporate proxy:
 
-1. Export the host trust store into the repo-local Docker cert directory.
-2. Set `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` in your shell.
-3. Build the image normally with Docker Compose.
+1. Export the host trust store into `.docker/certs/`.
+2. Set `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` in the shell used for Docker builds.
+3. Build and start the app normally.
 
-PowerShell on Windows:
+Windows PowerShell:
 
 ```powershell
 ./scripts/export-host-ca.ps1
-```
-
-POSIX shell on Linux/macOS:
-
-```sh
-./scripts/export-host-ca.sh
-```
-
-Both helpers write PEM `.crt` files under `.docker/certs/`. The Docker build copies those certificates into every stage before Composer, npm, curl, or the final app image make outbound TLS connections, so `docker compose build` and the running container trust the same local root CAs.
-
-Set the proxy variables in the same shell before building:
-
-```bash
-export HTTP_PROXY=http://proxy.corp.example.com:3128
-export HTTPS_PROXY=http://proxy.corp.example.com:3128
-export NO_PROXY=localhost,127.0.0.1,mysql,redis
-docker compose build
-```
-
-```powershell
 $env:HTTP_PROXY = 'http://proxy.corp.example.com:3128'
 $env:HTTPS_PROXY = 'http://proxy.corp.example.com:3128'
 $env:NO_PROXY = 'localhost,127.0.0.1,mysql,redis'
 docker compose build
 ```
 
-If you prefer a manual path, you can still place one or more PEM-encoded `.crt` files under `.docker/certs/` yourself before building.
+Linux or macOS:
 
-Limitations:
-
-- This repo-local flow fixes TLS inside the Docker build and inside the application container.
-- It does not reconfigure Docker Desktop or the Docker daemon's own trust store for image pulls or registry access. If base image pulls fail before the Dockerfile starts, you must also configure Docker Desktop's proxy and CA trust on the host.
-
-```yaml
-# docker-compose.override.yml
-services:
-  app:
-    volumes:
-      - ./corporate-ca.crt:/etc/ssl/corporate-ca.crt:ro
-    environment:
-      SSL_CERT_FILE: /etc/ssl/corporate-ca.crt
-      HTTPS_PROXY: http://proxy.corp.example.com:3128
+```bash
+./scripts/export-host-ca.sh
+export HTTP_PROXY=http://proxy.corp.example.com:3128
+export HTTPS_PROXY=http://proxy.corp.example.com:3128
+export NO_PROXY=localhost,127.0.0.1,mysql,redis
+docker compose build
 ```
 
-## Health check
+The build copies exported PEM `.crt` files into every stage so Composer, npm, apt, curl, and the running app trust the same CA chain.
+
+## First Login
+
+After bootstrapping the first admin:
+
+1. Open `http://localhost:8080/`.
+2. Sign in with the email and password passed to `appsec:bootstrap-admin`.
+3. Complete mandatory two-factor enrollment at `/user/two-factor-setup`.
+4. After confirmation, the Filament application shell becomes available.
+5. Change the bootstrap password immediately if you used a temporary value.
+
+Disabled users are logged out automatically and cannot access the panel or web routes until re-enabled by an Admin.
+
+## Health Check
 
 ```bash
 curl http://localhost:8080/up
-# → ok
+# ok
 ```
 
-## Included triage tools
+Expected Docker state:
+
+- `mysql` healthy
+- `redis` running
+- `app` healthy
+
+## Runtime Topology
+
+The Compose stack runs three services:
+
+- `app`: nginx, php-fpm, Laravel scheduler worker, and queue worker under Supervisor
+- `mysql`: MySQL 8 storage
+- `redis`: queue, cache, and session backend
+
+The production-style `app` service runs with:
+
+- read-only root filesystem
+- all Linux capabilities dropped
+- explicit writable mounts for Laravel storage and tmpfs-backed runtime paths
+- port `8080` so no privileged bind capability is required
+
+## Included Triage Tools
 
 | Tool | Location |
 | --- | --- |
-| Trivy (SBOM/vulnerability scanner) | `/usr/bin/trivy` |
+| Trivy | `/usr/bin/trivy` |
 | BFG Repo Cleaner 1.15.0 | `/opt/bfg/bfg.jar` |
 | Git | `/usr/bin/git` |
-| Java 21 (JRE) | `/usr/bin/java` |
+| Java 21 JRE | `/usr/bin/java` |
 
-## Security scan baseline
-
-Run `trivy image appsec-scout:latest` after building to capture the initial SBOM.
-Target: zero HIGH/CRITICAL CVEs (enforcement deferred to M6).
+These tools are used by supported triage commands and the Operations page action that queues a Trivy DB update.

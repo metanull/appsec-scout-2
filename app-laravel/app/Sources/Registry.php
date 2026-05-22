@@ -2,45 +2,62 @@
 
 namespace App\Sources;
 
+use App\Integrations\IntegrationSettingsRepository;
 use App\Sources\Contracts\Source;
 use Illuminate\Contracts\Container\Container;
 
 final class Registry
 {
     /** @var list<Source>|null */
-    private ?array $resolved = null;
+    private ?array $resolvedAll = null;
 
-    public function __construct(private readonly Container $container) {}
+    /** @var list<Source>|null */
+    private ?array $resolvedEnabled = null;
+
+    public function __construct(
+        private readonly Container $container,
+        private readonly IntegrationSettingsRepository $settings,
+    ) {}
 
     /**
-     * Return all enabled source implementations.
-     *
-     * A source is considered enabled when `integration_settings.<id>.enabled`
-     * is truthy in the application configuration.
-     *
+     * @return list<Source>
+     */
+    public function all(): array
+    {
+        if ($this->resolvedAll !== null) {
+            return $this->resolvedAll;
+        }
+
+        $this->resolvedAll = [];
+
+        foreach ($this->container->tagged('appsec-scout.source') as $source) {
+            /** @var Source $source */
+            $this->resolvedAll[] = $source;
+        }
+
+        return $this->resolvedAll;
+    }
+
+    /**
      * @return list<Source>
      */
     public function enabled(): array
     {
-        if ($this->resolved !== null) {
-            return $this->resolved;
+        if ($this->resolvedEnabled !== null) {
+            return $this->resolvedEnabled;
         }
 
-        $this->resolved = [];
+        $this->resolvedEnabled = array_values(array_filter(
+            $this->all(),
+            fn (Source $source): bool => $this->settings->isEnabled('source', $source->id()),
+        ));
 
-        foreach ($this->container->tagged('appsec-scout.source') as $source) {
-            /** @var Source $source */
-            if ((bool) config("integration_settings.{$source->id()}.enabled", false)) {
-                $this->resolved[] = $source;
-            }
-        }
-
-        return $this->resolved;
+        return $this->resolvedEnabled;
     }
 
     public function find(string $id): ?Source
     {
-        foreach ($this->enabled() as $source) {
+        foreach ($this->all() as $source) {
             if ($source->id() === $id) {
                 return $source;
             }

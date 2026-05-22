@@ -62,7 +62,7 @@ class SecurityEventResource extends Resource
             ->columns([
                 TextColumn::make('severity')
                     ->badge()
-                    ->color(fn (string $state) => match ($state) {
+                    ->color(fn (EventSeverity|string $state) => match ($state instanceof EventSeverity ? $state->value : $state) {
                         EventSeverity::Critical->value => 'danger',
                         EventSeverity::High->value => 'warning',
                         EventSeverity::Medium->value => 'info',
@@ -71,7 +71,7 @@ class SecurityEventResource extends Resource
                     }),
                 TextColumn::make('state')
                     ->badge()
-                    ->color(fn (string $state) => match ($state) {
+                    ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
                         EventState::Resolved->value => 'success',
                         EventState::Dismissed->value => 'gray',
                         EventState::InProgress->value => 'info',

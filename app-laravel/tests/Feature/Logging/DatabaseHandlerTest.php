@@ -6,6 +6,10 @@ use App\Models\ErrorLog;
 use Monolog\Level;
 use Monolog\LogRecord;
 
+beforeEach(function () {
+    ErrorLog::query()->delete();
+});
+
 it('writes ERROR level logs to the database', function () {
     $handler = new DatabaseHandler(Level::Error);
     $record = new LogRecord(
