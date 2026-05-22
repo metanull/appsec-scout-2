@@ -32,6 +32,7 @@ class IntegrationSetting extends Model
         ];
     }
 
+    /** @return BelongsTo<User, $this> */
     public function serviceUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'service_user_id');

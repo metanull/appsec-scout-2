@@ -8,20 +8,23 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
 
+/**
+ * @phpstan-type IntegrationSettingsResult array{
+ *   integration_kind: string,
+ *   integration_id: string,
+ *   enabled: bool,
+ *   fetch_interval_minutes: int,
+ *   service_user_id: ?int,
+ *   last_synced_at: ?Carbon,
+ *   last_sync_status: ?string,
+ *   last_sync_message: ?string,
+ *   model: ?IntegrationSetting
+ * }
+ */
 final class IntegrationSettingsRepository
 {
     /**
-     * @return array{
-     *   integration_kind: string,
-     *   integration_id: string,
-     *   enabled: bool,
-     *   fetch_interval_minutes: int,
-     *   service_user_id: ?int,
-     *   last_synced_at: ?Carbon,
-     *   last_sync_status: ?string,
-     *   last_sync_message: ?string,
-     *   model: ?IntegrationSetting
-     * }
+     * @return IntegrationSettingsResult
      */
     public function get(string $kind, string $integrationId): array
     {
@@ -49,13 +52,19 @@ final class IntegrationSettingsRepository
             $defaults,
         );
 
+        $lastSyncedAt = $setting->last_synced_at;
+
+        if (is_string($lastSyncedAt)) {
+            $lastSyncedAt = Carbon::parse($lastSyncedAt);
+        }
+
         return [
             'integration_kind' => $setting->integration_kind,
             'integration_id' => $setting->integration_id,
             'enabled' => (bool) $setting->enabled,
             'fetch_interval_minutes' => max(1, (int) $setting->fetch_interval_minutes),
             'service_user_id' => $setting->service_user_id !== null ? (int) $setting->service_user_id : null,
-            'last_synced_at' => $setting->last_synced_at,
+            'last_synced_at' => $lastSyncedAt,
             'last_sync_status' => $setting->last_sync_status,
             'last_sync_message' => $setting->last_sync_message,
             'model' => $setting,
@@ -82,6 +91,7 @@ final class IntegrationSettingsRepository
         return $setting['last_synced_at']->lte(now()->subMinutes($setting['fetch_interval_minutes']));
     }
 
+    /** @param array<string, bool|int|string|Carbon|null> $attributes */
     public function update(string $kind, string $integrationId, array $attributes): IntegrationSetting
     {
         if (! $this->tableExists()) {
@@ -134,6 +144,7 @@ final class IntegrationSettingsRepository
         return $this->legacyServiceUserId();
     }
 
+    /** @param iterable<string> $integrationIds */
     public function syncKnown(string $kind, iterable $integrationIds): void
     {
         if (! $this->tableExists()) {
@@ -141,7 +152,7 @@ final class IntegrationSettingsRepository
         }
 
         foreach ($integrationIds as $integrationId) {
-            if (! is_string($integrationId) || $integrationId === '') {
+            if ($integrationId === '') {
                 continue;
             }
 

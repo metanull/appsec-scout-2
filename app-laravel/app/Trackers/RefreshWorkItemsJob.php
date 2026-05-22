@@ -38,7 +38,9 @@ final class RefreshWorkItemsJob implements ShouldBeUnique, ShouldQueue
                 ->pluck('tracker_id');
 
         foreach ($trackerIds as $trackerId) {
-            if (! is_string($trackerId) || $trackerId === '') {
+            $trackerId = (string) $trackerId;
+
+            if ($trackerId === '') {
                 continue;
             }
 

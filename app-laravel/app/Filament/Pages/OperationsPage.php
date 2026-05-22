@@ -9,6 +9,7 @@ use App\Jobs\PruneErrorLogs;
 use App\Jobs\UpdateTrivyDbJob;
 use App\Models\ErrorLog;
 use App\Models\SyncRun;
+use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Trackers\RefreshWorkItemsJob;
@@ -37,7 +38,9 @@ class OperationsPage extends Page
 
     public static function canAccess(): bool
     {
-        return Auth::user()?->can('admin.queue') ?? false;
+        $user = Auth::user();
+
+        return $user instanceof User ? $user->can('admin.queue') : false;
     }
 
     public function mount(): void
@@ -59,7 +62,8 @@ class OperationsPage extends Page
     /** @return list<array{id: int, uuid: string, queue: string, failed_at: string, payload_preview: string}> */
     public function recentFailedJobs(): array
     {
-        return DB::table('failed_jobs')
+        /** @var list<array{id: int, uuid: string, queue: string, failed_at: string, payload_preview: string}> $failedJobs */
+        $failedJobs = DB::table('failed_jobs')
             ->orderByDesc('failed_at')
             ->limit(10)
             ->get(['id', 'uuid', 'queue', 'payload', 'failed_at'])
@@ -72,18 +76,26 @@ class OperationsPage extends Page
             ])
             ->values()
             ->all();
+
+        return $failedJobs;
     }
 
     /** @return list<SyncRun> */
     public function recentSyncRuns(): array
     {
-        return SyncRun::query()->latest('id')->limit(10)->get()->all();
+        /** @var list<SyncRun> $runs */
+        $runs = SyncRun::query()->latest('id')->limit(10)->get()->values()->all();
+
+        return $runs;
     }
 
     /** @return list<ErrorLog> */
     public function recentErrors(): array
     {
-        return ErrorLog::query()->latest('occurred_at')->limit(10)->get()->all();
+        /** @var list<ErrorLog> $errors */
+        $errors = ErrorLog::query()->latest('occurred_at')->limit(10)->get()->values()->all();
+
+        return $errors;
     }
 
     /** @return list<array{id: string, cadence: string}> */
@@ -184,6 +196,7 @@ class OperationsPage extends Page
 
     public function retryFailedJob(string $failedJobUuid): void
     {
+        /** @var object{connection: string, payload: string, queue: string}|null $failedJob */
         $failedJob = app('queue.failer')->find($failedJobUuid);
 
         if ($failedJob === null) {

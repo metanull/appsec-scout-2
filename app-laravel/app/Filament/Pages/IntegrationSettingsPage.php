@@ -15,6 +15,30 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
 
+/**
+ * @phpstan-type IntegrationState array{enabled: bool, fetch_interval_minutes: int, service_user_id: ?int}
+ * @phpstan-type IntegrationTestResult array{ok: bool, error: ?string}
+ * @phpstan-type IntegrationRepositoryState array{
+ *   integration_kind: string,
+ *   integration_id: string,
+ *   enabled: bool,
+ *   fetch_interval_minutes: int,
+ *   service_user_id: ?int,
+ *   last_synced_at: \Illuminate\Support\Carbon|null,
+ *   last_sync_status: ?string,
+ *   last_sync_message: ?string,
+ *   model: \App\Models\IntegrationSetting|null
+ * }
+ * @phpstan-type IntegrationEntry array{
+ *   id: string,
+ *   kind: string,
+ *   key: string,
+ *   display_name: string,
+ *   instance: \App\Sources\Contracts\Source|\App\Trackers\Contracts\Tracker,
+ *   required_credential_keys: list<string>,
+ *   setting: IntegrationRepositoryState
+ * }
+ */
 class IntegrationSettingsPage extends Page
 {
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-cog-6-tooth';
@@ -27,10 +51,10 @@ class IntegrationSettingsPage extends Page
 
     protected string $view = 'filament.pages.integration-settings-page';
 
-    /** @var array<string, array{enabled: bool, fetch_interval_minutes: int, service_user_id: ?int}> */
+    /** @var array<string, IntegrationState> */
     public array $settings = [];
 
-    /** @var array<string, array{ok: bool, error: ?string}|null> */
+    /** @var array<string, IntegrationTestResult|null> */
     public array $testResults = [];
 
     public function mount(): void
@@ -40,7 +64,9 @@ class IntegrationSettingsPage extends Page
 
     public static function canAccess(): bool
     {
-        return Auth::user()?->can('admin.integrations') ?? false;
+        $user = Auth::user();
+
+        return $user instanceof User ? $user->can('admin.integrations') : false;
     }
 
     /** @return list<array<string, mixed>> */
@@ -50,6 +76,7 @@ class IntegrationSettingsPage extends Page
 
         foreach ($this->integrationEntries() as $entry) {
             $key = $entry['key'];
+            /** @var IntegrationState $setting */
             $setting = $this->settings[$key] ?? [
                 'enabled' => false,
                 'fetch_interval_minutes' => 30,
@@ -67,7 +94,9 @@ class IntegrationSettingsPage extends Page
                 'last_synced_at' => $entry['setting']['last_synced_at'],
                 'last_sync_status' => $entry['setting']['last_sync_status'],
                 'last_sync_message' => $entry['setting']['last_sync_message'],
-                'service_user_name' => $entry['setting']['model']?->serviceUser?->name,
+                'service_user_name' => $entry['setting']['model']?->serviceUser instanceof User
+                    ? $entry['setting']['model']->serviceUser->name
+                    : null,
             ];
         }
 
@@ -92,7 +121,7 @@ class IntegrationSettingsPage extends Page
             abort(404);
         }
 
-        $interval = max(1, (int) ($state['fetch_interval_minutes'] ?? 30));
+        $interval = max(1, $state['fetch_interval_minutes']);
         $serviceUserId = $state['service_user_id'] ?? null;
         $serviceUserId = is_numeric($serviceUserId) ? (int) $serviceUserId : null;
 
@@ -103,7 +132,7 @@ class IntegrationSettingsPage extends Page
         }
 
         $setting = app(IntegrationSettingsRepository::class)->update($entry['kind'], $entry['id'], [
-            'enabled' => (bool) ($state['enabled'] ?? false),
+            'enabled' => $state['enabled'],
             'fetch_interval_minutes' => $interval,
             'service_user_id' => $serviceUserId,
         ]);
@@ -167,7 +196,7 @@ class IntegrationSettingsPage extends Page
         }
     }
 
-    /** @return list<array{id: string, kind: string, key: string, display_name: string, instance: Source|Tracker, required_credential_keys: list<string>, setting: array<string, mixed>}> */
+    /** @return list<IntegrationEntry> */
     private function integrationEntries(): array
     {
         $repository = app(IntegrationSettingsRepository::class);
@@ -208,7 +237,7 @@ class IntegrationSettingsPage extends Page
         return $entries;
     }
 
-    /** @return array{id: string, kind: string, key: string, display_name: string, instance: Source|Tracker, required_credential_keys: list<string>, setting: array<string, mixed>} */
+    /** @return IntegrationEntry */
     private function integrationByKey(string $key): array
     {
         foreach ($this->integrationEntries() as $entry) {

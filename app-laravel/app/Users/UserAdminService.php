@@ -68,7 +68,7 @@ final class UserAdminService
         }
 
         if (array_key_exists('roles', $data)) {
-            $roles = $this->normalizedRoles($data['roles'] ?? []);
+            $roles = $this->normalizedRoles($data['roles']);
             $previousRoles = $user->roles->pluck('name')->values()->all();
 
             if ($previousRoles !== $roles) {
