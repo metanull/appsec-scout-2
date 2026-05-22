@@ -28,6 +28,12 @@ final class AzDoAlert
         public readonly ?array $additionalData = null,
     ) {}
 
+    public function descriptionReady(): bool
+    {
+        return $this->alertUri !== null
+            && ($this->physicalLocations !== [] || $this->logicalLocations !== [] || $this->tools !== [] || $this->additionalData !== null);
+    }
+
     /** @phpstan-param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {

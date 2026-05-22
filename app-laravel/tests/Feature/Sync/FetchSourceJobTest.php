@@ -152,3 +152,20 @@ it('writes failure sync run when source throws', function () {
         ->and($run->status)->toBe('failure')
         ->and($run->error_message)->toContain('boom');
 });
+
+it('marks the latest running sync as failed when the queued job fails outside handle', function () {
+    $run = SyncRun::query()->create([
+        'source_id' => 'azdo',
+        'started_at' => now()->subMinutes(5),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    (new FetchSourceJob('azdo'))->failed(new RuntimeException('worker timeout'));
+
+    $run->refresh();
+
+    expect($run->status)->toBe('failure')
+        ->and($run->finished_at)->not->toBeNull()
+        ->and($run->error_message)->toContain('worker timeout');
+});

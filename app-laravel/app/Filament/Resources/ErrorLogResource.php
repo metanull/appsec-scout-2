@@ -50,7 +50,11 @@ class ErrorLogResource extends Resource
                     default => 'secondary',
                 }),
                 TextColumn::make('channel'),
-                TextColumn::make('message')->limit(80)->searchable(),
+                TextColumn::make('message')->searchable()->wrap(),
+                TextColumn::make('trace')
+                    ->limit(500)
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('level')

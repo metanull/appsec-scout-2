@@ -20,11 +20,36 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 600;
 
+    public int $timeout = 1800;
+
     public function __construct(public readonly string $sourceId) {}
 
     public function uniqueId(): string
     {
         return 'fetch-source:' . $this->sourceId;
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        $run = SyncRun::query()
+            ->where('source_id', $this->sourceId)
+            ->where('status', 'running')
+            ->latest('id')
+            ->first();
+
+        if ($run === null) {
+            return;
+        }
+
+        $run->update([
+            'finished_at' => now(),
+            'status' => 'failure',
+            'error_message' => $exception->getMessage(),
+        ]);
+
+        app(IntegrationSettingsRepository::class)->markSyncResult('source', $this->sourceId, false, $exception->getMessage());
+
+        event(new SyncRunFinished($run));
     }
 
     public function handle(

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\SecurityContainerResource\RelationManagers;
 
+use App\Filament\Resources\SecurityEventResource;
+use App\Models\SecurityEvent;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -19,6 +21,7 @@ class EventsRelationManager extends RelationManager
                 TextColumn::make('title')->wrap(),
                 TextColumn::make('last_seen_at')->since(),
             ])
+            ->recordUrl(fn (SecurityEvent $record): string => SecurityEventResource::getUrl('view', ['record' => $record]))
             ->paginated([10, 25, 50]);
     }
 }

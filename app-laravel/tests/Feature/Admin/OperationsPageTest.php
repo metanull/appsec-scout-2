@@ -73,7 +73,7 @@ it('shows queue failed-job sync-run and error counts', function () {
         ->assertSee('Queued jobs')
         ->assertSee('Failed jobs')
         ->assertSee('Sync failed')
-        ->assertSee('Failed job #');
+        ->assertSee('Unknown job');
 
     $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
 
