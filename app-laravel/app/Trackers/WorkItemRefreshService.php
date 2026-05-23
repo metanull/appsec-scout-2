@@ -5,6 +5,7 @@ namespace App\Trackers;
 use App\Audit\Recorder;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
+use App\Trackers\Contracts\RateLimitedTracker;
 use App\Trackers\Contracts\Tracker;
 use Illuminate\Database\DatabaseManager;
 
@@ -71,12 +72,10 @@ final class WorkItemRefreshService
 
     private function rateLimitDelay(Tracker $tracker): int
     {
-        if (! method_exists($tracker, 'rateLimitDelay')) {
+        if (! $tracker instanceof RateLimitedTracker) {
             return 0;
         }
 
-        $delay = $tracker->rateLimitDelay();
-
-        return is_int($delay) && $delay > 0 ? $delay : 0;
+        return max(0, $tracker->rateLimitDelay());
     }
 }

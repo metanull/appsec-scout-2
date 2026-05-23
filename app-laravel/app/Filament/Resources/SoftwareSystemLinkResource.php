@@ -2,10 +2,15 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\SoftwareSystemLinkResource\Pages\CreateSoftwareSystemLink;
+use App\Filament\Resources\SoftwareSystemLinkResource\Pages\EditSoftwareSystemLink;
 use App\Filament\Resources\SoftwareSystemLinkResource\Pages\ListSoftwareSystemLinks;
 use App\Filament\Resources\SoftwareSystemLinkResource\Pages\ViewSoftwareSystemLink;
 use App\Filament\Resources\SoftwareSystemLinkResource\RelationManagers\MembersRelationManager;
 use App\Models\SoftwareSystemLink;
+use Filament\Actions\EditAction;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -30,7 +35,14 @@ class SoftwareSystemLinkResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        return $schema->components([]);
+        return $schema->components([
+            TextInput::make('name')
+                ->required()
+                ->maxLength(255),
+            Textarea::make('description')
+                ->rows(4)
+                ->nullable(),
+        ]);
     }
 
     public static function table(Table $table): Table
@@ -42,6 +54,9 @@ class SoftwareSystemLinkResource extends Resource
                 TextColumn::make('description')->limit(80),
                 TextColumn::make('members_count')->label('Members')->sortable(),
                 TextColumn::make('updated_at')->since(),
+            ])
+            ->actions([
+                EditAction::make(),
             ])
             ->recordUrl(fn (SoftwareSystemLink $record): string => static::getUrl('view', ['record' => $record]))
             ->paginated([25, 50, 100]);
@@ -58,7 +73,9 @@ class SoftwareSystemLinkResource extends Resource
     {
         return [
             'index' => ListSoftwareSystemLinks::route('/'),
+            'create' => CreateSoftwareSystemLink::route('/create'),
             'view' => ViewSoftwareSystemLink::route('/{record}'),
+            'edit' => EditSoftwareSystemLink::route('/{record}/edit'),
         ];
     }
 }

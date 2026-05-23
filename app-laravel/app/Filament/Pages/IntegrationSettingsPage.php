@@ -6,6 +6,7 @@ use App\Audit\Recorder;
 use App\Credentials\Vault;
 use App\Integrations\IntegrationSettingsRepository;
 use App\Models\IntegrationSetting;
+use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
@@ -83,6 +84,13 @@ class IntegrationSettingsPage extends Page
                 'fetch_interval_minutes' => 30,
                 'service_user_id' => null,
             ];
+            $runningSync = $entry['kind'] === IntegrationSetting::KIND_SOURCE
+                ? SyncRun::query()
+                    ->where('source_id', $entry['id'])
+                    ->where('status', 'running')
+                    ->latest('id')
+                    ->first()
+                : null;
 
             $integrations[] = [
                 'key' => $key,
@@ -93,7 +101,8 @@ class IntegrationSettingsPage extends Page
                 'fetch_interval_minutes' => $setting['fetch_interval_minutes'],
                 'service_user_id' => $setting['service_user_id'],
                 'last_synced_at' => $entry['setting']['last_synced_at'],
-                'last_sync_status' => $entry['setting']['last_sync_status'],
+                'sync_started_at' => $runningSync?->started_at,
+                'last_sync_status' => $runningSync instanceof SyncRun ? 'in_progress' : $entry['setting']['last_sync_status'],
                 'last_sync_message' => $entry['setting']['last_sync_message'],
                 'service_user_name' => $entry['setting']['model']?->serviceUser instanceof User
                     ? $entry['setting']['model']->serviceUser->name
@@ -154,14 +163,13 @@ class IntegrationSettingsPage extends Page
     public function testIntegration(string $key): void
     {
         $entry = $this->integrationByKey($key);
-        $ownerId = $this->selectedOwnerId($key);
         $keys = array_map(fn (string $credentialKey): string => $credentialKey, $entry['required_credential_keys']);
 
-        $result = app(Vault::class)->runAsOwner($ownerId, function () use ($entry): object {
+        $result = app(Vault::class)->runAsOwner(null, function () use ($entry): object {
             return $entry['instance']->testConnection();
         }, true);
 
-        app(Vault::class)->markTestedKeys($keys, $ownerId, (bool) $result->ok, $result->error);
+        app(Vault::class)->markTestedKeys($keys, null, (bool) $result->ok, $result->error);
 
         $this->testResults[$key] = [
             'ok' => (bool) $result->ok,
@@ -171,7 +179,7 @@ class IntegrationSettingsPage extends Page
         app(Recorder::class)->recordAdminAction('integration.connection_tested', [
             'integration_kind' => $entry['kind'],
             'integration_id' => $entry['id'],
-            'service_user_id' => $ownerId,
+            'service_user_id' => null,
             'outcome' => $result->ok ? 'success' : 'failure',
             'error' => $result->error,
         ]);
@@ -267,12 +275,5 @@ class IntegrationSettingsPage extends Page
         }
 
         abort(404);
-    }
-
-    private function selectedOwnerId(string $key): ?int
-    {
-        $serviceUserId = $this->settings[$key]['service_user_id'] ?? null;
-
-        return is_numeric($serviceUserId) ? (int) $serviceUserId : null;
     }
 }

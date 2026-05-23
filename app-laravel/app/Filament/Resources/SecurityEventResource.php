@@ -78,6 +78,12 @@ class SecurityEventResource extends Resource
                         EventState::Acknowledged->value => 'warning',
                         default => 'danger',
                     }),
+                TextColumn::make('is_dirty')
+                    ->label('Sync')
+                    ->state(fn (SecurityEvent $record): ?string => $record->is_dirty ? 'Dirty' : null)
+                    ->badge()
+                    ->color('warning')
+                    ->placeholder('-'),
                 TextColumn::make('source_id')->label('Source')->badge(),
                 TextColumn::make('work_item_state')
                     ->label('Tracker')
@@ -138,6 +144,13 @@ class SecurityEventResource extends Resource
                     ->queries(
                         true: fn (Builder $query) => SecurityEventTableQuery::applyHasWorkItem($query, true),
                         false: fn (Builder $query) => SecurityEventTableQuery::applyHasWorkItem($query, false),
+                        blank: fn (Builder $query) => $query,
+                    ),
+                TernaryFilter::make('is_dirty')
+                    ->label('Pending sync')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereRaw('is_dirty = 1'),
+                        false: fn (Builder $query) => $query->whereRaw('is_dirty = 0'),
                         blank: fn (Builder $query) => $query,
                     ),
                 SelectFilter::make('tags')

@@ -1,11 +1,14 @@
 <?php
 
 use App\Credentials\Vault;
+use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
+use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Sources\Asoc\AsocClient;
 use App\Sources\Asoc\AsocSource;
+use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -125,4 +128,29 @@ it('enriches remediation article, sanitizes html, and uses cache on second call'
         ->and($first->remediation)->not->toContain('onclick')
         ->and($second)->not->toBeNull()
         ->and($history)->toHaveCount(3);
+});
+
+it('enriches event dto remediation during source sync', function () {
+    $client = new AsocClient('key-id', 'key-secret', 'https://cloud.appscan.com', new Client([
+        'handler' => new MockHandler([
+            new Response(200, [], '{"Token":"token-1"}'),
+            new Response(200, ['Content-Type' => 'text/html'], (string) file_get_contents(base_path('tests/Fixtures/Asoc/article-general-dast.html'))),
+        ]),
+    ]));
+
+    $source = new AsocSource(app(Vault::class));
+    injectAsocClient($source, $client);
+
+    $dto = $source->enrichFetchedEvent(new EventDto(
+        sourceEventId: '1004',
+        sourceSystemId: 'app-001',
+        title: 'SQL injection',
+        severity: EventSeverity::High,
+        state: EventState::Open,
+        type: EventType::Vulnerability,
+        metadata: ['issueTypeId' => 'dast.01', 'language' => 'en'],
+    ));
+
+    expect($dto)->not->toBeNull()
+        ->and($dto?->remediation)->not->toBeNull();
 });

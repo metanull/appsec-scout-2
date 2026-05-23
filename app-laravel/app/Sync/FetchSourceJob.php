@@ -7,6 +7,7 @@ use App\Integrations\IntegrationSettingsRepository;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
+use App\Sources\Contracts\EnrichesFetchedEvents;
 use App\Sources\Registry;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -141,11 +142,16 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                     $container->save();
 
                     $containerIdMap[$systemDto->sourceSystemId . ':' . $containerDto->sourceContainerId] = $container->id;
+                    $containerIdMap[$containerDto->sourceContainerId] = $container->id;
                     $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
                 }
             }
 
             foreach ($source->fetchEvents($sinceCarbon) as $eventDto) {
+                if ($source instanceof EnrichesFetchedEvents) {
+                    $eventDto = $source->enrichFetchedEvent($eventDto);
+                }
+
                 $created = $upserter->upsert($this->sourceId, $eventDto, $systemIdMap, $containerIdMap);
                 $counts[$created ? 'events_created' : 'events_updated']++;
             }

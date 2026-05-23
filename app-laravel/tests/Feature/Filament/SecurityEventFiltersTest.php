@@ -117,6 +117,14 @@ it('filters by work item presence', function () {
         ->and($withoutWorkItem)->toBe(2);
 });
 
+it('filters by pending sync dirty state', function () {
+    SecurityEvent::factory()->create(['is_dirty' => true]);
+    SecurityEvent::factory()->create(['is_dirty' => false]);
+
+    expect(SecurityEvent::query()->where('is_dirty', true)->count())->toBe(1)
+        ->and(SecurityEvent::query()->where('is_dirty', false)->count())->toBe(1);
+});
+
 it('filters by tags', function () {
     seedFilterFixture();
 

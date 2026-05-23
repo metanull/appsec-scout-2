@@ -65,7 +65,7 @@ it('dispatches only due integrations from database-backed settings', function ()
     expect($count)->toBe(1);
 });
 
-it('prefers the configured integration service user for background credential resolution', function () {
+it('uses system credentials for background credential resolution', function () {
     $serviceUser = User::factory()->create();
 
     Credential::query()->create(['integration_key' => 'fake.apiKey', 'owner_user_id' => null, 'value' => 'system-token']);
@@ -76,7 +76,7 @@ it('prefers the configured integration service user for background credential re
         ['enabled' => true, 'fetch_interval_minutes' => 30, 'service_user_id' => $serviceUser->id],
     );
 
-    expect(app(CredentialResolver::class)->resolve('fake.apiKey')?->value)->toBe('service-token');
+    expect(app(CredentialResolver::class)->resolve('fake.apiKey')?->value)->toBe('system-token');
 });
 
 it('saves integration settings and records an audit row', function () {
@@ -99,14 +99,14 @@ it('saves integration settings and records an audit row', function () {
     expect(AuditLog::query()->where('action', 'integration.settings_updated')->exists())->toBeTrue();
 });
 
-it('tests a connection with the selected service user credentials and records an audit row', function () {
+it('tests a connection with system credentials and records an audit row', function () {
     $admin = enrolledAdmin();
     $serviceUser = User::factory()->create();
 
     Credential::query()->create([
         'integration_key' => 'fake.apiKey',
-        'owner_user_id' => $serviceUser->id,
-        'value' => 'service-token',
+        'owner_user_id' => null,
+        'value' => 'system-token',
     ]);
 
     IntegrationSetting::query()->updateOrCreate(
@@ -119,7 +119,7 @@ it('tests a connection with the selected service user credentials and records an
         ->call('testIntegration', 'source:fake')
         ->assertSee('Connection test succeeded.');
 
-    expect(Credential::query()->where('integration_key', 'fake.apiKey')->where('owner_user_id', $serviceUser->id)->first()?->last_tested_ok)
+    expect(Credential::query()->where('integration_key', 'fake.apiKey')->whereNull('owner_user_id')->first()?->last_tested_ok)
         ->toBeTrue()
         ->and(AuditLog::query()->where('action', 'integration.connection_tested')->exists())->toBeTrue();
 });

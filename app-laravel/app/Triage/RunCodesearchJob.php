@@ -20,8 +20,8 @@ class RunCodesearchJob implements ShouldQueue
 
     public function handle(CodesearchService $service, Vault $vault): void
     {
-        $pat = $vault->get('azdo.pat', $this->userId, true)
-            ?? throw new \RuntimeException('AzDO PAT not configured for the selected user.');
+        $pat = $vault->get('azdo.pat', null, true)
+            ?? throw new \RuntimeException('AzDO PAT is not configured in system credentials.');
 
         $service->run($pat, $this->query, $this->scope, $this->eventId, $this->userId);
     }
