@@ -6,6 +6,7 @@ use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SoftwareSystemLinkResource;
 use App\Models\SoftwareSystemLink;
 use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
 class ViewSoftwareSystemLink extends ViewRecord
@@ -16,6 +17,7 @@ class ViewSoftwareSystemLink extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            EditAction::make(),
             Action::make('viewAlerts')
                 ->label('View alerts')
                 ->url(fn (): string => SecurityEventResource::getUrl('index', [

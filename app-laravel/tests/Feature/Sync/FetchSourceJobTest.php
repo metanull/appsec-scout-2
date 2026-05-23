@@ -79,6 +79,33 @@ it('syncs systems containers events and preserves dirty/local metadata', functio
         ->and($run->counts_json['events_updated'])->toBe(1);
 });
 
+it('links events to containers when the event only carries the source container id', function () {
+    config(['integration_settings.fake.enabled' => true]);
+
+    $source = (new FakeSource)
+        ->withSystems(new SystemDto('sys-001', 'Payments API'))
+        ->withContainers('sys-001', new ContainerDto('repo-001', 'Backend Repo', 'sys-001', 'repository'))
+        ->withEvents(new EventDto(
+            sourceEventId: 'evt-001',
+            sourceSystemId: 'sys-001',
+            sourceContainerId: 'repo-001',
+            title: 'Container mapped alert',
+            severity: EventSeverity::High,
+            state: EventState::Open,
+            type: EventType::Vulnerability,
+        ));
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+
+    (new FetchSourceJob('fake'))->handle(app(Registry::class), app(Upserter::class));
+
+    $event = SecurityEvent::query()->where('source_event_id', 'evt-001')->first();
+
+    expect($event)->not->toBeNull()
+        ->and($event?->container_id)->not->toBeNull();
+});
+
 it('writes failure sync run when source throws', function () {
     config(['integration_settings.broken.enabled' => true]);
 

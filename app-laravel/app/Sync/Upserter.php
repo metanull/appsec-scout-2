@@ -22,6 +22,7 @@ final class Upserter
         $containerId = null;
         if ($dto->sourceContainerId !== null && $dto->sourceContainerId !== '') {
             $containerId = $containerIdMap[$dto->sourceSystemId . ':' . $dto->sourceContainerId] ?? null;
+            $containerId ??= $containerIdMap[$dto->sourceContainerId] ?? null;
         }
 
         $existing = SecurityEvent::query()->where([

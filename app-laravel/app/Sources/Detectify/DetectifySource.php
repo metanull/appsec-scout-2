@@ -150,8 +150,8 @@ final class DetectifySource implements Source
             return $this->client;
         }
 
-        $apiKey = $this->vault->get('detectify.apiKey', null) ?? throw new \RuntimeException('Detectify API key is not configured');
-        $baseUrl = $this->vault->get('detectify.baseUrl', null) ?? 'https://api.detectify.com';
+        $apiKey = $this->vault->get('detectify.apiKey', null, true) ?? throw new \RuntimeException('Detectify API key is not configured');
+        $baseUrl = $this->vault->get('detectify.baseUrl', null, true) ?? 'https://api.detectify.com';
         $fingerprint = hash('sha256', implode('|', [$apiKey, $baseUrl]));
 
         if ($this->client === null || $this->clientFingerprint !== $fingerprint) {

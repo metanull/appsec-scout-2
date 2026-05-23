@@ -2,6 +2,7 @@
 
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager as ContainerEventsRelationManager;
+use App\Filament\Resources\SoftwareSystemLinkResource;
 use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
@@ -40,4 +41,9 @@ it('loads related events for container view', function () {
     SecurityEvent::factory()->forSystem($system)->forContainer($container)->count(2)->create();
 
     expect($container->events()->count())->toBe(2);
+});
+
+it('system links expose create and edit pages', function () {
+    expect(SoftwareSystemLinkResource::getPages())
+        ->toHaveKeys(['index', 'create', 'view', 'edit']);
 });

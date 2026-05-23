@@ -15,6 +15,7 @@
                             <th class="px-3 py-2 font-medium">Enabled</th>
                             <th class="px-3 py-2 font-medium">Interval</th>
                             <th class="px-3 py-2 font-medium">Service user</th>
+                            <th class="px-3 py-2 font-medium">Started</th>
                             <th class="px-3 py-2 font-medium">Last sync</th>
                             <th class="px-3 py-2 font-medium">Status</th>
                             <th class="px-3 py-2 font-medium">Actions</th>
@@ -54,12 +55,15 @@
                                     </select>
                                 </td>
                                 <td class="px-3 py-3 text-gray-600">
+                                    {{ $integration['sync_started_at']?->diffForHumans() ?? '-' }}
+                                </td>
+                                <td class="px-3 py-3 text-gray-600">
                                     {{ $integration['last_synced_at']?->diffForHumans() ?? 'Never' }}
                                 </td>
                                 <td class="px-3 py-3">
                                     @if ($integration['last_sync_status'] !== null)
-                                        <div class="font-medium {{ $integration['last_sync_status'] === 'success' ? 'text-success-700' : 'text-danger-700' }}">
-                                            {{ ucfirst($integration['last_sync_status']) }}
+                                        <div class="font-medium {{ $integration['last_sync_status'] === 'success' ? 'text-success-700' : ($integration['last_sync_status'] === 'in_progress' ? 'text-warning-700' : 'text-danger-700') }}">
+                                            {{ str($integration['last_sync_status'])->replace('_', ' ')->title() }}
                                         </div>
                                     @else
                                         <div class="text-gray-500">Not run</div>

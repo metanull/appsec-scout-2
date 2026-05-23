@@ -272,9 +272,9 @@ final class AzDoSource implements Source
             return $this->client;
         }
 
-        $pat = $this->vault->get('azdo.pat', null) ?? throw new \RuntimeException('AzDO PAT not configured');
-        $organization = $this->vault->get('azdo.organization', null) ?? throw new \RuntimeException('AzDO organization not configured');
-        $baseUrl = $this->vault->get('azdo.baseUrl', null) ?? 'https://dev.azure.com';
+        $pat = $this->vault->get('azdo.pat', null, true) ?? throw new \RuntimeException('AzDO PAT not configured');
+        $organization = $this->vault->get('azdo.organization', null, true) ?? throw new \RuntimeException('AzDO organization not configured');
+        $baseUrl = $this->vault->get('azdo.baseUrl', null, true) ?? 'https://dev.azure.com';
         $fingerprint = hash('sha256', implode('|', [$organization, $pat, $baseUrl]));
 
         if ($this->client === null || $this->clientFingerprint !== $fingerprint) {

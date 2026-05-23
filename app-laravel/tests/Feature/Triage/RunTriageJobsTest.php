@@ -79,11 +79,11 @@ it('run bfg job invokes the shared service and deletes the uploaded file', funct
         ->and(File::exists($secretList))->toBeFalse();
 });
 
-it('run codesearch job uses the current users azdo pat and invokes the shared service', function () {
+it('run codesearch job uses system azdo pat and invokes the shared service', function () {
     $event = SecurityEvent::factory()->create();
     $user = User::factory()->create();
 
-    app(Vault::class)->set('azdo.pat', $user->id, 'user-pat');
+    app(Vault::class)->set('azdo.pat', null, 'system-pat');
     app(Vault::class)->set('azdo.organization', null, 'testorg');
 
     app()->bind(CodesearchService::class, fn () => new class extends CodesearchService
@@ -113,5 +113,5 @@ it('run codesearch job uses the current users azdo pat and invokes the shared se
     $attachment = EventAttachment::query()->where('kind', 'codesearch-json')->first();
 
     expect($attachment)->not()->toBeNull()
-        ->and($attachment?->payload)->toContain('user-pat');
+        ->and($attachment?->payload)->toContain('system-pat');
 });

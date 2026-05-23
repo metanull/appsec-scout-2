@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\SoftwareSystemLinkResource\RelationManagers;
 
+use Filament\Actions\AttachAction;
+use Filament\Actions\DetachAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
@@ -29,6 +31,21 @@ class MembersRelationManager extends RelationManager
                 TextColumn::make('name')->searchable(),
                 TextColumn::make('source_id')->badge(),
                 TextColumn::make('pivot.sort_order')->label('Order')->sortable(),
+            ])
+            ->headerActions([
+                AttachAction::make()
+                    ->preloadRecordSelect()
+                    ->form(fn (AttachAction $action): array => [
+                        $action->getRecordSelect(),
+                        TextInput::make('sort_order')
+                            ->numeric()
+                            ->minValue(0)
+                            ->default(0)
+                            ->required(),
+                    ]),
+            ])
+            ->actions([
+                DetachAction::make(),
             ])
             ->paginated([10, 25, 50]);
     }

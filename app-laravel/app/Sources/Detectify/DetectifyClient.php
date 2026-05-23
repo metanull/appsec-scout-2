@@ -17,60 +17,94 @@ final class DetectifyClient
         $this->http = $httpClient ?? OutboundHttpFactory::create([
             'base_uri' => rtrim($this->baseUrl, '/') . '/',
             'headers' => [
-                'Authorization' => $this->apiKey,
+                'X-Detectify-Key' => $this->apiKey,
                 'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
             ],
         ]);
     }
 
     public function testConnection(): bool
     {
-        $this->listDomains();
+        $this->listDomains(1);
 
         return true;
     }
 
     /** @return list<array<string, mixed>> */
-    public function listDomains(): array
+    public function listDomains(int $pageSize = 100): array
     {
-        /** @var array<string, mixed> $payload */
-        $payload = $this->request('GET', 'v2/domains/');
-
-        /** @var list<array<string, mixed>> $items */
-        $items = $payload['results'] ?? $payload['domains'] ?? [];
-
-        return $items;
+        return $this->fetchAllPages('rest/v2/assets/', 'assets', ['pageSize' => $pageSize]);
     }
 
     /** @return list<array<string, mixed>> */
     public function listFindings(string $domainToken): array
     {
-        /** @var array<string, mixed> $payload */
-        $payload = $this->request('GET', "v2/domains/{$domainToken}/findings/");
-
-        /** @var list<array<string, mixed>> $items */
-        $items = $payload['results'] ?? $payload['findings'] ?? [];
-
-        return $items;
+        return $this->fetchAllPages('rest/v2/vulnerabilities/', 'vulnerabilities', [
+            'pageSize' => 100,
+            'asset_token[]' => $domainToken,
+        ]);
     }
 
     /** @return array<string, mixed> */
     public function getFinding(string $domainToken, string $uuid): array
     {
         /** @var array<string, mixed> $payload */
-        $payload = $this->request('GET', "v2/domains/{$domainToken}/findings/{$uuid}/");
+        $payload = $this->request('GET', 'rest/v2/vulnerabilities/uuid/' . rawurlencode($uuid) . '/');
 
-        return $payload;
+        $finding = $payload['vulnerability'] ?? $payload;
+
+        return is_array($finding) ? $finding : [];
     }
 
     public function updateFindingStatus(string $domainToken, string $uuid, string $status, ?string $note = null): void
     {
-        $this->request('PATCH', "v2/domains/{$domainToken}/findings/{$uuid}/", [
-            'json' => [
-                'status' => $status,
-                'note' => $note,
-            ],
-        ]);
+        $this->request('POST', 'rest/v2/vulnerabilities/uuid/' . rawurlencode($uuid) . '/' . self::statusAction($status) . '/');
+    }
+
+    /**
+     * @param  array<string, mixed>  $query
+     * @return list<array<string, mixed>>
+     */
+    private function fetchAllPages(string $path, string $itemsKey, array $query): array
+    {
+        $items = [];
+        $marker = null;
+
+        do {
+            $pageQuery = $query;
+
+            if (is_string($marker) && $marker !== '') {
+                $pageQuery['marker'] = $marker;
+            }
+
+            $payload = $this->request('GET', $path, ['query' => $pageQuery]);
+            $pageItems = $payload[$itemsKey] ?? $payload['results'] ?? [];
+
+            if (is_array($pageItems)) {
+                foreach ($pageItems as $item) {
+                    if (is_array($item)) {
+                        $items[] = $item;
+                    }
+                }
+            }
+
+            $marker = ($payload['has_more'] ?? false) === true && is_string($payload['next_marker'] ?? null)
+                ? $payload['next_marker']
+                : null;
+        } while ($marker !== null);
+
+        return $items;
+    }
+
+    private static function statusAction(string $status): string
+    {
+        return match ($status) {
+            'patched' => 'setfixedstatus',
+            'accepted_risk' => 'setacceptedriskstatus',
+            'false_positive' => 'setfalsepositivestatus',
+            default => 'unsetfixedstatus',
+        };
     }
 
     /**
@@ -79,6 +113,11 @@ final class DetectifyClient
      */
     private function request(string $method, string $path, array $options = []): array
     {
+        $options['headers'] = array_merge($options['headers'] ?? [], [
+            'X-Detectify-Key' => $this->apiKey,
+            'Accept' => 'application/json',
+        ]);
+
         $response = $this->http->request($method, ltrim($path, '/'), $options);
 
         /** @var array<string, mixed> $decoded */
