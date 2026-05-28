@@ -5,6 +5,7 @@ namespace App\Sources\AzDo;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\SecurityEvents\SourceLinkHelper;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
@@ -203,6 +204,15 @@ final class AzDoNormalizer
         if ($alert->tools !== []) {
             $tool = $alert->tools[0];
             $meta['detector'] = $tool['name'] ?? null;
+
+            // Preserve rule help URI for documentation links
+            $rule = $tool['rules'][0] ?? null;
+            if (is_array($rule)) {
+                $helpUri = $rule['helpUri'] ?? $rule['help']['text'] ?? null;
+                if (is_string($helpUri) && SourceLinkHelper::isSafeUrl($helpUri)) {
+                    $meta['ruleHelpUri'] = $helpUri;
+                }
+            }
         }
 
         if ($alert->additionalData !== null) {
@@ -221,6 +231,40 @@ final class AzDoNormalizer
 
         if ($alert->logicalLocations !== []) {
             $meta['logicalLocations'] = $alert->logicalLocations;
+        }
+
+        // Build links array for EventLinkCatalog
+        $links = [];
+
+        if ($alert->alertUri !== null && SourceLinkHelper::isSafeUrl($alert->alertUri)) {
+            $links[] = ['label' => 'Source alert', 'url' => $alert->alertUri];
+        }
+
+        // Item URL from physical locations (version control link to source file)
+        foreach ($alert->physicalLocations as $loc) {
+            $itemUrl = $loc['versionControl']['itemUrl'] ?? null;
+            if (is_string($itemUrl) && SourceLinkHelper::isSafeUrl($itemUrl)) {
+                $links[] = ['label' => 'Source file', 'url' => $itemUrl];
+                break;
+            }
+        }
+
+        // Rule help URI
+        if (isset($meta['ruleHelpUri'])) {
+            $links[] = ['label' => 'Rule documentation', 'url' => $meta['ruleHelpUri']];
+        }
+
+        // CVE link
+        $cveId = $meta['cve'] ?? null;
+        if (is_string($cveId)) {
+            $cveUrl = SourceLinkHelper::cveLinkUrl($cveId);
+            if ($cveUrl !== null) {
+                $links[] = ['label' => 'CVE: ' . strtoupper($cveId), 'url' => $cveUrl];
+            }
+        }
+
+        if ($links !== []) {
+            $meta['links'] = $links;
         }
 
         return $meta ?: [];

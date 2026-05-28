@@ -12,6 +12,7 @@ use App\Models\EventComment;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Models\WorkItemLink;
+use App\SecurityEvents\EventLinkCatalog;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
 use App\Sync\RefetchEventJob;
@@ -142,6 +143,22 @@ class ViewSecurityEvent extends ViewRecord
             ])
                 ->label('Run triage')
                 ->icon('heroicon-o-play'),
+            Action::make('addAttachment')
+                ->label('Add attachment')
+                ->icon('heroicon-o-paper-clip')
+                ->visible(fn (): bool => Gate::allows('work-items.create'))
+                ->form([
+                    FileUpload::make('attachment_file')
+                        ->label('File')
+                        ->disk('local')
+                        ->directory('attachments-upload')
+                        ->required(),
+                    TextInput::make('attachment_name')
+                        ->label('Name')
+                        ->maxLength(255)
+                        ->nullable(),
+                ])
+                ->action(fn (array $data): bool => $this->uploadAttachment($data)),
         ];
     }
 
@@ -216,6 +233,167 @@ class ViewSecurityEvent extends ViewRecord
             ->latest('created_at')
             ->limit(20)
             ->get();
+    }
+
+    /**
+     * Returns the structured link catalog for the current alert.
+     *
+     * @return list<array{label: string, url: string, kind: string, external: bool}>
+     */
+    public function linkCatalog(): array
+    {
+        $record = $this->eventRecord()->load(['softwareSystem', 'container', 'workItemLinks']);
+
+        return app(EventLinkCatalog::class)->build($record);
+    }
+
+    /**
+     * Groups the link catalog by kind and returns a sorted map.
+     *
+     * @return array<string, list<array{label: string, url: string, kind: string, external: bool}>>
+     */
+    public function linkCatalogByKind(): array
+    {
+        $grouped = [];
+        foreach ($this->linkCatalog() as $link) {
+            $grouped[$link['kind']][] = $link;
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * Maps metadata.occurrences into structured rows for the secret detail table.
+     *
+     * @return list<array{file_path: string, start_line: int|string, end_line: int|string, branch: string, commit: string, url: string|null}>
+     */
+    public function occurrenceRows(): array
+    {
+        /** @var array<string, mixed>|null $metadata */
+        $metadata = $this->eventRecord()->getAttribute('metadata');
+
+        if (! is_array($metadata)) {
+            return [];
+        }
+
+        $raw = $metadata['occurrences'] ?? null;
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $rows = [];
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $filePath = is_string($item['filePath'] ?? null) ? (string) $item['filePath'] : 'n/a';
+            $startLine = $item['startLine'] ?? $item['start_line'] ?? 'n/a';
+            $endLine = $item['endLine'] ?? $item['end_line'] ?? 'n/a';
+            $ref = is_string($item['ref'] ?? null) ? ltrim((string) $item['ref'], 'refs/heads/') : '';
+            $commit = is_string($item['commitSha'] ?? $item['commit_sha'] ?? null)
+                ? substr((string) ($item['commitSha'] ?? $item['commit_sha']), 0, 8)
+                : '';
+            $url = is_string($item['url'] ?? $item['itemUrl'] ?? null) ? (string) ($item['url'] ?? $item['itemUrl']) : null;
+
+            $rows[] = [
+                'file_path' => $filePath,
+                'start_line' => $startLine,
+                'end_line' => $endLine,
+                'branch' => $ref,
+                'commit' => $commit,
+                'url' => $url,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Builds the raw evidence payload for inspection, redacting sensitive fields.
+     *
+     * @return array<string, mixed>
+     */
+    public function rawEvidencePayload(): array
+    {
+        $record = $this->eventRecord();
+
+        /** @var array<string, mixed>|null $metadata */
+        $metadata = $record->getAttribute('metadata');
+        $sourceDataRaw = $record->getAttribute('source_data');
+
+        $sourceData = null;
+        if (is_string($sourceDataRaw) && $sourceDataRaw !== '') {
+            /** @var mixed $decoded */
+            $decoded = json_decode($sourceDataRaw, true);
+            $sourceData = is_array($decoded) ? $decoded : ['_raw' => Str::limit($sourceDataRaw, 4096)];
+        } elseif (is_array($sourceDataRaw)) {
+            $sourceData = $sourceDataRaw;
+        }
+
+        $type = $record->getAttribute('type');
+        $severity = $record->getAttribute('severity');
+        $state = $record->getAttribute('state');
+        $pendingState = $record->getAttribute('pending_state');
+        $pendingSeverity = $record->getAttribute('pending_severity');
+        $syncedAt = $record->getAttribute('synced_at');
+
+        $payload = [
+            'event' => [
+                'id' => $record->id,
+                'source_id' => $record->source_id,
+                'source_event_id' => $record->source_event_id,
+                'type' => $type instanceof EventType ? $type->value : (is_string($type) ? $type : null),
+                'severity' => $severity instanceof EventSeverity ? $severity->value : (is_string($severity) ? $severity : null),
+                'state' => $state instanceof EventState ? $state->value : (is_string($state) ? $state : null),
+                'is_dirty' => $record->is_dirty,
+                'pending_state' => $pendingState instanceof EventState ? $pendingState->value : null,
+                'pending_severity' => $pendingSeverity instanceof EventSeverity ? $pendingSeverity->value : null,
+                'rule_id' => $record->rule_id,
+                'fingerprint' => $record->fingerprint,
+                'synced_at' => $syncedAt instanceof \DateTimeInterface ? $syncedAt->format('c') : null,
+            ],
+            'metadata' => is_array($metadata) ? self::redactArray($metadata) : null,
+            'source_data' => is_array($sourceData) ? self::redactArray($sourceData) : null,
+        ];
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function redactArray(array $data): array
+    {
+        $result = [];
+
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $result[$key] = self::redactArray($value);
+            } elseif (self::isSensitiveKey((string) $key)) {
+                $result[$key] = '***REDACTED***';
+            } else {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
+    }
+
+    private static function isSensitiveKey(string $key): bool
+    {
+        $lower = strtolower($key);
+
+        foreach (['token', 'secret', 'password', 'passwd', 'key', 'pat', 'authorization', 'credential', 'private'] as $sensitive) {
+            if (str_contains($lower, $sensitive)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return list<array{rule_id:string,severity:string,location:string,snippet:string,snippet_html:string}> */
@@ -485,6 +663,59 @@ class ViewSecurityEvent extends ViewRecord
         RefetchEventJob::dispatch($this->eventRecord()->id);
 
         Notification::make()->title('Alert refresh queued')->success()->send();
+    }
+
+    /** @param array<string, mixed> $data */
+    private function uploadAttachment(array $data): bool
+    {
+        Gate::authorize('work-items.create');
+
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        $relativePath = (string) $data['attachment_file'];
+        $fullPath = storage_path('app/' . $relativePath);
+
+        if (! file_exists($fullPath)) {
+            Notification::make()->title('Uploaded file not found')->danger()->send();
+
+            return false;
+        }
+
+        $fileContent = file_get_contents($fullPath);
+
+        if ($fileContent === false) {
+            Notification::make()->title('Could not read uploaded file')->danger()->send();
+
+            return false;
+        }
+
+        $name = is_string($data['attachment_name'] ?? null) && trim((string) $data['attachment_name']) !== ''
+            ? trim((string) $data['attachment_name'])
+            : basename($relativePath);
+
+        $mime = mime_content_type($fullPath) ?: 'application/octet-stream';
+
+        app(AttachmentService::class)->attachToEvent(
+            event: $this->eventRecord(),
+            kind: 'manual',
+            mime: $mime,
+            name: $name,
+            payload: $fileContent,
+            createdByUserId: $user->id,
+        );
+
+        @unlink($fullPath);
+
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Attachment added')->success()->send();
+
+        return true;
     }
 
     /** @param array<string, mixed> $data */
