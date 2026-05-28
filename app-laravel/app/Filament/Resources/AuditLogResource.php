@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Audit\AuditLog;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
+use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
 use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -53,7 +54,9 @@ class AuditLogResource extends Resource
                     ->formatStateUsing(fn (mixed $state): string => json_encode($state, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '')
                     ->wrap()
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('user_id')->label('User ID'),
+                TextColumn::make('user_id')
+                    ->label('User')
+                    ->formatStateUsing(fn (mixed $state): string => $state !== null ? "User #{$state}" : '—'),
                 TextColumn::make('ip')->label('IP'),
             ])
             ->filters([
@@ -73,13 +76,15 @@ class AuditLogResource extends Resource
                     )),
             ])
             ->defaultSort('created_at', 'desc')
-            ->paginated([25, 50, 100]);
+            ->paginated([25, 50, 100])
+            ->recordUrl(fn (AuditLog $record): string => AuditLogResource::getUrl('view', ['record' => $record]));
     }
 
     public static function getPages(): array
     {
         return [
             'index' => ListAuditLogs::route('/'),
+            'view' => ViewAuditLog::route('/{record}'),
         ];
     }
 }

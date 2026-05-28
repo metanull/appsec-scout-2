@@ -3,6 +3,7 @@
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
 use App\Models\ErrorLog;
+use App\Models\FailedJob;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
@@ -142,6 +143,123 @@ it('retries and forgets failed jobs', function () {
 
     expect(DB::table('failed_jobs')->where('uuid', $failedJobUuid)->exists())->toBeFalse()
         ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
+});
+
+it('header actions render for admin', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertActionExists('dispatchDueIntegrations')
+        ->assertActionExists('fetchSource')
+        ->assertActionExists('refreshTracker');
+});
+
+it('header action dispatches source by form data', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->set('selectedSourceId', 'fake')
+        ->call('dispatchSelectedSource');
+
+    expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue();
+});
+
+it('header action dispatches tracker by form data', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->set('selectedTrackerId', 'fake-tracker')
+        ->call('dispatchSelectedTracker');
+
+    expect(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
+});
+
+it('failed jobs table renders with searchable columns and filters', function () {
+    $admin = operationsAdmin();
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Example","displayName":"ExampleJob","token":"secret-token"}',
+        'exception' => 'RuntimeException: something went wrong',
+        'failed_at' => now(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertTableColumnExists('failed_at')
+        ->assertTableColumnExists('queue')
+        ->assertTableColumnExists('job')
+        ->assertTableColumnExists('exception_summary');
+});
+
+it('table retry and forget actions work and record audit', function () {
+    $admin = operationsAdmin();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Example","displayName":"ExampleJob"}',
+        'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->callTableAction('retry', $record);
+
+    expect(DB::table('failed_jobs')->where('uuid', $uuid)->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'operations.retry_failed_job')->exists())->toBeTrue();
+
+    $uuid2 = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid2,
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Example"}',
+        'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+
+    $record2 = FailedJob::where('uuid', $uuid2)->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->callTableAction('forget', $record2);
+
+    expect(DB::table('failed_jobs')->where('uuid', $uuid2)->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
+});
+
+it('details table action modal fills exception and payload', function () {
+    $admin = operationsAdmin();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Example","token":"my-secret"}',
+        'exception' => 'authorization: bearer secret-value',
+        'failed_at' => now(),
+    ]);
+
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->mountTableAction('details', $record)
+        ->assertTableActionDataSet(fn (array $data) => str_contains($data['exception'] ?? '', '***')
+            && ! str_contains($data['exception'] ?? '', 'secret-value')
+            && ! str_contains($data['payload'] ?? '', 'my-secret'));
 });
 
 function bindFakeOperationsIntegrations(): void

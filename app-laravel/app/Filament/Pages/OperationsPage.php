@@ -8,21 +8,35 @@ use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Jobs\UpdateTrivyDbJob;
 use App\Models\ErrorLog;
+use App\Models\FailedJob;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry as TrackerRegistry;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
-class OperationsPage extends Page
+class OperationsPage extends Page implements HasTable
 {
+    use InteractsWithTable;
+
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-server-stack';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
@@ -50,9 +64,133 @@ class OperationsPage extends Page
         $this->selectedTrackerId = $this->trackerOptions() !== [] ? array_key_first($this->trackerOptions()) : null;
     }
 
+    /** @return array<Action|ActionGroup> */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('dispatchDueIntegrations')
+                ->label('Dispatch due integrations')
+                ->icon('heroicon-o-play')
+                ->requiresConfirmation()
+                ->action(fn () => $this->dispatchDueIntegrationsNow()),
+
+            Action::make('fetchSource')
+                ->label('Fetch source')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->form([
+                    Select::make('source_id')
+                        ->label('Source')
+                        ->options(fn (): array => $this->sourceOptions())
+                        ->required(),
+                ])
+                ->action(fn (array $data) => $this->dispatchSelectedSource($data['source_id'])),
+
+            Action::make('refreshTracker')
+                ->label('Refresh tracker')
+                ->icon('heroicon-o-arrow-path')
+                ->form([
+                    Select::make('tracker_id')
+                        ->label('Tracker')
+                        ->options(fn (): array => $this->trackerOptions())
+                        ->required(),
+                ])
+                ->action(fn (array $data) => $this->dispatchSelectedTracker($data['tracker_id'])),
+
+            ActionGroup::make([
+                Action::make('pruneAuditLogs')
+                    ->label('Prune audit logs')
+                    ->requiresConfirmation()
+                    ->action(fn () => $this->pruneAuditLogsNow()),
+
+                Action::make('pruneErrorLogs')
+                    ->label('Prune error logs')
+                    ->requiresConfirmation()
+                    ->action(fn () => $this->pruneErrorLogsNow()),
+
+                Action::make('updateTrivyDb')
+                    ->label('Update Trivy DB')
+                    ->requiresConfirmation()
+                    ->action(fn () => $this->updateTrivyDbNow()),
+            ])->label('Maintenance'),
+        ];
+    }
+
+    public function table(Table $table): Table
+    {
+        return $table
+            ->query(FailedJob::query()->latest('failed_at'))
+            ->columns([
+                TextColumn::make('failed_at')
+                    ->label('Failed at')
+                    ->dateTime()
+                    ->sortable(),
+                TextColumn::make('queue')
+                    ->badge(),
+                TextColumn::make('job')
+                    ->label('Job')
+                    ->getStateUsing(fn (FailedJob $record): string => $this->jobName($record->payload))
+                    ->wrap()
+                    ->searchable(query: fn (Builder $query, string $search) => $query->whereRaw('payload LIKE ?', ["%{$search}%"])),
+                TextColumn::make('exception_summary')
+                    ->label('Exception')
+                    ->getStateUsing(fn (FailedJob $record): string => $this->exceptionPreview($record->exception))
+                    ->wrap()
+                    ->limit(200),
+                TextColumn::make('source_tracker')
+                    ->label('Source / Tracker')
+                    ->getStateUsing(fn (FailedJob $record): string => $this->sourceOrTracker($record->payload)),
+            ])
+            ->filters([
+                SelectFilter::make('queue')
+                    ->options(fn (): array => DB::table('failed_jobs')->distinct()->pluck('queue', 'queue')->all()),
+                Filter::make('job_class')
+                    ->form([TextInput::make('job_class')->label('Job class')])
+                    ->query(fn (Builder $query, array $data) => $query->when(
+                        $data['job_class'] ?? null,
+                        fn (Builder $q, string $v) => $q->whereRaw('payload LIKE ?', ["%{$v}%"]),
+                    )),
+            ])
+            ->actions([
+                Action::make('retry')
+                    ->label('Retry')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->action(fn (FailedJob $record) => $this->retryFailedJob($record->uuid)),
+                Action::make('forget')
+                    ->label('Forget')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->action(fn (FailedJob $record) => $this->forgetFailedJob($record->uuid)),
+                Action::make('details')
+                    ->label('Details')
+                    ->icon('heroicon-o-magnifying-glass')
+                    ->color('gray')
+                    ->fillForm(fn (FailedJob $record): array => [
+                        'exception' => $this->redactString($record->exception),
+                        'payload' => $this->payloadFull($record->payload),
+                    ])
+                    ->form([
+                        Textarea::make('exception')
+                            ->label('Exception')
+                            ->rows(10)
+                            ->disabled()
+                            ->dehydrated(false),
+                        Textarea::make('payload')
+                            ->label('Payload')
+                            ->rows(8)
+                            ->disabled()
+                            ->dehydrated(false),
+                    ])
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close'),
+            ])
+            ->emptyStateDescription('No failed jobs recorded.')
+            ->heading('Failed jobs');
+    }
+
     public function queuedJobCount(): int
     {
-        return max(Queue::size('default'), (int) DB::table('jobs')->count());
+        return (int) DB::table('jobs')->count();
     }
 
     public function runningSyncCount(): int
@@ -150,30 +288,34 @@ class OperationsPage extends Page
         Notification::make()->title("Queued {$count} due integration job(s)")->success()->send();
     }
 
-    public function dispatchSelectedSource(): void
+    public function dispatchSelectedSource(string $override = ''): void
     {
-        if (! is_string($this->selectedSourceId) || $this->selectedSourceId === '') {
+        $id = $override !== '' ? $override : ($this->selectedSourceId ?? '');
+
+        if ($id === '') {
             Notification::make()->title('Select a source first')->warning()->send();
 
             return;
         }
 
-        FetchSourceJob::dispatch($this->selectedSourceId);
-        app(Recorder::class)->recordAdminAction('operations.dispatch_source_fetch', ['source_id' => $this->selectedSourceId]);
+        FetchSourceJob::dispatch($id);
+        app(Recorder::class)->recordAdminAction('operations.dispatch_source_fetch', ['source_id' => $id]);
 
         Notification::make()->title('Source fetch queued')->success()->send();
     }
 
-    public function dispatchSelectedTracker(): void
+    public function dispatchSelectedTracker(string $override = ''): void
     {
-        if (! is_string($this->selectedTrackerId) || $this->selectedTrackerId === '') {
+        $id = $override !== '' ? $override : ($this->selectedTrackerId ?? '');
+
+        if ($id === '') {
             Notification::make()->title('Select a tracker first')->warning()->send();
 
             return;
         }
 
-        RefreshWorkItemsJob::dispatch($this->selectedTrackerId);
-        app(Recorder::class)->recordAdminAction('operations.dispatch_tracker_refresh', ['tracker_id' => $this->selectedTrackerId]);
+        RefreshWorkItemsJob::dispatch($id);
+        app(Recorder::class)->recordAdminAction('operations.dispatch_tracker_refresh', ['tracker_id' => $id]);
 
         Notification::make()->title('Tracker refresh queued')->success()->send();
     }
@@ -230,6 +372,17 @@ class OperationsPage extends Page
         Notification::make()->title('Failed job removed')->success()->send();
     }
 
+    private function payloadFull(string $payload): string
+    {
+        $decoded = json_decode($payload, true);
+
+        if (is_array($decoded)) {
+            return json_encode($this->redactArray($decoded), JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '[payload unavailable]';
+        }
+
+        return $this->redactString($payload);
+    }
+
     private function payloadPreview(string $payload): string
     {
         $decoded = json_decode($payload, true);
@@ -273,6 +426,35 @@ class OperationsPage extends Page
         $commandName = data_get($decoded, 'data.commandName');
 
         return is_string($commandName) && $commandName !== '' ? $commandName : 'Unknown job';
+    }
+
+    private function sourceOrTracker(string $payload): string
+    {
+        $decoded = json_decode($payload, true);
+
+        if (! is_array($decoded)) {
+            return '';
+        }
+
+        $sourceId = data_get($decoded, 'data.command.sourceId')
+            ?? data_get($decoded, 'data.command.source_id')
+            ?? data_get($decoded, 'data.sourceId')
+            ?? null;
+
+        if (is_string($sourceId) && $sourceId !== '') {
+            return "source:{$sourceId}";
+        }
+
+        $trackerId = data_get($decoded, 'data.command.trackerId')
+            ?? data_get($decoded, 'data.command.tracker_id')
+            ?? data_get($decoded, 'data.trackerId')
+            ?? null;
+
+        if (is_string($trackerId) && $trackerId !== '') {
+            return "tracker:{$trackerId}";
+        }
+
+        return '';
     }
 
     /** @param array<string, mixed> $payload
