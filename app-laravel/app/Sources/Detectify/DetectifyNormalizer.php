@@ -5,6 +5,7 @@ namespace App\Sources\Detectify;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\SecurityEvents\SourceLinkHelper;
 use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
 
@@ -30,10 +31,43 @@ final class DetectifyNormalizer
     public static function toEvent(array $finding): EventDto
     {
         $domainToken = self::toNullableString($finding['asset_token'] ?? $finding['domain_token'] ?? null);
+
+        $links = [];
         $metadata = [
             'domainToken' => $domainToken,
             'cwe' => self::toNullableString($finding['cwe'] ?? null),
         ];
+
+        // Details page link
+        $detailsPage = self::toNullableString($finding['links']['details_page'] ?? null);
+        if ($detailsPage !== null && SourceLinkHelper::isSafeUrl($detailsPage)) {
+            $links[] = ['label' => 'Details page', 'url' => $detailsPage];
+        }
+
+        // CWE link
+        $cweId = $metadata['cwe'];
+        if (is_string($cweId)) {
+            $cweUrl = SourceLinkHelper::cweLinkUrl($cweId);
+            if ($cweUrl !== null) {
+                $links[] = ['label' => 'CWE: ' . $cweId, 'url' => $cweUrl];
+            }
+        }
+
+        // Additional reference links from finding definition
+        $references = $finding['definition']['references'] ?? $finding['references'] ?? null;
+        if (is_array($references)) {
+            foreach ($references as $ref) {
+                $refUrl = is_string($ref['url'] ?? null) ? (string) $ref['url'] : (is_string($ref) ? $ref : null);
+                $refLabel = is_string($ref['name'] ?? null) ? (string) $ref['name'] : 'Reference';
+                if ($refUrl !== null && SourceLinkHelper::isSafeUrl($refUrl)) {
+                    $links[] = ['label' => $refLabel, 'url' => $refUrl];
+                }
+            }
+        }
+
+        if ($links !== []) {
+            $metadata['links'] = $links;
+        }
 
         return new EventDto(
             sourceEventId: (string) ($finding['uuid'] ?? ''),
@@ -46,7 +80,7 @@ final class DetectifyNormalizer
             description: self::toNullableString($finding['description'] ?? $finding['definition']['description'] ?? null),
             ruleId: self::toNullableString($finding['cwe'] ?? null),
             fingerprint: self::toNullableString($finding['fingerprint'] ?? $finding['uuid'] ?? null),
-            url: self::toNullableString($finding['links']['details_page'] ?? null),
+            url: $detailsPage,
             remediation: self::toNullableString($finding['definition']['remediation'] ?? null),
             filePath: self::toNullableString($finding['location'] ?? null),
             startLine: null,

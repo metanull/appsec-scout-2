@@ -18,6 +18,7 @@ use App\Trackers\WorkItemService;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -25,6 +26,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
@@ -80,11 +82,20 @@ class SecurityEventResource extends Resource
                     }),
                 TextColumn::make('is_dirty')
                     ->label('Sync')
-                    ->state(fn (SecurityEvent $record): ?string => $record->is_dirty ? 'Dirty' : null)
+                    ->state(fn (SecurityEvent $record): ?string => $record->is_dirty ? 'Pending' : null)
                     ->badge()
                     ->color('warning')
                     ->placeholder('-'),
                 TextColumn::make('source_id')->label('Source')->badge(),
+                TextColumn::make('type')
+                    ->badge()
+                    ->color('gray')
+                    ->formatStateUsing(fn (EventType|string $state): string => str($state instanceof EventType ? $state->value : $state)->replace('_', ' ')->title()->toString())
+                    ->toggleable(),
+                TextColumn::make('title')
+                    ->searchable()
+                    ->wrap()
+                    ->grow(),
                 TextColumn::make('work_item_state')
                     ->label('Tracker')
                     ->state(function (SecurityEvent $record): ?string {
@@ -98,17 +109,15 @@ class SecurityEventResource extends Resource
                     })
                     ->badge()
                     ->placeholder('-'),
-                TextColumn::make('title')
-                    ->searchable()
-                    ->wrap(),
                 TextColumn::make('last_seen_at')
                     ->label('Last seen')
-                    ->since()
+                    ->dateTime('d M H:i')
                     ->sortable(),
                 TextColumn::make('first_seen_at')
                     ->label('First seen')
-                    ->dateTime()
-                    ->sortable(),
+                    ->dateTime('d M Y')
+                    ->sortable()
+                    ->toggleable(),
             ])
             ->filters([
                 SelectFilter::make('severity')
@@ -157,97 +166,114 @@ class SecurityEventResource extends Resource
                     ->multiple()
                     ->options(fn () => self::availableTags())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyTags($query, self::stringArray($data['values'] ?? []))),
+                Filter::make('work_item')
+                    ->form([])
+                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyWorkItem(
+                        $query,
+                        is_string($data['tracker_id'] ?? null) ? $data['tracker_id'] : null,
+                        is_string($data['work_item_id'] ?? null) ? $data['work_item_id'] : null,
+                    ))
+                    ->indicateUsing(function (array $data): ?string {
+                        $tracker = is_string($data['tracker_id'] ?? null) ? $data['tracker_id'] : '';
+                        $itemId = is_string($data['work_item_id'] ?? null) ? $data['work_item_id'] : '';
+
+                        return ($tracker !== '' && $itemId !== '') ? "Work item: {$tracker}/{$itemId}" : null;
+                    }),
             ])
             ->actions([
-                Action::make('changeState')
-                    ->label('Change state')
-                    ->icon('heroicon-o-pencil-square')
-                    ->visible(fn (): bool => self::currentUserCan('alerts.edit'))
-                    ->form(self::stateChangeForm())
-                    ->action(function (SecurityEvent $record, array $data): void {
-                        /** @var User|null $user */
-                        $user = Auth::user();
+                ActionGroup::make([
+                    Action::make('changeState')
+                        ->label('Change state')
+                        ->icon('heroicon-o-pencil-square')
+                        ->visible(fn (): bool => self::currentUserCan('alerts.edit'))
+                        ->form(self::stateChangeForm())
+                        ->action(function (SecurityEvent $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
 
-                        if ($user === null) {
-                            abort(403);
-                        }
+                            if ($user === null) {
+                                abort(403);
+                            }
 
-                        app(StateChanger::class)->change(
-                            $record,
-                            $user,
-                            EventState::from((string) $data['new_state']),
-                            (string) $data['comment'],
-                        );
-                    }),
-                Action::make('changeSeverity')
-                    ->label('Change severity')
-                    ->icon('heroicon-o-adjustments-horizontal')
-                    ->visible(fn (): bool => self::currentUserCan('alerts.edit'))
-                    ->form(self::severityChangeForm())
-                    ->action(function (SecurityEvent $record, array $data): void {
-                        /** @var User|null $user */
-                        $user = Auth::user();
+                            app(StateChanger::class)->change(
+                                $record,
+                                $user,
+                                EventState::from((string) $data['new_state']),
+                                (string) $data['comment'],
+                            );
+                        }),
+                    Action::make('changeSeverity')
+                        ->label('Change severity')
+                        ->icon('heroicon-o-adjustments-horizontal')
+                        ->visible(fn (): bool => self::currentUserCan('alerts.edit'))
+                        ->form(self::severityChangeForm())
+                        ->action(function (SecurityEvent $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
 
-                        if ($user === null) {
-                            abort(403);
-                        }
+                            if ($user === null) {
+                                abort(403);
+                            }
 
-                        app(SeverityChanger::class)->change(
-                            $record,
-                            $user,
-                            EventSeverity::from((string) $data['new_severity']),
-                            (string) $data['comment'],
-                        );
-                    }),
-                Action::make('createWorkItem')
-                    ->label('Create work item')
-                    ->icon('heroicon-o-ticket')
-                    ->visible(fn (): bool => self::currentUserCan('work-items.create'))
-                    ->form(fn (SecurityEvent $record): array => app(WorkItemFormOptions::class)->createSchema([$record]))
-                    ->action(function (SecurityEvent $record, array $data): void {
-                        /** @var User|null $user */
-                        $user = Auth::user();
+                            app(SeverityChanger::class)->change(
+                                $record,
+                                $user,
+                                EventSeverity::from((string) $data['new_severity']),
+                                (string) $data['comment'],
+                            );
+                        }),
+                    Action::make('createWorkItem')
+                        ->label('Create work item')
+                        ->icon('heroicon-o-ticket')
+                        ->visible(fn (): bool => self::currentUserCan('work-items.create'))
+                        ->form(fn (SecurityEvent $record): array => app(WorkItemFormOptions::class)->createSchema([$record]))
+                        ->action(function (SecurityEvent $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
 
-                        if ($user === null) {
-                            abort(403);
-                        }
+                            if ($user === null) {
+                                abort(403);
+                            }
 
-                        CreateWorkItemJob::dispatch(
-                            eventIds: [$record->id],
-                            userId: $user->id,
-                            trackerId: (string) $data['tracker'],
-                            projectKey: (string) $data['project'],
-                            itemType: (string) $data['item_type'],
-                            labels: self::stringArray($data['labels'] ?? []),
-                            priority: self::nullableString($data['priority'] ?? null),
-                            assigneeId: self::nullableString($data['assignee_id'] ?? null),
-                            parentId: self::nullableString($data['parent_id'] ?? null),
-                        );
+                            CreateWorkItemJob::dispatch(
+                                eventIds: [$record->id],
+                                userId: $user->id,
+                                trackerId: (string) $data['tracker'],
+                                projectKey: (string) $data['project'],
+                                itemType: (string) $data['item_type'],
+                                labels: self::stringArray($data['labels'] ?? []),
+                                priority: self::nullableString($data['priority'] ?? null),
+                                assigneeId: self::nullableString($data['assignee_id'] ?? null),
+                                parentId: self::nullableString($data['parent_id'] ?? null),
+                            );
 
-                        Notification::make()->title('Work item creation queued')->success()->send();
-                    }),
-                Action::make('linkExistingWorkItem')
-                    ->label('Link existing')
-                    ->icon('heroicon-o-link')
-                    ->visible(fn (): bool => self::currentUserCan('work-items.link'))
-                    ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
-                    ->action(function (SecurityEvent $record, array $data): void {
-                        /** @var User|null $user */
-                        $user = Auth::user();
+                            Notification::make()->title('Work item creation queued')->success()->send();
+                        }),
+                    Action::make('linkExistingWorkItem')
+                        ->label('Link existing work item')
+                        ->icon('heroicon-o-link')
+                        ->visible(fn (): bool => self::currentUserCan('work-items.link'))
+                        ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                        ->action(function (SecurityEvent $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
 
-                        if ($user === null) {
-                            abort(403);
-                        }
+                            if ($user === null) {
+                                abort(403);
+                            }
 
-                        app(WorkItemService::class)->linkExisting(
-                            eventIds: [$record->id],
-                            userId: $user->id,
-                            trackerId: (string) $data['tracker'],
-                            workItemId: (string) $data['selected_work_item'],
-                        );
+                            app(WorkItemService::class)->linkExisting(
+                                eventIds: [$record->id],
+                                userId: $user->id,
+                                trackerId: (string) $data['tracker'],
+                                workItemId: (string) $data['selected_work_item'],
+                            );
 
-                        Notification::make()->title('Work item linked')->success()->send();
-                    }),
+                            Notification::make()->title('Work item linked')->success()->send();
+                        }),
+                ])
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->tooltip('Actions'),
             ])
             ->bulkActions([
                 BulkAction::make('changeStateBulk')
@@ -395,6 +421,47 @@ class SecurityEventResource extends Resource
             ->all();
 
         return array_merge($physical, $virtual);
+    }
+
+    /**
+     * Build a URL to the alert list with pre-applied filter state.
+     *
+     * The Filament table filter query parameter format (Livewire 3 URL binding) is:
+     *   tableFilters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
+     *   tableFilters[{filter_name}][value]=value       (for single-value filters)
+     *
+     * @param  array<string, list<string>>  $multiSelectFilters  filter name => list of values
+     */
+    public static function filteredIndexUrl(array $multiSelectFilters = []): string
+    {
+        $params = [];
+
+        foreach ($multiSelectFilters as $filterName => $values) {
+            foreach ($values as $idx => $value) {
+                $params['tableFilters'][$filterName]['values'][$idx] = $value;
+            }
+        }
+
+        $base = static::getUrl('index');
+
+        return $params !== [] ? $base . '?' . http_build_query($params) : $base;
+    }
+
+    /**
+     * Build a pre-filtered alert list URL showing only alerts linked to the given work item.
+     */
+    public static function workItemFilterUrl(string $trackerId, string $workItemId): string
+    {
+        $params = [
+            'tableFilters' => [
+                'work_item' => [
+                    'tracker_id' => $trackerId,
+                    'work_item_id' => $workItemId,
+                ],
+            ],
+        ];
+
+        return static::getUrl('index') . '?' . http_build_query($params);
     }
 
     /** @return list<string> */

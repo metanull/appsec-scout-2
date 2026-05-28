@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SecurityEventResource\Support;
 
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystemLinkMember;
+use App\Models\WorkItemLink;
 use Illuminate\Database\Eloquent\Builder;
 
 final class SecurityEventTableQuery
@@ -115,8 +116,29 @@ final class SecurityEventTableQuery
         }
 
         return $hasWorkItem
-            ? $query->whereNotNull('metadata->work_item_id')
-            : $query->whereNull('metadata->work_item_id');
+            ? $query->whereHas('workItemLinks')
+            : $query->whereDoesntHave('workItemLinks');
+    }
+
+    /**
+     * Filter to events linked to a specific tracker work item (by tracker_id + work_item_id).
+     *
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    public static function applyWorkItem(Builder $query, ?string $trackerId, ?string $workItemId): Builder
+    {
+        if ($trackerId === null || $trackerId === '' || $workItemId === null || $workItemId === '') {
+            return $query;
+        }
+
+        $tid = $trackerId;
+        $wid = $workItemId;
+
+        return $query->whereHas('workItemLinks', function (Builder $q) use ($tid, $wid): void {
+            /** @var Builder<WorkItemLink> $q */
+            $q->where('tracker_id', $tid)->where('work_item_id', $wid);
+        });
     }
 
     /**
