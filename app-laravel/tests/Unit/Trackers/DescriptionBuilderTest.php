@@ -140,3 +140,94 @@ it('keeps grouped descriptions within sixteen kilobytes', function () {
 
     expect(strlen($markdown))->toBeLessThanOrEqual(16384);
 });
+
+it('includes an Alert section with view-alert link in single descriptions', function () {
+    $builder = new DescriptionBuilder;
+
+    $markdown = $builder->buildSingle(makeEvent([
+        'url' => 'https://example.test/alerts/42',
+    ]));
+
+    expect($markdown)
+        ->toContain('### Alert')
+        ->toContain('[View alert](https://example.test/alerts/42)');
+});
+
+it('omits Alert section when event has no url', function () {
+    $builder = new DescriptionBuilder;
+
+    $markdown = $builder->buildSingle(makeEvent(['url' => null]));
+
+    expect($markdown)->not->toContain('### Alert');
+});
+
+it('includes CVE reference link in single description when metadata has cve', function () {
+    $builder = new DescriptionBuilder;
+
+    $markdown = $builder->buildSingle(makeEvent([
+        'metadata' => ['cve' => 'CVE-2023-12345'],
+    ]));
+
+    expect($markdown)
+        ->toContain('### References')
+        ->toContain('[CVE: CVE-2023-12345](https://nvd.nist.gov/vuln/detail/CVE-2023-12345)');
+});
+
+it('includes CWE reference link when metadata has cwe', function () {
+    $builder = new DescriptionBuilder;
+
+    $markdown = $builder->buildSingle(makeEvent([
+        'metadata' => ['cwe' => 'CWE-79'],
+    ]));
+
+    expect($markdown)
+        ->toContain('### References')
+        ->toContain('[CWE: CWE-79](https://cwe.mitre.org/data/definitions/79.html)');
+});
+
+it('includes remediation references from ruleHelpUri metadata', function () {
+    $builder = new DescriptionBuilder;
+
+    $markdown = $builder->buildSingle(makeEvent([
+        'metadata' => ['ruleHelpUri' => 'https://docs.example.test/rules/GHAS-001'],
+    ]));
+
+    expect($markdown)
+        ->toContain('### Remediation References')
+        ->toContain('[Rule documentation](https://docs.example.test/rules/GHAS-001)');
+});
+
+it('appends source code link to occurrence when version_control_url is set', function () {
+    $builder = new DescriptionBuilder;
+
+    $markdown = $builder->buildSingle(makeEvent([
+        'url' => 'https://example.test/alerts/5',
+        'version_control_url' => 'https://github.test/org/repo/blob/main/src/Foo.php#L10',
+        'file_path' => 'src/Foo.php',
+        'start_line' => 10,
+    ]));
+
+    expect($markdown)
+        ->toContain('([alert](https://example.test/alerts/5))')
+        ->toContain('([source](https://github.test/org/repo/blob/main/src/Foo.php#L10))');
+});
+
+it('shares remediation reference links across a grouped type section', function () {
+    $builder = new DescriptionBuilder;
+
+    $events = [
+        makeEvent([
+            'type' => EventType::Vulnerability,
+            'metadata' => ['ruleHelpUri' => 'https://docs.example.test/rules/SQL-1'],
+        ]),
+        makeEvent([
+            'type' => EventType::Vulnerability,
+            'metadata' => [],
+        ]),
+    ];
+
+    $markdown = $builder->buildGrouped($events);
+
+    // Rule doc link appears once from the first event that has it
+    expect(substr_count($markdown, '[Rule documentation](https://docs.example.test/rules/SQL-1)'))->toBe(1);
+});

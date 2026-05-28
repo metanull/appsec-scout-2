@@ -8,6 +8,10 @@
 - First Seen: 2026-05-01 08:00:00
 - Last Seen: 2026-05-20 09:30:00
 
+### Alert
+
+- [View alert](https://example.test/alerts/secret-101)
+
 ### Description
 
 The repository contains a committed personal access token.

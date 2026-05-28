@@ -133,6 +133,53 @@ it('filters by work item presence using work_item_links relationship', function 
         ->and($noFilter)->toBe(3);
 });
 
+it('filters by specific tracker and work item id', function () {
+    $eventA = SecurityEvent::factory()->create();
+    $eventB = SecurityEvent::factory()->create();
+    $eventC = SecurityEvent::factory()->create();
+
+    WorkItemLink::query()->create([
+        'event_id' => $eventA->id,
+        'tracker_id' => 'jira',
+        'work_item_id' => 'PROJ-10',
+        'work_item_title' => null,
+        'work_item_state' => null,
+        'work_item_url' => null,
+        'created_by_user_id' => null,
+        'synced_at' => now(),
+    ]);
+
+    WorkItemLink::query()->create([
+        'event_id' => $eventB->id,
+        'tracker_id' => 'jira',
+        'work_item_id' => 'PROJ-10',
+        'work_item_title' => null,
+        'work_item_state' => null,
+        'work_item_url' => null,
+        'created_by_user_id' => null,
+        'synced_at' => now(),
+    ]);
+
+    WorkItemLink::query()->create([
+        'event_id' => $eventC->id,
+        'tracker_id' => 'jira',
+        'work_item_id' => 'PROJ-99',
+        'work_item_title' => null,
+        'work_item_state' => null,
+        'work_item_url' => null,
+        'created_by_user_id' => null,
+        'synced_at' => now(),
+    ]);
+
+    $count = SecurityEventTableQuery::applyWorkItem(SecurityEvent::query(), 'jira', 'PROJ-10')->count();
+    $empty = SecurityEventTableQuery::applyWorkItem(SecurityEvent::query(), 'jira', '')->count();
+    $nullFilter = SecurityEventTableQuery::applyWorkItem(SecurityEvent::query(), null, null)->count();
+
+    expect($count)->toBe(2)
+        ->and($empty)->toBe(3)
+        ->and($nullFilter)->toBe(3);
+});
+
 it('filters by pending sync dirty state', function () {
     SecurityEvent::factory()->create(['is_dirty' => true]);
     SecurityEvent::factory()->create(['is_dirty' => false]);

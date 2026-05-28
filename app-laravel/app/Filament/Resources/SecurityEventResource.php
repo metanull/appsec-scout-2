@@ -26,6 +26,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
@@ -165,6 +166,19 @@ class SecurityEventResource extends Resource
                     ->multiple()
                     ->options(fn () => self::availableTags())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyTags($query, self::stringArray($data['values'] ?? []))),
+                Filter::make('work_item')
+                    ->form([])
+                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyWorkItem(
+                        $query,
+                        is_string($data['tracker_id'] ?? null) ? $data['tracker_id'] : null,
+                        is_string($data['work_item_id'] ?? null) ? $data['work_item_id'] : null,
+                    ))
+                    ->indicateUsing(function (array $data): ?string {
+                        $tracker = is_string($data['tracker_id'] ?? null) ? $data['tracker_id'] : '';
+                        $itemId = is_string($data['work_item_id'] ?? null) ? $data['work_item_id'] : '';
+
+                        return ($tracker !== '' && $itemId !== '') ? "Work item: {$tracker}/{$itemId}" : null;
+                    }),
             ])
             ->actions([
                 ActionGroup::make([
@@ -431,6 +445,23 @@ class SecurityEventResource extends Resource
         $base = static::getUrl('index');
 
         return $params !== [] ? $base . '?' . http_build_query($params) : $base;
+    }
+
+    /**
+     * Build a pre-filtered alert list URL showing only alerts linked to the given work item.
+     */
+    public static function workItemFilterUrl(string $trackerId, string $workItemId): string
+    {
+        $params = [
+            'tableFilters' => [
+                'work_item' => [
+                    'tracker_id' => $trackerId,
+                    'work_item_id' => $workItemId,
+                ],
+            ],
+        ];
+
+        return static::getUrl('index') . '?' . http_build_query($params);
     }
 
     /** @return list<string> */

@@ -8,7 +8,6 @@
         $occurrenceRows = $this->occurrenceRows();
         $tags = is_array($metadata['tags'] ?? null) ? $metadata['tags'] : [];
         $auditRows = $this->auditRows();
-        $workItemLinks = $this->workItemLinks();
         $attachments = $this->attachments();
         $sarifRows = $this->sarifRows();
         $linksByKind = $this->linkCatalogByKind();
@@ -380,7 +379,8 @@
 
         {{-- ── Work Items ────────────────────────────────────────────────── --}}
         <x-filament::section heading="Work Items">
-            @if ($workItemLinks->isEmpty())
+            @php $workItemLinksWithSiblings = $this->workItemLinksWithSiblings(); @endphp
+            @if (empty($workItemLinksWithSiblings))
                 <div class="text-sm text-gray-500">No linked work item.</div>
             @else
                 <div class="overflow-x-auto rounded border border-gray-200">
@@ -390,13 +390,15 @@
                                 <th class="px-3 py-2 font-medium">Tracker</th>
                                 <th class="px-3 py-2 font-medium">Work Item</th>
                                 <th class="px-3 py-2 font-medium">State</th>
+                                <th class="px-3 py-2 font-medium">Linked alerts</th>
                                 <th class="px-3 py-2 font-medium">Created by</th>
                                 <th class="px-3 py-2 font-medium">Created at</th>
                                 <th class="px-3 py-2 font-medium">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
-                            @foreach ($workItemLinks as $link)
+                            @foreach ($workItemLinksWithSiblings as $row)
+                                @php $link = $row['link']; @endphp
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-3 py-2">
                                         <x-filament::badge color="gray">{{ $link->tracker_id }}</x-filament::badge>
@@ -416,6 +418,15 @@
                                             <x-filament::badge color="info">{{ $link->work_item_state }}</x-filament::badge>
                                         @else
                                             <span class="text-gray-400">—</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-3 py-2 text-xs">
+                                        @if ($row['sibling_count'] > 0)
+                                            <a class="text-primary-700 underline" href="{{ $row['sibling_url'] }}">
+                                                {{ $row['sibling_count'] + 1 }} alert{{ ($row['sibling_count'] + 1) !== 1 ? 's' : '' }}
+                                            </a>
+                                        @else
+                                            <span class="text-gray-400">This alert only</span>
                                         @endif
                                     </td>
                                     <td class="px-3 py-2 text-xs text-gray-600">
