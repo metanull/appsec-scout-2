@@ -6,6 +6,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
+use App\SecurityEvents\SourceLinkHelper;
 use Illuminate\Support\Carbon;
 
 final class DescriptionBuilder
@@ -19,8 +20,11 @@ final class DescriptionBuilder
         return $this->truncateAtParagraphBoundary(implode("\n\n", array_filter([
             sprintf('## %s', $this->buildTitle($event)),
             $this->buildEventSummary($event),
+            $this->buildAlertLinks($event),
+            $this->buildSourceLinks($event),
             $this->buildEventDescription($event),
             $this->buildRemediation($event),
+            $this->buildRemediationLinks($event),
             $this->buildOccurrences([$event]),
         ])));
     }
@@ -45,6 +49,7 @@ final class DescriptionBuilder
             $sections[] = sprintf('## %s', $this->typeLabel($group['type']));
             $sections[] = $this->buildSharedDescription($group['events']);
             $sections[] = $this->buildRemediation($this->firstWithValue($group['events'], 'remediation') ?? $group['events'][0]);
+            $sections[] = $this->buildGroupRemediationLinks($group['events']);
             $sections[] = $this->buildOccurrences($group['events']);
         }
 
@@ -129,6 +134,179 @@ final class DescriptionBuilder
         return implode("\n", $lines);
     }
 
+    /**
+     * Renders the alert's own URL as a single-line "View alert" link section.
+     */
+    private function buildAlertLinks(SecurityEvent $event): ?string
+    {
+        if (! is_string($event->url) || $event->url === '') {
+            return null;
+        }
+
+        if (! SourceLinkHelper::isSafeUrl($event->url)) {
+            return null;
+        }
+
+        return sprintf("### Alert\n\n- [View alert](%s)", $event->url);
+    }
+
+    /**
+     * Renders source/code/standard links extracted from event metadata.
+     * Returns null when no links are available.
+     */
+    private function buildSourceLinks(SecurityEvent $event): ?string
+    {
+        $items = $this->extractSourceLinks($event);
+
+        if ($items === []) {
+            return null;
+        }
+
+        $lines = ['### References'];
+
+        foreach ($items as [$label, $url]) {
+            $lines[] = sprintf('- [%s](%s)', $label, $url);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Renders shared remediation links for a type group (first event that has them wins).
+     *
+     * @param  list<SecurityEvent>  $events
+     */
+    private function buildGroupRemediationLinks(array $events): ?string
+    {
+        foreach ($events as $event) {
+            $result = $this->buildRemediationLinks($event);
+
+            if ($result !== null) {
+                return $result;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Renders rule/remediation reference links from event metadata.
+     */
+    private function buildRemediationLinks(SecurityEvent $event): ?string
+    {
+        $items = $this->extractRemediationLinks($event);
+
+        if ($items === []) {
+            return null;
+        }
+
+        $lines = ['### Remediation References'];
+
+        foreach ($items as [$label, $url]) {
+            $lines[] = sprintf('- [%s](%s)', $label, $url);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return list<array{0: string, 1: string}>
+     */
+    private function extractSourceLinks(SecurityEvent $event): array
+    {
+        $items = [];
+        /** @var array<string, mixed>|null $metadata */
+        $metadata = $event->getAttribute('metadata');
+
+        if (is_array($metadata)) {
+            // CVE
+            if (isset($metadata['cve']) && is_string($metadata['cve'])) {
+                $url = SourceLinkHelper::cveLinkUrl($metadata['cve']);
+                if ($url !== null) {
+                    $items[] = ['CVE: ' . strtoupper($metadata['cve']), $url];
+                }
+            }
+
+            // CWE
+            if (isset($metadata['cwe'])) {
+                $url = SourceLinkHelper::cweLinkUrl($metadata['cwe']);
+                if ($url !== null) {
+                    $items[] = ['CWE: ' . $metadata['cwe'], $url];
+                }
+            }
+
+            // Generic metadata.links (source/code kinds produced by normalizers)
+            if (isset($metadata['links']) && is_array($metadata['links'])) {
+                foreach ($metadata['links'] as $entry) {
+                    if (! is_array($entry)) {
+                        continue;
+                    }
+
+                    $label = is_string($entry['label'] ?? null) ? (string) $entry['label'] : 'Link';
+                    $url = is_string($entry['url'] ?? null) ? (string) $entry['url'] : null;
+
+                    if ($url === null || ! SourceLinkHelper::isSafeUrl($url)) {
+                        continue;
+                    }
+
+                    // Skip remediation-kind links; they go into buildRemediationLinks
+                    $lower = strtolower($label);
+                    if (str_contains($lower, 'rule') || str_contains($lower, 'remediat') || str_contains($lower, 'doc')) {
+                        continue;
+                    }
+
+                    $items[] = [$label, $url];
+                }
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return list<array{0: string, 1: string}>
+     */
+    private function extractRemediationLinks(SecurityEvent $event): array
+    {
+        $items = [];
+        /** @var array<string, mixed>|null $metadata */
+        $metadata = $event->getAttribute('metadata');
+
+        if (is_array($metadata)) {
+            if (isset($metadata['ruleHelpUri']) && is_string($metadata['ruleHelpUri']) && SourceLinkHelper::isSafeUrl($metadata['ruleHelpUri'])) {
+                $items[] = ['Rule documentation', $metadata['ruleHelpUri']];
+            }
+
+            if (isset($metadata['articleUrl']) && is_string($metadata['articleUrl']) && SourceLinkHelper::isSafeUrl($metadata['articleUrl'])) {
+                $items[] = ['Issue article', $metadata['articleUrl']];
+            }
+
+            // Rule-kind entries from metadata.links
+            if (isset($metadata['links']) && is_array($metadata['links'])) {
+                foreach ($metadata['links'] as $entry) {
+                    if (! is_array($entry)) {
+                        continue;
+                    }
+
+                    $label = is_string($entry['label'] ?? null) ? (string) $entry['label'] : 'Link';
+                    $url = is_string($entry['url'] ?? null) ? (string) $entry['url'] : null;
+
+                    if ($url === null || ! SourceLinkHelper::isSafeUrl($url)) {
+                        continue;
+                    }
+
+                    $lower = strtolower($label);
+
+                    if (str_contains($lower, 'rule') || str_contains($lower, 'remediat') || str_contains($lower, 'doc')) {
+                        $items[] = [$label, $url];
+                    }
+                }
+            }
+        }
+
+        return $items;
+    }
+
     private function buildEventDescription(SecurityEvent $event): ?string
     {
         if ($event->description === null || trim($event->description) === '') {
@@ -195,8 +373,14 @@ final class DescriptionBuilder
 
         $line = '- ' . implode('/', $parts);
 
-        if ($event->url !== null) {
+        // Alert URL (primary link)
+        if ($event->url !== null && SourceLinkHelper::isSafeUrl($event->url)) {
             $line .= sprintf(' ([alert](%s))', $event->url);
+        }
+
+        // Source-code / version-control link
+        if (is_string($event->version_control_url) && $event->version_control_url !== '' && SourceLinkHelper::isSafeUrl($event->version_control_url)) {
+            $line .= sprintf(' ([source](%s))', $event->version_control_url);
         }
 
         return $line;

@@ -224,6 +224,33 @@ class ViewSecurityEvent extends ViewRecord
             ->get();
     }
 
+    /**
+     * Returns work item links enriched with sibling_count and sibling_url.
+     *
+     * @return list<array{link: WorkItemLink, sibling_count: int, sibling_url: string}>
+     */
+    public function workItemLinksWithSiblings(): array
+    {
+        $currentId = $this->eventRecord()->id;
+        $result = [];
+
+        foreach ($this->workItemLinks() as $link) {
+            $siblingCount = WorkItemLink::query()
+                ->where('tracker_id', $link->tracker_id)
+                ->where('work_item_id', $link->work_item_id)
+                ->where('event_id', '!=', $currentId)
+                ->count();
+
+            $result[] = [
+                'link' => $link,
+                'sibling_count' => $siblingCount,
+                'sibling_url' => SecurityEventResource::workItemFilterUrl($link->tracker_id, $link->work_item_id),
+            ];
+        }
+
+        return $result;
+    }
+
     /** @return Collection<int, AuditLog> */
     public function auditRows(): Collection
     {

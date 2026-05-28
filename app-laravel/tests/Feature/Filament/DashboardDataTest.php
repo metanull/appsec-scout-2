@@ -218,4 +218,3 @@ it('groups open alerts by source and work item linkage', function () {
         ->and($detectify['linked'])->toBe(0)
         ->and($detectify['unlinked'])->toBe(1);
 });
-
