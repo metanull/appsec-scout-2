@@ -35,23 +35,19 @@ class RecentSyncRunsTableWidget extends TableWidget
                     ->state(function ($record): string {
                         $duration = DashboardData::durationSeconds($record);
 
-                        return match ($duration) {
-                            null => 'n/a',
-                            default => $duration . 's',
-                        };
-                    }),
-                TextColumn::make('counts_json')
-                    ->label('Counts')
-                    ->formatStateUsing(function (mixed $state): string {
-                        if (! is_array($state)) {
+                        if ($duration === null) {
                             return 'n/a';
                         }
 
-                        $created = (int) ($state['events_created'] ?? 0);
-                        $updated = (int) ($state['events_updated'] ?? 0);
+                        if ($duration >= 60) {
+                            return round($duration / 60, 1) . 'm';
+                        }
 
-                        return "created {$created} / updated {$updated}";
+                        return $duration . 's';
                     }),
+                TextColumn::make('counts_json')
+                    ->label('Counts')
+                    ->formatStateUsing(fn (mixed $state): string => DashboardData::formatCounts($state)),
             ])
             ->defaultSort('started_at', 'desc')
             ->paginated(false);

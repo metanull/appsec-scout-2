@@ -115,8 +115,8 @@ final class SecurityEventTableQuery
         }
 
         return $hasWorkItem
-            ? $query->whereNotNull('metadata->work_item_id')
-            : $query->whereNull('metadata->work_item_id');
+            ? $query->whereHas('workItemLinks')
+            : $query->whereDoesntHave('workItemLinks');
     }
 
     /**

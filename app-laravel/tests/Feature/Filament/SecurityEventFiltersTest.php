@@ -9,6 +9,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
 use App\Models\User;
+use App\Models\WorkItemLink;
 
 function seedFilterFixture(): array
 {
@@ -18,13 +19,25 @@ function seedFilterFixture(): array
     $containerA = SecurityContainer::factory()->forSystem($systemA)->create(['name' => 'Repo A']);
     $containerB = SecurityContainer::factory()->forSystem($systemB)->create(['name' => 'Repo B']);
 
-    SecurityEvent::factory()->forSystem($systemA)->forContainer($containerA)->create([
+    $eventWithWorkItem = SecurityEvent::factory()->forSystem($systemA)->forContainer($containerA)->create([
         'source_id' => 'azdo',
         'severity' => EventSeverity::Critical,
         'state' => 'open',
         'type' => EventType::Secret,
         'title' => 'Leaked PAT in source',
-        'metadata' => ['work_item_id' => 'WI-1', 'tags' => ['secret', 'hotfix'], 'cveId' => null, 'ruleId' => 'GHA-001'],
+        'metadata' => ['tags' => ['secret', 'hotfix'], 'cveId' => null, 'ruleId' => 'GHA-001'],
+    ]);
+
+    // Seed a WorkItemLink for the first event (replaces old metadata->work_item_id approach)
+    WorkItemLink::query()->create([
+        'event_id' => $eventWithWorkItem->id,
+        'tracker_id' => 'jira',
+        'work_item_id' => 'WI-1',
+        'work_item_title' => 'Fix leaked PAT',
+        'work_item_state' => 'Open',
+        'work_item_url' => null,
+        'created_by_user_id' => null,
+        'synced_at' => now(),
     ]);
 
     SecurityEvent::factory()->forSystem($systemA)->forContainer($containerA)->create([
@@ -107,14 +120,17 @@ it('filters by event type', function () {
     expect($count)->toBe(1);
 });
 
-it('filters by work item presence', function () {
+it('filters by work item presence using work_item_links relationship', function () {
+    // seedFilterFixture already seeds one event with a WorkItemLink and two without
     seedFilterFixture();
 
     $withWorkItem = SecurityEventTableQuery::applyHasWorkItem(SecurityEvent::query(), true)->count();
     $withoutWorkItem = SecurityEventTableQuery::applyHasWorkItem(SecurityEvent::query(), false)->count();
+    $noFilter = SecurityEventTableQuery::applyHasWorkItem(SecurityEvent::query(), null)->count();
 
     expect($withWorkItem)->toBe(1)
-        ->and($withoutWorkItem)->toBe(2);
+        ->and($withoutWorkItem)->toBe(2)
+        ->and($noFilter)->toBe(3);
 });
 
 it('filters by pending sync dirty state', function () {
