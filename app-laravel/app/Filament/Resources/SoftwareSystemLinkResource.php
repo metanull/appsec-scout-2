@@ -26,6 +26,8 @@ class SoftwareSystemLinkResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
+    protected static ?int $navigationSort = 24;
+
     protected static ?string $navigationLabel = 'System links';
 
     public static function canViewAny(): bool

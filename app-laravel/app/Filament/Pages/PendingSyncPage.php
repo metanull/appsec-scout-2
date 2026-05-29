@@ -20,7 +20,7 @@ class PendingSyncPage extends Page
 
     protected static ?string $navigationLabel = 'Pending Sync';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $slug = 'sync/pending';
 
