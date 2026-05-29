@@ -126,7 +126,7 @@ it('writes failure sync run when source throws', function () {
             return new SourceCapabilities;
         }
 
-        public function requiredCredentialKeys(): array
+        public function credentialFields(): array
         {
             return [];
         }

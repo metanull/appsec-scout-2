@@ -14,7 +14,7 @@ beforeEach(function () {
     (new RolePermissionSeeder)->run();
 });
 
-it('saves and masks personal integration credentials on the profile page', function () {
+it('saves and shows Stored badge for personal integration secret credentials', function () {
     bindFakeCredentialIntegrations();
 
     $user = enrolledUser();
@@ -24,12 +24,12 @@ it('saves and masks personal integration credentials on the profile page', funct
         ->set('values.fake_tracker_token', 'user-token')
         ->set('descriptions.fake-tracker', 'Personal tracker token')
         ->call('saveIntegration', 'fake-tracker')
-        ->assertSee('••••••••');
+        ->assertSee('Stored');
 
     expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->exists())->toBeTrue();
 });
 
-it('tests personal integration credentials and updates the last tested state', function () {
+it('tests personal integration credentials and shows connected badge', function () {
     bindFakeCredentialIntegrations();
 
     $user = enrolledUser();
@@ -43,7 +43,7 @@ it('tests personal integration credentials and updates the last tested state', f
     Livewire::actingAs($user)
         ->test(ProfileIntegrationsPage::class)
         ->call('testIntegration', 'fake-tracker')
-        ->assertSee('Connection test succeeded.');
+        ->assertSee('Connected');
 
     expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->first()?->last_tested_ok)->toBeTrue();
 });
@@ -61,6 +61,82 @@ it('saves system credentials from the admin page', function () {
         ->call('saveIntegration', 'fake-tracker');
 
     expect(Credential::query()->where('integration_key', 'fake-tracker.token')->whereNull('owner_user_id')->exists())->toBeTrue();
+});
+
+it('saves all credentials for multiple integrations at once', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->set('values.fake_apiKey', 'source-key')
+        ->set('values.fake_tracker_token', 'tracker-token')
+        ->call('saveAllCredentials');
+
+    expect(Credential::query()->where('integration_key', 'fake.apiKey')->where('owner_user_id', $user->id)->exists())->toBeTrue();
+    expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('tests all configured integrations in one action', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+
+    Credential::query()->create([
+        'integration_key' => 'fake.apiKey',
+        'owner_user_id' => $user->id,
+        'value' => 'source-key',
+    ]);
+    Credential::query()->create([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => $user->id,
+        'value' => 'tracker-token',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->call('testAllConfiguredIntegrations')
+        ->assertSee('Connected');
+});
+
+it('replaces a stored secret when replace is activated', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+
+    Credential::query()->create([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => $user->id,
+        'value' => 'old-token',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->set('replace.fake_tracker_token', true)
+        ->set('values.fake_tracker_token', 'new-token')
+        ->call('saveIntegration', 'fake-tracker');
+
+    expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->first()?->value)->toBe('new-token');
+});
+
+it('requires a replacement value when replace is activated for a secret', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+
+    Credential::query()->create([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => $user->id,
+        'value' => 'old-token',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->set('replace.fake_tracker_token', true)
+        ->set('values.fake_tracker_token', '')
+        ->call('saveIntegration', 'fake-tracker')
+        ->assertHasErrors(['values.fake_tracker_token']);
 });
 
 function bindFakeCredentialIntegrations(): void

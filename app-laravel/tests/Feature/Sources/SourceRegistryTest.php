@@ -68,7 +68,7 @@ it('fake source satisfies Source contract', function () {
         ->and($fake->id())->toBeString()->not->toBeEmpty()
         ->and($fake->displayName())->toBeString()->not->toBeEmpty()
         ->and($fake->capabilities())->toBeInstanceOf(SourceCapabilities::class)
-        ->and($fake->requiredCredentialKeys())->toBeArray()
+        ->and($fake->credentialFields())->toBeArray()
         ->and($fake->testConnection())->toBeInstanceOf(TestResult::class);
 });
 

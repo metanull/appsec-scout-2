@@ -22,8 +22,9 @@ beforeEach(function () {
 
 it('requires the base url credential so operators can choose the ASoC region', function () {
     $source = new AsocSource(app(Vault::class));
+    $fields = $source->credentialFields();
 
-    expect($source->requiredCredentialKeys())->toBe(['asoc.baseUrl', 'asoc.keyId', 'asoc.keySecret']);
+    expect(array_map(fn ($f) => $f->key, $fields))->toBe(['asoc.baseUrl', 'asoc.keyId', 'asoc.keySecret']);
 });
 
 function injectAsocClient(AsocSource $source, AsocClient $client): void

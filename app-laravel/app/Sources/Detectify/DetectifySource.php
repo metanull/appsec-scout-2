@@ -2,6 +2,7 @@
 
 namespace App\Sources\Detectify;
 
+use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -47,10 +48,12 @@ final class DetectifySource implements Source
         );
     }
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array
+    /** @return list<CredentialField> */
+    public function credentialFields(): array
     {
-        return ['detectify.apiKey'];
+        return [
+            new CredentialField(key: 'detectify.apiKey', label: 'API Key', isSecret: true, required: true, description: 'The Detectify API key.'),
+        ];
     }
 
     public function testConnection(): TestResult
