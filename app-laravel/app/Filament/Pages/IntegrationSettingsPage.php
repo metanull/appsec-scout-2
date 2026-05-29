@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Audit\Recorder;
+use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Integrations\IntegrationSettingsRepository;
 use App\Models\IntegrationSetting;
@@ -37,7 +38,7 @@ use Illuminate\Support\Str;
  *   key: string,
  *   display_name: string,
  *   instance: \App\Sources\Contracts\Source|\App\Trackers\Contracts\Tracker,
- *   required_credential_keys: list<string>,
+ *   credential_fields: list<\App\Credentials\CredentialField>,
  *   setting: IntegrationRepositoryState
  * }
  */
@@ -163,7 +164,7 @@ class IntegrationSettingsPage extends Page
     public function testIntegration(string $key): void
     {
         $entry = $this->integrationByKey($key);
-        $keys = array_map(fn (string $credentialKey): string => $credentialKey, $entry['required_credential_keys']);
+        $keys = array_map(fn (CredentialField $credentialField): string => $credentialField->key, $entry['credential_fields']);
 
         $result = app(Vault::class)->runAsOwner(null, function () use ($entry): object {
             return $entry['instance']->testConnection();
@@ -240,7 +241,7 @@ class IntegrationSettingsPage extends Page
                 'key' => IntegrationSetting::KIND_SOURCE . ':' . $source->id(),
                 'display_name' => $source->displayName(),
                 'instance' => $source,
-                'required_credential_keys' => $source->requiredCredentialKeys(),
+                'credential_fields' => $source->credentialFields(),
                 'setting' => $repository->get(IntegrationSetting::KIND_SOURCE, $source->id()),
             ];
         }
@@ -255,7 +256,7 @@ class IntegrationSettingsPage extends Page
                 'key' => IntegrationSetting::KIND_TRACKER . ':' . $tracker->id(),
                 'display_name' => $tracker->displayName(),
                 'instance' => $tracker,
-                'required_credential_keys' => $tracker->requiredCredentialKeys(),
+                'credential_fields' => $tracker->credentialFields(),
                 'setting' => $repository->get(IntegrationSetting::KIND_TRACKER, $tracker->id()),
             ];
         }

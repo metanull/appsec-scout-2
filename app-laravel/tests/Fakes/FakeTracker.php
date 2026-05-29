@@ -2,6 +2,7 @@
 
 namespace Tests\Fakes;
 
+use App\Credentials\CredentialField;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\ProjectDto;
@@ -55,10 +56,12 @@ final class FakeTracker implements Tracker
         );
     }
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array
+    /** @return list<CredentialField> */
+    public function credentialFields(): array
     {
-        return ['fake-tracker.token'];
+        return [
+            new CredentialField(key: 'fake-tracker.token', label: 'Token', isSecret: true, required: true),
+        ];
     }
 
     public function testConnection(): TestResult

@@ -2,6 +2,7 @@
 
 namespace App\Sources\Contracts;
 
+use App\Credentials\CredentialField;
 use App\Models\SecurityEvent;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
@@ -19,8 +20,8 @@ interface Source
 
     public function capabilities(): SourceCapabilities;
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array;
+    /** @return list<CredentialField> */
+    public function credentialFields(): array;
 
     public function testConnection(): TestResult;
 

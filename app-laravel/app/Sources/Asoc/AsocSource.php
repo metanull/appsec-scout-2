@@ -2,6 +2,7 @@
 
 namespace App\Sources\Asoc;
 
+use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Models\Article;
 use App\Models\Enums\EventSeverity;
@@ -52,10 +53,14 @@ final class AsocSource implements EnrichesFetchedEvents, Source
         );
     }
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array
+    /** @return list<CredentialField> */
+    public function credentialFields(): array
     {
-        return ['asoc.baseUrl', 'asoc.keyId', 'asoc.keySecret'];
+        return [
+            new CredentialField(key: 'asoc.baseUrl', label: 'Base URL', isSecret: false, required: true, description: 'The ASoC service base URL.'),
+            new CredentialField(key: 'asoc.keyId', label: 'Key ID', isSecret: false, required: true, description: 'The ASoC API key identifier.'),
+            new CredentialField(key: 'asoc.keySecret', label: 'Key Secret', isSecret: true, required: true, description: 'The ASoC API key secret.'),
+        ];
     }
 
     public function testConnection(): TestResult

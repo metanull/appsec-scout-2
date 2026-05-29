@@ -2,6 +2,7 @@
 
 namespace App\Trackers\Jira;
 
+use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
@@ -40,10 +41,14 @@ final class JiraTracker implements Tracker
         );
     }
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array
+    /** @return list<CredentialField> */
+    public function credentialFields(): array
     {
-        return ['jira.host', 'jira.email', 'jira.api_token'];
+        return [
+            new CredentialField(key: 'jira.host', label: 'Host URL', isSecret: false, required: true, description: 'The Jira Cloud instance URL (e.g. https://yourorg.atlassian.net).'),
+            new CredentialField(key: 'jira.email', label: 'Email', isSecret: false, required: true, description: 'The Jira account email address.'),
+            new CredentialField(key: 'jira.api_token', label: 'API Token', isSecret: true, required: true, description: 'The Jira API token generated from your Atlassian account.'),
+        ];
     }
 
     public function testConnection(): TestResult

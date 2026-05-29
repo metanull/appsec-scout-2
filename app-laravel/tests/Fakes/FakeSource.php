@@ -2,6 +2,7 @@
 
 namespace Tests\Fakes;
 
+use App\Credentials\CredentialField;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Sources\Contracts\Source;
@@ -55,10 +56,12 @@ final class FakeSource implements Source
         );
     }
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array
+    /** @return list<CredentialField> */
+    public function credentialFields(): array
     {
-        return ['fake.apiKey'];
+        return [
+            new CredentialField(key: 'fake.apiKey', label: 'API Key', isSecret: true, required: true),
+        ];
     }
 
     public function testConnection(): TestResult

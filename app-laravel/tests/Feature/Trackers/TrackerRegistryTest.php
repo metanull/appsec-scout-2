@@ -79,7 +79,7 @@ it('registered trackers satisfy the tracker contract', function () {
             ->and($tracker->id())->toBeString()->not->toBeEmpty()
             ->and($tracker->displayName())->toBeString()->not->toBeEmpty()
             ->and($tracker->capabilities())->toBeInstanceOf(TrackerCapabilities::class)
-            ->and($tracker->requiredCredentialKeys())->toBeArray()
+            ->and($tracker->credentialFields())->toBeArray()
             ->and($tracker->testConnection())->toBeInstanceOf(TestResult::class);
     }
 });

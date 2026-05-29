@@ -2,6 +2,7 @@
 
 namespace App\Trackers\GitHub;
 
+use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
@@ -40,10 +41,12 @@ final class GitHubTracker implements Tracker
         );
     }
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array
+    /** @return list<CredentialField> */
+    public function credentialFields(): array
     {
-        return ['github.token'];
+        return [
+            new CredentialField(key: 'github.token', label: 'Personal Access Token', isSecret: true, required: true, description: 'The GitHub personal access token (classic or fine-grained).'),
+        ];
     }
 
     public function testConnection(): TestResult

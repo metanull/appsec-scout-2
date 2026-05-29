@@ -2,6 +2,7 @@
 
 namespace App\Sources\AzDo;
 
+use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -54,10 +55,13 @@ final class AzDoSource implements Source
         );
     }
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array
+    /** @return list<CredentialField> */
+    public function credentialFields(): array
     {
-        return ['azdo.pat', 'azdo.organization'];
+        return [
+            new CredentialField(key: 'azdo.pat', label: 'Personal Access Token', isSecret: true, required: true, description: 'The Azure DevOps personal access token.'),
+            new CredentialField(key: 'azdo.organization', label: 'Organization', isSecret: false, required: true, description: 'The Azure DevOps organization name.'),
+        ];
     }
 
     public function testConnection(): TestResult

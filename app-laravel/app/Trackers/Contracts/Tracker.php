@@ -2,6 +2,7 @@
 
 namespace App\Trackers\Contracts;
 
+use App\Credentials\CredentialField;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
@@ -18,8 +19,8 @@ interface Tracker
 
     public function capabilities(): TrackerCapabilities;
 
-    /** @return list<string> */
-    public function requiredCredentialKeys(): array;
+    /** @return list<CredentialField> */
+    public function credentialFields(): array;
 
     public function testConnection(): TestResult;
 
