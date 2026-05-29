@@ -49,7 +49,7 @@ Core inputs: `TextInput`, `Textarea`, `Select`, `Toggle`, `Checkbox`, `CheckboxL
 - `TextColumn` — text, `badge()`, `color()`, `icon()`, `formatStateUsing()`, `limit()`, `wrap()`, `since()`, `dateTime()`, `money()`.
 - `IconColumn` — boolean or icon map via `icon()` / `color()`.
 - `ImageColumn` — inline image.
-- `ColorColumn` — colour swatch.
+- `ColorColumn` — color swatch.
 - `ToggleColumn` — inline editable toggle.
 - `SelectColumn` — inline editable select.
 - `CheckboxColumn` — inline editable checkbox.
@@ -75,7 +75,7 @@ Core inputs: `TextInput`, `Textarea`, `Select`, `Toggle`, `Checkbox`, `CheckboxL
 - `TextEntry` — primary display entry; supports `badge()`, `color()`, `icon()`, `formatStateUsing()`, `html()`, `limit()`.
 - `IconEntry` — icon mapped to a boolean or enum.
 - `ImageEntry` — inline image.
-- `ColorEntry` — colour swatch.
+- `ColorEntry` — color swatch.
 - `KeyValueEntry` — key/value pairs from an array or JSON.
 - `RepeatableEntry` — iterate over a relationship or array inline.
 - Layout: `Section`, `Grid`, `Fieldset`, `Split`, `Tabs` — same API as form layout.
