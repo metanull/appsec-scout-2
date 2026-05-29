@@ -137,7 +137,7 @@ final class JiraClient
         try {
             $payload = $this->decode($this->http->get("rest/api/3/issue/{$workItemKey}", [
                 'query' => [
-                    'fields' => 'summary,status,labels,priority,assignee,parent',
+                    'fields' => 'summary,status,labels,priority,assignee,parent,description',
                 ],
             ]));
         } catch (ClientException $exception) {
@@ -186,7 +186,7 @@ final class JiraClient
                     addcslashes($query, '"\\'),
                 ),
                 'maxResults' => $limit,
-                'fields' => 'summary,status,labels,priority,assignee,parent',
+                'fields' => 'summary,status,labels,priority,assignee,parent,description',
             ],
         ]));
 
@@ -253,6 +253,9 @@ final class JiraClient
             assignee: $assignee,
             parentId: isset($fields['parent']['key']) ? (string) $fields['parent']['key'] : null,
             labels: array_values(array_map('strval', $fields['labels'] ?? [])),
+            description: isset($fields['description']) && is_array($fields['description'])
+                ? AdfToText::toText($fields['description'])
+                : null,
         );
     }
 

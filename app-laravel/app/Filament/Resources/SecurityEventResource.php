@@ -269,6 +269,7 @@ class SecurityEventResource extends Resource
                                 userId: $user->id,
                                 trackerId: (string) $data['tracker'],
                                 workItemId: (string) $data['selected_work_item'],
+                                projectKey: (string) ($data['project'] ?? ''),
                             );
 
                             Notification::make()->title('Work item linked')->success()->send();
@@ -349,6 +350,7 @@ class SecurityEventResource extends Resource
                             userId: $user->id,
                             trackerId: (string) $data['tracker'],
                             workItemId: (string) $data['selected_work_item'],
+                            projectKey: (string) ($data['project'] ?? ''),
                         );
 
                         Notification::make()->title('Existing work item linked')->success()->send();

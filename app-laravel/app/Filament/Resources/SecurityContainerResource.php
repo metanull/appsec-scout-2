@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SecurityContainerResource\Pages\ListSecurityContainers;
 use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Models\SecurityContainer;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -56,6 +57,7 @@ class SecurityContainerResource extends Resource
     {
         return [
             EventsRelationManager::class,
+            TrackerProjectLinksRelationManager::class,
         ];
     }
 

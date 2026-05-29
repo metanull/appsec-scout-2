@@ -15,6 +15,7 @@ final class WorkItemService
         private readonly DescriptionBuilder $descriptionBuilder,
         private readonly Recorder $recorder,
         private readonly Registry $registry,
+        private readonly TrackerProjectLinker $linker,
     ) {}
 
     /**
@@ -54,7 +55,7 @@ final class WorkItemService
             parentId: $parentId,
         ));
 
-        $this->db->transaction(function () use ($events, $workItem, $trackerId, $userId, $isGrouped): void {
+        $this->db->transaction(function () use ($events, $workItem, $trackerId, $projectKey, $userId, $isGrouped): void {
             foreach ($events as $event) {
                 WorkItemLink::query()->create([
                     'event_id' => $event->id,
@@ -69,9 +70,12 @@ final class WorkItemService
                 ]);
             }
 
+            $this->linker->learnFromEvents($events, $trackerId, $projectKey, null, $userId);
+
             $this->recorder->recordWorkItemCreated(SecurityEvent::class, (string) $events[0]->id, [
                 'tracker_id' => $trackerId,
                 'work_item_id' => $workItem->id,
+                'project_key' => $projectKey,
                 'event_ids' => array_map(fn (SecurityEvent $event): int => $event->id, $events),
                 'grouped' => $isGrouped,
             ]);
@@ -79,11 +83,13 @@ final class WorkItemService
     }
 
     /** @param  list<int>  $eventIds */
-    public function linkExisting(array $eventIds, int $userId, string $trackerId, string $workItemId): void
+    public function linkExisting(array $eventIds, int $userId, string $trackerId, string $workItemId, string $projectKey = ''): void
     {
         $events = $this->events($eventIds);
         $tracker = $this->tracker($trackerId);
         $workItem = $tracker->getWorkItem($workItemId) ?? throw new \RuntimeException('Selected work item could not be loaded from the tracker.');
+
+        $resolvedProjectKey = $projectKey !== '' ? $projectKey : $workItem->projectKey;
 
         $duplicate = WorkItemLink::query()
             ->whereIn('event_id', array_map(fn (SecurityEvent $event): int => $event->id, $events))
@@ -95,7 +101,7 @@ final class WorkItemService
             throw new \RuntimeException('One or more selected alerts are already linked to this work item.');
         }
 
-        $this->db->transaction(function () use ($events, $workItem, $trackerId, $userId): void {
+        $this->db->transaction(function () use ($events, $workItem, $trackerId, $resolvedProjectKey, $userId): void {
             foreach ($events as $event) {
                 WorkItemLink::query()->create([
                     'event_id' => $event->id,
@@ -110,9 +116,12 @@ final class WorkItemService
                 ]);
             }
 
+            $this->linker->learnFromEvents($events, $trackerId, $resolvedProjectKey, null, $userId);
+
             $this->recorder->recordWorkItemLinked(SecurityEvent::class, (string) $events[0]->id, [
                 'tracker_id' => $trackerId,
                 'work_item_id' => $workItem->id,
+                'project_key' => $resolvedProjectKey,
                 'event_ids' => array_map(fn (SecurityEvent $event): int => $event->id, $events),
             ]);
         });

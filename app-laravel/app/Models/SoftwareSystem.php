@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'source_id', 'source_system_id', 'name', 'description',
@@ -17,6 +18,13 @@ class SoftwareSystem extends Model
 {
     /** @use HasFactory<SoftwareSystemFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::deleting(function (SoftwareSystem $system): void {
+            $system->trackerProjectLinks()->delete();
+        });
+    }
 
     /** @return array<string, mixed> */
     protected function casts(): array
@@ -39,6 +47,12 @@ class SoftwareSystem extends Model
     public function events(): HasMany
     {
         return $this->hasMany(SecurityEvent::class);
+    }
+
+    /** @return MorphMany<TrackerProjectLink, $this> */
+    public function trackerProjectLinks(): MorphMany
+    {
+        return $this->morphMany(TrackerProjectLink::class, 'owner');
     }
 
     /** @return BelongsToMany<SoftwareSystemLink, $this> */

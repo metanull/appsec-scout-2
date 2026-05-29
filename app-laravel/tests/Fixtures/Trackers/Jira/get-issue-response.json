@@ -26,6 +26,34 @@
     },
     "parent": {
       "key": "APP-7"
+    },
+    "description": {
+      "version": 1,
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "This issue was created by AppSec Scout. See ",
+              "marks": []
+            },
+            {
+              "type": "text",
+              "text": "alert detail",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "https://appsec.example.com/alerts/42"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   }
 }

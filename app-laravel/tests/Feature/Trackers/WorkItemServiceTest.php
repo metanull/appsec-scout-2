@@ -5,7 +5,6 @@ use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use App\Trackers\Dto\WorkItemDto;
-use App\Trackers\Registry;
 use App\Trackers\WorkItemService;
 use Database\Seeders\RolePermissionSeeder;
 use Tests\Fakes\FakeTracker;
@@ -110,15 +109,3 @@ it('unlinks a work item and records an audit row', function () {
     expect(WorkItemLink::count())->toBe(0)
         ->and(AuditLog::query()->where('action', 'work_item_unlinked')->exists())->toBeTrue();
 });
-
-function bindFakeWorkItemTracker(FakeTracker $tracker): FakeTracker
-{
-    config(['integration_settings.fake-tracker.enabled' => true]);
-
-    app()->bind('appsec-scout.tracker.fake', fn () => $tracker);
-    app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
-
-    app()->forgetInstance(Registry::class);
-
-    return $tracker;
-}

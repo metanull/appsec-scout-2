@@ -13,6 +13,7 @@ use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry as TrackerRegistry;
+use App\Trackers\TrackerConfigRepository;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
@@ -62,9 +63,12 @@ class IntegrationSettingsPage extends Page
     /** @var array<string, IntegrationTestResult|null> */
     public array $testResults = [];
 
+    public ?string $jiraDefaultProject = null;
+
     public function mount(): void
     {
         $this->loadState();
+        $this->jiraDefaultProject = app(TrackerConfigRepository::class)->getJiraDefaultProjectKey();
     }
 
     public static function canAccess(): bool
@@ -157,6 +161,11 @@ class IntegrationSettingsPage extends Page
             'fetch_interval_minutes' => $setting->fetch_interval_minutes,
             'service_user_id' => $setting->service_user_id,
         ]);
+
+        if ($entry['id'] === 'jira' && $entry['kind'] === IntegrationSetting::KIND_TRACKER) {
+            $projectKey = is_string($this->jiraDefaultProject) ? trim($this->jiraDefaultProject) : null;
+            app(TrackerConfigRepository::class)->setJiraDefaultProjectKey($projectKey !== '' ? $projectKey : null);
+        }
 
         $this->loadState();
 

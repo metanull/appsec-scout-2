@@ -82,7 +82,9 @@ it('gets an existing jira issue', function () {
         ->and($workItem?->id)->toBe('APP-101')
         ->and($workItem?->title)->toBe('Grouped secret findings')
         ->and($workItem?->state)->toBe('In Progress')
-        ->and($workItem?->parentId)->toBe('APP-7');
+        ->and($workItem?->parentId)->toBe('APP-7')
+        ->and($workItem?->description)->toContain('This issue was created by AppSec Scout')
+        ->and($workItem?->description)->toContain('https://appsec.example.com/alerts/42');
 });
 
 it('updates a jira issue and transitions its state', function () {
