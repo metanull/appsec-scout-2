@@ -81,6 +81,17 @@
                                 </td>
                                 <td class="px-3 py-3">
                                     <div class="flex flex-wrap gap-2">
+                                        @if ($integration['kind'] === 'tracker' && $integration['id'] === 'jira')
+                                            <div class="mb-2 w-full">
+                                                <label class="block text-xs font-medium text-gray-700">Default Jira project key</label>
+                                                <input
+                                                    type="text"
+                                                    wire:model.live="jiraDefaultProject"
+                                                    placeholder="e.g. APP"
+                                                    class="mt-1 block w-40 rounded-lg border-gray-300 text-sm shadow-sm"
+                                                >
+                                            </div>
+                                        @endif
                                         <x-filament::button size="sm" wire:click="saveIntegration('{{ $integration['key'] }}')">
                                             Save
                                         </x-filament::button>

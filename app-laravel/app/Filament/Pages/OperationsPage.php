@@ -13,6 +13,7 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
+use App\Trackers\ReconcileAllJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry as TrackerRegistry;
 use Filament\Actions\Action;
@@ -97,6 +98,13 @@ class OperationsPage extends Page implements HasTable
                         ->required(),
                 ])
                 ->action(fn (array $data) => $this->dispatchSelectedTracker($data['tracker_id'])),
+
+            Action::make('reconcileWorkItems')
+                ->label('Reconcile work items')
+                ->icon('heroicon-o-arrows-pointing-in')
+                ->requiresConfirmation()
+                ->modalDescription('Queue a reconciliation job to find and create missing links between alerts and tracker work items.')
+                ->action(fn () => $this->dispatchReconcileAll()),
 
             ActionGroup::make([
                 Action::make('pruneAuditLogs')
@@ -320,6 +328,14 @@ class OperationsPage extends Page implements HasTable
         app(Recorder::class)->recordAdminAction('operations.dispatch_tracker_refresh', ['tracker_id' => $id]);
 
         Notification::make()->title('Tracker refresh queued')->success()->send();
+    }
+
+    public function dispatchReconcileAll(): void
+    {
+        ReconcileAllJob::dispatch();
+        app(Recorder::class)->recordAdminAction('operations.reconcile_work_items');
+
+        Notification::make()->title('Work item reconciliation queued')->success()->send();
     }
 
     public function pruneAuditLogsNow(): void

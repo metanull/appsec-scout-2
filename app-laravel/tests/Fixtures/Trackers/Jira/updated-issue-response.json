@@ -24,6 +24,7 @@
     },
     "parent": {
       "key": "APP-7"
-    }
+    },
+    "description": null
   }
 }

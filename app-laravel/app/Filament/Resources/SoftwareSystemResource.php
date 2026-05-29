@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\Pages\ListSoftwareSystems;
 use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRelationManager;
@@ -65,6 +66,7 @@ class SoftwareSystemResource extends Resource
             EventsRelationManager::class,
             ContainersRelationManager::class,
             LinksRelationManager::class,
+            TrackerProjectLinksRelationManager::class,
         ];
     }
 

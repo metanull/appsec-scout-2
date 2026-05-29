@@ -111,6 +111,7 @@ It supports the following actions:
 - dispatch due integrations now
 - queue a selected source fetch
 - queue a selected tracker refresh
+- queue a work item reconciliation (find and create missing alert-to-work-item links)
 - prune audit logs
 - prune error logs
 - queue a Trivy DB update
@@ -150,7 +151,7 @@ Admin operators manage integration configuration from three places:
 
 - `Admin -> System credentials` for shared system-owned credentials
 - `Profile integrations` for the signed-in user's personal credentials
-- `Admin -> Integrations` for enablement, interval, service user selection, and connection tests
+- `Admin -> Integrations` for enablement, interval, service user selection, connection tests, and the Jira default project key
 
 Background resolution order now depends on the integration setting:
 
@@ -158,6 +159,31 @@ Background resolution order now depends on the integration setting:
 2. authenticated user's personal credential for interactive actions
 3. integration-specific service user credential when configured
 4. system credential
+
+## Tracker Project Scope
+
+Each Software System and each Security Container can have one or more **Tracker project links** — a mapping of `(tracker_id, project_key)` that controls which project work items are created in and which projects are searched during reconciliation.
+
+Links are managed in two ways:
+
+- **Manually**, via the `Tracker project links` tab on the Software System or Security Container detail page.
+- **Automatically learned**, whenever a work item is created or linked from a specific alert — the tracker and project key are recorded against every system and container that the alert belongs to.
+
+A global **Jira default project key** can also be set on the `Admin → Integrations` page under the Jira tracker row. This value is used as a fallback when no project link exists for the event's system or container.
+
+## Work Item Reconciliation
+
+Reconciliation finds missing `alert ↔ work item` links without duplicating existing ones. It runs in the background and operates on the following heuristics:
+
+1. **URL cross-reference**: if an alert's `url` or `version_control_url` matches the `work_item_url` stored on a `WorkItemLink` for another event, the current event is linked to that work item.
+2. **Description scan**: if a work item's description (fetched live from the tracker) contains the alert's URL, the alert is linked to that work item.
+
+Reconciliation can be triggered from two places:
+
+- **Operations page** → `Reconcile work items` action — queues a `ReconcileAllJob` that processes every alert.
+- **Alert detail page** → `Reconcile work items` action — queues a `ReconcileEventJob` scoped to that alert only.
+
+Both actions require the `work-items.link` permission. Every new link created by reconciliation produces an audit row with `via: reconciliation`.
 
 ## Development Verification
 

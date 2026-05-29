@@ -6,9 +6,11 @@ use App\Models\Enums\EventType;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
+use App\Trackers\Registry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
+use Tests\Fakes\FakeTracker;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class)->in('Feature');
@@ -17,6 +19,18 @@ uses(TestCase::class)->in('Unit');
 function trackerFixtureText(string $path): string
 {
     return str_replace("\r\n", "\n", trim(file_get_contents(base_path('tests/Fixtures/Trackers/' . $path))));
+}
+
+function bindFakeWorkItemTracker(FakeTracker $tracker): FakeTracker
+{
+    config(['integration_settings.fake-tracker.enabled' => true]);
+
+    app()->bind('appsec-scout.tracker.fake', fn () => $tracker);
+    app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
+
+    app()->forgetInstance(Registry::class);
+
+    return $tracker;
 }
 
 /** @return list<string> */

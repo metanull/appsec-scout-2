@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'software_system_id', 'source_container_id', 'name', 'kind',
@@ -17,6 +18,13 @@ class SecurityContainer extends Model
 {
     /** @use HasFactory<SecurityContainerFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::deleting(function (SecurityContainer $container): void {
+            $container->trackerProjectLinks()->delete();
+        });
+    }
 
     /** @return array<string, mixed> */
     protected function casts(): array
@@ -39,5 +47,11 @@ class SecurityContainer extends Model
     public function events(): HasMany
     {
         return $this->hasMany(SecurityEvent::class, 'container_id');
+    }
+
+    /** @return MorphMany<TrackerProjectLink, $this> */
+    public function trackerProjectLinks(): MorphMany
+    {
+        return $this->morphMany(TrackerProjectLink::class, 'owner');
     }
 }

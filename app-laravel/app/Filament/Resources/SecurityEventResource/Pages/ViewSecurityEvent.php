@@ -17,6 +17,7 @@ use App\Sources\Dto\EventDto;
 use App\Sources\Registry;
 use App\Sync\RefetchEventJob;
 use App\Trackers\CreateWorkItemJob;
+use App\Trackers\ReconcileEventJob;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
 use App\Triage\AttachmentService;
@@ -98,6 +99,13 @@ class ViewSecurityEvent extends ViewRecord
                 ->visible(fn (): bool => Gate::allows('work-items.link'))
                 ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
                 ->action(fn (array $data): bool => $this->linkExistingWorkItem($data)),
+            Action::make('reconcileWorkItems')
+                ->label('Reconcile work items')
+                ->icon('heroicon-o-arrows-pointing-in')
+                ->visible(fn (): bool => Gate::allows('work-items.link'))
+                ->requiresConfirmation()
+                ->modalDescription('Queue a reconciliation job to find and create missing links for this alert.')
+                ->action(fn (): bool => $this->dispatchReconcileEvent()),
             ActionGroup::make([
                 Action::make('runTrivy')
                     ->label('Run Trivy')
@@ -855,10 +863,22 @@ class ViewSecurityEvent extends ViewRecord
             userId: $user->id,
             trackerId: (string) $data['tracker'],
             workItemId: (string) $data['selected_work_item'],
+            projectKey: (string) ($data['project'] ?? ''),
         );
 
         $this->refreshFormData([]);
         Notification::make()->title('Work item linked')->success()->send();
+
+        return true;
+    }
+
+    private function dispatchReconcileEvent(): bool
+    {
+        Gate::authorize('work-items.link');
+
+        ReconcileEventJob::dispatch($this->eventRecord()->id);
+
+        Notification::make()->title('Work item reconciliation queued for this alert')->success()->send();
 
         return true;
     }
