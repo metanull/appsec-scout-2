@@ -31,6 +31,8 @@ class UserResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
+    protected static ?int $navigationSort = 20;
+
     protected static ?string $navigationLabel = 'Users';
 
     protected static ?string $slug = 'admin/users';
@@ -102,6 +104,7 @@ class UserResource extends Resource
                 Action::make('resetTwoFactor')
                     ->label('Reset 2FA')
                     ->requiresConfirmation()
+                    ->visible(fn (User $record): bool => $record->id !== Auth::id())
                     ->action(function (User $record): void {
                         $actor = Auth::user();
 
@@ -113,6 +116,7 @@ class UserResource extends Resource
                     }),
                 Action::make('sendPasswordReset')
                     ->label('Send password reset')
+                    ->visible(fn (User $record): bool => $record->id !== Auth::id())
                     ->action(function (User $record): void {
                         $actor = Auth::user();
 
@@ -126,7 +130,7 @@ class UserResource extends Resource
                     ->label('Disable user')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->visible(fn (User $record): bool => ! $record->is_disabled)
+                    ->visible(fn (User $record): bool => ! $record->is_disabled && $record->id !== Auth::id())
                     ->action(function (User $record): void {
                         $actor = Auth::user();
 

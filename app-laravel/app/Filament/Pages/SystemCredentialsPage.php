@@ -15,6 +15,8 @@ class SystemCredentialsPage extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
+    protected static ?int $navigationSort = 23;
+
     protected static ?string $navigationLabel = 'System credentials';
 
     protected static ?string $slug = 'admin/system-credentials';

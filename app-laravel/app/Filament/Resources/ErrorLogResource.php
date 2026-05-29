@@ -22,6 +22,8 @@ class ErrorLogResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
+    protected static ?int $navigationSort = 25;
+
     protected static ?string $navigationLabel = 'Errors';
 
     public static function canCreate(): bool

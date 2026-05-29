@@ -21,6 +21,8 @@ class SecurityContainerResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Reader';
 
+    protected static ?int $navigationSort = 10;
+
     protected static ?string $navigationLabel = 'Containers';
 
     public static function canViewAny(): bool

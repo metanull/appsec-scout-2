@@ -42,6 +42,8 @@ class SecurityEventResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Reader';
 
+    protected static ?int $navigationSort = 11;
+
     protected static ?string $navigationLabel = 'Alerts';
 
     public static function canViewAny(): bool

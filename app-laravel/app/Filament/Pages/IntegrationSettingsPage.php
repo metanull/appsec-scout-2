@@ -48,6 +48,8 @@ class IntegrationSettingsPage extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
+    protected static ?int $navigationSort = 22;
+
     protected static ?string $navigationLabel = 'Integrations';
 
     protected static ?string $slug = 'admin/integrations';

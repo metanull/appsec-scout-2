@@ -23,6 +23,8 @@ class SoftwareSystemResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Reader';
 
+    protected static ?int $navigationSort = 12;
+
     protected static ?string $navigationLabel = 'Software systems';
 
     public static function canViewAny(): bool
