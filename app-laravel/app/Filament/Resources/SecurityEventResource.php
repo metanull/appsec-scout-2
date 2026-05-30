@@ -4,6 +4,10 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SecurityEventResource\Pages\ListSecurityEvents;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
+use App\Filament\Resources\SecurityEventResource\RelationManagers\AttachmentsRelationManager;
+use App\Filament\Resources\SecurityEventResource\RelationManagers\AuditHistoryRelationManager;
+use App\Filament\Resources\SecurityEventResource\RelationManagers\CommentsRelationManager;
+use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Filament\Resources\SecurityEventResource\Support\SecurityEventTableQuery;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -12,7 +16,9 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
 use App\Models\User;
+use App\SecurityEvents\SourceLinkHelper;
 use App\Trackers\CreateWorkItemJob;
+use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
 use App\Triage\SeverityChanger;
@@ -22,8 +28,13 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -33,6 +44,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 class SecurityEventResource extends Resource
 {
@@ -54,6 +66,277 @@ class SecurityEventResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Alert Summary')
+                ->schema([
+                    Grid::make(3)->schema([
+                        TextEntry::make('title')
+                            ->columnSpan(2)
+                            ->wrap(),
+                        TextEntry::make('type')
+                            ->badge()
+                            ->color('gray')
+                            ->formatStateUsing(fn (EventType|string $state): string => str($state instanceof EventType ? $state->value : $state)->replace('_', ' ')->title()->toString()),
+                        TextEntry::make('severity')
+                            ->badge()
+                            ->color(fn (EventSeverity|string $state): string => match ($state instanceof EventSeverity ? $state->value : $state) {
+                                EventSeverity::Critical->value => 'danger',
+                                EventSeverity::High->value => 'warning',
+                                EventSeverity::Medium->value => 'info',
+                                EventSeverity::Low->value => 'gray',
+                                default => 'secondary',
+                            }),
+                        TextEntry::make('state')
+                            ->badge()
+                            ->color(fn (EventState|string $state): string => match ($state instanceof EventState ? $state->value : $state) {
+                                EventState::Resolved->value => 'success',
+                                EventState::Dismissed->value => 'gray',
+                                EventState::InProgress->value => 'info',
+                                EventState::Acknowledged->value => 'warning',
+                                default => 'danger',
+                            })
+                            ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()),
+                        TextEntry::make('source_id')
+                            ->label('Source')
+                            ->badge(),
+                        TextEntry::make('first_seen_at')
+                            ->label('First seen')
+                            ->dateTime('d M Y')
+                            ->placeholder('-'),
+                        TextEntry::make('last_seen_at')
+                            ->label('Last seen')
+                            ->dateTime('d M Y H:i')
+                            ->placeholder('-'),
+                        TextEntry::make('fingerprint')
+                            ->placeholder('-'),
+                        TextEntry::make('rule_id')
+                            ->label('Rule ID')
+                            ->placeholder('-'),
+                        TextEntry::make('_tags')
+                            ->label('Tags')
+                            ->state(fn (SecurityEvent $record): array => is_array($record->metadata) && is_array($record->metadata['tags'] ?? null)
+                                ? array_values(array_filter($record->metadata['tags'], fn (mixed $t): bool => is_string($t) && $t !== ''))
+                                : [])
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('-')
+                            ->columnSpanFull(),
+                    ]),
+                ]),
+
+            Section::make('Pending Sync')
+                ->visible(fn (SecurityEvent $record): bool => (bool) $record->is_dirty)
+                ->schema([
+                    Grid::make(3)->schema([
+                        TextEntry::make('pending_state')
+                            ->label('Pending state')
+                            ->badge()
+                            ->color('warning')
+                            ->formatStateUsing(fn (EventState|string|null $state): string => $state
+                                ? str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()
+                                : '—')
+                            ->placeholder('-'),
+                        TextEntry::make('pending_severity')
+                            ->label('Pending severity')
+                            ->badge()
+                            ->color(fn (EventSeverity|string|null $state): string => match ($state instanceof EventSeverity ? $state->value : (is_string($state) ? $state : '')) {
+                                EventSeverity::Critical->value => 'danger',
+                                EventSeverity::High->value => 'warning',
+                                EventSeverity::Medium->value => 'info',
+                                EventSeverity::Low->value => 'gray',
+                                default => 'warning',
+                            })
+                            ->placeholder('-'),
+                        TextEntry::make('pending_comment')
+                            ->label('Pending comment')
+                            ->wrap()
+                            ->placeholder('-'),
+                    ]),
+                ]),
+
+            Section::make('Links')
+                ->collapsible()
+                ->visible(fn (SecurityEvent $record): bool => filled($record->url) || filled($record->version_control_url))
+                ->schema([
+                    Grid::make(2)->schema([
+                        TextEntry::make('url')
+                            ->label('Source alert')
+                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                        TextEntry::make('version_control_url')
+                            ->label('Version control')
+                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                    ]),
+                ]),
+
+            Section::make('Secret Details')
+                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Secret))
+                ->schema([
+                    Grid::make(3)->schema([
+                        TextEntry::make('_detector')
+                            ->label('Detector')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['detector'] ?? null) : null)
+                            ->placeholder('-'),
+                        TextEntry::make('_truncated_secret')
+                            ->label('Truncated value')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['truncatedSecret'] ?? null) : null)
+                            ->placeholder('-'),
+                        TextEntry::make('_validation_fps')
+                            ->label('Validation fingerprints')
+                            ->state(fn (SecurityEvent $record): string => (string) count(
+                                is_array($record->metadata) && is_array($record->metadata['validationFingerprints'] ?? null)
+                                    ? $record->metadata['validationFingerprints']
+                                    : []
+                            )),
+                    ]),
+                    RepeatableEntry::make('_occurrences')
+                        ->label('Occurrences')
+                        ->state(fn (SecurityEvent $record): array => self::buildOccurrenceRows($record))
+                        ->schema([
+                            TextEntry::make('file_path')
+                                ->label('File')
+                                ->placeholder('n/a'),
+                            TextEntry::make('lines')
+                                ->label('Lines')
+                                ->placeholder('n/a'),
+                            TextEntry::make('branch')
+                                ->label('Branch')
+                                ->placeholder('n/a'),
+                            TextEntry::make('commit')
+                                ->label('Commit')
+                                ->placeholder('n/a'),
+                        ])
+                        ->columns(4),
+                ]),
+
+            Section::make('Dependency Details')
+                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Dependency))
+                ->schema([
+                    Grid::make(3)->schema([
+                        TextEntry::make('_package')
+                            ->label('Package')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) && is_array($record->metadata['package'] ?? null)
+                                ? trim(($record->metadata['package']['name'] ?? '') . ' ' . ($record->metadata['package']['version'] ?? ''))
+                                : null)
+                            ->placeholder('-'),
+                        TextEntry::make('_ecosystem')
+                            ->label('Ecosystem')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) && is_array($record->metadata['package'] ?? null)
+                                ? ($record->metadata['package']['ecosystem'] ?? null)
+                                : null)
+                            ->placeholder('-'),
+                        TextEntry::make('_cve')
+                            ->label('CVE')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['cve'] ?? null) : null)
+                            ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cveLinkUrl($state) : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                        TextEntry::make('_cvss')
+                            ->label('CVSS')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? (isset($record->metadata['cvss']) ? (string) $record->metadata['cvss'] : null) : null)
+                            ->placeholder('-'),
+                        TextEntry::make('_fixed_in')
+                            ->label('Fixed in')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['fixedInVersion'] ?? null) : null)
+                            ->placeholder('-'),
+                    ]),
+                ]),
+
+            Section::make('Code Location')
+                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Vulnerability) || self::isEventType($record, EventType::CodeQuality))
+                ->schema([
+                    Grid::make(2)->schema([
+                        TextEntry::make('file_path')
+                            ->label('File')
+                            ->url(fn (?string $state, SecurityEvent $record): ?string => filled($record->version_control_url) ? $record->version_control_url : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                        TextEntry::make('_lines')
+                            ->label('Lines')
+                            ->state(fn (SecurityEvent $record): ?string => $record->start_line !== null
+                                ? ($record->start_line === $record->end_line || $record->end_line === null
+                                    ? (string) $record->start_line
+                                    : $record->start_line . '–' . $record->end_line)
+                                : null)
+                            ->placeholder('-'),
+                        TextEntry::make('rule_id')
+                            ->label('Rule')
+                            ->placeholder('-'),
+                        TextEntry::make('_cwe')
+                            ->label('CWE')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? (isset($record->metadata['cwe']) ? (string) $record->metadata['cwe'] : null) : null)
+                            ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cweLinkUrl($state) : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                        TextEntry::make('branch')
+                            ->label('Branch')
+                            ->placeholder('-'),
+                        TextEntry::make('commit_sha')
+                            ->label('Commit')
+                            ->formatStateUsing(fn (?string $state): string => $state ? substr($state, 0, 12) : '-')
+                            ->placeholder('-'),
+                        TextEntry::make('snippet')
+                            ->label('Snippet')
+                            ->fontFamily('mono')
+                            ->wrap()
+                            ->columnSpanFull()
+                            ->placeholder('-'),
+                    ]),
+                ]),
+
+            Section::make('Posture')
+                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Misconfiguration) || self::isEventType($record, EventType::Iac) || self::isEventType($record, EventType::Posture))
+                ->schema([
+                    Grid::make(2)->schema([
+                        TextEntry::make('_resource_type')
+                            ->label('Resource type')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['resourceType'] ?? null) : null)
+                            ->placeholder('-'),
+                        TextEntry::make('_recommendation')
+                            ->label('Recommendation')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['recommendation'] ?? null) : null)
+                            ->wrap()
+                            ->placeholder('-'),
+                        TextEntry::make('_documentation_url')
+                            ->label('Documentation')
+                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['documentationUrl'] ?? null) : null)
+                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                    ]),
+                ]),
+
+            Section::make('Remediation')
+                ->schema([
+                    TextEntry::make('remediation')
+                        ->label('')
+                        ->html()
+                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
+                        ->columnSpanFull(),
+                ]),
+
+            Section::make('Raw Evidence')
+                ->collapsible()
+                ->collapsed()
+                ->schema([
+                    TextEntry::make('_raw_evidence')
+                        ->label('')
+                        ->state(fn (SecurityEvent $record): string => json_encode(
+                            self::buildRawEvidence($record),
+                            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                        ) ?: '{}')
+                        ->fontFamily('mono')
+                        ->copyable()
+                        ->columnSpanFull(),
+                ]),
+        ]);
     }
 
     public static function table(Table $table): Table
@@ -169,17 +452,37 @@ class SecurityEventResource extends Resource
                     ->options(fn () => self::availableTags())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyTags($query, self::stringArray($data['values'] ?? []))),
                 Filter::make('work_item')
-                    ->form([])
+                    ->form([
+                        Select::make('tracker_id')
+                            ->label('Tracker')
+                            ->options(fn (): array => collect(app(TrackerRegistry::class)->all())
+                                ->mapWithKeys(fn ($t): array => [$t->id() => $t->displayName()])
+                                ->all())
+                            ->placeholder('Any tracker'),
+                        TextInput::make('work_item_id')
+                            ->label('Work item ID')
+                            ->placeholder('e.g. PROJ-123')
+                            ->maxLength(200),
+                    ])
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyWorkItem(
                         $query,
                         is_string($data['tracker_id'] ?? null) ? $data['tracker_id'] : null,
                         is_string($data['work_item_id'] ?? null) ? $data['work_item_id'] : null,
                     ))
-                    ->indicateUsing(function (array $data): ?string {
-                        $tracker = is_string($data['tracker_id'] ?? null) ? $data['tracker_id'] : '';
-                        $itemId = is_string($data['work_item_id'] ?? null) ? $data['work_item_id'] : '';
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        $tracker = is_string($data['tracker_id'] ?? null) ? trim($data['tracker_id']) : '';
+                        $itemId = is_string($data['work_item_id'] ?? null) ? trim($data['work_item_id']) : '';
 
-                        return ($tracker !== '' && $itemId !== '') ? "Work item: {$tracker}/{$itemId}" : null;
+                        if ($tracker !== '') {
+                            $indicators[] = "Tracker: {$tracker}";
+                        }
+
+                        if ($itemId !== '') {
+                            $indicators[] = "Work item: {$itemId}";
+                        }
+
+                        return $indicators;
                     }),
             ])
             ->actions([
@@ -362,6 +665,16 @@ class SecurityEventResource extends Resource
             ->paginated([25, 50, 100]);
     }
 
+    public static function getRelations(): array
+    {
+        return [
+            CommentsRelationManager::class,
+            WorkItemLinksRelationManager::class,
+            AttachmentsRelationManager::class,
+            AuditHistoryRelationManager::class,
+        ];
+    }
+
     public static function getPages(): array
     {
         return [
@@ -531,5 +844,154 @@ class SecurityEventResource extends Resource
         return collect(EventSeverity::cases())
             ->mapWithKeys(fn (EventSeverity $severity): array => [$severity->value => ucfirst($severity->value)])
             ->all();
+    }
+
+    private static function isEventType(SecurityEvent $record, EventType $type): bool
+    {
+        $current = $record->getAttribute('type');
+
+        return ($current instanceof EventType ? $current : EventType::tryFrom((string) $current)) === $type;
+    }
+
+    /**
+     * @return list<array{file_path: string, lines: string, branch: string, commit: string}>
+     */
+    private static function buildOccurrenceRows(SecurityEvent $record): array
+    {
+        /** @var array<string, mixed>|null $metadata */
+        $metadata = $record->getAttribute('metadata');
+
+        if (! is_array($metadata)) {
+            return [];
+        }
+
+        $raw = $metadata['occurrences'] ?? null;
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $rows = [];
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $filePath = is_string($item['filePath'] ?? null) ? (string) $item['filePath'] : (is_string($item['file_path'] ?? null) ? (string) $item['file_path'] : 'n/a');
+            $startLine = $item['startLine'] ?? $item['start_line'] ?? 'n/a';
+            $endLine = $item['endLine'] ?? $item['end_line'] ?? 'n/a';
+            $ref = is_string($item['ref'] ?? null) ? ltrim((string) $item['ref'], 'refs/heads/') : '';
+            $commit = is_string($item['commitSha'] ?? $item['commit_sha'] ?? null)
+                ? substr((string) ($item['commitSha'] ?? $item['commit_sha']), 0, 8)
+                : '';
+
+            $lines = (string) $startLine;
+            if ((string) $endLine !== (string) $startLine && (string) $endLine !== 'n/a') {
+                $lines .= '–' . $endLine;
+            }
+
+            $rows[] = [
+                'file_path' => $filePath,
+                'lines' => $lines,
+                'branch' => $ref !== '' ? $ref : 'n/a',
+                'commit' => $commit !== '' ? $commit : 'n/a',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function buildRawEvidence(SecurityEvent $record): array
+    {
+        /** @var array<string, mixed>|null $metadata */
+        $metadata = $record->getAttribute('metadata');
+        $sourceDataRaw = $record->getAttribute('source_data');
+
+        $sourceData = null;
+        if (is_string($sourceDataRaw) && $sourceDataRaw !== '') {
+            /** @var mixed $decoded */
+            $decoded = json_decode($sourceDataRaw, true);
+            $sourceData = is_array($decoded) ? $decoded : ['_raw' => Str::limit($sourceDataRaw, 4096)];
+        } elseif (is_array($sourceDataRaw)) {
+            $sourceData = $sourceDataRaw;
+        }
+
+        $type = $record->getAttribute('type');
+        $severity = $record->getAttribute('severity');
+        $state = $record->getAttribute('state');
+        $pendingState = $record->getAttribute('pending_state');
+        $pendingSeverity = $record->getAttribute('pending_severity');
+        $syncedAt = $record->getAttribute('synced_at');
+
+        return [
+            'event' => [
+                'id' => $record->id,
+                'source_id' => $record->source_id,
+                'source_event_id' => $record->source_event_id,
+                'type' => $type instanceof EventType ? $type->value : (is_string($type) ? $type : null),
+                'severity' => $severity instanceof EventSeverity ? $severity->value : (is_string($severity) ? $severity : null),
+                'state' => $state instanceof EventState ? $state->value : (is_string($state) ? $state : null),
+                'is_dirty' => $record->is_dirty,
+                'pending_state' => $pendingState instanceof EventState ? $pendingState->value : null,
+                'pending_severity' => $pendingSeverity instanceof EventSeverity ? $pendingSeverity->value : null,
+                'rule_id' => $record->rule_id,
+                'fingerprint' => $record->fingerprint,
+                'synced_at' => $syncedAt instanceof \DateTimeInterface ? $syncedAt->format('c') : null,
+            ],
+            'metadata' => is_array($metadata) ? self::redactArray($metadata) : null,
+            'source_data' => is_array($sourceData) ? self::redactArray($sourceData) : null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function redactArray(array $data): array
+    {
+        $result = [];
+
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $result[$key] = self::redactArray($value);
+            } elseif (self::isSensitiveKey((string) $key)) {
+                $result[$key] = '***REDACTED***';
+            } else {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
+    }
+
+    private static function isSensitiveKey(string $key): bool
+    {
+        $lower = strtolower($key);
+
+        foreach (['token', 'secret', 'password', 'passwd', 'key', 'pat', 'authorization', 'credential', 'private'] as $sensitive) {
+            if (str_contains($lower, $sensitive)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function renderRemediation(SecurityEvent $record): string
+    {
+        $markdown = $record->remediation;
+
+        if (! is_string($markdown) || trim($markdown) === '') {
+            return '<p class="fi-in-placeholder">No remediation guidance available.</p>';
+        }
+
+        return Str::markdown($markdown, [
+            'html_input' => 'strip',
+            'allow_unsafe_links' => false,
+        ]);
     }
 }
