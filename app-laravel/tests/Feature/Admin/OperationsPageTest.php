@@ -2,13 +2,17 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
+use App\Jobs\UpdateTrivyDbJob;
 use App\Models\ErrorLog;
 use App\Models\FailedJob;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
+use App\Sync\FetchSourceJob;
+use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
@@ -88,6 +92,8 @@ it('shows queue failed-job sync-run and error counts', function () {
 });
 
 it('queues supported operational actions and records audit rows', function () {
+    Bus::fake();
+
     $admin = operationsAdmin();
 
     Livewire::actingAs($admin)
@@ -98,6 +104,10 @@ it('queues supported operational actions and records audit rows', function () {
         ->call('dispatchSelectedSource')
         ->call('dispatchSelectedTracker')
         ->call('updateTrivyDbNow');
+
+    Bus::assertDispatched(FetchSourceJob::class);
+    Bus::assertDispatched(RefreshWorkItemsJob::class);
+    Bus::assertDispatched(UpdateTrivyDbJob::class);
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_due_integrations')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
