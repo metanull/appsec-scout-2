@@ -41,7 +41,7 @@ docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-li
 # Phase 1: SQLite (in-memory).
 # phpunit.xml forces DB_CONNECTION=sqlite and DB_DATABASE=:memory: via force="true",
 # overriding the mysql settings that arrive from .env.testing.
-docker compose run --rm "${test_env_args[@]}" app vendor/bin/pest --no-coverage --quiet --compact
+docker compose run --rm "${test_env_args[@]}" app vendor/bin/pest --no-coverage --compact
 
 # Phase 2: MySQL (dedicated appsec_scout_test database).
 # The database is created automatically by docker/mysql-init.sql on first MySQL
@@ -50,6 +50,6 @@ docker compose up -d mysql redis
 
 docker compose run --rm "${test_env_args[@]}" app php artisan migrate:fresh --force
 
-docker compose run --rm "${test_env_args[@]}" app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml --quiet --compact
+docker compose run --rm "${test_env_args[@]}" app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml --compact
 
 docker compose run --rm "${test_env_args[@]}" app composer smoke

@@ -70,7 +70,7 @@ try {
         throw "artisan migrate:fresh failed for appsec_scout_test."
     }
 
-    docker compose run --rm @testEnvArgs app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml 
+    docker compose run --rm @testEnvArgs app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml --compact
     if ($LASTEXITCODE -ne 0) {
         throw "Pest (MySQL) check failed."
     }
