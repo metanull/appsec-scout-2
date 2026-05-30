@@ -9,9 +9,9 @@ use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRel
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Models\SoftwareSystem;
-use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;

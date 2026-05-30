@@ -7,9 +7,9 @@ use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Models\SecurityContainer;
-use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
