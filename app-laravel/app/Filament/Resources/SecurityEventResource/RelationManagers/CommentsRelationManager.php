@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SecurityEventResource\RelationManagers;
 
 use App\Models\EventComment;
+use App\Models\SecurityEvent;
 use App\Triage\CommentManager;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
@@ -76,9 +77,15 @@ class CommentsRelationManager extends RelationManager
                             abort(403);
                         }
 
+                        $ownerRecord = $this->getOwnerRecord();
+
+                        if (! $ownerRecord instanceof SecurityEvent) {
+                            abort(500);
+                        }
+
                         try {
                             app(CommentManager::class)->add(
-                                $this->getOwnerRecord(),
+                                $ownerRecord,
                                 $user,
                                 (string) $data['body'],
                             );

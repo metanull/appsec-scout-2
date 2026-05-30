@@ -190,6 +190,7 @@ Both actions require the `work-items.link` permission. Every new link created by
 Run all checks from the repository root after rebuilding the dev image:
 
 ```bash
+#APP_BUILD_TARGET=dev docker compose build app --no-cache
 APP_BUILD_TARGET=dev docker compose build app
 APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pint --test
 APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
@@ -201,6 +202,7 @@ PowerShell equivalent:
 
 ```powershell
 $env:APP_BUILD_TARGET = 'dev'
+#docker compose build app --no-cache
 docker compose build app
 docker compose run --rm app vendor/bin/pint --test
 docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M

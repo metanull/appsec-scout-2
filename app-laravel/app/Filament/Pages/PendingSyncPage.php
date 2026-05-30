@@ -6,10 +6,9 @@ use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Sync\PushEventStatesJob;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Filament\Tables\Actions\BulkAction;
-use Filament\Tables\Actions\BulkActionGroup;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
@@ -70,7 +69,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('state')
                     ->label('Current state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($record->state?->value) {
+                    ->color(fn (SecurityEvent $record): string => match ((string) $record->state) {
                         'open' => 'danger',
                         'resolved' => 'success',
                         'dismissed' => 'gray',
@@ -80,7 +79,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('pending_state')
                     ->label('Pending state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($record->pending_state?->value) {
+                    ->color(fn (SecurityEvent $record): string => match ((string) $record->pending_state) {
                         'open' => 'danger',
                         'resolved' => 'success',
                         'dismissed' => 'gray',
@@ -90,7 +89,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('severity')
                     ->label('Current severity')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($record->severity?->value) {
+                    ->color(fn (SecurityEvent $record): string => match ((string) $record->severity) {
                         'critical' => 'danger',
                         'high' => 'warning',
                         'medium' => 'info',
@@ -101,7 +100,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('pending_severity')
                     ->label('Pending severity')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($record->pending_severity?->value) {
+                    ->color(fn (SecurityEvent $record): string => match ((string) $record->pending_severity) {
                         'critical' => 'danger',
                         'high' => 'warning',
                         'medium' => 'info',
@@ -124,27 +123,25 @@ class PendingSyncPage extends Page implements HasTable
             ->groups(['source_id'])
             ->defaultGroup('source_id')
             ->bulkActions([
-                BulkActionGroup::make([
-                    BulkAction::make('pushToSource')
-                        ->label('Push to source')
-                        ->icon('heroicon-o-arrow-up-on-square-stack')
-                        ->requiresConfirmation()
-                        ->modalHeading('Push selected alerts to source')
-                        ->modalDescription('This will dispatch sync jobs for each selected alert grouped by source.')
-                        ->action(function (Collection $records): void {
-                            Gate::authorize('work-items.sync');
-                            Gate::authorize('sources.push-state');
+                BulkAction::make('pushToSource')
+                    ->label('Push to source')
+                    ->icon('heroicon-o-arrow-up-on-square-stack')
+                    ->requiresConfirmation()
+                    ->modalHeading('Push selected alerts to source')
+                    ->modalDescription('This will dispatch sync jobs for each selected alert grouped by source.')
+                    ->action(function (Collection $records): void {
+                        Gate::authorize('work-items.sync');
+                        Gate::authorize('sources.push-state');
 
-                            $records->groupBy('source_id')
-                                ->each(function (Collection $group): void {
-                                    $ids = $group->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
-                                    /** @var list<int> $ids */
-                                    PushEventStatesJob::dispatch($ids);
-                                });
+                        $records->groupBy('source_id')
+                            ->each(function (Collection $group): void {
+                                $ids = $group->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
+                                /** @var list<int> $ids */
+                                PushEventStatesJob::dispatch($ids);
+                            });
 
-                            Notification::make()->title('Selected alerts queued for sync')->success()->send();
-                        }),
-                ]),
+                        Notification::make()->title('Selected alerts queued for sync')->success()->send();
+                    }),
             ])
             ->emptyStateHeading('No pending sync')
             ->emptyStateDescription('All alerts are up to date with their sources.')

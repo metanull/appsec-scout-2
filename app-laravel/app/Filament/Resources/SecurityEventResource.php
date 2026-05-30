@@ -118,9 +118,11 @@ class SecurityEventResource extends Resource
                             ->placeholder('-'),
                         TextEntry::make('_tags')
                             ->label('Tags')
-                            ->state(fn (SecurityEvent $record): array => is_array($record->metadata) && is_array($record->metadata['tags'] ?? null)
-                                ? array_values(array_filter($record->metadata['tags'], fn (mixed $t): bool => is_string($t) && $t !== ''))
-                                : [])
+                            ->state(function (SecurityEvent $record): array {
+                                $tags = self::metadataArrayValue($record, 'tags');
+
+                                return array_values(array_filter($tags, fn (mixed $tag): bool => is_string($tag) && $tag !== ''));
+                            })
                             ->badge()
                             ->color('gray')
                             ->placeholder('-')
@@ -182,19 +184,15 @@ class SecurityEventResource extends Resource
                     Grid::make(3)->schema([
                         TextEntry::make('_detector')
                             ->label('Detector')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['detector'] ?? null) : null)
+                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'detector'))
                             ->placeholder('-'),
                         TextEntry::make('_truncated_secret')
                             ->label('Truncated value')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['truncatedSecret'] ?? null) : null)
+                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'truncatedSecret'))
                             ->placeholder('-'),
                         TextEntry::make('_validation_fps')
                             ->label('Validation fingerprints')
-                            ->state(fn (SecurityEvent $record): string => (string) count(
-                                is_array($record->metadata) && is_array($record->metadata['validationFingerprints'] ?? null)
-                                    ? $record->metadata['validationFingerprints']
-                                    : []
-                            )),
+                            ->state(fn (SecurityEvent $record): string => (string) count(self::metadataArrayValue($record, 'validationFingerprints'))),
                     ]),
                     RepeatableEntry::make('_occurrences')
                         ->label('Occurrences')
@@ -222,29 +220,41 @@ class SecurityEventResource extends Resource
                     Grid::make(3)->schema([
                         TextEntry::make('_package')
                             ->label('Package')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) && is_array($record->metadata['package'] ?? null)
-                                ? trim(($record->metadata['package']['name'] ?? '') . ' ' . ($record->metadata['package']['version'] ?? ''))
-                                : null)
+                            ->state(function (SecurityEvent $record): ?string {
+                                $package = self::metadataArrayValue($record, 'package');
+
+                                if ($package === []) {
+                                    return null;
+                                }
+
+                                return trim((string) ($package['name'] ?? '') . ' ' . (string) ($package['version'] ?? ''));
+                            })
                             ->placeholder('-'),
                         TextEntry::make('_ecosystem')
                             ->label('Ecosystem')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) && is_array($record->metadata['package'] ?? null)
-                                ? ($record->metadata['package']['ecosystem'] ?? null)
-                                : null)
+                            ->state(function (SecurityEvent $record): ?string {
+                                $package = self::metadataArrayValue($record, 'package');
+
+                                return is_string($package['ecosystem'] ?? null) ? $package['ecosystem'] : null;
+                            })
                             ->placeholder('-'),
                         TextEntry::make('_cve')
                             ->label('CVE')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['cve'] ?? null) : null)
+                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'cve'))
                             ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cveLinkUrl($state) : null)
                             ->openUrlInNewTab()
                             ->placeholder('-'),
                         TextEntry::make('_cvss')
                             ->label('CVSS')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? (isset($record->metadata['cvss']) ? (string) $record->metadata['cvss'] : null) : null)
+                            ->state(function (SecurityEvent $record): ?string {
+                                $cvss = self::metadataValue($record, 'cvss');
+
+                                return $cvss !== null ? (string) $cvss : null;
+                            })
                             ->placeholder('-'),
                         TextEntry::make('_fixed_in')
                             ->label('Fixed in')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['fixedInVersion'] ?? null) : null)
+                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'fixedInVersion'))
                             ->placeholder('-'),
                     ]),
                 ]),
@@ -271,7 +281,11 @@ class SecurityEventResource extends Resource
                             ->placeholder('-'),
                         TextEntry::make('_cwe')
                             ->label('CWE')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? (isset($record->metadata['cwe']) ? (string) $record->metadata['cwe'] : null) : null)
+                            ->state(function (SecurityEvent $record): ?string {
+                                $cwe = self::metadataValue($record, 'cwe');
+
+                                return $cwe !== null ? (string) $cwe : null;
+                            })
                             ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cweLinkUrl($state) : null)
                             ->openUrlInNewTab()
                             ->placeholder('-'),
@@ -297,16 +311,16 @@ class SecurityEventResource extends Resource
                     Grid::make(2)->schema([
                         TextEntry::make('_resource_type')
                             ->label('Resource type')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['resourceType'] ?? null) : null)
+                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'resourceType'))
                             ->placeholder('-'),
                         TextEntry::make('_recommendation')
                             ->label('Recommendation')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['recommendation'] ?? null) : null)
+                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'recommendation'))
                             ->wrap()
                             ->placeholder('-'),
                         TextEntry::make('_documentation_url')
                             ->label('Documentation')
-                            ->state(fn (SecurityEvent $record): ?string => is_array($record->metadata) ? ($record->metadata['documentationUrl'] ?? null) : null)
+                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'documentationUrl'))
                             ->url(fn (?string $state): ?string => filled($state) ? $state : null)
                             ->openUrlInNewTab()
                             ->placeholder('-'),
@@ -702,6 +716,47 @@ class SecurityEventResource extends Resource
             ->values();
 
         return $tags->mapWithKeys(fn (string $tag): array => [$tag => $tag])->all();
+    }
+
+    /** @return array<string, mixed> */
+    private static function metadata(SecurityEvent $record): array
+    {
+        $metadata = $record->getAttribute('metadata');
+
+        if (is_array($metadata)) {
+            return $metadata;
+        }
+
+        if (is_string($metadata) && $metadata !== '') {
+            /** @var mixed $decoded */
+            $decoded = json_decode($metadata, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
+    private static function metadataValue(SecurityEvent $record, string $key): mixed
+    {
+        $metadata = self::metadata($record);
+
+        return $metadata[$key] ?? null;
+    }
+
+    /** @return array<int|string, mixed> */
+    private static function metadataArrayValue(SecurityEvent $record, string $key): array
+    {
+        $value = self::metadataValue($record, $key);
+
+        return is_array($value) ? $value : [];
+    }
+
+    private static function metadataStringValue(SecurityEvent $record, string $key): ?string
+    {
+        $value = self::metadataValue($record, $key);
+
+        return is_string($value) ? $value : null;
     }
 
     private static function nullableInt(mixed $value): ?int

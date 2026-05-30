@@ -8,6 +8,7 @@
 app-laravel/vendor
 app-laravel/node_modules
 app-laravel/public/build
+app-laravel/bootstrap/cache/*.php
 app-laravel/storage/logs
 app-laravel/storage/framework/cache
 app-laravel/storage/framework/sessions

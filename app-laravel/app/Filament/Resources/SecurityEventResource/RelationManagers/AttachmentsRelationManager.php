@@ -40,7 +40,7 @@ class AttachmentsRelationManager extends RelationManager
                     ->formatStateUsing(fn (int $state): string => self::formatBytes($state)),
                 TextColumn::make('createdBy.name')
                     ->label('Created by')
-                    ->state(fn (EventAttachment $record): string => $record->createdBy?->name ?? $record->created_by_command ?? '—')
+                    ->state(fn (EventAttachment $record): string => ($record->createdBy !== null ? $record->createdBy->name : null) ?? $record->created_by_command ?? '—')
                     ->placeholder('—'),
                 TextColumn::make('created_at')
                     ->label('Created')

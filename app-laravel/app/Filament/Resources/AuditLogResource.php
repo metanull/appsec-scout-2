@@ -199,7 +199,7 @@ class AuditLogResource extends Resource
 
         $user = User::find($record->user_id);
 
-        return $user?->name ?? "User #{$record->user_id}";
+        return $user instanceof User ? $user->name : "User #{$record->user_id}";
     }
 
     private static function resolveUserUrl(AuditLog $record): ?string

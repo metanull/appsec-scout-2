@@ -13,13 +13,12 @@ use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\TrackerConfigRepository;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Filament\Tables\Actions\Action as TableAction;
-use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -122,7 +121,7 @@ class IntegrationSettingsPage extends Page implements HasTable
             ])
             ->actions([
                 ActionGroup::make([
-                    TableAction::make('editSettings')
+                    Action::make('editSettings')
                         ->label('Edit settings')
                         ->icon('heroicon-o-pencil')
                         ->form(fn (IntegrationSetting $record): array => $this->buildEditForm($record))
@@ -135,7 +134,7 @@ class IntegrationSettingsPage extends Page implements HasTable
                                 : null,
                         ])
                         ->action(fn (IntegrationSetting $record, array $data) => $this->saveIntegration($record, $data)),
-                    TableAction::make('testConnection')
+                    Action::make('testConnection')
                         ->label('Test connection')
                         ->icon('heroicon-o-signal')
                         ->color('gray')

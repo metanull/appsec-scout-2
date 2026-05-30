@@ -7,7 +7,6 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
-use App\Sources\Dto\EventDto;
 use App\Sync\RefetchEventJob;
 use App\Trackers\CreateWorkItemJob;
 use App\Trackers\ReconcileEventJob;
@@ -402,52 +401,5 @@ class ViewSecurityEvent extends ViewRecord
         $record = $this->getRecord();
 
         return $record;
-    }
-
-    private function applyEventDto(SecurityEvent $record, EventDto $dto): void
-    {
-        $rawMetadata = $record->getRawOriginal('metadata');
-        $metadata = [];
-
-        if (is_string($rawMetadata) && $rawMetadata !== '') {
-            /** @var mixed $decoded */
-            $decoded = json_decode($rawMetadata, true);
-            if (is_array($decoded)) {
-                $metadata = $decoded;
-            }
-        }
-
-        $incomingMetadata = is_array($dto->metadata) ? $dto->metadata : [];
-
-        if (array_key_exists('local', $metadata)) {
-            $incomingMetadata['local'] = $metadata['local'];
-        }
-
-        $record->fill([
-            'title' => $dto->title,
-            'description' => $dto->description,
-            'severity' => $dto->severity,
-            'state' => $dto->state,
-            'type' => $dto->type,
-            'rule_id' => $dto->ruleId,
-            'fingerprint' => $dto->fingerprint,
-            'url' => $dto->url,
-            'remediation' => $dto->remediation ?? $record->remediation,
-            'file_path' => $dto->filePath,
-            'start_line' => $dto->startLine,
-            'end_line' => $dto->endLine,
-            'snippet' => $dto->snippet,
-            'commit_sha' => $dto->commitSha,
-            'branch' => $dto->branch,
-            'version_control_url' => $dto->versionControlUrl,
-            'source_data' => $dto->sourceData,
-            'metadata' => $incomingMetadata,
-            'first_seen_at' => $dto->firstSeenAt ?? $record->first_seen_at,
-            'last_seen_at' => $dto->lastSeenAt ?? $record->last_seen_at,
-            'synced_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $record->save();
     }
 }
