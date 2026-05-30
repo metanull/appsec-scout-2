@@ -1,17 +1,112 @@
 <?php
 
-use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
+use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventType;
+use App\Models\SecurityEvent;
+use App\Models\User;
+use Database\Seeders\RolePermissionSeeder;
 
-it('selects expected sections for every event type', function (EventType $type, array $expected) {
-    expect(ViewSecurityEvent::sectionsForType($type))->toBe($expected);
-})->with([
-    [EventType::Secret, ['universal', 'secret', 'remediation', 'comments', 'audit', 'work_items']],
-    [EventType::Dependency, ['universal', 'dependency', 'remediation', 'comments', 'audit', 'work_items']],
-    [EventType::Vulnerability, ['universal', 'code_location', 'remediation', 'comments', 'audit', 'work_items']],
-    [EventType::CodeQuality, ['universal', 'code_location', 'remediation', 'comments', 'audit', 'work_items']],
-    [EventType::Misconfiguration, ['universal', 'posture', 'remediation', 'comments', 'audit', 'work_items']],
-    [EventType::Iac, ['universal', 'posture', 'remediation', 'comments', 'audit', 'work_items']],
-    [EventType::Posture, ['universal', 'posture', 'remediation', 'comments', 'audit', 'work_items']],
-    [EventType::License, ['universal', 'remediation', 'comments', 'audit', 'work_items']],
-]);
+beforeEach(function () {
+    (new RolePermissionSeeder)->run();
+});
+
+it('renders the alert detail infolist for a user with alerts.view', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Plan']);
+
+    $event = SecurityEvent::factory()->create([
+        'title' => 'Test infolist alert',
+        'type' => EventType::Secret,
+    ]);
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
+        ->assertOk()
+        ->assertSee('Test infolist alert')
+        ->assertSee('Alert Summary');
+});
+
+it('shows type-specific Secret Details section for secret events', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Plan']);
+
+    $event = SecurityEvent::factory()->create([
+        'type' => EventType::Secret,
+        'metadata' => ['detector' => 'GitLeaks'],
+    ]);
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
+        ->assertOk()
+        ->assertSee('Secret Details')
+        ->assertSee('GitLeaks');
+});
+
+it('shows type-specific Dependency Details section for dependency events', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Plan']);
+
+    $event = SecurityEvent::factory()->create([
+        'type' => EventType::Dependency,
+        'metadata' => ['package' => ['name' => 'lodash', 'version' => '4.17.20', 'ecosystem' => 'npm']],
+    ]);
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
+        ->assertOk()
+        ->assertSee('Dependency Details')
+        ->assertSee('lodash 4.17.20');
+});
+
+it('shows Code Location section for vulnerability events', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Plan']);
+
+    $event = SecurityEvent::factory()->create([
+        'type' => EventType::Vulnerability,
+        'file_path' => 'src/auth/login.php',
+        'start_line' => 42,
+    ]);
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
+        ->assertOk()
+        ->assertSee('Code Location')
+        ->assertSee('src/auth/login.php');
+});
+
+it('shows Posture section for misconfiguration events', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Plan']);
+
+    $event = SecurityEvent::factory()->create([
+        'type' => EventType::Misconfiguration,
+        'metadata' => ['resourceType' => 'S3Bucket'],
+    ]);
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
+        ->assertOk()
+        ->assertSee('Posture')
+        ->assertSee('S3Bucket');
+});

@@ -11,7 +11,9 @@ use App\Models\SoftwareSystemLink;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -44,6 +46,35 @@ class SoftwareSystemLinkResource extends Resource
             Textarea::make('description')
                 ->rows(4)
                 ->nullable(),
+        ]);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Summary')
+                ->schema([
+                    TextEntry::make('name')
+                        ->label('Name')
+                        ->wrap(),
+                    TextEntry::make('description')
+                        ->label('Description')
+                        ->wrap()
+                        ->placeholder('-'),
+                    TextEntry::make('members_count')
+                        ->label('Member count')
+                        ->state(fn (SoftwareSystemLink $record): int => $record->members()->count())
+                        ->placeholder('-'),
+                    TextEntry::make('created_at')
+                        ->label('Created')
+                        ->dateTime('d M Y H:i')
+                        ->placeholder('-'),
+                    TextEntry::make('updated_at')
+                        ->label('Last updated')
+                        ->since()
+                        ->placeholder('-'),
+                ])
+                ->columns(3),
         ]);
     }
 

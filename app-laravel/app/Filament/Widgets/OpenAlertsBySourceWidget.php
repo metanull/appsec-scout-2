@@ -5,12 +5,14 @@ namespace App\Filament\Widgets;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\Enums\EventState;
-use Filament\Widgets\Widget;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
+use Filament\Widgets\TableWidget;
 use Illuminate\Support\Facades\Auth;
 
-class OpenAlertsBySourceWidget extends Widget
+class OpenAlertsBySourceWidget extends TableWidget
 {
-    protected string $view = 'filament.widgets.open-alerts-by-source';
+    protected static ?string $heading = 'Open alerts by source';
 
     protected int|string|array $columnSpan = 'full';
 
@@ -21,32 +23,39 @@ class OpenAlertsBySourceWidget extends Widget
         return Auth::user()?->can('alerts.view') ?? false;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function getViewData(): array
+    public function table(Table $table): Table
     {
-        $rows = DashboardData::openAlertsBySourceAndWorkItemState();
-
-        $rowsWithUrls = array_map(function (array $row): array {
-            $row['source_url'] = SecurityEventResource::filteredIndexUrl([
-                'source_id' => [$row['source_id']],
-                'state' => [EventState::Open->value],
-            ]);
-            $row['linked_url'] = SecurityEventResource::filteredIndexUrl([
-                'source_id' => [$row['source_id']],
-                'state' => [EventState::Open->value],
-                'has_work_item' => ['1'],
-            ]);
-            $row['unlinked_url'] = SecurityEventResource::filteredIndexUrl([
-                'source_id' => [$row['source_id']],
-                'state' => [EventState::Open->value],
-                'has_work_item' => ['0'],
-            ]);
-
-            return $row;
-        }, $rows);
-
-        return ['rows' => $rowsWithUrls];
+        return $table
+            ->records(fn () => collect(DashboardData::openAlertsBySourceAndWorkItemState()))
+            ->columns([
+                TextColumn::make('source_id')
+                    ->label('Source')
+                    ->url(fn (array $row): string => SecurityEventResource::filteredIndexUrl([
+                        'source_id' => [$row['source_id']],
+                        'state' => [EventState::Open->value],
+                    ]))
+                    ->badge()
+                    ->color('info'),
+                TextColumn::make('linked')
+                    ->label('With work item')
+                    ->url(fn (array $row): string => SecurityEventResource::filteredIndexUrl([
+                        'source_id' => [$row['source_id']],
+                        'state' => [EventState::Open->value],
+                        'has_work_item' => ['1'],
+                    ]))
+                    ->badge()
+                    ->color('success'),
+                TextColumn::make('unlinked')
+                    ->label('Without work item')
+                    ->url(fn (array $row): string => SecurityEventResource::filteredIndexUrl([
+                        'source_id' => [$row['source_id']],
+                        'state' => [EventState::Open->value],
+                        'has_work_item' => ['0'],
+                    ]))
+                    ->badge()
+                    ->color('warning'),
+            ])
+            ->paginated(false)
+            ->emptyStateDescription('No open alerts.');
     }
 }

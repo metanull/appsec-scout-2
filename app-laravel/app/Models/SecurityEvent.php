@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Audit\AuditLog;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -77,6 +78,14 @@ class SecurityEvent extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(EventAttachment::class, 'event_id')->orderByDesc('created_at');
+    }
+
+    /** @return HasMany<AuditLog, $this> */
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(AuditLog::class, 'subject_id', 'id')
+            ->where('subject_type', static::class)
+            ->orderByDesc('created_at');
     }
 
     /**

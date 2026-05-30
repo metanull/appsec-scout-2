@@ -14,32 +14,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare Docker environment
-        run: |
-          cp app-laravel/.env.example .env
-          printf '%s\n' \
-            'APP_BUILD_TARGET=dev' \
-            'APP_ENV=testing' \
-            'APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
-            'APP_DEBUG=false' \
-            'DB_DATABASE=appsec_scout_test' \
-            'DB_PASSWORD=password' \
-            'CACHE_STORE=redis' \
-            'SESSION_DRIVER=redis' \
-            'QUEUE_CONNECTION=redis' \
-            >> .env
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: intl, pdo_mysql, bcmath, zip, pcntl
+          coverage: none
 
-      - name: Build Docker development image
-        run: docker compose build app
+      - name: Install dependencies
+        working-directory: app-laravel
+        run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Start backing services
-        run: docker compose up -d mysql redis
+      - name: Copy .env
+        working-directory: app-laravel
+        run: cp .env.example .env
+
+      - name: Generate app key
+        working-directory: app-laravel
+        run: php artisan key:generate
 
       - name: Lint (Pint)
-        run: docker compose run --rm app vendor/bin/pint --test
+        working-directory: app-laravel
+        run: vendor/bin/pint --test
 
       - name: Static analysis (PHPStan)
-        run: docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+        working-directory: app-laravel
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 
       - name: Test (Pest)
-        run: docker compose run --rm app vendor/bin/pest --no-coverage
+        working-directory: app-laravel
+        run: vendor/bin/pest --no-coverage
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ":memory:"

@@ -3,6 +3,9 @@
 namespace App\Filament\Pages;
 
 use App\Audit\Recorder;
+use App\Filament\Widgets\OperationsHealthStatsWidget;
+use App\Filament\Widgets\RecentErrorsTableWidget;
+use App\Filament\Widgets\RecentSyncRunsTableWidget;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
@@ -49,6 +52,16 @@ class OperationsPage extends Page implements HasTable
     protected static ?string $slug = 'admin/operations';
 
     protected string $view = 'filament.pages.operations-page';
+
+    /** @return list<class-string> */
+    public function getWidgets(): array
+    {
+        return [
+            OperationsHealthStatsWidget::class,
+            RecentSyncRunsTableWidget::class,
+            RecentErrorsTableWidget::class,
+        ];
+    }
 
     public ?string $selectedSourceId = null;
 

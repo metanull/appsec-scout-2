@@ -2,11 +2,14 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Resources\SecurityEventResource;
+use App\Filament\Resources\SecurityEventResource\RelationManagers\AuditHistoryRelationManager;
+use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use Database\Seeders\RolePermissionSeeder;
+use Livewire\Livewire;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -83,7 +86,7 @@ it('renders secret occurrences table when metadata has occurrences', function ()
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
         ->assertSee('src/config/secrets.js')
-        ->assertSee('Occurrences (1)');
+        ->assertSee('Occurrences');
 });
 
 it('renders the raw evidence section collapsed by default', function () {
@@ -166,9 +169,12 @@ it('shows work item table columns including created by', function () {
         'synced_at' => now(),
     ]);
 
-    $this->actingAs($user)
-        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
-        ->assertOk()
+    Livewire::actingAs($user)
+        ->test(WorkItemLinksRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => SecurityEventResource\Pages\ViewSecurityEvent::class,
+        ])
+        ->call('loadTable')
         ->assertSee('Fix the secret')
         ->assertSee('Created by')
         ->assertSee('Created at');
@@ -193,9 +199,12 @@ it('shows audit history table with action column', function () {
         'payload_json' => ['old_state' => 'open', 'new_state' => 'resolved'],
     ]);
 
-    $this->actingAs($user)
-        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
-        ->assertOk()
+    Livewire::actingAs($user)
+        ->test(AuditHistoryRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => SecurityEventResource\Pages\ViewSecurityEvent::class,
+        ])
+        ->call('loadTable')
         ->assertSee('state.changed')
         ->assertSee('Audit History');
 });

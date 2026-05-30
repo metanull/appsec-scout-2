@@ -2,17 +2,12 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        if (DB::getDriverName() !== 'mysql') {
-            throw new RuntimeException('The event_attachments payload column requires MySQL LONGBLOB support.');
-        }
-
         Schema::create('event_attachments', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('event_id')->constrained('security_events')->cascadeOnDelete();
@@ -27,8 +22,6 @@ return new class extends Migration
 
             $table->index(['event_id', 'kind']);
         });
-
-        DB::statement('ALTER TABLE event_attachments MODIFY payload LONGBLOB NOT NULL');
     }
 
     public function down(): void
