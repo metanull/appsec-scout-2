@@ -211,6 +211,16 @@ docker compose run --rm app composer smoke
 Remove-Item Env:\APP_BUILD_TARGET
 ```
 
+Helper scripts for the same dev-container checks:
+
+```bash
+./scripts/invoke-check.sh
+```
+
+```powershell
+.\scripts\invoke-check.ps1
+```
+
 CI intentionally stops at the existing Laravel quality gates. It does not build a production image, generate an SBOM, or run Trivy image scans.
 
 ## Optional Local Image Checks
