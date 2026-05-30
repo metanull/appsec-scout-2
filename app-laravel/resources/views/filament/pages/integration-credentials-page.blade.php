@@ -1,40 +1,53 @@
 <x-filament-panels::page>
-    <div class="space-y-6">
-        <div>
-            <h2 class="text-lg font-semibold text-gray-950">{{ $this->heading() }}</h2>
-            <p class="text-sm text-gray-500">{{ $this->subheading() }}</p>
-        </div>
+    <div class="fi-page-content grid gap-y-6">
 
         <div class="flex flex-wrap justify-end gap-3">
-            <x-filament::button wire:click="testAllConfiguredIntegrations" color="gray" size="sm" icon="heroicon-o-signal">
+            <x-filament::button
+                wire:click="testAllConfiguredIntegrations"
+                color="gray"
+                size="sm"
+                icon="heroicon-o-signal"
+            >
                 Test all configured
             </x-filament::button>
-            <x-filament::button wire:click="saveAllCredentials" size="sm" icon="heroicon-o-arrow-down-tray">
+            <x-filament::button
+                wire:click="saveAllCredentials"
+                size="sm"
+                icon="heroicon-o-arrow-down-tray"
+            >
                 Save all changes
             </x-filament::button>
         </div>
 
         @foreach ($this->integrations() as $integration)
+            @php $testResult = $this->testResults[$integration['id']] ?? null; @endphp
+
             <x-filament::section>
                 <x-slot name="heading">
-                    <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
                         <span>{{ $integration['display_name'] }}</span>
-                        <div class="flex items-center gap-2">
-                            @if (($this->testResults[$integration['id']] ?? null) !== null)
-                                @if ($this->testResults[$integration['id']]['ok'])
-                                    <x-filament::badge color="success" size="sm">Connected</x-filament::badge>
-                                @else
-                                    <x-filament::badge color="danger" size="sm" :tooltip="$this->testResults[$integration['id']]['error'] ?? 'Unknown error'">Failed</x-filament::badge>
-                                @endif
+                        @if ($testResult !== null)
+                            @if ($testResult['ok'])
+                                <x-filament::badge color="success" size="sm">Connected</x-filament::badge>
+                            @else
+                                <x-filament::badge color="danger" size="sm">Failed</x-filament::badge>
                             @endif
-                            <x-filament::button wire:click="testIntegration('{{ $integration['id'] }}')" color="gray" size="xs">
-                                Test
-                            </x-filament::button>
-                        </div>
+                        @endif
                     </div>
                 </x-slot>
 
-                <div class="space-y-4">
+                <x-slot name="headerEnd">
+                    <x-filament::button
+                        wire:click="testIntegration('{{ $integration['id'] }}')"
+                        color="gray"
+                        size="xs"
+                        icon="heroicon-o-signal"
+                    >
+                        Test
+                    </x-filament::button>
+                </x-slot>
+
+                <div class="grid gap-4 sm:grid-cols-2">
                     @foreach ($integration['credential_fields'] as $field)
                         @php
                             $stateKey = $field->stateKey();
@@ -42,21 +55,14 @@
                             $shouldReplace = $this->replace[$stateKey] ?? false;
                         @endphp
 
-                        <div class="space-y-1">
-                            <label class="block text-sm font-medium text-gray-700">
-                                {{ $field->label }}
-                                @if ($field->required)
-                                    <span class="text-danger-500">*</span>
-                                @endif
-                            </label>
-
-                            @if ($field->description)
-                                <p class="text-xs text-gray-500">{{ $field->description }}</p>
-                            @endif
-
-                            @if ($field->isSecret)
-                                @if ($hasStored && ! $shouldReplace)
-                                    <div class="flex items-center gap-3">
+                        <div class="fi-fo-field-wrp flex flex-col gap-y-1.5">
+                            <x-filament::input.wrapper
+                                :label="$field->label . ($field->required ? ' *' : '')"
+                                :helper-text="$field->description ?? null"
+                                :state-path="'values.' . $stateKey"
+                            >
+                                @if ($field->isSecret && $hasStored && ! $shouldReplace)
+                                    <div class="flex items-center gap-3 px-3 py-2">
                                         <x-filament::badge color="success" size="sm">Stored</x-filament::badge>
                                         <button
                                             type="button"
@@ -66,13 +72,12 @@
                                             Replace
                                         </button>
                                     </div>
-                                @else
-                                    <input
+                                @elseif ($field->isSecret)
+                                    <x-filament::input
                                         type="password"
-                                        wire:model="values.{{ $stateKey }}"
-                                        placeholder="{{ $hasStored ? 'Enter new value to replace stored secret' : '' }}"
-                                        class="w-full rounded-lg border-gray-300 text-sm shadow-sm"
-                                    >
+                                        wire:model.live="values.{{ $stateKey }}"
+                                        :placeholder="$hasStored ? 'Enter new value to replace stored secret' : ''"
+                                    />
                                     @if ($hasStored)
                                         <button
                                             type="button"
@@ -82,37 +87,41 @@
                                             Cancel replacement
                                         </button>
                                     @endif
+                                @else
+                                    <x-filament::input
+                                        type="text"
+                                        wire:model.live="values.{{ $stateKey }}"
+                                    />
                                 @endif
-                            @else
-                                <input
-                                    type="text"
-                                    wire:model="values.{{ $stateKey }}"
-                                    class="w-full rounded-lg border-gray-300 text-sm shadow-sm"
-                                >
-                            @endif
+                            </x-filament::input.wrapper>
 
                             @error('values.' . $stateKey)
-                                <div class="text-sm text-danger-600">{{ $message }}</div>
+                                <p class="fi-fo-field-wrp-error-message text-sm text-danger-600 dark:text-danger-400">{{ $message }}</p>
                             @enderror
                         </div>
                     @endforeach
 
-                    <div class="space-y-1">
-                        <label class="block text-sm font-medium text-gray-700">Description</label>
-                        <textarea
-                            wire:model="descriptions.{{ $integration['id'] }}"
-                            rows="2"
-                            class="w-full rounded-lg border-gray-300 text-sm shadow-sm"
-                        ></textarea>
+                    <div class="sm:col-span-2 fi-fo-field-wrp flex flex-col gap-y-1.5">
+                        <x-filament::input.wrapper label="Description">
+                            <x-filament::input
+                                type="text"
+                                wire:model.live="descriptions.{{ $integration['id'] }}"
+                            />
+                        </x-filament::input.wrapper>
                     </div>
+                </div>
 
-                    <div class="flex justify-end">
-                        <x-filament::button wire:click="saveIntegration('{{ $integration['id'] }}')" size="sm">
-                            Save credentials
-                        </x-filament::button>
-                    </div>
+                <div class="mt-4 flex justify-end">
+                    <x-filament::button
+                        wire:click="saveIntegration('{{ $integration['id'] }}')"
+                        size="sm"
+                        icon="heroicon-o-arrow-down-tray"
+                    >
+                        Save credentials
+                    </x-filament::button>
                 </div>
             </x-filament::section>
         @endforeach
+
     </div>
 </x-filament-panels::page>
