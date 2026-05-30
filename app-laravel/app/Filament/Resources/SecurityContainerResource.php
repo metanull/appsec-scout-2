@@ -9,7 +9,6 @@ use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationMa
 use App\Models\SecurityContainer;
 use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -39,9 +38,9 @@ class SecurityContainerResource extends Resource
         return $schema->components([]);
     }
 
-    public static function infolist(Infolist $infolist): Infolist
+    public static function infolist(Schema $schema): Schema
     {
-        return $infolist->schema([
+        return $schema->components([
             Section::make('Summary')
                 ->schema([
                     TextEntry::make('name')
