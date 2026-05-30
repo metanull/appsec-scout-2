@@ -1,4 +1,4 @@
-<x-auth-layouts.auth :title="config(''app.name'') . '' — Set up two-factor authentication''" heading="Set up two-factor authentication">
+<x-auth-layouts.auth :title="config('app.name') . ' — Set up two-factor authentication'" heading="Set up two-factor authentication">
 
     <p class="text-sm text-gray-500 dark:text-gray-400">
         Scan the QR code with your authenticator app (e.g. Google Authenticator, Authy), then enter the 6-digit code to confirm.
@@ -13,7 +13,7 @@
         <code class="block rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-xs font-mono text-gray-800 dark:text-gray-200 break-all select-all">{{ $secretKey }}</code>
     </div>
 
-    <form method="POST" action="{{ route(''two-factor.setup.confirm'') }}" class="space-y-4">
+    <form method="POST" action="{{ route('two-factor.setup.confirm') }}" class="space-y-4">
         @csrf
 
         <div>
@@ -32,7 +32,7 @@
                 placeholder="000000"
                 class="fi-input block w-full rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-center tracking-widest text-gray-950 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
             >
-            @error(''code'')
+            @error('code')
                 <p class="mt-1 text-xs text-danger-600 dark:text-danger-400">{{ $message }}</p>
             @enderror
         </div>

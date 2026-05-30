@@ -1,4 +1,4 @@
-<x-auth-layouts.auth :title="config(''app.name'') . '' — Recovery codes''" heading="Save your recovery codes">
+<x-auth-layouts.auth :title="config('app.name') . ' — Recovery codes'" heading="Save your recovery codes">
 
     <div class="rounded-lg border border-warning-300 bg-warning-50 dark:bg-warning-900/10 dark:border-warning-700 px-4 py-3 text-sm text-warning-800 dark:text-warning-300">
         Store these codes in a safe place. Each code can only be used once.
@@ -12,7 +12,7 @@
     </ul>
 
     <a
-        href="{{ url(''/'') }}"
+        href="{{ url('/') }}"
         class="fi-btn block w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white text-center shadow-sm hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-600"
     >
         I have saved my codes &mdash; Continue

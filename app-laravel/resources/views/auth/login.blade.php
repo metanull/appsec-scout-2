@@ -1,6 +1,6 @@
-<x-auth-layouts.auth :title="config(''app.name'') . '' — Sign in''" heading="Sign in to your account">
+<x-auth-layouts.auth :title="config('app.name') . ' — Sign in'" heading="Sign in to your account">
 
-    <form method="POST" action="{{ url(''/user/login'') }}" class="space-y-4">
+    <form method="POST" action="{{ url('/user/login') }}" class="space-y-4">
         @csrf
 
         <div>
@@ -11,13 +11,13 @@
                 id="email"
                 type="email"
                 name="email"
-                value="{{ old(''email'') }}"
+                value="{{ old('email') }}"
                 required
                 autofocus
                 autocomplete="username"
                 class="fi-input block w-full rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-950 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
             >
-            @error(''email'')
+            @error('email')
                 <p class="mt-1 text-xs text-danger-600 dark:text-danger-400">{{ $message }}</p>
             @enderror
         </div>
@@ -34,7 +34,7 @@
                 autocomplete="current-password"
                 class="fi-input block w-full rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-950 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
             >
-            @error(''password'')
+            @error('password')
                 <p class="mt-1 text-xs text-danger-600 dark:text-danger-400">{{ $message }}</p>
             @enderror
         </div>

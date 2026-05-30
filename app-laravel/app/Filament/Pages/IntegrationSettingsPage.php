@@ -13,7 +13,6 @@ use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\TrackerConfigRepository;
 use Filament\Actions\Action;
-use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -44,6 +43,11 @@ class IntegrationSettingsPage extends Page implements HasTable
 {
     use InteractsWithTable;
 
+    /**
+     * @var array<string, array{enabled: bool, fetch_interval_minutes: int, service_user_id: int|string|null, jira_default_project?: ?string}>
+     */
+    public array $settings = [];
+
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-cog-6-tooth';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
@@ -71,6 +75,21 @@ class IntegrationSettingsPage extends Page implements HasTable
 
         $repository->syncKnown(IntegrationSetting::KIND_SOURCE, array_map(fn ($s): string => $s->id(), $sources));
         $repository->syncKnown(IntegrationSetting::KIND_TRACKER, array_map(fn (Tracker $t): string => $t->id(), $trackers));
+
+        $this->settings = IntegrationSetting::query()
+            ->get()
+            ->mapWithKeys(function (IntegrationSetting $setting): array {
+                $key = $setting->integration_kind . ':' . $setting->integration_id;
+
+                return [
+                    $key => [
+                        'enabled' => $setting->enabled,
+                        'fetch_interval_minutes' => $setting->fetch_interval_minutes,
+                        'service_user_id' => $setting->service_user_id,
+                    ],
+                ];
+            })
+            ->all();
     }
 
     public function table(Table $table): Table
@@ -110,6 +129,7 @@ class IntegrationSettingsPage extends Page implements HasTable
                     ->placeholder('-'),
                 TextColumn::make('last_sync_message')
                     ->label('Last message')
+                    ->state(fn (IntegrationSetting $record): ?string => $this->statusMessageSummary($record->last_sync_message))
                     ->limit(80)
                     ->wrap()
                     ->placeholder('-')
@@ -120,26 +140,24 @@ class IntegrationSettingsPage extends Page implements HasTable
                     ->placeholder('-'),
             ])
             ->actions([
-                ActionGroup::make([
-                    Action::make('editSettings')
-                        ->label('Edit settings')
-                        ->icon('heroicon-o-pencil')
-                        ->form(fn (IntegrationSetting $record): array => $this->buildEditForm($record))
-                        ->fillForm(fn (IntegrationSetting $record): array => [
-                            'enabled' => $record->enabled,
-                            'fetch_interval_minutes' => $record->fetch_interval_minutes,
-                            'service_user_id' => $record->service_user_id,
-                            'jira_default_project' => $record->integration_id === 'jira'
-                                ? app(TrackerConfigRepository::class)->getJiraDefaultProjectKey()
-                                : null,
-                        ])
-                        ->action(fn (IntegrationSetting $record, array $data) => $this->saveIntegration($record, $data)),
-                    Action::make('testConnection')
-                        ->label('Test connection')
-                        ->icon('heroicon-o-signal')
-                        ->color('gray')
-                        ->action(fn (IntegrationSetting $record) => $this->testIntegration($record)),
-                ]),
+                Action::make('editSettings')
+                    ->label('Edit settings')
+                    ->icon('heroicon-o-pencil')
+                    ->form(fn (IntegrationSetting $record): array => $this->buildEditForm($record))
+                    ->fillForm(fn (IntegrationSetting $record): array => [
+                        'enabled' => $record->enabled,
+                        'fetch_interval_minutes' => $record->fetch_interval_minutes,
+                        'service_user_id' => $record->service_user_id,
+                        'jira_default_project' => $record->integration_id === 'jira'
+                            ? app(TrackerConfigRepository::class)->getJiraDefaultProjectKey()
+                            : null,
+                    ])
+                    ->action(fn (IntegrationSetting $record, array $data) => $this->persistIntegration($record, $data)),
+                Action::make('testConnection')
+                    ->label('Test connection')
+                    ->icon('heroicon-o-signal')
+                    ->color('gray')
+                    ->action(fn (IntegrationSetting $record) => $this->testIntegration($record)),
             ])
             ->emptyStateHeading('No integrations')
             ->paginated(false);
@@ -212,7 +230,7 @@ class IntegrationSettingsPage extends Page implements HasTable
     }
 
     /** @param array<string, mixed> $data */
-    private function saveIntegration(IntegrationSetting $record, array $data): void
+    private function persistIntegration(IntegrationSetting $record, array $data): void
     {
         $serviceUserId = isset($data['service_user_id']) && is_numeric($data['service_user_id'])
             ? (int) $data['service_user_id']
@@ -232,6 +250,13 @@ class IntegrationSettingsPage extends Page implements HasTable
             'service_user_id' => $setting->service_user_id,
         ]);
 
+        $legacyKey = $setting->integration_kind . ':' . $setting->integration_id;
+        $this->settings[$legacyKey] = [
+            'enabled' => $setting->enabled,
+            'fetch_interval_minutes' => $setting->fetch_interval_minutes,
+            'service_user_id' => $setting->service_user_id,
+        ];
+
         if ($record->integration_id === 'jira' && $record->integration_kind === IntegrationSetting::KIND_TRACKER) {
             $projectKey = isset($data['jira_default_project']) && is_string($data['jira_default_project'])
                 ? trim($data['jira_default_project'])
@@ -240,6 +265,33 @@ class IntegrationSettingsPage extends Page implements HasTable
         }
 
         Notification::make()->title('Integration settings saved')->success()->send();
+    }
+
+    public function saveIntegration(string $target): void
+    {
+        [$kind, $id] = array_pad(explode(':', $target, 2), 2, null);
+
+        if (! is_string($kind) || $kind === '' || ! is_string($id) || $id === '') {
+            return;
+        }
+
+        $record = IntegrationSetting::query()
+            ->where('integration_kind', $kind)
+            ->where('integration_id', $id)
+            ->first();
+
+        if (! $record instanceof IntegrationSetting) {
+            return;
+        }
+
+        $legacy = $this->settings[$target] ?? [];
+
+        $this->persistIntegration($record, [
+            'enabled' => (bool) ($legacy['enabled'] ?? $record->enabled),
+            'fetch_interval_minutes' => (int) ($legacy['fetch_interval_minutes'] ?? $record->fetch_interval_minutes),
+            'service_user_id' => $legacy['service_user_id'] ?? $record->service_user_id,
+            'jira_default_project' => $legacy['jira_default_project'] ?? null,
+        ]);
     }
 
     private function testIntegration(IntegrationSetting $record): void
@@ -282,5 +334,18 @@ class IntegrationSettingsPage extends Page implements HasTable
             ->title($result->ok ? 'Connection successful' : 'Connection failed')
             ->color($result->ok ? 'success' : 'danger')
             ->send();
+    }
+
+    public function statusMessageSummary(?string $message): ?string
+    {
+        if ($message === null || trim($message) === '') {
+            return null;
+        }
+
+        if (str_contains($message, "Data too long for column 'version_control_url'")) {
+            return 'Data too long for version_control_url. See Error Logs for the full database error.';
+        }
+
+        return $message;
     }
 }
