@@ -51,49 +51,73 @@
                     @foreach ($integration['credential_fields'] as $field)
                         @php
                             $stateKey = $field->stateKey();
+                            $fieldId = $integration['id'] . '_' . $stateKey;
                             $hasStored = $this->hasStored[$stateKey] ?? false;
                             $shouldReplace = $this->replace[$stateKey] ?? false;
                         @endphp
 
                         <div class="fi-fo-field-wrp flex flex-col gap-y-1.5">
-                            <x-filament::input.wrapper
-                                :label="$field->label . ($field->required ? ' *' : '')"
-                                :helper-text="$field->description ?? null"
-                                :state-path="'values.' . $stateKey"
-                            >
+                            <label for="{{ $fieldId }}" class="fi-fo-field-wrp-label inline-flex items-center gap-x-1 text-sm font-medium leading-6 text-gray-950 dark:text-white">
+                                <span>{{ $field->label }}</span>
+                                @if ($field->required)
+                                    <span class="text-danger-600 dark:text-danger-400" aria-hidden="true">*</span>
+                                @endif
+                            </label>
+
+                            <x-filament::input.wrapper>
                                 @if ($field->isSecret && $hasStored && ! $shouldReplace)
                                     <div class="flex items-center gap-3 px-3 py-2">
                                         <x-filament::badge color="success" size="sm">Stored</x-filament::badge>
-                                        <button
-                                            type="button"
+                                        <x-filament::button
                                             wire:click="$set('replace.{{ $stateKey }}', true)"
-                                            class="text-sm text-primary-600 hover:text-primary-700"
+                                            size="xs"
+                                            color="gray"
+                                            outlined
                                         >
                                             Replace
-                                        </button>
+                                        </x-filament::button>
                                     </div>
                                 @elseif ($field->isSecret)
                                     <x-filament::input
+                                        id="{{ $fieldId }}"
                                         type="password"
                                         wire:model.live="values.{{ $stateKey }}"
                                         :placeholder="$hasStored ? 'Enter new value to replace stored secret' : ''"
+                                        @if ($field->required)
+                                            required
+                                        @endif
+                                        data-lpignore="true"
+                                        data-1p-ignore="true"
+                                        data-bwignore="true"
                                     />
                                     @if ($hasStored)
-                                        <button
-                                            type="button"
+                                        <x-filament::button
                                             wire:click="$set('replace.{{ $stateKey }}', false)"
-                                            class="text-xs text-gray-500 hover:text-gray-700"
+                                            size="xs"
+                                            color="gray"
+                                            outlined
                                         >
                                             Cancel replacement
-                                        </button>
+                                        </x-filament::button>
                                     @endif
                                 @else
                                     <x-filament::input
+                                        id="{{ $fieldId }}"
                                         type="text"
                                         wire:model.live="values.{{ $stateKey }}"
+                                        @if ($field->required)
+                                            required
+                                        @endif
+                                        data-lpignore="true"
+                                        data-1p-ignore="true"
+                                        data-bwignore="true"
                                     />
                                 @endif
                             </x-filament::input.wrapper>
+
+                            @if (filled($field->description))
+                                <p class="fi-fo-field-wrp-helper-text text-sm text-gray-500 dark:text-gray-400">{{ $field->description }}</p>
+                            @endif
 
                             @error('values.' . $stateKey)
                                 <p class="fi-fo-field-wrp-error-message text-sm text-danger-600 dark:text-danger-400">{{ $message }}</p>
@@ -106,19 +130,12 @@
                             <x-filament::input
                                 type="text"
                                 wire:model.live="descriptions.{{ $integration['id'] }}"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-bwignore="true"
                             />
                         </x-filament::input.wrapper>
                     </div>
-                </div>
-
-                <div class="mt-4 flex justify-end">
-                    <x-filament::button
-                        wire:click="saveIntegration('{{ $integration['id'] }}')"
-                        size="sm"
-                        icon="heroicon-o-arrow-down-tray"
-                    >
-                        Save credentials
-                    </x-filament::button>
                 </div>
             </x-filament::section>
         @endforeach
