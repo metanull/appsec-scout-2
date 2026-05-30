@@ -358,7 +358,7 @@ class SecurityEventResource extends Resource
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->with('workItemLinks')
-                ->orderByRaw("FIELD(severity, 'critical', 'high', 'medium', 'low', 'informational') DESC")
+                ->orderByRaw("CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END DESC")
                 ->orderByDesc('last_seen_at'))
             ->columns([
                 TextColumn::make('severity')
