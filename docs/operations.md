@@ -190,6 +190,7 @@ Both actions require the `work-items.link` permission. Every new link created by
 Run all checks from the repository root after rebuilding the dev image:
 
 ```bash
+#APP_BUILD_TARGET=dev docker compose build app --no-cache
 APP_BUILD_TARGET=dev docker compose build app
 APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pint --test
 APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
@@ -201,12 +202,23 @@ PowerShell equivalent:
 
 ```powershell
 $env:APP_BUILD_TARGET = 'dev'
+#docker compose build app --no-cache
 docker compose build app
 docker compose run --rm app vendor/bin/pint --test
 docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 docker compose run --rm app vendor/bin/pest --no-coverage
 docker compose run --rm app composer smoke
 Remove-Item Env:\APP_BUILD_TARGET
+```
+
+Helper scripts for the same dev-container checks:
+
+```bash
+./scripts/invoke-check.sh
+```
+
+```powershell
+.\scripts\invoke-check.ps1
 ```
 
 CI intentionally stops at the existing Laravel quality gates. It does not build a production image, generate an SBOM, or run Trivy image scans.

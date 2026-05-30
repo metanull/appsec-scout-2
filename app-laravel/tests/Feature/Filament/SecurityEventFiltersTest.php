@@ -196,7 +196,7 @@ it('filters by tags', function () {
     expect($count)->toBe(1);
 });
 
-it('searches title description metadata and fulltext fallback', function () {
+it('searches title description and metadata with portable like filters', function () {
     seedFilterFixture();
 
     $countByTitle = SecurityEventTableQuery::applySearch(SecurityEvent::query(), 'Leaked PAT')->count();

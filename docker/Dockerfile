@@ -172,6 +172,7 @@ RUN mkdir -p \
         storage/logs \
         public/css \
         public/js \
+    && rm -f bootstrap/cache/*.php \
     && APP_ENV=production \
         LOG_STACK=stderr \
         CACHE_STORE=array \

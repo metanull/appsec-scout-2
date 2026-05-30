@@ -127,10 +127,10 @@ final class DashboardData
     public static function recentSyncRuns(): Collection
     {
         /** @var Collection<int, SyncRun> $result */
-        $result = Cache::remember(self::RUNS_CACHE_KEY, self::CACHE_TTL_SECONDS, fn () => SyncRun::query()
+        $result = SyncRun::query()
             ->latest('started_at')
             ->limit(10)
-            ->get());
+            ->get();
 
         return $result;
     }

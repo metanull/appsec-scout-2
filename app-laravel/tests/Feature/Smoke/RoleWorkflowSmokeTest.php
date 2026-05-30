@@ -12,6 +12,7 @@ use App\Filament\Resources\UserResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\Models\IntegrationSetting;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
@@ -158,12 +159,24 @@ it('covers the admin workflow and integration operations actions', function () {
     app(UserAdminService::class)->disable($created, $admin);
     app(UserAdminService::class)->enable($created, $admin);
 
+    IntegrationSetting::query()->updateOrCreate(
+        ['integration_kind' => 'source', 'integration_id' => 'fake'],
+        ['enabled' => false, 'fetch_interval_minutes' => 30, 'service_user_id' => null],
+    );
+
+    $record = IntegrationSetting::query()
+        ->where('integration_kind', 'source')
+        ->where('integration_id', 'fake')
+        ->firstOrFail();
+
     Livewire::actingAs($admin)
         ->test(IntegrationSettingsPage::class)
-        ->set('settings.source:fake.enabled', true)
-        ->set('settings.source:fake.fetch_interval_minutes', 5)
-        ->call('saveIntegration', 'source:fake')
-        ->call('testIntegration', 'source:fake');
+        ->callTableAction('editSettings', $record, data: [
+            'enabled' => true,
+            'fetch_interval_minutes' => 5,
+            'service_user_id' => null,
+        ])
+        ->callTableAction('testConnection', $record);
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)

@@ -7,7 +7,9 @@ use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Models\SecurityContainer;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -36,6 +38,43 @@ class SecurityContainerResource extends Resource
         return $schema->components([]);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Summary')
+                ->schema([
+                    TextEntry::make('name')
+                        ->label('Name')
+                        ->wrap(),
+                    TextEntry::make('kind')
+                        ->label('Kind')
+                        ->badge()
+                        ->color('gray')
+                        ->placeholder('-'),
+                    TextEntry::make('softwareSystem.name')
+                        ->label('Software system')
+                        ->placeholder('-'),
+                    TextEntry::make('open_events_count')
+                        ->label('Open alerts')
+                        ->state(fn (SecurityContainer $record): int => $record->events()->whereRaw("state = 'open'")->count())
+                        ->placeholder('-'),
+                    TextEntry::make('first_seen_at')
+                        ->label('First seen')
+                        ->dateTime('d M Y H:i')
+                        ->placeholder('-'),
+                    TextEntry::make('last_seen_at')
+                        ->label('Last seen')
+                        ->since()
+                        ->placeholder('-'),
+                    TextEntry::make('updated_at')
+                        ->label('Last updated')
+                        ->since()
+                        ->placeholder('-'),
+                ])
+                ->columns(4),
+        ]);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -43,11 +82,11 @@ class SecurityContainerResource extends Resource
                 'events as open_events_count' => fn (Builder $events) => $events->whereRaw("state = 'open'"),
             ]))
             ->columns([
-                TextColumn::make('name')->searchable()->sortable(),
-                TextColumn::make('kind')->badge(),
-                TextColumn::make('softwareSystem.name')->label('System')->searchable(),
-                TextColumn::make('open_events_count')->label('Open')->sortable(),
-                TextColumn::make('last_seen_at')->label('Last seen')->since(),
+                TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
+                TextColumn::make('kind')->badge()->color('gray')->placeholder('-'),
+                TextColumn::make('softwareSystem.name')->label('System')->searchable()->placeholder('-'),
+                TextColumn::make('open_events_count')->label('Open')->sortable()->placeholder('-'),
+                TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
             ])
             ->recordUrl(fn (SecurityContainer $record): string => static::getUrl('view', ['record' => $record]))
             ->paginated([25, 50, 100]);

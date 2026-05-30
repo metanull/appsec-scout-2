@@ -1,48 +1,60 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ config('app.name') }} &mdash; Sign in</title>
-    <style>
-        *, *::before, *::after { box-sizing: border-box; }
-        body { margin: 0; font-family: system-ui, sans-serif; background: #f3f4f6; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-        .card { background: #fff; border-radius: .5rem; box-shadow: 0 1px 3px rgba(0,0,0,.1); padding: 2rem; width: 100%; max-width: 22rem; }
-        h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 1.5rem; }
-        label { display: block; font-size: .875rem; font-weight: 500; margin-bottom: .25rem; }
-        input { display: block; width: 100%; padding: .5rem .75rem; border: 1px solid #d1d5db; border-radius: .375rem; font-size: .875rem; margin-bottom: 1rem; }
-        input:focus { outline: 2px solid #6366f1; }
-        .error { color: #dc2626; font-size: .8rem; margin-top: -.75rem; margin-bottom: 1rem; }
-        button { width: 100%; padding: .625rem; background: #6366f1; color: #fff; border: none; border-radius: .375rem; font-weight: 600; cursor: pointer; }
-        button:hover { background: #4f46e5; }
-        .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-        .row label { margin: 0; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>{{ config('app.name') }}</h1>
+<x-auth-layouts.auth :title="config('app.name') . ' — Sign in'" heading="Sign in to your account">
 
-        <form method="POST" action="{{ url('/user/login') }}">
-            @csrf
+    <form method="POST" action="{{ url('/user/login') }}" class="space-y-4">
+        @csrf
 
-            <label for="email">Email</label>
-            <input id="email" type="email" name="email" value="{{ old('email') }}" required autofocus autocomplete="username">
-            @error('email') <p class="error">{{ $message }}</p> @enderror
+        <div>
+            <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                Email address
+            </label>
+            <input
+                id="email"
+                type="email"
+                name="email"
+                value="{{ old('email') }}"
+                required
+                autofocus
+                autocomplete="username"
+                class="fi-input block w-full rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-950 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            >
+            @error('email')
+                <p class="mt-1 text-xs text-danger-600 dark:text-danger-400">{{ $message }}</p>
+            @enderror
+        </div>
 
-            <label for="password">Password</label>
-            <input id="password" type="password" name="password" required autocomplete="current-password">
-            @error('password') <p class="error">{{ $message }}</p> @enderror
+        <div>
+            <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                Password
+            </label>
+            <input
+                id="password"
+                type="password"
+                name="password"
+                required
+                autocomplete="current-password"
+                class="fi-input block w-full rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-950 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            >
+            @error('password')
+                <p class="mt-1 text-xs text-danger-600 dark:text-danger-400">{{ $message }}</p>
+            @enderror
+        </div>
 
-            <div class="row">
-                <label>
-                    <input type="checkbox" name="remember" style="width:auto;margin:0 .25rem 0 0">
-                    Remember me
-                </label>
-            </div>
+        <div class="flex items-center gap-2">
+            <input
+                id="remember"
+                type="checkbox"
+                name="remember"
+                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            >
+            <label for="remember" class="text-sm text-gray-700 dark:text-gray-200">Remember me</label>
+        </div>
 
-            <button type="submit">Sign in</button>
-        </form>
-    </div>
-</body>
-</html>
+        <button
+            type="submit"
+            class="fi-btn fi-btn-size-md fi-color-primary fi-btn-color-primary w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-600"
+        >
+            Sign in
+        </button>
+    </form>
+
+</x-auth-layouts.auth>

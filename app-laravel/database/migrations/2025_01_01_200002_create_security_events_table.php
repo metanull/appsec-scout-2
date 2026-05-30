@@ -44,7 +44,6 @@ return new class extends Migration
             $table->index(['software_system_id', 'state']);
             $table->index('severity');
             $table->index('fingerprint');
-            $table->fullText(['title', 'description']);
         });
     }
 

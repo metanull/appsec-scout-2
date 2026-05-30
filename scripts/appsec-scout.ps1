@@ -4,6 +4,8 @@ $ErrorActionPreference = "Stop"
 try {
     Set-Location (Split-Path $PSScriptRoot)
 
+    $env:APP_BUILD_TARGET = "dev"
+
     docker compose ps | Out-Null
     if( $LASTEXITCODE -ne 0) {
         throw "Docker compose is not running. Please start Docker and try again."
@@ -43,4 +45,6 @@ try {
 } catch {
     Write-Error $_.Exception.Message
     exit 1
+} finally {
+    Remove-Item Env:\APP_BUILD_TARGET -ErrorAction SilentlyContinue
 }

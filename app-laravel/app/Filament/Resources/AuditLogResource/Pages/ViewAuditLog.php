@@ -14,83 +14,73 @@ class ViewAuditLog extends ViewRecord
 {
     protected static string $resource = AuditLogResource::class;
 
-    protected string $view = 'filament.resources.audit-log-resource.pages.view-audit-log';
-
-    public function getRedactedPayload(): string
-    {
-        /** @var AuditLog $record */
-        $record = $this->record;
-        $payload = $record->payload_json;
-
-        if (! is_array($payload)) {
-            return '—';
-        }
-
-        $redacted = $this->redactArray($payload);
-
-        return json_encode($redacted, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?: '{}';
-    }
-
     public function getUserUrl(): ?string
     {
-        /** @var AuditLog $record */
-        $record = $this->record;
+        $userId = $this->currentRecord()->user_id;
 
-        if ($record->user_id === null) {
+        if ($userId === null) {
             return null;
         }
 
-        if (! User::where('id', $record->user_id)->exists()) {
+        if (! User::where('id', $userId)->exists()) {
             return null;
         }
 
-        return UserResource::getUrl('edit', ['record' => $record->user_id]);
+        return UserResource::getUrl('edit', ['record' => $userId]);
     }
 
     public function getSubjectUrl(): ?string
     {
-        /** @var AuditLog $record */
-        $record = $this->record;
+        $subjectType = $this->currentRecord()->subject_type;
+        $subjectId = $this->currentRecord()->subject_id;
 
-        if ($record->subject_type !== 'App\\Models\\SecurityEvent' && $record->subject_type !== 'SecurityEvent') {
+        if ($subjectType === null || $subjectId === null) {
             return null;
         }
 
-        if ($record->subject_id === null) {
+        if (class_basename($subjectType) !== 'SecurityEvent') {
             return null;
         }
 
-        if (! SecurityEvent::where('id', $record->subject_id)->exists()) {
+        if (! SecurityEvent::where('id', $subjectId)->exists()) {
             return null;
         }
 
-        return SecurityEventResource::getUrl('view', ['record' => $record->subject_id]);
+        return SecurityEventResource::getUrl('view', ['record' => $subjectId]);
     }
 
-    /** @param array<string, mixed> $payload
-     * @return array<string, mixed>
-     */
-    private function redactArray(array $payload): array
+    public function getRedactedPayload(): string
     {
-        $redacted = [];
+        $payload = $this->currentRecord()->payload_json;
 
-        foreach ($payload as $key => $value) {
-            if (is_array($value)) {
-                $redacted[$key] = $this->redactArray($value);
-
-                continue;
-            }
-
-            if (is_scalar($value) && $this->isSensitiveKey((string) $key)) {
-                $redacted[$key] = '[redacted]';
-
-                continue;
-            }
-
-            $redacted[$key] = is_string($value) ? $this->redactString($value) : $value;
+        if (! is_array($payload)) {
+            return '{}';
         }
 
-        return $redacted;
+        return json_encode($this->redactArray($payload), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function redactArray(array $data): array
+    {
+        $result = [];
+
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $result[$key] = $this->redactArray($value);
+            } elseif (is_scalar($value) && $this->isSensitiveKey((string) $key)) {
+                $result[$key] = '[redacted]';
+            } elseif (is_string($value)) {
+                $result[$key] = $this->redactString($value);
+            } else {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 
     private function redactString(string $value): string
@@ -113,5 +103,13 @@ class ViewAuditLog extends ViewRecord
             || str_contains($normalized, 'apikey')
             || str_contains($normalized, 'pat')
             || str_contains($normalized, 'authorization');
+    }
+
+    private function currentRecord(): AuditLog
+    {
+        /** @var AuditLog $record */
+        $record = $this->getRecord();
+
+        return $record;
     }
 }

@@ -1,10 +1,12 @@
 <?php
 
 use App\Filament\Resources\SecurityEventResource;
+use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use Database\Seeders\RolePermissionSeeder;
+use Livewire\Livewire;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -34,9 +36,12 @@ it('renders linked work items on the alert detail page', function () {
         'synced_at' => now(),
     ]);
 
-    $this->actingAs($user)
-        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
-        ->assertOk()
+    Livewire::actingAs($user)
+        ->test(WorkItemLinksRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => SecurityEventResource\Pages\ViewSecurityEvent::class,
+        ])
+        ->call('loadTable')
         ->assertSee('Grouped secret findings')
         ->assertSee('octo-org/appsec-scout#101')
         ->assertSee('Unlink');
@@ -63,10 +68,13 @@ it('shows "This alert only" when the work item has no sibling alerts', function 
         'synced_at' => now(),
     ]);
 
-    $this->actingAs($user)
-        ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
-        ->assertOk()
-        ->assertSee('This alert only');
+    Livewire::actingAs($user)
+        ->test(WorkItemLinksRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => SecurityEventResource\Pages\ViewSecurityEvent::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('1 alert');
 });
 
 it('shows sibling count and view link when the work item is shared', function () {
@@ -94,12 +102,15 @@ it('shows sibling count and view link when the work item is shared', function ()
         ]);
     }
 
-    $response = $this->actingAs($user)
-        ->get(SecurityEventResource::getUrl('view', ['record' => $eventA]));
+    $livewire = Livewire::actingAs($user)
+        ->test(WorkItemLinksRelationManager::class, [
+            'ownerRecord' => $eventA,
+            'pageClass' => SecurityEventResource\Pages\ViewSecurityEvent::class,
+        ])
+        ->call('loadTable');
 
-    $response->assertOk()
-        ->assertSee('3 alerts');
+    $livewire->assertSee('3 alerts');
 
-    // The URL should contain the work_item filter params
-    expect($response->content())->toContain('work_item');
+    // The work_item filter URL should be present
+    expect($livewire->html())->toContain('work_item');
 });

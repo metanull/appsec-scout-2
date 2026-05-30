@@ -9,7 +9,9 @@ use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRel
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Models\SoftwareSystem;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -38,6 +40,44 @@ class SoftwareSystemResource extends Resource
         return $schema->components([]);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Summary')
+                ->schema([
+                    TextEntry::make('name')
+                        ->label('Name')
+                        ->wrap(),
+                    TextEntry::make('source_id')
+                        ->label('Source')
+                        ->badge()
+                        ->color('info')
+                        ->placeholder('-'),
+                    TextEntry::make('open_events_count')
+                        ->label('Open alerts')
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("state = 'open'")->count())
+                        ->placeholder('-'),
+                    TextEntry::make('critical_events_count')
+                        ->label('Critical')
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'critical'")->count())
+                        ->placeholder('-'),
+                    TextEntry::make('high_events_count')
+                        ->label('High')
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'high'")->count())
+                        ->placeholder('-'),
+                    TextEntry::make('medium_events_count')
+                        ->label('Medium')
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'medium'")->count())
+                        ->placeholder('-'),
+                    TextEntry::make('updated_at')
+                        ->label('Last updated')
+                        ->since()
+                        ->placeholder('-'),
+                ])
+                ->columns(4),
+        ]);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -48,13 +88,13 @@ class SoftwareSystemResource extends Resource
                 'events as medium_events_count' => fn (Builder $events) => $events->whereRaw("severity = 'medium'"),
             ]))
             ->columns([
-                TextColumn::make('name')->searchable()->sortable(),
-                TextColumn::make('source_id')->label('Source')->badge(),
-                TextColumn::make('open_events_count')->label('Open')->sortable(),
-                TextColumn::make('critical_events_count')->label('Critical')->sortable(),
-                TextColumn::make('high_events_count')->label('High')->sortable(),
-                TextColumn::make('medium_events_count')->label('Medium')->sortable(),
-                TextColumn::make('updated_at')->label('Updated')->since(),
+                TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
+                TextColumn::make('source_id')->label('Source')->badge()->color('info'),
+                TextColumn::make('open_events_count')->label('Open')->sortable()->placeholder('-'),
+                TextColumn::make('critical_events_count')->label('Critical')->sortable()->placeholder('-'),
+                TextColumn::make('high_events_count')->label('High')->sortable()->placeholder('-'),
+                TextColumn::make('medium_events_count')->label('Medium')->sortable()->placeholder('-'),
+                TextColumn::make('updated_at')->label('Updated')->since()->placeholder('-'),
             ])
             ->recordUrl(fn (SoftwareSystem $record): string => static::getUrl('view', ['record' => $record]))
             ->paginated([25, 50, 100]);

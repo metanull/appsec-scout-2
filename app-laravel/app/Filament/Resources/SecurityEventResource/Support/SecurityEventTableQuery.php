@@ -173,13 +173,12 @@ final class SecurityEventTableQuery
 
         $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%';
 
-        return $query->where(function (Builder $nested) use ($like, $search): void {
+        return $query->where(function (Builder $nested) use ($like): void {
             $nested
                 ->where('title', 'like', $like)
                 ->orWhere('description', 'like', $like)
-                ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.cveId')) LIKE ?", [$like])
-                ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.ruleId')) LIKE ?", [$like])
-                ->orWhereRaw('MATCH(title, description) AGAINST (? IN BOOLEAN MODE)', [$search]);
+                ->orWhere('rule_id', 'like', $like)
+                ->orWhere('metadata', 'like', $like);
         });
     }
 }
