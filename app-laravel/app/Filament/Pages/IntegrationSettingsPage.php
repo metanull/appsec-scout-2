@@ -8,6 +8,7 @@ use App\Integrations\IntegrationSettingsRepository;
 use App\Models\IntegrationSetting;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Queue\QueueRuntimeInspector;
 use App\Sources\Registry as SourceRegistry;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry as TrackerRegistry;
@@ -42,6 +43,9 @@ use Illuminate\Support\Facades\Auth;
 class IntegrationSettingsPage extends Page implements HasTable
 {
     use InteractsWithTable;
+
+    /** @var array{source: list<string>, tracker: list<string>}|null */
+    private ?array $queuedIntegrationIds = null;
 
     /**
      * @var array<string, array{enabled: bool, fetch_interval_minutes: int, service_user_id: int|string|null, jira_default_project?: ?string}>
@@ -119,10 +123,11 @@ class IntegrationSettingsPage extends Page implements HasTable
                 TextColumn::make('last_sync_status')
                     ->label('Last sync status')
                     ->badge()
-                    ->color(fn (IntegrationSetting $record): string => match ($record->last_sync_status) {
+                    ->color(fn (IntegrationSetting $record): string => match ($this->resolveLastSyncStatus($record)) {
                         'success' => 'success',
                         'in_progress' => 'info',
-                        'error' => 'danger',
+                        'queued' => 'warning',
+                        'failure', 'error' => 'danger',
                         default => 'gray',
                     })
                     ->state(fn (IntegrationSetting $record): string => $this->resolveLastSyncStatus($record))
@@ -199,7 +204,36 @@ class IntegrationSettingsPage extends Page implements HasTable
             return 'in_progress';
         }
 
+        if ($this->isIntegrationQueued($record)) {
+            return 'queued';
+        }
+
         return $record->last_sync_status ?? '';
+    }
+
+    private function isIntegrationQueued(IntegrationSetting $record): bool
+    {
+        $queued = $this->getQueuedIntegrationIds();
+
+        if ($record->integration_kind === IntegrationSetting::KIND_SOURCE) {
+            return in_array($record->integration_id, $queued['source'], true);
+        }
+
+        if ($record->integration_kind === IntegrationSetting::KIND_TRACKER) {
+            return in_array($record->integration_id, $queued['tracker'], true);
+        }
+
+        return false;
+    }
+
+    /** @return array{source: list<string>, tracker: list<string>} */
+    private function getQueuedIntegrationIds(): array
+    {
+        if (! is_array($this->queuedIntegrationIds)) {
+            $this->queuedIntegrationIds = app(QueueRuntimeInspector::class)->queuedIntegrationIds();
+        }
+
+        return $this->queuedIntegrationIds;
     }
 
     /** @return array<int, mixed> */

@@ -5,11 +5,11 @@ namespace App\Trackers;
 use App\Models\SecurityEvent;
 use App\Trackers\Contracts\Tracker;
 use BackedEnum;
-use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Illuminate\Support\Facades\Cache;
 
 final class WorkItemFormOptions
@@ -30,26 +30,40 @@ final class WorkItemFormOptions
 
     /**
      * @param  list<SecurityEvent>  $events
-     * @return array<int, Radio|Select|TagsInput|TextInput>
+     * @return array<int, Select|TagsInput|TextInput>
      */
     public function createSchema(array $events = []): array
     {
         return [
-            Radio::make('tracker')
+            Select::make('tracker')
                 ->label('Tracker')
                 ->options($this->trackerOptions())
+                ->placeholder('Select a tracker')
+                ->searchable()
+                ->preload()
                 ->required()
-                ->live(),
+                ->live()
+                ->afterStateUpdated(function (Set $set): void {
+                    $set('project', null);
+                    $set('item_type', null);
+                    $set('assignee_id', null);
+                    $set('parent_id', null);
+                }),
             Select::make('project')
                 ->label('Project')
                 ->required()
                 ->searchable()
                 ->preload()
+                ->placeholder('Select a tracker first')
+                ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)))
                 ->options(fn (Get $get): array => $this->projectOptions($get->string('tracker', isNullable: true)))
-                ->live(),
+                ->live()
+                ->afterStateUpdated(fn (Set $set): mixed => $set('item_type', null)),
             Select::make('item_type')
                 ->label('Item type')
                 ->required()
+                ->placeholder('Select tracker and project first')
+                ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)) || blank($get->string('project', isNullable: true)))
                 ->options(fn (Get $get): array => $this->itemTypeOptions(
                     $get->string('tracker', isNullable: true),
                     $get->string('project', isNullable: true),
@@ -94,26 +108,38 @@ final class WorkItemFormOptions
         ];
     }
 
-    /** @return array<int, Radio|Select|TextInput> */
+    /** @return array<int, Select|TextInput> */
     public function linkSchema(): array
     {
         return [
-            Radio::make('tracker')
+            Select::make('tracker')
                 ->label('Tracker')
                 ->options($this->trackerOptions())
+                ->placeholder('Select a tracker')
+                ->searchable()
+                ->preload()
                 ->required()
-                ->live(),
+                ->live()
+                ->afterStateUpdated(function (Set $set): void {
+                    $set('project', null);
+                    $set('selected_work_item', null);
+                }),
             Select::make('project')
                 ->label('Project')
                 ->required()
                 ->searchable()
                 ->preload()
+                ->placeholder('Select a tracker first')
+                ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)))
                 ->options(fn (Get $get): array => $this->projectOptions($get->string('tracker', isNullable: true)))
-                ->live(),
+                ->live()
+                ->afterStateUpdated(fn (Set $set): mixed => $set('selected_work_item', null)),
             Select::make('selected_work_item')
                 ->label('Work item')
                 ->required()
                 ->searchable()
+                ->placeholder('Select tracker and project first')
+                ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)) || blank($get->string('project', isNullable: true)))
                 ->getSearchResultsUsing(fn (Get $get, string $search): array => $this->workItemOptions(
                     $get->string('tracker', isNullable: true),
                     $get->string('project', isNullable: true),
