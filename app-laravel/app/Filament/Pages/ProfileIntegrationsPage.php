@@ -3,10 +3,11 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Pages\Concerns\ManagesIntegrationCredentials;
+use Filament\Forms\Contracts\HasForms;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
 
-class ProfileIntegrationsPage extends Page
+class ProfileIntegrationsPage extends Page implements HasForms
 {
     use ManagesIntegrationCredentials;
 

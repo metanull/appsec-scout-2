@@ -64,6 +64,19 @@ it('saves system credentials from the admin page', function () {
     expect(Credential::query()->where('integration_key', 'fake-tracker.token')->whereNull('owner_user_id')->exists())->toBeTrue();
 });
 
+it('renders editable inputs for empty required system credentials', function () {
+    bindFakeCredentialIntegrations();
+
+    $admin = enrolledUser();
+    $admin->syncRoles(['Admin']);
+
+    Livewire::actingAs($admin)
+        ->test(SystemCredentialsPage::class)
+        ->assertSeeHtml('wire:model.live="values.fake_apiKey"')
+        ->assertSeeHtml('wire:model.live="values.fake_tracker_token"')
+        ->assertDontSee('x-filament::input');
+});
+
 it('saves all credentials for multiple integrations at once', function () {
     bindFakeCredentialIntegrations();
 

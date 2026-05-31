@@ -9,10 +9,19 @@ use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry as TrackerRegistry;
+use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Schema;
 
 trait ManagesIntegrationCredentials
 {
+    use InteractsWithForms;
+
     /** @var array<string, string> */
     public array $values = [];
 
@@ -31,6 +40,28 @@ trait ManagesIntegrationCredentials
     public function mountManagesIntegrationCredentials(): void
     {
         $this->loadCredentialState();
+        $this->syncCredentialFormState();
+    }
+
+    public function form(Schema $schema): Schema
+    {
+        return $schema->components($this->credentialSections());
+    }
+
+    /** @return array<int, Action> */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('testAllConfigured')
+                ->label('Test all configured')
+                ->icon('heroicon-o-signal')
+                ->color('gray')
+                ->action(fn () => $this->testAllConfiguredIntegrations()),
+            Action::make('saveAllChanges')
+                ->label('Save all changes')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->action(fn () => $this->saveAllCredentials()),
+        ];
     }
 
     /** @return list<array{id: string, type: string, display_name: string, credential_fields: list<CredentialField>}> */
@@ -56,6 +87,7 @@ trait ManagesIntegrationCredentials
         }
 
         $this->loadCredentialState();
+        $this->syncCredentialFormState();
 
         Notification::make()->title('Credentials saved')->success()->send();
     }
@@ -71,6 +103,7 @@ trait ManagesIntegrationCredentials
         }
 
         $this->loadCredentialState();
+        $this->syncCredentialFormState();
 
         Notification::make()
             ->title($saved > 0 ? "Saved credentials for {$saved} integration(s)" : 'No credentials to save')
@@ -117,6 +150,145 @@ trait ManagesIntegrationCredentials
     }
 
     abstract protected function credentialOwnerId(): ?int;
+
+    /** @return array<int, Section> */
+    private function credentialSections(): array
+    {
+        $sections = [];
+
+        foreach ($this->integrations() as $integration) {
+            $integrationId = $integration['id'];
+            $actionKey = str_replace(['-', '.'], '_', $integrationId);
+
+            $sectionComponents = array_map(
+                fn (CredentialField $field): TextInput => $this->credentialInputComponent($field),
+                $integration['credential_fields'],
+            );
+
+            $sectionComponents[] = TextInput::make("descriptions.{$integrationId}")
+                ->label('Description')
+                ->extraInputAttributes($this->passwordManagerIgnoreAttributes())
+                ->columnSpanFull();
+
+            $sections[] = Section::make($integration['display_name'])
+                ->description(fn (): ?string => $this->integrationStatusDescription($integrationId))
+                ->headerActions([
+                    Action::make("test_{$actionKey}")
+                        ->label('Test')
+                        ->icon('heroicon-o-signal')
+                        ->color('gray')
+                        ->action(fn () => $this->testIntegration($integrationId)),
+                ])
+                ->schema([
+                    Grid::make(2)->schema($sectionComponents),
+                ]);
+        }
+
+        return $sections;
+    }
+
+    private function credentialInputComponent(CredentialField $field): TextInput
+    {
+        $stateKey = $field->stateKey();
+
+        $component = TextInput::make("values.{$stateKey}")
+            ->label($field->label)
+            ->helperText($field->description)
+            ->required($field->required)
+            ->live()
+            ->extraInputAttributes($this->passwordManagerIgnoreAttributes());
+
+        if (! $field->isSecret) {
+            return $component;
+        }
+
+        $replaceStatePath = "replace.{$stateKey}";
+
+        return $component
+            ->password()
+            ->revealable()
+            ->placeholder(fn (Get $get): ?string => $this->secretPlaceholder($stateKey, $get))
+            ->disabled(fn (Get $get): bool => $this->isStoredSecretLocked($stateKey, $get))
+            ->dehydrated(fn (Get $get): bool => ! $this->isStoredSecretLocked($stateKey, $get))
+            ->suffixActions([
+                Action::make("replace_{$stateKey}")
+                    ->label('Replace')
+                    ->button()
+                    ->outlined()
+                    ->size('xs')
+                    ->color('gray')
+                    ->visible(fn (Get $get): bool => ($this->hasStored[$stateKey] ?? false) && ! $get->boolean($replaceStatePath))
+                    ->action(function () use ($stateKey): void {
+                        $this->replace[$stateKey] = true;
+                        $this->values[$stateKey] = '';
+                    }),
+                Action::make("cancel_replace_{$stateKey}")
+                    ->label('Cancel')
+                    ->button()
+                    ->outlined()
+                    ->size('xs')
+                    ->color('gray')
+                    ->visible(fn (Get $get): bool => ($this->hasStored[$stateKey] ?? false) && $get->boolean($replaceStatePath))
+                    ->action(function () use ($stateKey): void {
+                        $this->replace[$stateKey] = false;
+                        $this->values[$stateKey] = '';
+                    }),
+            ]);
+    }
+
+    private function integrationStatusDescription(string $integrationId): ?string
+    {
+        $result = $this->testResults[$integrationId] ?? null;
+
+        if (! is_array($result)) {
+            return null;
+        }
+
+        return $result['ok'] ? 'Connected' : 'Connection failed';
+    }
+
+    /** @return array<string, string> */
+    private function passwordManagerIgnoreAttributes(): array
+    {
+        return [
+            'data-lpignore' => 'true',
+            'data-1p-ignore' => 'true',
+            'data-bwignore' => 'true',
+        ];
+    }
+
+    private function isStoredSecretLocked(string $stateKey, Get $get): bool
+    {
+        return ($this->hasStored[$stateKey] ?? false) && ! $get->boolean("replace.{$stateKey}");
+    }
+
+    private function secretPlaceholder(string $stateKey, Get $get): ?string
+    {
+        if (! ($this->hasStored[$stateKey] ?? false)) {
+            return null;
+        }
+
+        if (! $get->boolean("replace.{$stateKey}")) {
+            return 'Stored secret. Click Replace to edit.';
+        }
+
+        return 'Enter new value to replace stored secret';
+    }
+
+    private function syncCredentialFormState(): void
+    {
+        $form = $this->getForm('form');
+
+        if (! $form instanceof Schema) {
+            return;
+        }
+
+        $form->fill([
+            'values' => $this->values,
+            'descriptions' => $this->descriptions,
+            'replace' => $this->replace,
+        ]);
+    }
 
     private function saveIntegrationCredentials(string $integrationId): bool
     {
