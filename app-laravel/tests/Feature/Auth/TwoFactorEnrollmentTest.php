@@ -58,3 +58,16 @@ it('required MFA setup page redirects enrolled user away', function () {
 
     $response->assertRedirect('/profile');
 });
+
+it('treats unreadable MFA payloads as not enrolled', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => 'invalid-payload',
+        'two_factor_recovery_codes' => 'invalid-payload',
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $this->actingAs($user);
+
+    $response = $this->get('/');
+
+    $response->assertRedirect(Filament::getSetUpRequiredMultiFactorAuthenticationUrl());
+});

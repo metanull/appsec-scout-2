@@ -7,6 +7,7 @@ use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -59,7 +60,11 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             return null;
         }
 
-        return decrypt($this->two_factor_secret);
+        try {
+            return decrypt($this->two_factor_secret);
+        } catch (DecryptException) {
+            return null;
+        }
     }
 
     public function saveAppAuthenticationSecret(?string $secret): void
@@ -81,7 +86,11 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             return null;
         }
 
-        $decoded = json_decode(decrypt($this->two_factor_recovery_codes), true);
+        try {
+            $decoded = json_decode(decrypt($this->two_factor_recovery_codes), true);
+        } catch (DecryptException) {
+            return null;
+        }
 
         if (! is_array($decoded)) {
             return null;
