@@ -13,6 +13,7 @@ docker compose exec app php artisan migrate --force
 docker compose exec app php artisan db:seed
 
 docker compose exec app php artisan appsec:bootstrap-admin \
+  --if-missing \
   --name="Admin" \
   --email="admin@example.com" \
   --password="changeme-now"

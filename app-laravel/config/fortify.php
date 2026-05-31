@@ -1,7 +1,5 @@
 <?php
 
-use Laravel\Fortify\Features;
-
 return [
     'guard' => 'web',
     'passwords' => 'users',
@@ -17,10 +15,5 @@ return [
         'two-factor' => 'two-factor',
     ],
     'views' => false,
-    'features' => [
-        Features::twoFactorAuthentication([
-            'confirm' => true,
-            'confirmPassword' => true,
-        ]),
-    ],
+    'features' => [],
 ];

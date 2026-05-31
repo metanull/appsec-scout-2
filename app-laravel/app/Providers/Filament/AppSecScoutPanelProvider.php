@@ -3,7 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Http\Middleware\EnsureUserIsEnabled;
-use App\Http\Middleware\RequireTwoFactor;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -38,8 +38,12 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->pages([Dashboard::class])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([AccountWidget::class, FilamentInfoWidget::class])
+            ->profile(isSimple: false)
+            ->multiFactorAuthentication([
+                AppAuthentication::make()->recoverable(),
+            ], isRequired: true)
             ->middleware($this->webMiddleware())
-            ->authMiddleware([EnsureUserIsEnabled::class, RequireTwoFactor::class, Authenticate::class]);
+            ->authMiddleware([EnsureUserIsEnabled::class, Authenticate::class]);
     }
 
     /** @return list<class-string> */

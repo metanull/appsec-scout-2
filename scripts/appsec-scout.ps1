@@ -33,7 +33,7 @@ try {
     if( $LASTEXITCODE -ne 0) {
         throw "Failed to seed the database. Please check your Docker setup and try again."
     }
-    docker compose exec app php artisan appsec:bootstrap-admin --name="Admin" --email="admin@example.com" --password="changeme-now"
+    docker compose exec app php artisan appsec:bootstrap-admin --if-missing --name="Admin" --email="admin@example.com" --password="changeme-now"
     if( $LASTEXITCODE -ne 0) {
         throw "Failed to bootstrap admin user. Please check your Docker setup and try again."
     }

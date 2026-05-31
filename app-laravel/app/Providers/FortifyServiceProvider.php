@@ -35,7 +35,6 @@ class FortifyServiceProvider extends ServiceProvider
             return $user;
         });
         Fortify::loginView(fn () => view('auth.login'));
-        Fortify::twoFactorChallengeView(fn () => view('auth.two-factor-challenge'));
     }
 
     private function configureRateLimiters(): void
