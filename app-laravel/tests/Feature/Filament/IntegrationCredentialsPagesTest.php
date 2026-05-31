@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Sources\Registry;
 use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
+use Tests\Fakes\FakeMultiFieldSource;
 use Tests\Fakes\FakeSource;
 use Tests\Fakes\FakeTracker;
 
@@ -76,6 +77,37 @@ it('saves all credentials for multiple integrations at once', function () {
 
     expect(Credential::query()->where('integration_key', 'fake.apiKey')->where('owner_user_id', $user->id)->exists())->toBeTrue();
     expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->exists())->toBeTrue();
+});
+
+it('allows save all when one integration remains fully empty', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->set('values.fake_apiKey', 'source-key')
+        ->call('saveAllCredentials')
+        ->assertHasNoErrors();
+
+    expect(Credential::query()->where('integration_key', 'fake.apiKey')->where('owner_user_id', $user->id)->exists())->toBeTrue();
+    expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->exists())->toBeFalse();
+});
+
+it('rejects partial required fields within one integration', function () {
+    bindFakeMultiFieldSourceIntegration();
+
+    $user = enrolledUser();
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->set('values.fake_multi_username', 'operator')
+        ->set('values.fake_multi_token', '')
+        ->call('saveAllCredentials')
+        ->assertHasErrors(['values.fake_multi_token']);
+
+    expect(Credential::query()->where('integration_key', 'fake-multi.username')->where('owner_user_id', $user->id)->exists())->toBeFalse();
+    expect(Credential::query()->where('integration_key', 'fake-multi.token')->where('owner_user_id', $user->id)->exists())->toBeFalse();
 });
 
 it('tests all configured integrations in one action', function () {
@@ -151,6 +183,19 @@ function bindFakeCredentialIntegrations(): void
 
     app()->bind('appsec-scout.tracker.fake', fn () => new FakeTracker);
     app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
+
+    app()->forgetInstance(Registry::class);
+    app()->forgetInstance(App\Trackers\Registry::class);
+}
+
+function bindFakeMultiFieldSourceIntegration(): void
+{
+    config([
+        'integration_settings.fake-multi.enabled' => true,
+    ]);
+
+    app()->bind('appsec-scout.source.fake-multi', fn () => new FakeMultiFieldSource);
+    app()->tag(['appsec-scout.source.fake-multi'], 'appsec-scout.source');
 
     app()->forgetInstance(Registry::class);
     app()->forgetInstance(App\Trackers\Registry::class);

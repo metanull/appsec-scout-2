@@ -124,6 +124,54 @@ trait ManagesIntegrationCredentials
         $ownerId = $this->credentialOwnerId();
         $description = $this->normalizedDescription($integrationId);
 
+        $requiredFieldStates = [];
+        $hasAnyRequiredIntent = false;
+
+        foreach ($integration['credential_fields'] as $field) {
+            if (! $field->required) {
+                continue;
+            }
+
+            $existing = $this->credential($field->key, $ownerId);
+            $stateKey = $field->stateKey();
+            $shouldReplace = $this->replace[$stateKey] ?? false;
+            $value = trim((string) ($this->values[$stateKey] ?? ''));
+
+            $isSatisfied = false;
+
+            if ($value !== '') {
+                $isSatisfied = true;
+            } elseif ($existing instanceof Credential) {
+                $isSatisfied = ! ($field->isSecret && $shouldReplace);
+            }
+
+            if ($value !== '' || $shouldReplace) {
+                $hasAnyRequiredIntent = true;
+            }
+
+            $requiredFieldStates[] = [
+                'state_key' => $stateKey,
+                'is_satisfied' => $isSatisfied,
+            ];
+        }
+
+        $hasAnySatisfiedRequired = count(array_filter(
+            $requiredFieldStates,
+            fn (array $fieldState): bool => $fieldState['is_satisfied'],
+        )) > 0;
+
+        if ($hasAnyRequiredIntent) {
+            foreach ($requiredFieldStates as $fieldState) {
+                if ($fieldState['is_satisfied']) {
+                    continue;
+                }
+
+                $this->addError("values.{$fieldState['state_key']}", 'This field is required.');
+
+                return false;
+            }
+        }
+
         foreach ($integration['credential_fields'] as $field) {
             $existing = $this->credential($field->key, $ownerId);
             $stateKey = $field->stateKey();
@@ -140,13 +188,25 @@ trait ManagesIntegrationCredentials
                 }
 
                 if ($value === '') {
-                    $this->addError("values.{$stateKey}", 'Enter a replacement value before saving.');
+                    if ($field->required && $hasAnyRequiredIntent) {
+                        $this->addError("values.{$stateKey}", 'Enter a replacement value before saving.');
 
-                    return false;
+                        return false;
+                    }
+
+                    continue;
                 }
 
                 app(Vault::class)->set($field->key, $ownerId, $value, $description);
             } else {
+                if ($value === '' && ! $field->required) {
+                    continue;
+                }
+
+                if ($field->required && $value === '' && ! $hasAnyRequiredIntent) {
+                    continue;
+                }
+
                 if ($field->required && $value === '') {
                     $this->addError("values.{$stateKey}", 'This field is required.');
 
