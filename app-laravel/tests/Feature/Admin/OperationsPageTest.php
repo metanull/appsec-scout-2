@@ -38,6 +38,11 @@ it('authorizes the operations page only for admins', function () {
 it('shows queue failed-job sync-run and error counts', function () {
     $admin = operationsAdmin();
 
+    config([
+        'queue.default' => 'database',
+        'queue.connections.database.queue' => 'default',
+    ]);
+
     DB::table('jobs')->delete();
     DB::table('failed_jobs')->delete();
 
@@ -89,6 +94,40 @@ it('shows queue failed-job sync-run and error counts', function () {
         ->and($page->failedJobCount())->toBe(1)
         ->and($page->recentFailedJobs()[0]['payload_preview'])->not->toContain('secret-token')
         ->and($page->recentFailedJobs()[0]['exception_preview'])->toBe('Database value exceeded security_events.version_control_url. Run migrations, then retry or forget this failed job.');
+});
+
+it('counts queued jobs across configured queue names', function () {
+    $admin = operationsAdmin();
+
+    config([
+        'queue.default' => 'database',
+        'queue.connections.database.queue' => 'default,high',
+    ]);
+
+    DB::table('jobs')->delete();
+
+    DB::table('jobs')->insert([
+        [
+            'queue' => 'default',
+            'payload' => '{"job":"Example"}',
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ],
+        [
+            'queue' => 'high',
+            'payload' => '{"job":"Example"}',
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ],
+    ]);
+
+    $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
+
+    expect($page->queuedJobCount())->toBe(2);
 });
 
 it('queues supported operational actions and records audit rows', function () {

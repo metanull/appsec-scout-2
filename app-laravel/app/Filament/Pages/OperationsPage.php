@@ -14,6 +14,7 @@ use App\Models\ErrorLog;
 use App\Models\FailedJob;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Queue\QueueRuntimeInspector;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Trackers\ReconcileAllJob;
@@ -213,7 +214,7 @@ class OperationsPage extends Page implements HasTable
 
     public function queuedJobCount(): int
     {
-        return (int) DB::table('jobs')->count();
+        return app(QueueRuntimeInspector::class)->queuedCount();
     }
 
     public function runningSyncCount(): int

@@ -3,6 +3,8 @@
 namespace App\Filament\Widgets;
 
 use App\Models\SyncRun;
+use App\Models\User;
+use App\Queue\QueueRuntimeInspector;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
@@ -14,12 +16,14 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 
     public static function canView(): bool
     {
-        return Auth::user()?->can('admin.queue') ?? false;
+        $user = Auth::user();
+
+        return $user instanceof User ? $user->can('admin.queue') : false;
     }
 
     protected function getStats(): array
     {
-        $queued = (int) DB::table('jobs')->count();
+        $queued = app(QueueRuntimeInspector::class)->queuedCount();
         $failed = (int) DB::table('failed_jobs')->count();
         $running = (int) SyncRun::query()->where('status', 'running')->count();
         $scheduled = 4; // Managed schedule entries: dispatch-due, prune-audit, prune-errors, update-trivy-db

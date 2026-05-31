@@ -7,11 +7,15 @@ use App\Integrations\DispatchDueIntegrations;
 use App\Integrations\IntegrationSettingsRepository;
 use App\Models\IntegrationSetting;
 use App\Models\User;
+use App\Queue\QueueRuntimeInspector;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\CredentialResolver;
+use App\Sync\FetchSourceJob;
+use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry as TrackerRegistry;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
 use Tests\Fakes\FakeTracker;
@@ -147,6 +151,57 @@ it('prunes settings for integrations that are no longer registered', function ()
 
     expect(IntegrationSetting::query()->where('integration_id', 'stale-source')->exists())->toBeFalse()
         ->and(IntegrationSetting::query()->where('integration_id', 'fake')->exists())->toBeTrue();
+});
+
+it('detects queued source and tracker integrations from pending queue payloads', function () {
+    config([
+        'queue.default' => 'database',
+        'queue.connections.database.queue' => 'default',
+    ]);
+
+    DB::table('jobs')->delete();
+
+    DB::table('jobs')->insert([
+        [
+            'queue' => 'default',
+            'payload' => json_encode([
+                'displayName' => FetchSourceJob::class,
+                'data' => [
+                    'commandName' => FetchSourceJob::class,
+                    'command' => serialize(new FetchSourceJob('fake')),
+                ],
+            ]),
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ],
+        [
+            'queue' => 'default',
+            'payload' => json_encode([
+                'displayName' => RefreshWorkItemsJob::class,
+                'data' => [
+                    'commandName' => RefreshWorkItemsJob::class,
+                    'command' => serialize(new RefreshWorkItemsJob('fake-tracker')),
+                ],
+            ]),
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ],
+    ]);
+
+    $queued = app(QueueRuntimeInspector::class)->queuedIntegrationIds();
+
+    expect($queued['source'])->toContain('fake')
+        ->and($queued['tracker'])->toContain('fake-tracker');
+
+    $admin = enrolledAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(IntegrationSettingsPage::class)
+        ->assertSee('queued');
 });
 
 function bindFakeIntegrationsForSettings(): void

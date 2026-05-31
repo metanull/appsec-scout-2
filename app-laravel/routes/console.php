@@ -27,10 +27,11 @@ Artisan::command('integrations:dispatch-due', function (DispatchDueIntegrations 
     return self::SUCCESS;
 })->purpose('Dispatch due source fetch and tracker refresh jobs from database-backed integration settings');
 
-Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin}', function (UserAdminService $users): int {
+Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin} {--if-missing}', function (UserAdminService $users): int {
     $email = (string) $this->option('email');
     $password = (string) $this->option('password');
     $name = (string) $this->option('name');
+    $ifMissing = (bool) $this->option('if-missing');
 
     if ($email === '' || $password === '') {
         $this->error('Both --email and --password are required.');
@@ -41,6 +42,12 @@ Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin}
     try {
         $user = $users->bootstrapAdmin($name, $email, $password);
     } catch (RuntimeException $exception) {
+        if ($ifMissing && str_contains($exception->getMessage(), 'can only be created when no users exist')) {
+            $this->info('Bootstrap admin already present. Skipping because --if-missing was provided.');
+
+            return self::SUCCESS;
+        }
+
         $this->error($exception->getMessage());
 
         return self::FAILURE;

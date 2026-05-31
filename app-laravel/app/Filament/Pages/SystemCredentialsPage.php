@@ -4,10 +4,11 @@ namespace App\Filament\Pages;
 
 use App\Filament\Pages\Concerns\ManagesIntegrationCredentials;
 use App\Models\User;
+use Filament\Forms\Contracts\HasForms;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Auth;
 
-class SystemCredentialsPage extends Page
+class SystemCredentialsPage extends Page implements HasForms
 {
     use ManagesIntegrationCredentials;
 

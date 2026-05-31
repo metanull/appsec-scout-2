@@ -5,6 +5,7 @@ use App\Filament\Resources\UserResource;
 use App\Models\User;
 use App\Users\UserAdminService;
 use Database\Seeders\RolePermissionSeeder;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\DB;
@@ -142,7 +143,7 @@ it('tracks last_login_at on successful login', function () {
 
     $response->assertRedirect('/');
 
-    $this->get('/')->assertRedirectToRoute('two-factor.setup');
+    $this->get('/')->assertRedirect(Filament::getSetUpRequiredMultiFactorAuthenticationUrl());
 
     expect($user->fresh()?->last_login_at)->not->toBeNull();
 });
@@ -165,6 +166,13 @@ it('bootstraps the first admin and refuses when a user already exists', function
         '--email' => 'another@example.test',
         '--password' => 'secret-pass',
     ])->assertFailed();
+
+    $this->artisan('appsec:bootstrap-admin', [
+        '--if-missing' => true,
+        '--name' => 'Skipped Admin',
+        '--email' => 'skipped@example.test',
+        '--password' => 'secret-pass',
+    ])->assertSuccessful();
 });
 
 it('authorizes the admin user resource only for admins', function () {
