@@ -1,6 +1,9 @@
-# YOUR TASK
+---
+name: 'Initial request and Historical context'
+description: 'This document stores the initial request at the origin of the project, and the historical context leading to that request.'
+---
 
-Your task is to plan the work defined in this document. Creating Epics and Stories.
+# Initial Request
 
 I intend to create a new GitHub project for this work and file it as **Epics and Stories** in GitHub.
 
