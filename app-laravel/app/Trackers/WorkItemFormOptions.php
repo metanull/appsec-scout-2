@@ -16,9 +16,12 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 final class WorkItemFormOptions
 {
+    private bool $loggedMissingEnabledTrackers = false;
+
     public function __construct(
         private readonly Registry $registry,
         private readonly Vault $vault,
@@ -29,8 +32,12 @@ final class WorkItemFormOptions
     {
         $options = [];
 
-        foreach ($this->registry->all() as $tracker) {
+        foreach ($this->registry->enabled() as $tracker) {
             $options[$tracker->id()] = $tracker->displayName();
+        }
+
+        if ($options === []) {
+            $this->logNoEnabledTrackers();
         }
 
         return $options;
@@ -43,6 +50,11 @@ final class WorkItemFormOptions
     public function createSchema(array $events = []): array
     {
         return [
+            Placeholder::make('enabled_tracker_notice')
+                ->label('Tracker availability')
+                ->content('No trackers are enabled. Enable at least one tracker in Admin > Integrations before creating a work item.')
+                ->visible(fn (): bool => $this->trackerOptions() === [])
+                ->columnSpanFull(),
             Select::make('tracker')
                 ->label('Tracker')
                 ->options($this->trackerOptions())
@@ -50,6 +62,7 @@ final class WorkItemFormOptions
                 ->searchable()
                 ->preload()
                 ->required()
+                ->disabled(fn (): bool => $this->trackerOptions() === [])
                 ->live()
                 ->afterStateUpdated(function (Set $set): void {
                     $set('project', null);
@@ -126,6 +139,11 @@ final class WorkItemFormOptions
     public function linkSchema(): array
     {
         return [
+            Placeholder::make('enabled_tracker_notice')
+                ->label('Tracker availability')
+                ->content('No trackers are enabled. Enable at least one tracker in Admin > Integrations before linking work items.')
+                ->visible(fn (): bool => $this->trackerOptions() === [])
+                ->columnSpanFull(),
             Select::make('tracker')
                 ->label('Tracker')
                 ->options($this->trackerOptions())
@@ -133,6 +151,7 @@ final class WorkItemFormOptions
                 ->searchable()
                 ->preload()
                 ->required()
+                ->disabled(fn (): bool => $this->trackerOptions() === [])
                 ->live()
                 ->afterStateUpdated(function (Set $set): void {
                     $set('project', null);
@@ -411,5 +430,22 @@ final class WorkItemFormOptions
         }
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function logNoEnabledTrackers(): void
+    {
+        if ($this->loggedMissingEnabledTrackers) {
+            return;
+        }
+
+        $this->loggedMissingEnabledTrackers = true;
+
+        Log::error('No enabled trackers available for work item forms.', [
+            'user_id' => $this->credentialOwnerId(),
+            'available_tracker_ids' => array_map(
+                static fn (Tracker $tracker): string => $tracker->id(),
+                $this->registry->all(),
+            ),
+        ]);
     }
 }
