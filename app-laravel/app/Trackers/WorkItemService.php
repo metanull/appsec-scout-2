@@ -3,9 +3,10 @@
 namespace App\Trackers;
 
 use App\Audit\Recorder;
-use App\Credentials\Vault;
+use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
+use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use Illuminate\Database\DatabaseManager;
 
@@ -14,10 +15,9 @@ final class WorkItemService
     public function __construct(
         private readonly DatabaseManager $db,
         private readonly DescriptionBuilder $descriptionBuilder,
+        private readonly OperatorIntegrationRuntime $runtime,
         private readonly Recorder $recorder,
-        private readonly Registry $registry,
         private readonly TrackerProjectLinker $linker,
-        private readonly Vault $vault,
     ) {}
 
     /**
@@ -36,7 +36,6 @@ final class WorkItemService
         ?string $parentId = null,
     ): void {
         $events = $this->events($eventIds);
-        $tracker = $this->tracker($trackerId);
 
         $isGrouped = count($events) > 1;
         $title = $isGrouped
@@ -46,7 +45,7 @@ final class WorkItemService
             ? $this->descriptionBuilder->buildGrouped($events)
             : $this->descriptionBuilder->buildSingle($events[0]);
 
-        $workItem = $this->vault->runAsOwner($userId, function () use ($tracker, $projectKey, $itemType, $title, $description, $labels, $priority, $assigneeId, $parentId) {
+        $workItem = $this->runtime->runTracker($trackerId, $userId, function (Tracker $tracker) use ($projectKey, $itemType, $title, $description, $labels, $priority, $assigneeId, $parentId) {
             return $tracker->createWorkItem(new CreateWorkItemRequest(
                 projectKey: $projectKey,
                 itemType: $itemType,
@@ -57,7 +56,7 @@ final class WorkItemService
                 assigneeId: $assigneeId,
                 parentId: $parentId,
             ));
-        }, true);
+        });
 
         $this->db->transaction(function () use ($events, $workItem, $trackerId, $projectKey, $userId, $isGrouped): void {
             foreach ($events as $event) {
@@ -90,8 +89,7 @@ final class WorkItemService
     public function linkExisting(array $eventIds, int $userId, string $trackerId, string $workItemId, string $projectKey = ''): void
     {
         $events = $this->events($eventIds);
-        $tracker = $this->tracker($trackerId);
-        $workItem = $this->vault->runAsOwner($userId, fn () => $tracker->getWorkItem($workItemId), true)
+        $workItem = $this->runtime->runTracker($trackerId, $userId, fn (Tracker $tracker) => $tracker->getWorkItem($workItemId))
             ?? throw new \RuntimeException('Selected work item could not be loaded from the tracker.');
 
         $resolvedProjectKey = $projectKey !== '' ? $projectKey : $workItem->projectKey;
@@ -177,10 +175,5 @@ final class WorkItemService
             static fn (mixed $label): ?string => is_string($label) && trim($label) !== '' ? trim($label) : null,
             $labels,
         ))));
-    }
-
-    private function tracker(string $trackerId): Contracts\Tracker
-    {
-        return $this->registry->find($trackerId) ?? throw new \RuntimeException("Tracker {$trackerId} is not enabled.");
     }
 }

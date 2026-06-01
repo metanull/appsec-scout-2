@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Integrations;
+
+use App\Credentials\Vault;
+use App\Sources\Contracts\Source;
+use App\Sources\Registry as SourceRegistry;
+use App\Trackers\Contracts\Tracker;
+use App\Trackers\Registry as TrackerRegistry;
+
+final class SystemIntegrationRuntime
+{
+    public function __construct(
+        private readonly SourceRegistry $sources,
+        private readonly TrackerRegistry $trackers,
+        private readonly Vault $vault,
+    ) {}
+
+    public function source(string $sourceId): ?Source
+    {
+        return $this->sources->find($sourceId);
+    }
+
+    public function tracker(string $trackerId): ?Tracker
+    {
+        return $this->trackers->find($trackerId);
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  callable(Source): TReturn  $callback
+     * @return TReturn
+     */
+    public function runSource(string $sourceId, callable $callback): mixed
+    {
+        $source = $this->source($sourceId) ?? throw new \RuntimeException("Source {$sourceId} is not registered.");
+
+        return $this->vault->runAsOwner(null, fn (): mixed => $callback($source), true);
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  callable(Tracker): TReturn  $callback
+     * @return TReturn
+     */
+    public function runTracker(string $trackerId, callable $callback): mixed
+    {
+        $tracker = $this->tracker($trackerId) ?? throw new \RuntimeException("Tracker {$trackerId} is not registered.");
+
+        return $this->vault->runAsOwner(null, fn (): mixed => $callback($tracker), true);
+    }
+}

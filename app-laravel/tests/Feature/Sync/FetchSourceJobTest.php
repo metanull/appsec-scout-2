@@ -1,5 +1,6 @@
 <?php
 
+use App\Integrations\SystemIntegrationRuntime;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -11,7 +12,6 @@ use App\Sources\Contracts\Source;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
-use App\Sources\Registry;
 use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
@@ -61,7 +61,7 @@ it('syncs systems containers events and preserves dirty/local metadata', functio
     ]);
 
     $job = new FetchSourceJob('fake');
-    $job->handle(app(Registry::class), app(Upserter::class));
+    $job->handle(app(SystemIntegrationRuntime::class), app(Upserter::class));
 
     $existing->refresh();
 
@@ -99,7 +99,7 @@ it('links events to containers when the event only carries the source container 
     $this->app->bind('appsec-scout.source.fake', fn () => $source);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 
-    (new FetchSourceJob('fake'))->handle(app(Registry::class), app(Upserter::class));
+    (new FetchSourceJob('fake'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class));
 
     $event = SecurityEvent::query()->where('source_event_id', 'evt-001')->first();
 
@@ -171,7 +171,7 @@ it('writes failure sync run when source throws', function () {
     $this->app->bind('appsec-scout.source.broken', fn () => $brokenSource);
     $this->app->tag(['appsec-scout.source.broken'], 'appsec-scout.source');
 
-    expect(fn () => (new FetchSourceJob('broken'))->handle(app(Registry::class), app(Upserter::class)))
+    expect(fn () => (new FetchSourceJob('broken'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class)))
         ->toThrow(RuntimeException::class, 'boom');
 
     $run = SyncRun::query()->latest('id')->first();

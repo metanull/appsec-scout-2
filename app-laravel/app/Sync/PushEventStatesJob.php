@@ -3,10 +3,11 @@
 namespace App\Sync;
 
 use App\Audit\Recorder;
+use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\ErrorLog;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
-use App\Sources\Registry;
+use App\Sources\Contracts\Source;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -17,7 +18,7 @@ final class PushEventStatesJob implements ShouldQueue
     use Dispatchable, Queueable;
 
     /** @param  list<int>  $eventIds */
-    public function __construct(public readonly array $eventIds) {}
+    public function __construct(public readonly array $eventIds, public readonly int $operatorUserId) {}
 
     /** @return list<WithoutOverlapping> */
     public function middleware(): array
@@ -33,7 +34,7 @@ final class PushEventStatesJob implements ShouldQueue
         return [new WithoutOverlapping('push-event-states:' . $sourceId)];
     }
 
-    public function handle(Registry $registry, Recorder $recorder): void
+    public function handle(OperatorIntegrationRuntime $runtime, Recorder $recorder): void
     {
         $events = SecurityEvent::query()
             ->with('softwareSystem')
@@ -66,80 +67,78 @@ final class PushEventStatesJob implements ShouldQueue
         $lastError = null;
 
         try {
-            $source = $registry->find($sourceId);
+            $runtime->runSource($sourceId, $this->operatorUserId, function (Source $source) use ($events, $sourceId, $recorder, &$counts, &$lastError): void {
+                foreach ($events as $event) {
+                    $metadata = self::metadataArray($event);
+                    $retryCount = min((int) ($metadata['pushRetryCount'] ?? 0), 3);
 
-            if ($source === null) {
-                throw new \RuntimeException("Source {$sourceId} is not enabled");
-            }
+                    if ($retryCount >= 3 || $event->pending_state === null) {
+                        $counts['events_skipped']++;
 
-            foreach ($events as $event) {
-                $metadata = self::metadataArray($event);
-                $retryCount = min((int) ($metadata['pushRetryCount'] ?? 0), 3);
+                        continue;
+                    }
 
-                if ($retryCount >= 3 || $event->pending_state === null) {
-                    $counts['events_skipped']++;
+                    $result = $source->pushEventState($event);
 
-                    continue;
-                }
+                    if ($result->ok) {
+                        unset($metadata['pushRetryCount'], $metadata['lastPushError']);
 
-                $result = $source->pushEventState($event);
+                        $event->forceFill([
+                            'state' => $event->pending_state,
+                            'pending_state' => null,
+                            'pending_comment' => null,
+                            'is_dirty' => $event->pending_severity !== null,
+                            'metadata' => $metadata,
+                            'synced_at' => now(),
+                            'updated_at' => now(),
+                        ])->save();
 
-                if ($result->ok) {
-                    unset($metadata['pushRetryCount'], $metadata['lastPushError']);
+                        $recorder->recordSyncPush(SecurityEvent::class, (string) $event->id, [
+                            'status' => 'success',
+                            'source_id' => $sourceId,
+                            'operator_user_id' => $this->operatorUserId,
+                        ]);
+
+                        $counts['events_succeeded']++;
+
+                        continue;
+                    }
+
+                    $retryCount = min($retryCount + 1, 3);
+                    $metadata['pushRetryCount'] = $retryCount;
+                    $metadata['lastPushError'] = $result->error;
 
                     $event->forceFill([
-                        'state' => $event->pending_state,
-                        'pending_state' => null,
-                        'pending_comment' => null,
-                        'is_dirty' => $event->pending_severity !== null,
+                        'is_dirty' => true,
                         'metadata' => $metadata,
-                        'synced_at' => now(),
                         'updated_at' => now(),
                     ])->save();
 
-                    $recorder->recordSyncPush(SecurityEvent::class, (string) $event->id, [
-                        'status' => 'success',
-                        'source_id' => $sourceId,
+                    ErrorLog::query()->create([
+                        'level' => 'error',
+                        'channel' => 'sync',
+                        'message' => $result->error ?? 'Push failed.',
+                        'context_json' => [
+                            'event_id' => $event->id,
+                            'source_id' => $sourceId,
+                            'retry_count' => $retryCount,
+                        ],
+                        'trace' => null,
+                        'occurred_at' => now(),
                     ]);
 
-                    $counts['events_succeeded']++;
-
-                    continue;
-                }
-
-                $retryCount = min($retryCount + 1, 3);
-                $metadata['pushRetryCount'] = $retryCount;
-                $metadata['lastPushError'] = $result->error;
-
-                $event->forceFill([
-                    'is_dirty' => true,
-                    'metadata' => $metadata,
-                    'updated_at' => now(),
-                ])->save();
-
-                ErrorLog::query()->create([
-                    'level' => 'error',
-                    'channel' => 'sync',
-                    'message' => $result->error ?? 'Push failed.',
-                    'context_json' => [
-                        'event_id' => $event->id,
+                    $recorder->recordSyncPush(SecurityEvent::class, (string) $event->id, [
+                        'status' => 'failure',
                         'source_id' => $sourceId,
+                        'operator_user_id' => $this->operatorUserId,
+                        'error' => $result->error,
                         'retry_count' => $retryCount,
-                    ],
-                    'trace' => null,
-                    'occurred_at' => now(),
-                ]);
+                    ]);
 
-                $recorder->recordSyncPush(SecurityEvent::class, (string) $event->id, [
-                    'status' => 'failure',
-                    'source_id' => $sourceId,
-                    'error' => $result->error,
-                    'retry_count' => $retryCount,
-                ]);
-
-                $counts['events_failed']++;
-                $lastError = $result->error;
-            }
+                    $counts['events_failed']++;
+                    $lastError = $result->error;
+                }
+            });
 
             $run->update([
                 'finished_at' => now(),

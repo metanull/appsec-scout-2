@@ -1,6 +1,7 @@
 <?php
 
 use App\Audit\AuditLog;
+use App\Integrations\SystemIntegrationRuntime;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
@@ -32,7 +33,7 @@ it('refreshes cached tracker state and title without mutating the alert state', 
         'created_at' => now(),
     ]);
 
-    (new RefreshWorkItemsJob)->handle(app(Registry::class), app(WorkItemRefreshService::class));
+    (new RefreshWorkItemsJob)->handle(app(SystemIntegrationRuntime::class), app(WorkItemRefreshService::class));
 
     $event->refresh();
     $link = WorkItemLink::query()->first();
@@ -67,7 +68,7 @@ it('deduplicates tracker gets for grouped work item links', function () {
         ]);
     }
 
-    (new RefreshWorkItemsJob)->handle(app(Registry::class), app(WorkItemRefreshService::class));
+    (new RefreshWorkItemsJob)->handle(app(SystemIntegrationRuntime::class), app(WorkItemRefreshService::class));
 
     expect($tracker->getCalls)->toBe(1)
         ->and(WorkItemLink::query()->where('work_item_state', 'Resolved')->count())->toBe(5);

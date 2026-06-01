@@ -18,7 +18,6 @@ use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
 use App\Models\User;
 use App\SecurityEvents\SourceLinkHelper;
-use App\Trackers\CreateWorkItemJob;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
@@ -564,7 +563,7 @@ class SecurityEventResource extends Resource
                                 return;
                             }
 
-                            CreateWorkItemJob::dispatch(
+                            app(WorkItemService::class)->createForEvents(
                                 eventIds: [$record->id],
                                 userId: $user->id,
                                 trackerId: $trackerId,
@@ -576,7 +575,7 @@ class SecurityEventResource extends Resource
                                 parentId: self::nullableString($data['parent_id'] ?? null),
                             );
 
-                            Notification::make()->title('Work item creation queued')->success()->send();
+                            Notification::make()->title('Work item created')->success()->send();
                         }),
                     Action::make('linkExistingWorkItem')
                         ->label('Link existing work item')
@@ -661,7 +660,7 @@ class SecurityEventResource extends Resource
                             return;
                         }
 
-                        CreateWorkItemJob::dispatch(
+                        app(WorkItemService::class)->createForEvents(
                             eventIds: array_values($records->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()),
                             userId: $user->id,
                             trackerId: $trackerId,
@@ -673,7 +672,7 @@ class SecurityEventResource extends Resource
                             parentId: self::nullableString($data['parent_id'] ?? null),
                         );
 
-                        Notification::make()->title('Grouped work item creation queued')->success()->send();
+                        Notification::make()->title('Grouped work item created')->success()->send();
                     })
                     ->deselectRecordsAfterCompletion(),
                 BulkAction::make('linkExistingWorkItemBulk')

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Credentials\Vault;
 use App\Events\SyncRunFinished;
 use App\Listeners\BustDashboardCache;
 use App\Models\User;
@@ -21,6 +22,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(Vault::class);
         $this->app->singleton(AzDoSource::class);
         $this->app->singleton(AsocSource::class);
         $this->app->singleton(DetectifySource::class);

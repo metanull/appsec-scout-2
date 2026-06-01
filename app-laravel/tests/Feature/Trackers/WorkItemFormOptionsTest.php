@@ -6,7 +6,6 @@ use App\Integrations\IntegrationSettingsRepository;
 use App\Models\User;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\WorkItemFormOptions;
-use Illuminate\Support\Facades\Log;
 use Tests\Fakes\FakeTracker;
 
 it('requires personal tracker credentials for interactive work item forms', function () {
@@ -35,22 +34,16 @@ it('keeps profile integrations page route available for guidance links', functio
     expect(ProfileIntegrationsPage::getUrl())->toContain('/profile/integrations');
 });
 
-it('returns no tracker options and logs an error when no tracker is enabled', function () {
+it('lists registered trackers for operator work item forms even when system scheduling is disabled', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
     bindFakeTrackerForWorkItemForms(enabled: false);
-    Log::spy();
 
     $options = app(WorkItemFormOptions::class)->trackerOptions();
 
-    expect($options)->toBe([]);
-
-    Log::shouldHaveReceived('error')
-        ->once()
-        ->withArgs(fn (string $message, array $context): bool => $message === 'No enabled trackers available for work item forms.'
-            && array_key_exists('available_tracker_ids', $context)
-            && in_array('fake-tracker', $context['available_tracker_ids'], true));
+    expect($options)->toHaveKey('fake-tracker')
+        ->and($options['fake-tracker'])->toBe('Fake Tracker');
 });
 
 function bindFakeTrackerForWorkItemForms(bool $enabled = true): void

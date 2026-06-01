@@ -12,7 +12,7 @@ final class ReconcileEventJob implements ShouldQueue
 {
     use Dispatchable, Queueable;
 
-    public function __construct(public readonly int $eventId) {}
+    public function __construct(public readonly int $eventId, public readonly int $operatorUserId) {}
 
     public function handle(ReconciliationService $service): void
     {
@@ -22,6 +22,6 @@ final class ReconcileEventJob implements ShouldQueue
             return;
         }
 
-        $service->reconcileEvent($event);
+        $service->reconcileEvent($event, $this->operatorUserId);
     }
 }

@@ -4,12 +4,13 @@ namespace App\Sync;
 
 use App\Events\SyncRunFinished;
 use App\Integrations\IntegrationSettingsRepository;
+use App\Integrations\SystemIntegrationRuntime;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
 use App\Sources\Contracts\EnrichesFetchedEvents;
-use App\Sources\Registry;
+use App\Sources\Contracts\Source;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -72,7 +73,7 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
     }
 
     public function handle(
-        Registry $registry,
+        SystemIntegrationRuntime $runtime,
         Upserter $upserter,
         ?IntegrationSettingsRepository $settings = null,
     ): void {
@@ -95,12 +96,6 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
         ];
 
         try {
-            $source = $registry->find($this->sourceId);
-
-            if ($source === null) {
-                throw new RuntimeException("Source {$this->sourceId} is not enabled");
-            }
-
             $since = SyncRun::query()
                 ->where('source_id', $this->sourceId)
                 ->where('status', 'success')
@@ -110,64 +105,66 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
 
             $sinceCarbon = $since !== null ? Carbon::parse((string) $since) : null;
 
-            $systemIdMap = [];
-            $containerIdMap = [];
+            $runtime->runSource($this->sourceId, function (Source $source) use ($sinceCarbon, $upserter, &$counts): void {
+                $systemIdMap = [];
+                $containerIdMap = [];
 
-            foreach ($source->fetchSystems() as $systemDto) {
-                $system = SoftwareSystem::query()->firstOrNew([
-                    'source_id' => $this->sourceId,
-                    'source_system_id' => $systemDto->sourceSystemId,
-                ]);
-
-                $isNew = ! $system->exists;
-
-                $system->fill([
-                    'name' => $systemDto->name,
-                    'description' => $systemDto->description,
-                    'url' => $systemDto->url,
-                    'metadata' => $systemDto->metadata,
-                    'first_seen_at' => $system->first_seen_at ?? now(),
-                    'last_seen_at' => now(),
-                    'synced_at' => now(),
-                ]);
-                $system->save();
-
-                $systemIdMap[$systemDto->sourceSystemId] = $system->id;
-                $counts[$isNew ? 'systems_created' : 'systems_updated']++;
-
-                foreach ($source->fetchContainers($systemDto) as $containerDto) {
-                    $container = SecurityContainer::query()->firstOrNew([
-                        'software_system_id' => $system->id,
-                        'source_container_id' => $containerDto->sourceContainerId,
+                foreach ($source->fetchSystems() as $systemDto) {
+                    $system = SoftwareSystem::query()->firstOrNew([
+                        'source_id' => $this->sourceId,
+                        'source_system_id' => $systemDto->sourceSystemId,
                     ]);
 
-                    $containerIsNew = ! $container->exists;
+                    $isNew = ! $system->exists;
 
-                    $container->fill([
-                        'name' => $containerDto->name,
-                        'kind' => $containerDto->kind,
-                        'url' => $containerDto->url,
-                        'metadata' => $containerDto->metadata,
-                        'first_seen_at' => $container->first_seen_at ?? now(),
+                    $system->fill([
+                        'name' => $systemDto->name,
+                        'description' => $systemDto->description,
+                        'url' => $systemDto->url,
+                        'metadata' => $systemDto->metadata,
+                        'first_seen_at' => $system->first_seen_at ?? now(),
                         'last_seen_at' => now(),
                         'synced_at' => now(),
                     ]);
-                    $container->save();
+                    $system->save();
 
-                    $containerIdMap[$systemDto->sourceSystemId . ':' . $containerDto->sourceContainerId] = $container->id;
-                    $containerIdMap[$containerDto->sourceContainerId] = $container->id;
-                    $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
+                    $systemIdMap[$systemDto->sourceSystemId] = $system->id;
+                    $counts[$isNew ? 'systems_created' : 'systems_updated']++;
+
+                    foreach ($source->fetchContainers($systemDto) as $containerDto) {
+                        $container = SecurityContainer::query()->firstOrNew([
+                            'software_system_id' => $system->id,
+                            'source_container_id' => $containerDto->sourceContainerId,
+                        ]);
+
+                        $containerIsNew = ! $container->exists;
+
+                        $container->fill([
+                            'name' => $containerDto->name,
+                            'kind' => $containerDto->kind,
+                            'url' => $containerDto->url,
+                            'metadata' => $containerDto->metadata,
+                            'first_seen_at' => $container->first_seen_at ?? now(),
+                            'last_seen_at' => now(),
+                            'synced_at' => now(),
+                        ]);
+                        $container->save();
+
+                        $containerIdMap[$systemDto->sourceSystemId . ':' . $containerDto->sourceContainerId] = $container->id;
+                        $containerIdMap[$containerDto->sourceContainerId] = $container->id;
+                        $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
+                    }
                 }
-            }
 
-            foreach ($source->fetchEvents($sinceCarbon) as $eventDto) {
-                if ($source instanceof EnrichesFetchedEvents) {
-                    $eventDto = $source->enrichFetchedEvent($eventDto);
+                foreach ($source->fetchEvents($sinceCarbon) as $eventDto) {
+                    if ($source instanceof EnrichesFetchedEvents) {
+                        $eventDto = $source->enrichFetchedEvent($eventDto);
+                    }
+
+                    $created = $upserter->upsert($this->sourceId, $eventDto, $systemIdMap, $containerIdMap);
+                    $counts[$created ? 'events_created' : 'events_updated']++;
                 }
-
-                $created = $upserter->upsert($this->sourceId, $eventDto, $systemIdMap, $containerIdMap);
-                $counts[$created ? 'events_created' : 'events_updated']++;
-            }
+            });
 
             $run->update([
                 'finished_at' => now(),

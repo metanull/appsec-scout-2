@@ -2,6 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Models\SecurityEvent;
+use App\Models\User;
 use App\Models\WorkItemLink;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Reconciliation\ReconciliationService;
@@ -21,7 +22,9 @@ it('returns empty results when event has no urls', function () {
         'metadata' => null,
     ]);
 
-    $results = app(ReconciliationService::class)->reconcileEvent($event);
+    $operator = reconciliationOperator();
+
+    $results = app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
 
     expect($results)->toBe([]);
 });
@@ -56,7 +59,9 @@ it('returns already-linked result when event url matches existing work item url'
     ]);
 
     // First reconcile event - should link it
-    $results = app(ReconciliationService::class)->reconcileEvent($event);
+    $operator = reconciliationOperator();
+
+    $results = app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
 
     expect($results)->toHaveCount(1)
         ->and($results[0]->linkedEventIds)->toContain($event->id)
@@ -103,7 +108,9 @@ it('returns already-linked result when link already exists', function () {
         'synced_at' => now(),
     ]);
 
-    $results = app(ReconciliationService::class)->reconcileEvent($event);
+    $operator = reconciliationOperator();
+
+    $results = app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
 
     expect($results)->toHaveCount(1)
         ->and($results[0]->alreadyLinked)->toBeTrue();
@@ -139,16 +146,24 @@ it('creates a work item link when reconciliation finds a url match', function ()
         'synced_at' => now(),
     ]);
 
-    app(ReconciliationService::class)->reconcileEvent($event);
+    $operator = reconciliationOperator();
+
+    app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
 
     expect(WorkItemLink::query()
         ->where('event_id', $event->id)
         ->where('tracker_id', 'fake-tracker')
         ->where('work_item_id', 'APP#5')
+        ->where('created_by_user_id', $operator->id)
         ->exists())->toBeTrue();
 
     expect(AuditLog::query()->where('action', 'work_item_linked')->exists())->toBeTrue();
 });
+
+function reconciliationOperator(): User
+{
+    return User::factory()->create();
+}
 
 it('reconcileAll processes all events', function () {
     $tracker = new FakeTracker;

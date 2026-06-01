@@ -3,7 +3,9 @@
 namespace App\Trackers;
 
 use App\Integrations\IntegrationSettingsRepository;
+use App\Integrations\SystemIntegrationRuntime;
 use App\Models\WorkItemLink;
+use App\Trackers\Contracts\Tracker;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -24,7 +26,7 @@ final class RefreshWorkItemsJob implements ShouldBeUnique, ShouldQueue
     }
 
     public function handle(
-        Registry $registry,
+        SystemIntegrationRuntime $runtime,
         WorkItemRefreshService $service,
         ?IntegrationSettingsRepository $settings = null,
     ): void {
@@ -44,7 +46,7 @@ final class RefreshWorkItemsJob implements ShouldBeUnique, ShouldQueue
                 continue;
             }
 
-            $tracker = $registry->find($trackerId);
+            $tracker = $runtime->tracker($trackerId);
 
             if ($tracker === null) {
                 if ($this->trackerId === $trackerId) {
@@ -57,7 +59,7 @@ final class RefreshWorkItemsJob implements ShouldBeUnique, ShouldQueue
             }
 
             try {
-                $service->refreshTracker($trackerId, $tracker);
+                $runtime->runTracker($trackerId, fn (Tracker $tracker) => $service->refreshTracker($trackerId, $tracker));
                 $settings->markSyncResult('tracker', $trackerId, true);
             } catch (\Throwable $exception) {
                 $settings->markSyncResult('tracker', $trackerId, false, $exception->getMessage());

@@ -133,11 +133,18 @@ class PendingSyncPage extends Page implements HasTable
                         Gate::authorize('work-items.sync');
                         Gate::authorize('sources.push-state');
 
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
                         $records->groupBy('source_id')
-                            ->each(function (Collection $group): void {
+                            ->each(function (Collection $group) use ($user): void {
                                 $ids = $group->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
                                 /** @var list<int> $ids */
-                                PushEventStatesJob::dispatch($ids);
+                                PushEventStatesJob::dispatch($ids, $user->id);
                             });
 
                         Notification::make()->title('Selected alerts queued for sync')->success()->send();

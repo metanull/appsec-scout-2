@@ -9,7 +9,6 @@ use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Sync\RefetchEventJob;
-use App\Trackers\CreateWorkItemJob;
 use App\Trackers\ReconcileEventJob;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
@@ -217,7 +216,7 @@ class ViewSecurityEvent extends ViewRecord
             return false;
         }
 
-        CreateWorkItemJob::dispatch(
+        app(WorkItemService::class)->createForEvents(
             eventIds: [$this->eventRecord()->id],
             userId: $user->id,
             trackerId: $trackerId,
@@ -229,7 +228,8 @@ class ViewSecurityEvent extends ViewRecord
             parentId: $this->nullableString($data['parent_id'] ?? null),
         );
 
-        Notification::make()->title('Work item creation queued')->success()->send();
+        $this->refreshFormData([]);
+        Notification::make()->title('Work item created')->success()->send();
 
         return true;
     }
@@ -273,7 +273,14 @@ class ViewSecurityEvent extends ViewRecord
     {
         Gate::authorize('work-items.link');
 
-        ReconcileEventJob::dispatch($this->eventRecord()->id);
+        /** @var User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        ReconcileEventJob::dispatch($this->eventRecord()->id, $user->id);
 
         Notification::make()->title('Work item reconciliation queued for this alert')->success()->send();
 
