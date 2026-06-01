@@ -34,13 +34,25 @@ it('keeps profile integrations page route available for guidance links', functio
     expect(ProfileIntegrationsPage::getUrl())->toContain('/profile/integrations');
 });
 
-function bindFakeTrackerForWorkItemForms(): void
+it('lists trackers in work item options even when integration scheduler setting is disabled', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    bindFakeTrackerForWorkItemForms(enabled: false);
+
+    $options = app(WorkItemFormOptions::class)->trackerOptions();
+
+    expect($options)->toHaveKey('fake-tracker')
+        ->and($options['fake-tracker'])->toBe('Fake Tracker');
+});
+
+function bindFakeTrackerForWorkItemForms(bool $enabled = true): void
 {
     app()->bind('appsec-scout.tracker.fake', fn () => new FakeTracker);
     app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
 
     app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
-        'enabled' => true,
+        'enabled' => $enabled,
         'fetch_interval_minutes' => 30,
         'service_user_id' => null,
     ]);

@@ -50,6 +50,24 @@ it('tests personal integration credentials and shows connected badge', function 
     expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->first()?->last_tested_ok)->toBeTrue();
 });
 
+it('saves pending personal values before running an integration test', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->set('values.fake_tracker_token', 'pending-user-token')
+        ->call('testIntegration', 'fake-tracker')
+        ->assertSee('Connected');
+
+    expect(Credential::query()
+        ->where('integration_key', 'fake-tracker.token')
+        ->where('owner_user_id', $user->id)
+        ->value('value'))
+        ->toBe('pending-user-token');
+});
+
 it('saves system credentials from the admin page', function () {
     bindFakeCredentialIntegrations();
 
@@ -76,6 +94,23 @@ it('renders editable inputs for empty required system credentials', function () 
         ->assertSeeHtml('wire:model.live="values.fake_apiKey"')
         ->assertSeeHtml('wire:model.live="values.fake_tracker_token"')
         ->assertDontSee('x-filament::input');
+});
+
+it('turns browser autocomplete off for credential inputs on profile and system pages', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->assertSeeHtml('autocomplete="off"');
+
+    $admin = enrolledUser();
+    $admin->syncRoles(['Admin']);
+
+    Livewire::actingAs($admin)
+        ->test(SystemCredentialsPage::class)
+        ->assertSeeHtml('autocomplete="off"');
 });
 
 it('saves all credentials for multiple integrations at once', function () {

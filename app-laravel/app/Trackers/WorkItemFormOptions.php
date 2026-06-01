@@ -29,7 +29,7 @@ final class WorkItemFormOptions
     {
         $options = [];
 
-        foreach ($this->registry->enabled() as $tracker) {
+        foreach ($this->registry->all() as $tracker) {
             $options[$tracker->id()] = $tracker->displayName();
         }
 
@@ -388,7 +388,15 @@ final class WorkItemFormOptions
     {
         $userId = Auth::id();
 
-        return is_int($userId) ? $userId : null;
+        if (is_int($userId)) {
+            return $userId;
+        }
+
+        if (is_string($userId) && $userId !== '' && ctype_digit($userId)) {
+            return (int) $userId;
+        }
+
+        return null;
     }
 
     private function runAsCredentialOwner(callable $callback): mixed
