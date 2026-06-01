@@ -37,6 +37,21 @@ try {
     if( $LASTEXITCODE -ne 0) {
         throw "Failed to bootstrap admin user. Please check your Docker setup and try again."
     }
+    if (Test-Path ".credentials.json") {
+        docker compose cp .credentials.json app:/var/www/html/storage/app/private/credentials.json
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to copy .credentials.json into the app container."
+        }
+
+        docker compose exec app php artisan credentials:system:import /var/www/html/storage/app/private/credentials.json
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to import system credentials from copied JSON file."
+        }
+
+        Write-Host "Imported system credentials from .credentials.json"
+    } else {
+        Write-Host "No .credentials.json found. Skipping credential import."
+    }
     $Reply = Invoke-WebRequest http://localhost:8080/up
     if( $Reply.StatusCode -ne 200) {
         throw "Failed to assert that the application is up."
