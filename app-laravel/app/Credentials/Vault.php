@@ -4,6 +4,8 @@ namespace App\Credentials;
 
 use App\Audit\Recorder;
 use App\Sync\CredentialResolver;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Facades\Crypt;
 
 class Vault
 {
@@ -22,7 +24,7 @@ class Vault
     {
         $credential = $this->resolveCredential($key, $userId, $strict);
 
-        return $credential?->value;
+        return $this->credentialValue($credential);
     }
 
     public function set(string $key, ?int $userId, string $value, ?string $description = null): void
@@ -48,7 +50,13 @@ class Vault
         }
 
         try {
-            $probe($credential->value);
+            $value = $this->credentialValue($credential);
+
+            if ($value === null) {
+                return TestResult::missing();
+            }
+
+            $probe($value);
             $this->markTested($credential, true, null);
 
             return TestResult::ok();
@@ -122,5 +130,26 @@ class Vault
             'last_tested_ok' => $ok,
             'last_tested_error' => $error,
         ]);
+    }
+
+    private function credentialValue(?Credential $credential): ?string
+    {
+        if (! $credential instanceof Credential) {
+            return null;
+        }
+
+        $encrypted = $credential->getRawOriginal('value');
+
+        if (! is_string($encrypted) || $encrypted === '') {
+            return null;
+        }
+
+        try {
+            $decrypted = Crypt::decrypt($encrypted, false);
+
+            return is_string($decrypted) ? $decrypted : null;
+        } catch (DecryptException) {
+            return null;
+        }
     }
 }

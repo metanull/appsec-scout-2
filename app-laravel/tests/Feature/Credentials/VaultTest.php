@@ -35,6 +35,16 @@ it('returns null for missing credential', function () {
     expect($this->vault->get('missing.key', null))->toBeNull();
 });
 
+it('returns null when credential payload cannot be decrypted', function () {
+    DB::table('credentials')->insert([
+        'integration_key' => 'azdo.pat',
+        'owner_user_id' => null,
+        'value' => 'invalid-payload',
+    ]);
+
+    expect($this->vault->get('azdo.pat', null))->toBeNull();
+});
+
 it('writes audit row on set with value redacted', function () {
     $this->vault->set('azdo.pat', null, 'secret');
 

@@ -17,6 +17,8 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Facades\Crypt;
 
 trait ManagesIntegrationCredentials
 {
@@ -352,8 +354,16 @@ trait ManagesIntegrationCredentials
 
             if ($field->isSecret) {
                 if ($existing instanceof Credential && ! $shouldReplace) {
+                    $existingValue = $this->credentialValue($existing);
+
+                    if ($existingValue === null) {
+                        $this->addError("values.{$stateKey}", 'Stored credential cannot be decrypted. Click Replace and save a new value.');
+
+                        return false;
+                    }
+
                     if ($description !== $existing->description) {
-                        app(Vault::class)->set($field->key, $ownerId, $existing->value, $description);
+                        app(Vault::class)->set($field->key, $ownerId, $existingValue, $description);
                     }
 
                     continue;
@@ -385,7 +395,9 @@ trait ManagesIntegrationCredentials
                     return false;
                 }
 
-                if ($existing instanceof Credential && $value === $existing->value && $description === $existing->description) {
+                $existingValue = $this->credentialValue($existing);
+
+                if ($existing instanceof Credential && $existingValue !== null && $value === $existingValue && $description === $existing->description) {
                     continue;
                 }
 
@@ -429,8 +441,17 @@ trait ManagesIntegrationCredentials
                 $this->hasStored[$stateKey] = $credential instanceof Credential;
 
                 if ($credential instanceof Credential) {
-                    $this->descriptions[$integration['id']] = $credential->description ?? '';
-                    $this->values[$stateKey] = $field->isSecret ? '' : $credential->value;
+                    $credentialValue = $this->credentialValue($credential);
+
+                    if ($credentialValue !== null) {
+                        $this->descriptions[$integration['id']] = $credential->description ?? '';
+                        $this->values[$stateKey] = $field->isSecret ? '' : $credentialValue;
+
+                        continue;
+                    }
+
+                    $this->hasStored[$stateKey] = false;
+                    $this->values[$stateKey] = '';
                 } else {
                     $this->values[$stateKey] = '';
                 }
@@ -499,5 +520,26 @@ trait ManagesIntegrationCredentials
             ->where('integration_key', $key)
             ->when($ownerId === null, fn ($query) => $query->whereNull('owner_user_id'), fn ($query) => $query->where('owner_user_id', $ownerId))
             ->first();
+    }
+
+    private function credentialValue(?Credential $credential): ?string
+    {
+        if (! $credential instanceof Credential) {
+            return null;
+        }
+
+        $encrypted = $credential->getRawOriginal('value');
+
+        if (! is_string($encrypted) || $encrypted === '') {
+            return null;
+        }
+
+        try {
+            $decrypted = Crypt::decrypt($encrypted, false);
+
+            return is_string($decrypted) ? $decrypted : null;
+        } catch (DecryptException) {
+            return null;
+        }
     }
 }
