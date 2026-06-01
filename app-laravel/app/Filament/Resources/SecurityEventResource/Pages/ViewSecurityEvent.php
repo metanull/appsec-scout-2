@@ -13,13 +13,9 @@ use App\Trackers\ReconcileEventJob;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
 use App\Triage\AttachmentService;
-use App\Triage\RunBfgJob;
-use App\Triage\RunCodesearchJob;
-use App\Triage\RunTrivyJob;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
-use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -84,50 +80,6 @@ class ViewSecurityEvent extends ViewRecord
                 ->requiresConfirmation()
                 ->modalDescription('Queue a reconciliation job to find and create missing links for this alert.')
                 ->action(fn (): bool => $this->dispatchReconcileEvent()),
-            ActionGroup::make([
-                Action::make('runTrivy')
-                    ->label('Run Trivy')
-                    ->icon('heroicon-o-bug-ant')
-                    ->visible(fn (): bool => Gate::allows('triage.run-trivy'))
-                    ->form([
-                        TextInput::make('git_url')
-                            ->label('Repository URL')
-                            ->default(fn (): ?string => $this->repositoryUrl())
-                            ->required(),
-                    ])
-                    ->action(fn (array $data): bool => $this->dispatchTrivy($data)),
-                Action::make('runBfg')
-                    ->label('Run BFG')
-                    ->icon('heroicon-o-wrench-screwdriver')
-                    ->visible(fn (): bool => Gate::allows('triage.run-bfg'))
-                    ->form([
-                        TextInput::make('git_url')
-                            ->label('Repository URL')
-                            ->default(fn (): ?string => $this->repositoryUrl())
-                            ->required(),
-                        FileUpload::make('secret_list_file')
-                            ->label('Secret list')
-                            ->disk('local')
-                            ->directory('triage-uploads')
-                            ->required(),
-                    ])
-                    ->action(fn (array $data): bool => $this->dispatchBfg($data)),
-                Action::make('runCodesearch')
-                    ->label('Run Code Search')
-                    ->icon('heroicon-o-magnifying-glass')
-                    ->visible(fn (): bool => Gate::allows('triage.run-codesearch'))
-                    ->form([
-                        TextInput::make('query')
-                            ->label('Query')
-                            ->required(),
-                        TextInput::make('scope')
-                            ->label('Scope')
-                            ->helperText('Optional. Use project:<name> or repo:<name>.'),
-                    ])
-                    ->action(fn (array $data): bool => $this->dispatchCodesearch($data)),
-            ])
-                ->label('Run triage')
-                ->icon('heroicon-o-play'),
             Action::make('addAttachment')
                 ->label('Add attachment')
                 ->icon('heroicon-o-paper-clip')
@@ -238,70 +190,6 @@ class ViewSecurityEvent extends ViewRecord
         @unlink($fullPath);
 
         Notification::make()->title('Attachment added')->success()->send();
-
-        return true;
-    }
-
-    /** @param array<string, mixed> $data */
-    private function dispatchTrivy(array $data): bool
-    {
-        Gate::authorize('triage.run-trivy');
-
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if ($user === null) {
-            abort(403);
-        }
-
-        RunTrivyJob::dispatch($this->eventRecord()->id, (string) $data['git_url'], $user->id);
-
-        Notification::make()->title('Trivy run queued')->success()->send();
-
-        return true;
-    }
-
-    /** @param array<string, mixed> $data */
-    private function dispatchBfg(array $data): bool
-    {
-        Gate::authorize('triage.run-bfg');
-
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if ($user === null) {
-            abort(403);
-        }
-
-        $secretListPath = storage_path('app/' . (string) $data['secret_list_file']);
-
-        RunBfgJob::dispatch($this->eventRecord()->id, (string) $data['git_url'], $secretListPath, $user->id);
-
-        Notification::make()->title('BFG run queued')->success()->send();
-
-        return true;
-    }
-
-    /** @param array<string, mixed> $data */
-    private function dispatchCodesearch(array $data): bool
-    {
-        Gate::authorize('triage.run-codesearch');
-
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if ($user === null) {
-            abort(403);
-        }
-
-        RunCodesearchJob::dispatch(
-            $this->eventRecord()->id,
-            (string) $data['query'],
-            $this->nullableString($data['scope'] ?? null),
-            $user->id,
-        );
-
-        Notification::make()->title('Code search queued')->success()->send();
 
         return true;
     }
