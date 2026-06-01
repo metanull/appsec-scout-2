@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Jobs\UpdateTrivyDbJob;
+use App\Sources\Registry as SourceRegistry;
+use App\Trackers\Registry as TrackerRegistry;
 use App\Triage\BfgService;
 use App\Triage\CodesearchService;
 use App\Triage\TrivyService;
 use App\Users\UserAdminService;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -147,6 +151,197 @@ Artisan::command('triage:bfg {git_url} {secret_list_file} {--attach-to=}', funct
 
     return 0;
 })->purpose('Clone a repository mirror, run BFG, and optionally attach the report and bundle to an alert');
+
+Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
+    $path = (string) $this->argument('path');
+
+    if ($path === '') {
+        $this->error('The export path is required.');
+
+        return self::FAILURE;
+    }
+
+    $integrations = [];
+
+    foreach ($sources->all() as $source) {
+        $fields = [];
+
+        foreach ($source->credentialFields() as $field) {
+            $fields[$field->key] = app(Vault::class)->get($field->key, null, true);
+        }
+
+        $integrations[$source->id()] = [
+            'type' => 'source',
+            'display_name' => $source->displayName(),
+            'fields' => $fields,
+        ];
+    }
+
+    foreach ($trackers->all() as $tracker) {
+        $fields = [];
+
+        foreach ($tracker->credentialFields() as $field) {
+            $fields[$field->key] = app(Vault::class)->get($field->key, null, true);
+        }
+
+        $integrations[$tracker->id()] = [
+            'type' => 'tracker',
+            'display_name' => $tracker->displayName(),
+            'fields' => $fields,
+        ];
+    }
+
+    $payload = [
+        'version' => 1,
+        'owner' => 'system',
+        'exported_at' => now()->toIso8601String(),
+        'integrations' => $integrations,
+    ];
+
+    $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+    $directory = dirname($path);
+
+    if (! $files->isDirectory($directory)) {
+        $files->makeDirectory($directory, 0755, true);
+    }
+
+    $files->put($path, $json . PHP_EOL);
+
+    $this->info(sprintf('Exported system credentials to %s.', $path));
+
+    return self::SUCCESS;
+})->purpose('Export system credentials to a JSON file');
+
+Artisan::command('credentials:system:import {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
+    $path = (string) $this->argument('path');
+
+    if (! $files->exists($path) || ! $files->isFile($path)) {
+        $this->error(sprintf('File not found: %s', $path));
+
+        return self::FAILURE;
+    }
+
+    $raw = $files->get($path);
+
+    try {
+        $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException $exception) {
+        $this->error('Invalid JSON: ' . $exception->getMessage());
+
+        return self::FAILURE;
+    }
+
+    if (! is_array($decoded)) {
+        $this->error('Invalid structure: root object is required.');
+
+        return self::FAILURE;
+    }
+
+    if (($decoded['version'] ?? null) !== 1 || ($decoded['owner'] ?? null) !== 'system') {
+        $this->error('Invalid structure: expected version=1 and owner=system.');
+
+        return self::FAILURE;
+    }
+
+    if (! array_key_exists('integrations', $decoded) || ! is_array($decoded['integrations'])) {
+        $this->error('Invalid structure: integrations object is required.');
+
+        return self::FAILURE;
+    }
+
+    $known = [];
+
+    foreach ($sources->all() as $source) {
+        $known[$source->id()] = [
+            'type' => 'source',
+            'fields' => array_map(fn ($field): string => $field->key, $source->credentialFields()),
+        ];
+    }
+
+    foreach ($trackers->all() as $tracker) {
+        $known[$tracker->id()] = [
+            'type' => 'tracker',
+            'fields' => array_map(fn ($field): string => $field->key, $tracker->credentialFields()),
+        ];
+    }
+
+    $incoming = $decoded['integrations'];
+
+    if (array_keys($incoming) !== array_values(array_filter(array_keys($incoming), 'is_string'))) {
+        $this->error('Invalid structure: integrations keys must be integration IDs.');
+
+        return self::FAILURE;
+    }
+
+    foreach ($known as $integrationId => $meta) {
+        if (! array_key_exists($integrationId, $incoming) || ! is_array($incoming[$integrationId])) {
+            $this->error(sprintf('Invalid structure: missing integration block for %s.', $integrationId));
+
+            return self::FAILURE;
+        }
+
+        $block = $incoming[$integrationId];
+
+        if (($block['type'] ?? null) !== $meta['type']) {
+            $this->error(sprintf('Invalid structure: integration %s has invalid type.', $integrationId));
+
+            return self::FAILURE;
+        }
+
+        if (! array_key_exists('fields', $block) || ! is_array($block['fields'])) {
+            $this->error(sprintf('Invalid structure: integration %s fields object is required.', $integrationId));
+
+            return self::FAILURE;
+        }
+
+        $incomingFields = $block['fields'];
+        $expectedFields = $meta['fields'];
+
+        sort($expectedFields);
+        $incomingFieldKeys = array_keys($incomingFields);
+        sort($incomingFieldKeys);
+
+        if ($incomingFieldKeys !== $expectedFields) {
+            $this->error(sprintf('Invalid structure: integration %s fields mismatch.', $integrationId));
+
+            return self::FAILURE;
+        }
+
+        foreach ($incomingFields as $key => $value) {
+            if (! is_string($key) || (! is_string($value) && $value !== null)) {
+                $this->error(sprintf('Invalid structure: integration %s contains invalid field values.', $integrationId));
+
+                return self::FAILURE;
+            }
+        }
+    }
+
+    if (count($incoming) !== count($known)) {
+        $this->error('Invalid structure: integration set does not match known integrations.');
+
+        return self::FAILURE;
+    }
+
+    $vault = app(Vault::class);
+
+    foreach ($known as $integrationId => $meta) {
+        /** @var array<string, string|null> $fields */
+        $fields = $incoming[$integrationId]['fields'];
+
+        foreach ($fields as $key => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            $vault->set($key, null, $value);
+        }
+    }
+
+    $this->info(sprintf('Imported system credentials from %s.', $path));
+
+    return self::SUCCESS;
+})->purpose('Import system credentials from a JSON export file with strict structure validation');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
