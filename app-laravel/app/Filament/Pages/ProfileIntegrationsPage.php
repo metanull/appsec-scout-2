@@ -43,6 +43,14 @@ class ProfileIntegrationsPage extends Page implements HasForms
     {
         $userId = Auth::id();
 
-        return is_int($userId) ? $userId : null;
+        if (is_int($userId)) {
+            return $userId;
+        }
+
+        if (is_string($userId) && $userId !== '' && ctype_digit($userId)) {
+            return (int) $userId;
+        }
+
+        return null;
     }
 }

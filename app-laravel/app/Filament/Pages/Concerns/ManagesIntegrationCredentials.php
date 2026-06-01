@@ -115,6 +115,19 @@ trait ManagesIntegrationCredentials
 
     public function testIntegration(string $integrationId): void
     {
+        if (! $this->saveIntegrationCredentials($integrationId)) {
+            Notification::make()
+                ->title('Could not test connection')
+                ->body('Fix validation errors and try again.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $this->loadCredentialState();
+        $this->syncCredentialFormState();
+
         $this->runIntegrationTest($integrationId);
 
         /** @var array{ok: bool, error: ?string} $result */
@@ -253,6 +266,10 @@ trait ManagesIntegrationCredentials
     private function passwordManagerIgnoreAttributes(): array
     {
         return [
+            'autocomplete' => 'off',
+            'autocapitalize' => 'off',
+            'autocorrect' => 'off',
+            'spellcheck' => 'false',
             'data-lpignore' => 'true',
             'data-1p-ignore' => 'true',
             'data-bwignore' => 'true',

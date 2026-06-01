@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SecurityEventResource\Pages;
 
+use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -13,13 +14,10 @@ use App\Trackers\ReconcileEventJob;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
 use App\Triage\AttachmentService;
-use App\Triage\RunBfgJob;
-use App\Triage\RunCodesearchJob;
-use App\Triage\RunTrivyJob;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
-use Filament\Actions\ActionGroup;
+use Filament\Actions\Action as FilamentAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -34,7 +32,7 @@ class ViewSecurityEvent extends ViewRecord
 
     protected static string $resource = SecurityEventResource::class;
 
-    /** @return array<Action|ActionGroup> */
+    /** @return array<Action> */
     protected function getHeaderActions(): array
     {
         return [
@@ -84,50 +82,6 @@ class ViewSecurityEvent extends ViewRecord
                 ->requiresConfirmation()
                 ->modalDescription('Queue a reconciliation job to find and create missing links for this alert.')
                 ->action(fn (): bool => $this->dispatchReconcileEvent()),
-            ActionGroup::make([
-                Action::make('runTrivy')
-                    ->label('Run Trivy')
-                    ->icon('heroicon-o-bug-ant')
-                    ->visible(fn (): bool => Gate::allows('triage.run-trivy'))
-                    ->form([
-                        TextInput::make('git_url')
-                            ->label('Repository URL')
-                            ->default(fn (): ?string => $this->repositoryUrl())
-                            ->required(),
-                    ])
-                    ->action(fn (array $data): bool => $this->dispatchTrivy($data)),
-                Action::make('runBfg')
-                    ->label('Run BFG')
-                    ->icon('heroicon-o-wrench-screwdriver')
-                    ->visible(fn (): bool => Gate::allows('triage.run-bfg'))
-                    ->form([
-                        TextInput::make('git_url')
-                            ->label('Repository URL')
-                            ->default(fn (): ?string => $this->repositoryUrl())
-                            ->required(),
-                        FileUpload::make('secret_list_file')
-                            ->label('Secret list')
-                            ->disk('local')
-                            ->directory('triage-uploads')
-                            ->required(),
-                    ])
-                    ->action(fn (array $data): bool => $this->dispatchBfg($data)),
-                Action::make('runCodesearch')
-                    ->label('Run Code Search')
-                    ->icon('heroicon-o-magnifying-glass')
-                    ->visible(fn (): bool => Gate::allows('triage.run-codesearch'))
-                    ->form([
-                        TextInput::make('query')
-                            ->label('Query')
-                            ->required(),
-                        TextInput::make('scope')
-                            ->label('Scope')
-                            ->helperText('Optional. Use project:<name> or repo:<name>.'),
-                    ])
-                    ->action(fn (array $data): bool => $this->dispatchCodesearch($data)),
-            ])
-                ->label('Run triage')
-                ->icon('heroicon-o-play'),
             Action::make('addAttachment')
                 ->label('Add attachment')
                 ->icon('heroicon-o-paper-clip')
@@ -243,70 +197,6 @@ class ViewSecurityEvent extends ViewRecord
     }
 
     /** @param array<string, mixed> $data */
-    private function dispatchTrivy(array $data): bool
-    {
-        Gate::authorize('triage.run-trivy');
-
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if ($user === null) {
-            abort(403);
-        }
-
-        RunTrivyJob::dispatch($this->eventRecord()->id, (string) $data['git_url'], $user->id);
-
-        Notification::make()->title('Trivy run queued')->success()->send();
-
-        return true;
-    }
-
-    /** @param array<string, mixed> $data */
-    private function dispatchBfg(array $data): bool
-    {
-        Gate::authorize('triage.run-bfg');
-
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if ($user === null) {
-            abort(403);
-        }
-
-        $secretListPath = storage_path('app/' . (string) $data['secret_list_file']);
-
-        RunBfgJob::dispatch($this->eventRecord()->id, (string) $data['git_url'], $secretListPath, $user->id);
-
-        Notification::make()->title('BFG run queued')->success()->send();
-
-        return true;
-    }
-
-    /** @param array<string, mixed> $data */
-    private function dispatchCodesearch(array $data): bool
-    {
-        Gate::authorize('triage.run-codesearch');
-
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if ($user === null) {
-            abort(403);
-        }
-
-        RunCodesearchJob::dispatch(
-            $this->eventRecord()->id,
-            (string) $data['query'],
-            $this->nullableString($data['scope'] ?? null),
-            $user->id,
-        );
-
-        Notification::make()->title('Code search queued')->success()->send();
-
-        return true;
-    }
-
-    /** @param array<string, mixed> $data */
     private function queueCreateWorkItem(array $data): bool
     {
         Gate::authorize('work-items.create');
@@ -318,10 +208,19 @@ class ViewSecurityEvent extends ViewRecord
             abort(403);
         }
 
+        $trackerId = (string) $data['tracker'];
+        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+        if ($missing !== []) {
+            $this->notifyMissingPersonalCredentials($trackerId, $missing);
+
+            return false;
+        }
+
         CreateWorkItemJob::dispatch(
             eventIds: [$this->eventRecord()->id],
             userId: $user->id,
-            trackerId: (string) $data['tracker'],
+            trackerId: $trackerId,
             projectKey: (string) $data['project'],
             itemType: (string) $data['item_type'],
             labels: SecurityEventResource::stringArray($data['labels'] ?? []),
@@ -347,10 +246,19 @@ class ViewSecurityEvent extends ViewRecord
             abort(403);
         }
 
+        $trackerId = (string) $data['tracker'];
+        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+        if ($missing !== []) {
+            $this->notifyMissingPersonalCredentials($trackerId, $missing);
+
+            return false;
+        }
+
         app(WorkItemService::class)->linkExisting(
             eventIds: [$this->eventRecord()->id],
             userId: $user->id,
-            trackerId: (string) $data['tracker'],
+            trackerId: $trackerId,
             workItemId: (string) $data['selected_work_item'],
             projectKey: (string) ($data['project'] ?? ''),
         );
@@ -381,25 +289,28 @@ class ViewSecurityEvent extends ViewRecord
         return trim($value);
     }
 
-    private function repositoryUrl(): ?string
-    {
-        /** @var array<string, mixed>|null $metadata */
-        $metadata = $this->eventRecord()->getAttribute('metadata');
-
-        if ($metadata === null) {
-            return null;
-        }
-
-        $value = $metadata['repository_url'] ?? null;
-
-        return is_string($value) && $value !== '' ? $value : null;
-    }
-
     private function eventRecord(): SecurityEvent
     {
         /** @var SecurityEvent $record */
         $record = $this->getRecord();
 
         return $record;
+    }
+
+    /** @param list<string> $missing */
+    private function notifyMissingPersonalCredentials(string $trackerId, array $missing): void
+    {
+        $fields = implode(', ', $missing);
+
+        Notification::make()
+            ->title('Personal tracker credentials required')
+            ->body("{$trackerId} is missing personal credentials: {$fields}.")
+            ->warning()
+            ->actions([
+                FilamentAction::make('openProfileIntegrations')
+                    ->label('Open profile integrations')
+                    ->url(ProfileIntegrationsPage::getUrl()),
+            ])
+            ->send();
     }
 }

@@ -2,19 +2,30 @@
 
 namespace App\Trackers;
 
+use App\Credentials\CredentialField;
+use App\Credentials\Vault;
+use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Models\SecurityEvent;
 use App\Trackers\Contracts\Tracker;
 use BackedEnum;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 final class WorkItemFormOptions
 {
-    public function __construct(private readonly Registry $registry) {}
+    private bool $loggedMissingEnabledTrackers = false;
+
+    public function __construct(
+        private readonly Registry $registry,
+        private readonly Vault $vault,
+    ) {}
 
     /** @return array<string, string> */
     public function trackerOptions(): array
@@ -25,16 +36,25 @@ final class WorkItemFormOptions
             $options[$tracker->id()] = $tracker->displayName();
         }
 
+        if ($options === []) {
+            $this->logNoEnabledTrackers();
+        }
+
         return $options;
     }
 
     /**
      * @param  list<SecurityEvent>  $events
-     * @return array<int, Select|TagsInput|TextInput>
+     * @return array<int, Placeholder|Select|TagsInput|TextInput>
      */
     public function createSchema(array $events = []): array
     {
         return [
+            Placeholder::make('enabled_tracker_notice')
+                ->label('Tracker availability')
+                ->content('No trackers are enabled. Enable at least one tracker in Admin > Integrations before creating a work item.')
+                ->visible(fn (): bool => $this->trackerOptions() === [])
+                ->columnSpanFull(),
             Select::make('tracker')
                 ->label('Tracker')
                 ->options($this->trackerOptions())
@@ -42,6 +62,7 @@ final class WorkItemFormOptions
                 ->searchable()
                 ->preload()
                 ->required()
+                ->disabled(fn (): bool => $this->trackerOptions() === [])
                 ->live()
                 ->afterStateUpdated(function (Set $set): void {
                     $set('project', null);
@@ -49,6 +70,11 @@ final class WorkItemFormOptions
                     $set('assignee_id', null);
                     $set('parent_id', null);
                 }),
+            Placeholder::make('tracker_credential_notice')
+                ->label('Credential setup')
+                ->content(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
+                ->visible(fn (Get $get): bool => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)) !== null)
+                ->columnSpanFull(),
             Select::make('project')
                 ->label('Project')
                 ->required()
@@ -56,6 +82,7 @@ final class WorkItemFormOptions
                 ->preload()
                 ->placeholder('Select a tracker first')
                 ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)))
+                ->helperText(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
                 ->options(fn (Get $get): array => $this->projectOptions($get->string('tracker', isNullable: true)))
                 ->live()
                 ->afterStateUpdated(fn (Set $set): mixed => $set('item_type', null)),
@@ -108,10 +135,15 @@ final class WorkItemFormOptions
         ];
     }
 
-    /** @return array<int, Select|TextInput> */
+    /** @return array<int, Placeholder|Select|TextInput> */
     public function linkSchema(): array
     {
         return [
+            Placeholder::make('enabled_tracker_notice')
+                ->label('Tracker availability')
+                ->content('No trackers are enabled. Enable at least one tracker in Admin > Integrations before linking work items.')
+                ->visible(fn (): bool => $this->trackerOptions() === [])
+                ->columnSpanFull(),
             Select::make('tracker')
                 ->label('Tracker')
                 ->options($this->trackerOptions())
@@ -119,11 +151,17 @@ final class WorkItemFormOptions
                 ->searchable()
                 ->preload()
                 ->required()
+                ->disabled(fn (): bool => $this->trackerOptions() === [])
                 ->live()
                 ->afterStateUpdated(function (Set $set): void {
                     $set('project', null);
                     $set('selected_work_item', null);
                 }),
+            Placeholder::make('tracker_credential_notice')
+                ->label('Credential setup')
+                ->content(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
+                ->visible(fn (Get $get): bool => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)) !== null)
+                ->columnSpanFull(),
             Select::make('project')
                 ->label('Project')
                 ->required()
@@ -131,6 +169,7 @@ final class WorkItemFormOptions
                 ->preload()
                 ->placeholder('Select a tracker first')
                 ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)))
+                ->helperText(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
                 ->options(fn (Get $get): array => $this->projectOptions($get->string('tracker', isNullable: true)))
                 ->live()
                 ->afterStateUpdated(fn (Set $set): mixed => $set('selected_work_item', null)),
@@ -174,17 +213,19 @@ final class WorkItemFormOptions
     {
         $tracker = $this->tracker($trackerId);
 
-        if (! $tracker instanceof Tracker) {
+        if (! $tracker instanceof Tracker || $this->missingCredentialLabels($tracker) !== []) {
             return [];
         }
 
         /** @var array<string, string> $projects */
-        $projects = Cache::remember("trackers:{$trackerId}:projects", now()->addHour(), function () use ($tracker): array {
+        $projects = Cache::remember('trackers:user:' . $this->credentialOwnerId() . ':' . $trackerId . ':projects', now()->addHour(), function () use ($tracker): array {
             $resolved = [];
 
-            foreach ($tracker->fetchProjects() as $project) {
-                $resolved[$project->key] = $project->name;
-            }
+            $this->runAsCredentialOwner(function () use ($tracker, &$resolved): void {
+                foreach ($tracker->fetchProjects() as $project) {
+                    $resolved[$project->key] = $project->name;
+                }
+            });
 
             return $resolved;
         });
@@ -197,11 +238,16 @@ final class WorkItemFormOptions
     {
         $tracker = $this->tracker($trackerId);
 
-        if (! $tracker instanceof Tracker || blank($projectKey)) {
+        if (! $tracker instanceof Tracker || blank($projectKey) || $this->missingCredentialLabels($tracker) !== []) {
             return [];
         }
 
-        $types = Cache::remember("trackers:{$trackerId}:{$projectKey}:item-types", now()->addHour(), fn (): array => iterator_to_array($tracker->fetchItemTypes($projectKey), false));
+        $types = Cache::remember('trackers:user:' . $this->credentialOwnerId() . ':' . $trackerId . ':' . $projectKey . ':item-types', now()->addHour(), function () use ($tracker, $projectKey): array {
+            /** @var list<string> $types */
+            $types = $this->runAsCredentialOwner(fn (): array => iterator_to_array($tracker->fetchItemTypes($projectKey), false));
+
+            return $types;
+        });
 
         return collect($types)
             ->filter(fn (string $type): bool => $type !== '')
@@ -214,15 +260,17 @@ final class WorkItemFormOptions
     {
         $tracker = $this->tracker($trackerId);
 
-        if (! $tracker instanceof Tracker || blank($projectKey)) {
+        if (! $tracker instanceof Tracker || blank($projectKey) || $this->missingCredentialLabels($tracker) !== []) {
             return [];
         }
 
         $resolved = [];
 
-        foreach ($tracker->fetchAssigneeCandidates($projectKey, $search) as $user) {
-            $resolved[$user->id] = $user->displayName;
-        }
+        $this->runAsCredentialOwner(function () use ($tracker, $projectKey, $search, &$resolved): void {
+            foreach ($tracker->fetchAssigneeCandidates($projectKey, $search) as $user) {
+                $resolved[$user->id] = $user->displayName;
+            }
+        });
 
         return $resolved;
     }
@@ -237,15 +285,17 @@ final class WorkItemFormOptions
     {
         $tracker = $this->tracker($trackerId);
 
-        if (! $tracker instanceof Tracker || blank($projectKey)) {
+        if (! $tracker instanceof Tracker || blank($projectKey) || $this->missingCredentialLabels($tracker) !== []) {
             return [];
         }
 
         $resolved = [];
 
-        foreach ($tracker->searchWorkItems($projectKey, $search, 20) as $workItem) {
-            $resolved[$workItem->id] = sprintf('%s (%s)', $workItem->title, $workItem->id);
-        }
+        $this->runAsCredentialOwner(function () use ($tracker, $projectKey, $search, &$resolved): void {
+            foreach ($tracker->searchWorkItems($projectKey, $search, 20) as $workItem) {
+                $resolved[$workItem->id] = sprintf('%s (%s)', $workItem->title, $workItem->id);
+            }
+        });
 
         return $resolved;
     }
@@ -254,11 +304,11 @@ final class WorkItemFormOptions
     {
         $tracker = $this->tracker($trackerId);
 
-        if (! $tracker instanceof Tracker) {
+        if (! $tracker instanceof Tracker || $this->missingCredentialLabels($tracker) !== []) {
             return $workItemId;
         }
 
-        $workItem = $tracker->getWorkItem($workItemId);
+        $workItem = $this->runAsCredentialOwner(fn () => $tracker->getWorkItem($workItemId));
 
         if ($workItem === null) {
             return $workItemId;
@@ -291,6 +341,88 @@ final class WorkItemFormOptions
         return $this->registry->find($trackerId);
     }
 
+    private function trackerCredentialNotice(?string $trackerId): ?string
+    {
+        $tracker = $this->tracker($trackerId);
+
+        if (! $tracker instanceof Tracker) {
+            return null;
+        }
+
+        $missing = $this->missingCredentialLabels($tracker);
+
+        if ($missing === []) {
+            return null;
+        }
+
+        $fields = implode(', ', $missing);
+        $url = ProfileIntegrationsPage::getUrl();
+
+        return sprintf(
+            'Missing personal credentials for %s: %s. Configure them in Profile integrations (%s).',
+            $tracker->displayName(),
+            $fields,
+            $url,
+        );
+    }
+
+    /** @return list<string> */
+    public function missingCredentialLabelsForTracker(?string $trackerId): array
+    {
+        $tracker = $this->tracker($trackerId);
+
+        if (! $tracker instanceof Tracker) {
+            return [];
+        }
+
+        return $this->missingCredentialLabels($tracker);
+    }
+
+    /** @return list<string> */
+    private function missingCredentialLabels(Tracker $tracker): array
+    {
+        $missing = [];
+
+        foreach ($tracker->credentialFields() as $field) {
+            if (! $field->required) {
+                continue;
+            }
+
+            if (! $this->hasCredentialValue($field)) {
+                $missing[] = $field->label;
+            }
+        }
+
+        return $missing;
+    }
+
+    private function hasCredentialValue(CredentialField $field): bool
+    {
+        $value = $this->runAsCredentialOwner(fn (): ?string => $this->vault->get($field->key, null, true));
+
+        return is_string($value) && trim($value) !== '';
+    }
+
+    private function credentialOwnerId(): ?int
+    {
+        $userId = Auth::id();
+
+        if (is_int($userId)) {
+            return $userId;
+        }
+
+        if (is_string($userId) && $userId !== '' && ctype_digit($userId)) {
+            return (int) $userId;
+        }
+
+        return null;
+    }
+
+    private function runAsCredentialOwner(callable $callback): mixed
+    {
+        return $this->vault->runAsOwner($this->credentialOwnerId(), $callback, true);
+    }
+
     private function backedEnumValue(mixed $value): ?string
     {
         if ($value instanceof BackedEnum) {
@@ -298,5 +430,22 @@ final class WorkItemFormOptions
         }
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function logNoEnabledTrackers(): void
+    {
+        if ($this->loggedMissingEnabledTrackers) {
+            return;
+        }
+
+        $this->loggedMissingEnabledTrackers = true;
+
+        Log::error('No enabled trackers available for work item forms.', [
+            'user_id' => $this->credentialOwnerId(),
+            'available_tracker_ids' => array_map(
+                static fn (Tracker $tracker): string => $tracker->id(),
+                $this->registry->all(),
+            ),
+        ]);
     }
 }

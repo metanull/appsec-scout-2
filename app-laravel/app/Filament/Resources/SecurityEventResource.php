@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\SecurityEventResource\Pages\ListSecurityEvents;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\AttachmentsRelationManager;
@@ -554,10 +555,19 @@ class SecurityEventResource extends Resource
                                 abort(403);
                             }
 
+                            $trackerId = (string) $data['tracker'];
+                            $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                            if ($missing !== []) {
+                                self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                                return;
+                            }
+
                             CreateWorkItemJob::dispatch(
                                 eventIds: [$record->id],
                                 userId: $user->id,
-                                trackerId: (string) $data['tracker'],
+                                trackerId: $trackerId,
                                 projectKey: (string) $data['project'],
                                 itemType: (string) $data['item_type'],
                                 labels: self::stringArray($data['labels'] ?? []),
@@ -581,10 +591,19 @@ class SecurityEventResource extends Resource
                                 abort(403);
                             }
 
+                            $trackerId = (string) $data['tracker'];
+                            $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                            if ($missing !== []) {
+                                self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                                return;
+                            }
+
                             app(WorkItemService::class)->linkExisting(
                                 eventIds: [$record->id],
                                 userId: $user->id,
-                                trackerId: (string) $data['tracker'],
+                                trackerId: $trackerId,
                                 workItemId: (string) $data['selected_work_item'],
                                 projectKey: (string) ($data['project'] ?? ''),
                             );
@@ -633,10 +652,19 @@ class SecurityEventResource extends Resource
                             abort(403);
                         }
 
+                        $trackerId = (string) $data['tracker'];
+                        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                        if ($missing !== []) {
+                            self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                            return;
+                        }
+
                         CreateWorkItemJob::dispatch(
                             eventIds: array_values($records->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()),
                             userId: $user->id,
-                            trackerId: (string) $data['tracker'],
+                            trackerId: $trackerId,
                             projectKey: (string) $data['project'],
                             itemType: (string) $data['item_type'],
                             labels: self::stringArray($data['labels'] ?? []),
@@ -662,10 +690,19 @@ class SecurityEventResource extends Resource
                             abort(403);
                         }
 
+                        $trackerId = (string) $data['tracker'];
+                        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                        if ($missing !== []) {
+                            self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                            return;
+                        }
+
                         app(WorkItemService::class)->linkExisting(
                             eventIds: array_values($records->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()),
                             userId: $user->id,
-                            trackerId: (string) $data['tracker'],
+                            trackerId: $trackerId,
                             workItemId: (string) $data['selected_work_item'],
                             projectKey: (string) ($data['project'] ?? ''),
                         );
@@ -775,6 +812,23 @@ class SecurityEventResource extends Resource
         }
 
         return trim($value);
+    }
+
+    /** @param list<string> $missing */
+    private static function notifyMissingPersonalCredentials(string $trackerId, array $missing): void
+    {
+        $fields = implode(', ', $missing);
+
+        Notification::make()
+            ->title('Personal tracker credentials required')
+            ->body("{$trackerId} is missing personal credentials: {$fields}.")
+            ->warning()
+            ->actions([
+                Action::make('openProfileIntegrations')
+                    ->label('Open profile integrations')
+                    ->url(ProfileIntegrationsPage::getUrl()),
+            ])
+            ->send();
     }
 
     /** @return array<string, string> */
