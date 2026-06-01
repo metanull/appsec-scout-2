@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
@@ -223,6 +224,11 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
     }
 
     $raw = $files->get($path);
+    $raw = str_replace("\r\n", "\n", $raw);
+
+    if (str_starts_with($raw, "\xEF\xBB\xBF")) {
+        $raw = substr($raw, 3);
+    }
 
     try {
         $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
@@ -324,6 +330,23 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
     }
 
     $vault = app(Vault::class);
+
+    $knownFieldKeys = [];
+
+    foreach ($known as $meta) {
+        foreach ($meta['fields'] as $fieldKey) {
+            $knownFieldKeys[] = $fieldKey;
+        }
+    }
+
+    $knownFieldKeys = array_values(array_unique($knownFieldKeys));
+
+    // Replace all imported system credentials atomically for known keys so key rotation
+    // or previously unreadable encrypted payloads cannot break imports.
+    Credential::query()
+        ->whereNull('owner_user_id')
+        ->whereIn('integration_key', $knownFieldKeys)
+        ->delete();
 
     foreach ($known as $integrationId => $meta) {
         /** @var array<string, string|null> $fields */

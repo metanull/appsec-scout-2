@@ -1,5 +1,6 @@
 # Env
 .env
+.credentials.json
 
 # Local binary/tool artifacts belong in Docker images, not the repository
 bfg.jar

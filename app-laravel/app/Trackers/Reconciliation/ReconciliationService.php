@@ -3,16 +3,19 @@
 namespace App\Trackers\Reconciliation;
 
 use App\Audit\Recorder;
+use App\Integrations\OperatorIntegrationRuntime;
+use App\Integrations\SystemIntegrationRuntime;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
+use App\Trackers\Contracts\Tracker;
 use App\Trackers\Jira\AdfToText;
-use App\Trackers\Registry;
 use Illuminate\Database\DatabaseManager;
 
 final class ReconciliationService
 {
     public function __construct(
-        private readonly Registry $registry,
+        private readonly OperatorIntegrationRuntime $operatorRuntime,
+        private readonly SystemIntegrationRuntime $systemRuntime,
         private readonly DatabaseManager $db,
         private readonly Recorder $recorder,
     ) {}
@@ -22,9 +25,9 @@ final class ReconciliationService
      *
      * @return list<ReconciliationResult>
      */
-    public function reconcileEvent(SecurityEvent $event): array
+    public function reconcileEvent(SecurityEvent $event, int $operatorUserId): array
     {
-        $candidates = $this->findCandidates($event);
+        $candidates = $this->findCandidates($event, $operatorUserId);
         $results = [];
 
         foreach ($candidates as $candidate) {
@@ -44,19 +47,23 @@ final class ReconciliationService
                 continue;
             }
 
-            $tracker = $this->registry->find($candidate->trackerId);
+            $tracker = $this->operatorRuntime->tracker($candidate->trackerId);
 
             if ($tracker === null) {
                 continue;
             }
 
-            $workItem = $tracker->getWorkItem($candidate->workItemId);
+            $workItem = $this->operatorRuntime->runTracker(
+                $candidate->trackerId,
+                $operatorUserId,
+                fn (Tracker $tracker) => $tracker->getWorkItem($candidate->workItemId),
+            );
 
             if ($workItem === null) {
                 continue;
             }
 
-            $this->db->transaction(function () use ($candidate, $workItem): void {
+            $this->db->transaction(function () use ($candidate, $operatorUserId, $workItem): void {
                 WorkItemLink::query()->create([
                     'event_id' => $candidate->eventId,
                     'tracker_id' => $candidate->trackerId,
@@ -64,7 +71,7 @@ final class ReconciliationService
                     'work_item_url' => $workItem->url,
                     'work_item_title' => $workItem->title,
                     'work_item_state' => $workItem->state,
-                    'created_by_user_id' => null,
+                    'created_by_user_id' => $operatorUserId,
                     'created_at' => now(),
                     'synced_at' => now(),
                 ]);
@@ -74,6 +81,7 @@ final class ReconciliationService
                 'tracker_id' => $candidate->trackerId,
                 'work_item_id' => $workItem->id,
                 'via' => 'reconciliation',
+                'operator_user_id' => $operatorUserId,
             ]);
 
             $results[] = ReconciliationResult::linked(
@@ -104,7 +112,7 @@ final class ReconciliationService
                 continue;
             }
 
-            $results = $this->reconcileEvent($event);
+            $results = $this->reconcileEventAsSystem($event);
             foreach ($results as $result) {
                 $allResults[] = $result;
             }
@@ -113,13 +121,82 @@ final class ReconciliationService
         return $allResults;
     }
 
+    /** @return list<ReconciliationResult> */
+    private function reconcileEventAsSystem(SecurityEvent $event): array
+    {
+        $candidates = $this->findCandidates($event, null);
+        $results = [];
+
+        foreach ($candidates as $candidate) {
+            $exists = WorkItemLink::query()
+                ->where('event_id', $candidate->eventId)
+                ->where('tracker_id', $candidate->trackerId)
+                ->where('work_item_id', $candidate->workItemId)
+                ->exists();
+
+            if ($exists) {
+                $results[] = ReconciliationResult::alreadyLinked(
+                    $candidate->trackerId,
+                    $candidate->workItemId,
+                    $candidate->eventId,
+                );
+
+                continue;
+            }
+
+            $tracker = $this->systemRuntime->tracker($candidate->trackerId);
+
+            if ($tracker === null) {
+                continue;
+            }
+
+            $workItem = $this->systemRuntime->runTracker(
+                $candidate->trackerId,
+                fn (Tracker $tracker) => $tracker->getWorkItem($candidate->workItemId),
+            );
+
+            if ($workItem === null) {
+                continue;
+            }
+
+            $this->db->transaction(function () use ($candidate, $workItem): void {
+                WorkItemLink::query()->create([
+                    'event_id' => $candidate->eventId,
+                    'tracker_id' => $candidate->trackerId,
+                    'work_item_id' => $workItem->id,
+                    'work_item_url' => $workItem->url,
+                    'work_item_title' => $workItem->title,
+                    'work_item_state' => $workItem->state,
+                    'created_by_user_id' => null,
+                    'created_at' => now(),
+                    'synced_at' => now(),
+                ]);
+            });
+
+            $this->recorder->recordWorkItemLinked(SecurityEvent::class, (string) $candidate->eventId, [
+                'tracker_id' => $candidate->trackerId,
+                'work_item_id' => $workItem->id,
+                'via' => 'reconciliation',
+                'scope' => 'system',
+            ]);
+
+            $results[] = ReconciliationResult::linked(
+                $candidate->trackerId,
+                $candidate->workItemId,
+                [$candidate->eventId],
+            );
+        }
+
+        return $results;
+    }
+
     /**
      * Find reconciliation candidates for a given event.
      * Searches existing work_item_links for URL cross-references and also checks tracker for URL-referenced IDs.
      *
      * @return list<ReconciliationCandidate>
      */
-    private function findCandidates(SecurityEvent $event): array
+    private function findCandidates(SecurityEvent $event, ?int $operatorUserId): array
     {
         $eventUrls = $this->extractEventUrls($event);
 
@@ -168,13 +245,18 @@ final class ReconciliationService
                 }
 
                 // Check if work item description contains the event URL
-                $tracker = $this->registry->find((string) $otherLink->tracker_id);
+                $trackerId = (string) $otherLink->tracker_id;
+                $tracker = $operatorUserId !== null
+                    ? $this->operatorRuntime->tracker($trackerId)
+                    : $this->systemRuntime->tracker($trackerId);
 
                 if ($tracker === null) {
                     continue;
                 }
 
-                $workItem = $tracker->getWorkItem((string) $otherLink->work_item_id);
+                $workItem = $operatorUserId !== null
+                    ? $this->operatorRuntime->runTracker($trackerId, $operatorUserId, fn (Tracker $tracker) => $tracker->getWorkItem((string) $otherLink->work_item_id))
+                    : $this->systemRuntime->runTracker($trackerId, fn (Tracker $tracker) => $tracker->getWorkItem((string) $otherLink->work_item_id));
 
                 if ($workItem === null) {
                     continue;

@@ -31,6 +31,9 @@ final class FakeSource implements Source
 
     private bool $pushOk = true;
 
+    /** @var callable(SecurityEvent): PushResult|null */
+    private $pushCallback = null;
+
     public string $lastPushedState = '';
 
     public int $pushCalls = 0;
@@ -90,6 +93,10 @@ final class FakeSource implements Source
     public function pushEventState(SecurityEvent $event): PushResult
     {
         $this->pushCalls++;
+
+        if (is_callable($this->pushCallback)) {
+            return ($this->pushCallback)($event);
+        }
 
         if ($this->pushOk) {
             $this->lastPushedState = $event->pending_state?->value ?? '';
@@ -157,6 +164,14 @@ final class FakeSource implements Source
     public function withPushFailure(): self
     {
         $this->pushOk = false;
+
+        return $this;
+    }
+
+    /** @param callable(SecurityEvent): PushResult $callback */
+    public function withPushCallback(callable $callback): self
+    {
+        $this->pushCallback = $callback;
 
         return $this;
     }

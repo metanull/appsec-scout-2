@@ -9,6 +9,7 @@ use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\UserResource;
+use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -115,7 +116,7 @@ it('covers the sync workflow and a denied admin action', function () {
         'is_dirty' => true,
     ]);
 
-    (new PushEventStatesJob([$event->id]))->handle(app(SourceRegistry::class), app(Recorder::class));
+    (new PushEventStatesJob([$event->id], $syncUser->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
 
     $event->refresh();
 

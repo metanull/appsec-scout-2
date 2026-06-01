@@ -2,13 +2,17 @@
 
 use App\Audit\AuditLog;
 use App\Audit\Recorder;
+use App\Credentials\Vault;
+use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\ErrorLog;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
-use App\Sources\Registry;
+use App\Models\User;
+use App\Sources\Registry as SourceRegistry;
+use App\Sources\ValueObjects\PushResult;
 use App\Sync\PushEventStatesJob;
 use Tests\Fakes\FakeSource;
 
@@ -27,7 +31,9 @@ it('pushes pending state successfully and clears the dirty state', function () {
         'is_dirty' => true,
     ]);
 
-    (new PushEventStatesJob([$event->id]))->handle(app(Registry::class), app(Recorder::class));
+    $operator = User::factory()->create();
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
 
     $event->refresh();
 
@@ -38,6 +44,40 @@ it('pushes pending state successfully and clears the dirty state', function () {
         ->and($event->is_dirty)->toBeFalse()
         ->and(AuditLog::query()->where('action', 'sync_push')->where('subject_id', (string) $event->id)->exists())->toBeTrue()
         ->and(SyncRun::query()->latest('id')->first()?->status)->toBe('success');
+});
+
+it('uses the operator credential when pushing selected dirty records from the queue', function () {
+    $operator = User::factory()->create();
+    app(Vault::class)->set('fake.apiKey', null, 'system-key');
+    app(Vault::class)->set('fake.apiKey', $operator->id, 'operator-key');
+
+    $source = bindFakePushSource((new FakeSource)->withPushCallback(function (): PushResult {
+        return app(Vault::class)->get('fake.apiKey', null, true) === 'operator-key'
+            ? PushResult::success()
+            : PushResult::failure('operator credential was not used');
+    }));
+
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => 'fake',
+        'source_system_id' => 'sys-001',
+    ]);
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'software_system_id' => $system->id,
+        'state' => EventState::Open,
+        'pending_state' => EventState::Resolved,
+        'pending_severity' => null,
+        'pending_comment' => 'Operator scoped push.',
+        'is_dirty' => true,
+    ]);
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
+
+    $event->refresh();
+
+    expect($source->pushCalls)->toBe(1)
+        ->and($event->is_dirty)->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'sync_push')->first()?->payload_json['operator_user_id'])->toBe($operator->id);
 });
 
 it('preserves the dirty state and records retry metadata when a push fails', function () {
@@ -55,7 +95,9 @@ it('preserves the dirty state and records retry metadata when a push fails', fun
         'metadata' => [],
     ]);
 
-    (new PushEventStatesJob([$event->id]))->handle(app(Registry::class), app(Recorder::class));
+    $operator = User::factory()->create();
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
 
     $event->refresh();
 
@@ -83,7 +125,9 @@ it('preserves pending severity data after a successful state push', function () 
         'is_dirty' => true,
     ]);
 
-    (new PushEventStatesJob([$event->id]))->handle(app(Registry::class), app(Recorder::class));
+    $operator = User::factory()->create();
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
 
     $event->refresh();
 
@@ -111,7 +155,9 @@ it('stops retrying automatically after the third failure', function () {
         ],
     ]);
 
-    (new PushEventStatesJob([$event->id]))->handle(app(Registry::class), app(Recorder::class));
+    $operator = User::factory()->create();
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
 
     $event->refresh();
 
@@ -127,6 +173,7 @@ function bindFakePushSource(FakeSource $source): FakeSource
 
     app()->bind('appsec-scout.source.fake', fn () => $source);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    app()->forgetInstance(SourceRegistry::class);
 
     return $source;
 }
