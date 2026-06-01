@@ -6,6 +6,8 @@ use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\SecurityEvent;
 use App\Trackers\Contracts\Tracker;
+use App\Trackers\Defaults\TrackerProjectDefaultResolution;
+use App\Trackers\Defaults\TrackerProjectDefaultResolver;
 use BackedEnum;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
@@ -23,6 +25,7 @@ final class WorkItemFormOptions
 
     public function __construct(
         private readonly OperatorIntegrationRuntime $runtime,
+        private readonly TrackerProjectDefaultResolver $trackerProjectDefaultResolver,
     ) {}
 
     /** @return array<string, string> */
@@ -47,6 +50,8 @@ final class WorkItemFormOptions
      */
     public function createSchema(array $events = []): array
     {
+        $formDefault = $this->resolveTrackerDefault($events);
+
         return [
             Placeholder::make('enabled_tracker_notice')
                 ->label('Tracker availability')
@@ -57,6 +62,7 @@ final class WorkItemFormOptions
                 ->label('Tracker')
                 ->options($this->trackerOptions())
                 ->placeholder('Select a tracker')
+                ->default($formDefault?->trackerId)
                 ->searchable()
                 ->preload()
                 ->required()
@@ -68,6 +74,11 @@ final class WorkItemFormOptions
                     $set('assignee_id', null);
                     $set('parent_id', null);
                 }),
+            Placeholder::make('tracker_default_notice')
+                ->label('Default project')
+                ->content($this->trackerDefaultNotice($formDefault))
+                ->visible($formDefault instanceof TrackerProjectDefaultResolution)
+                ->columnSpanFull(),
             Placeholder::make('tracker_credential_notice')
                 ->label('Credential setup')
                 ->content(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
@@ -78,6 +89,7 @@ final class WorkItemFormOptions
                 ->required()
                 ->searchable()
                 ->preload()
+                ->default($formDefault?->projectKey)
                 ->placeholder('Select a tracker first')
                 ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)))
                 ->helperText(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
@@ -133,9 +145,14 @@ final class WorkItemFormOptions
         ];
     }
 
-    /** @return array<int, Placeholder|Select|TextInput> */
-    public function linkSchema(): array
+    /**
+     * @param  list<SecurityEvent>  $events
+     * @return array<int, Placeholder|Select|TextInput>
+     */
+    public function linkSchema(array $events = []): array
     {
+        $formDefault = $this->resolveTrackerDefault($events);
+
         return [
             Placeholder::make('enabled_tracker_notice')
                 ->label('Tracker availability')
@@ -146,6 +163,7 @@ final class WorkItemFormOptions
                 ->label('Tracker')
                 ->options($this->trackerOptions())
                 ->placeholder('Select a tracker')
+                ->default($formDefault?->trackerId)
                 ->searchable()
                 ->preload()
                 ->required()
@@ -155,6 +173,11 @@ final class WorkItemFormOptions
                     $set('project', null);
                     $set('selected_work_item', null);
                 }),
+            Placeholder::make('tracker_default_notice')
+                ->label('Default project')
+                ->content($this->trackerDefaultNotice($formDefault))
+                ->visible($formDefault instanceof TrackerProjectDefaultResolution)
+                ->columnSpanFull(),
             Placeholder::make('tracker_credential_notice')
                 ->label('Credential setup')
                 ->content(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
@@ -165,6 +188,7 @@ final class WorkItemFormOptions
                 ->required()
                 ->searchable()
                 ->preload()
+                ->default($formDefault?->projectKey)
                 ->placeholder('Select a tracker first')
                 ->disabled(fn (Get $get): bool => blank($get->string('tracker', isNullable: true)))
                 ->helperText(fn (Get $get): ?string => $this->trackerCredentialNotice($get->string('tracker', isNullable: true)))
@@ -187,6 +211,16 @@ final class WorkItemFormOptions
                     $value,
                 )),
         ];
+    }
+
+    /**
+     * @param  list<SecurityEvent>  $events
+     */
+    public function trackerDefaultForEvents(array $events, string $trackerId): ?TrackerProjectDefaultResolution
+    {
+        $resolution = $this->trackerProjectDefaultResolver->resolveForEvents($events, $trackerId);
+
+        return $resolution->hasDefault() ? $resolution : null;
     }
 
     /**
@@ -435,5 +469,44 @@ final class WorkItemFormOptions
             'user_id' => $this->credentialOwnerId(),
             'registered_tracker_ids' => [],
         ]);
+    }
+
+    /**
+     * @param  list<SecurityEvent>  $events
+     */
+    private function resolveTrackerDefault(array $events): ?TrackerProjectDefaultResolution
+    {
+        if ($events === []) {
+            return null;
+        }
+
+        $candidates = [];
+
+        foreach (array_keys($this->trackerOptions()) as $trackerId) {
+            $resolution = $this->trackerDefaultForEvents($events, $trackerId);
+
+            if ($resolution instanceof TrackerProjectDefaultResolution) {
+                $candidates[] = $resolution;
+            }
+        }
+
+        if (count($candidates) !== 1) {
+            return null;
+        }
+
+        return $candidates[0];
+    }
+
+    private function trackerDefaultNotice(?TrackerProjectDefaultResolution $resolution): ?string
+    {
+        if (! ($resolution instanceof TrackerProjectDefaultResolution)) {
+            return null;
+        }
+
+        return sprintf(
+            'Defaulted from %s to %s.',
+            strtolower($resolution->confidenceLabel),
+            $resolution->projectKey,
+        );
     }
 }

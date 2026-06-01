@@ -72,7 +72,7 @@ class ViewSecurityEvent extends ViewRecord
                 ->label('Link existing')
                 ->icon('heroicon-o-link')
                 ->visible(fn (): bool => Gate::allows('work-items.link'))
-                ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema([$this->eventRecord()]))
                 ->action(fn (array $data): bool => $this->linkExistingWorkItem($data)),
             Action::make('reconcileWorkItems')
                 ->label('Reconcile work items')

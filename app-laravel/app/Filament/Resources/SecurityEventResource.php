@@ -581,7 +581,7 @@ class SecurityEventResource extends Resource
                         ->label('Link existing work item')
                         ->icon('heroicon-o-link')
                         ->visible(fn (): bool => self::currentUserCan('work-items.link'))
-                        ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                        ->form(fn (SecurityEvent $record): array => app(WorkItemFormOptions::class)->linkSchema([$record]))
                         ->action(function (SecurityEvent $record, array $data): void {
                             /** @var User|null $user */
                             $user = Auth::user();
@@ -641,7 +641,9 @@ class SecurityEventResource extends Resource
                     ->label('Create grouped work item')
                     ->icon('heroicon-o-ticket')
                     ->visible(fn (): bool => self::currentUserCan('work-items.create'))
-                    ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema())
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->createSchema(
+                        array_values($records->filter(fn (mixed $record): bool => $record instanceof SecurityEvent)->all())
+                    ))
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, SecurityEvent> $records */
                         /** @var User|null $user */
@@ -679,7 +681,9 @@ class SecurityEventResource extends Resource
                     ->label('Link existing')
                     ->icon('heroicon-o-link')
                     ->visible(fn (): bool => self::currentUserCan('work-items.link'))
-                    ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->linkSchema(
+                        array_values($records->filter(fn (mixed $record): bool => $record instanceof SecurityEvent)->all())
+                    ))
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, SecurityEvent> $records */
                         /** @var User|null $user */
