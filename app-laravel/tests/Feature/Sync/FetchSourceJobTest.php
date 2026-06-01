@@ -3,6 +3,7 @@
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\Models\ErrorLog;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
@@ -177,7 +178,8 @@ it('writes failure sync run when source throws', function () {
 
     expect($run)->not->toBeNull()
         ->and($run->status)->toBe('failure')
-        ->and($run->error_message)->toContain('boom');
+        ->and($run->error_message)->toContain('boom')
+        ->and(ErrorLog::query()->where('channel', 'sync')->where('message', 'like', '%boom%')->exists())->toBeTrue();
 });
 
 it('marks the latest running sync as failed when the queued job fails outside handle', function () {
@@ -194,7 +196,8 @@ it('marks the latest running sync as failed when the queued job fails outside ha
 
     expect($run->status)->toBe('failure')
         ->and($run->finished_at)->not->toBeNull()
-        ->and($run->error_message)->toContain('worker timeout');
+        ->and($run->error_message)->toContain('worker timeout')
+        ->and(ErrorLog::query()->where('channel', 'sync')->where('message', 'like', '%worker timeout%')->exists())->toBeTrue();
 });
 
 it('stores concise sync failure messages for oversized database values', function () {

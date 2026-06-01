@@ -33,16 +33,16 @@ class OpenAlertsBySourceWidget extends TableWidget
             ->columns([
                 TextColumn::make('source_id')
                     ->label('Source')
-                    ->url(fn (array $record): string => SecurityEventResource::filteredIndexUrl([
-                        'source_id' => [$record['source_id']],
+                    ->url(fn ($record): string => SecurityEventResource::filteredIndexUrl([
+                        'source_id' => [(string) data_get($record, 'source_id', '')],
                         'state' => [EventState::Open->value],
                     ]))
                     ->badge()
                     ->color('info'),
                 TextColumn::make('linked')
                     ->label('With work item')
-                    ->url(fn (array $record): string => SecurityEventResource::filteredIndexUrl([
-                        'source_id' => [$record['source_id']],
+                    ->url(fn ($record): string => SecurityEventResource::filteredIndexUrl([
+                        'source_id' => [(string) data_get($record, 'source_id', '')],
                         'state' => [EventState::Open->value],
                         'has_work_item' => ['1'],
                     ]))
@@ -50,8 +50,8 @@ class OpenAlertsBySourceWidget extends TableWidget
                     ->color('success'),
                 TextColumn::make('unlinked')
                     ->label('Without work item')
-                    ->url(fn (array $record): string => SecurityEventResource::filteredIndexUrl([
-                        'source_id' => [$record['source_id']],
+                    ->url(fn ($record): string => SecurityEventResource::filteredIndexUrl([
+                        'source_id' => [(string) data_get($record, 'source_id', '')],
                         'state' => [EventState::Open->value],
                         'has_work_item' => ['0'],
                     ]))

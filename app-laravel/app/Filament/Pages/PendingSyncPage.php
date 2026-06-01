@@ -69,7 +69,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('state')
                     ->label('Current state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ((string) $record->state) {
+                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->state)) {
                         'open' => 'danger',
                         'resolved' => 'success',
                         'dismissed' => 'gray',
@@ -79,7 +79,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('pending_state')
                     ->label('Pending state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ((string) $record->pending_state) {
+                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->pending_state)) {
                         'open' => 'danger',
                         'resolved' => 'success',
                         'dismissed' => 'gray',
@@ -89,7 +89,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('severity')
                     ->label('Current severity')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ((string) $record->severity) {
+                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->severity)) {
                         'critical' => 'danger',
                         'high' => 'warning',
                         'medium' => 'info',
@@ -100,7 +100,7 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('pending_severity')
                     ->label('Pending severity')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ((string) $record->pending_severity) {
+                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->pending_severity)) {
                         'critical' => 'danger',
                         'high' => 'warning',
                         'medium' => 'info',
@@ -152,5 +152,14 @@ class PendingSyncPage extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [];
+    }
+
+    private function enumString(mixed $state): string
+    {
+        if ($state instanceof \BackedEnum) {
+            return (string) $state->value;
+        }
+
+        return is_string($state) ? $state : '';
     }
 }

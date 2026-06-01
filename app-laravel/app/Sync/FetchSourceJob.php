@@ -4,6 +4,7 @@ namespace App\Sync;
 
 use App\Events\SyncRunFinished;
 use App\Integrations\IntegrationSettingsRepository;
+use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
@@ -54,6 +55,18 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
         ]);
 
         app(IntegrationSettingsRepository::class)->markSyncResult('source', $this->sourceId, false, $message);
+
+        ErrorLog::query()->create([
+            'level' => 'error',
+            'channel' => 'sync',
+            'message' => $message,
+            'context_json' => [
+                'source_id' => $this->sourceId,
+                'path' => 'failed',
+            ],
+            'trace' => $exception->getTraceAsString(),
+            'occurred_at' => now(),
+        ]);
 
         event(new SyncRunFinished($run));
     }
@@ -177,6 +190,18 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
             ]);
 
             $settings->markSyncResult('source', $this->sourceId, false, $message);
+
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'sync',
+                'message' => $message,
+                'context_json' => [
+                    'source_id' => $this->sourceId,
+                    'path' => 'handle',
+                ],
+                'trace' => $e->getTraceAsString(),
+                'occurred_at' => now(),
+            ]);
 
             event(new SyncRunFinished($run));
 

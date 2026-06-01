@@ -6,6 +6,7 @@ use App\Filament\Pages\SystemCredentialsPage;
 use App\Models\User;
 use App\Sources\Registry;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Fakes\FakeMultiFieldSource;
 use Tests\Fakes\FakeSource;
@@ -182,6 +183,23 @@ it('requires a replacement value when replace is activated for a secret', functi
         ->set('values.fake_tracker_token', '')
         ->call('saveIntegration', 'fake-tracker')
         ->assertHasErrors(['values.fake_tracker_token']);
+});
+
+it('renders system credentials page even when an existing credential is unreadable', function () {
+    bindFakeCredentialIntegrations();
+
+    $admin = enrolledUser();
+    $admin->syncRoles(['Admin']);
+
+    DB::table('credentials')->insert([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => null,
+        'value' => 'invalid-payload',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(SystemCredentialsPage::class)
+        ->assertSeeHtml('wire:model.live="values.fake_tracker_token"');
 });
 
 function bindFakeCredentialIntegrations(): void
