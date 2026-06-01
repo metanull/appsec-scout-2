@@ -3,6 +3,7 @@
 namespace App\Trackers;
 
 use App\Audit\Recorder;
+use App\Credentials\Vault;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
 use App\Trackers\Dto\CreateWorkItemRequest;
@@ -16,6 +17,7 @@ final class WorkItemService
         private readonly Recorder $recorder,
         private readonly Registry $registry,
         private readonly TrackerProjectLinker $linker,
+        private readonly Vault $vault,
     ) {}
 
     /**
@@ -44,16 +46,18 @@ final class WorkItemService
             ? $this->descriptionBuilder->buildGrouped($events)
             : $this->descriptionBuilder->buildSingle($events[0]);
 
-        $workItem = $tracker->createWorkItem(new CreateWorkItemRequest(
-            projectKey: $projectKey,
-            itemType: $itemType,
-            title: $title,
-            description: $description,
-            labels: $this->normalizeLabels($labels),
-            priority: $priority,
-            assigneeId: $assigneeId,
-            parentId: $parentId,
-        ));
+        $workItem = $this->vault->runAsOwner($userId, function () use ($tracker, $projectKey, $itemType, $title, $description, $labels, $priority, $assigneeId, $parentId) {
+            return $tracker->createWorkItem(new CreateWorkItemRequest(
+                projectKey: $projectKey,
+                itemType: $itemType,
+                title: $title,
+                description: $description,
+                labels: $this->normalizeLabels($labels),
+                priority: $priority,
+                assigneeId: $assigneeId,
+                parentId: $parentId,
+            ));
+        }, true);
 
         $this->db->transaction(function () use ($events, $workItem, $trackerId, $projectKey, $userId, $isGrouped): void {
             foreach ($events as $event) {
@@ -87,7 +91,8 @@ final class WorkItemService
     {
         $events = $this->events($eventIds);
         $tracker = $this->tracker($trackerId);
-        $workItem = $tracker->getWorkItem($workItemId) ?? throw new \RuntimeException('Selected work item could not be loaded from the tracker.');
+        $workItem = $this->vault->runAsOwner($userId, fn () => $tracker->getWorkItem($workItemId), true)
+            ?? throw new \RuntimeException('Selected work item could not be loaded from the tracker.');
 
         $resolvedProjectKey = $projectKey !== '' ? $projectKey : $workItem->projectKey;
 

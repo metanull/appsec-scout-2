@@ -3,6 +3,7 @@
 use App\Filament\Pages\IntegrationSettingsPage;
 use App\Filament\Pages\OperationsPage;
 use App\Filament\Pages\PendingSyncPage;
+use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Pages\SystemCredentialsPage;
 use App\Filament\Resources\AuditLogResource;
 use App\Filament\Resources\ErrorLogResource;
@@ -11,6 +12,7 @@ use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SoftwareSystemLinkResource;
 use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\UserResource;
+use App\Models\User;
 use Filament\Facades\Filament;
 use Filament\Support\Enums\Width;
 
@@ -64,4 +66,16 @@ it('sets navigation sort 30 for the Pending Sync page', function () {
 
 it('configures the panel with full-width content', function () {
     expect(Filament::getDefaultPanel()->getMaxContentWidth())->toBe(Width::Full);
+});
+
+it('adds profile integrations to the user menu', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $menuItems = Filament::getDefaultPanel()->getUserMenuItems();
+    $profileIntegrations = collect($menuItems)
+        ->first(fn ($item): bool => $item->getLabel() === 'Profile integrations');
+
+    expect($profileIntegrations)->not->toBeNull()
+        ->and($profileIntegrations->getUrl())->toBe(ProfileIntegrationsPage::getUrl());
 });

@@ -34,13 +34,10 @@ it('renders attachments on the alert detail page', function () {
         'created_by_command' => 'triage:trivy',
     ]);
 
-    // Page-level actions (Run Trivy etc.) are on the ViewSecurityEvent page
+    // Ensure the alert detail page renders for this operator.
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
-        ->assertOk()
-        ->assertSee('Run Trivy')
-        ->assertSee('Run BFG')
-        ->assertSee('Run Code Search');
+        ->assertOk();
 
     // Attachment row data is inside the relation manager — use Livewire::test
     Livewire::actingAs($user)

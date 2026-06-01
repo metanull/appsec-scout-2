@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SecurityEventResource\Pages;
 
+use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -16,6 +17,7 @@ use App\Triage\AttachmentService;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use Filament\Actions\Action;
+use Filament\Actions\Action as FilamentAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -30,7 +32,7 @@ class ViewSecurityEvent extends ViewRecord
 
     protected static string $resource = SecurityEventResource::class;
 
-    /** @return array<Action|ActionGroup> */
+    /** @return array<Action> */
     protected function getHeaderActions(): array
     {
         return [
@@ -206,10 +208,19 @@ class ViewSecurityEvent extends ViewRecord
             abort(403);
         }
 
+        $trackerId = (string) $data['tracker'];
+        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+        if ($missing !== []) {
+            $this->notifyMissingPersonalCredentials($trackerId, $missing);
+
+            return false;
+        }
+
         CreateWorkItemJob::dispatch(
             eventIds: [$this->eventRecord()->id],
             userId: $user->id,
-            trackerId: (string) $data['tracker'],
+            trackerId: $trackerId,
             projectKey: (string) $data['project'],
             itemType: (string) $data['item_type'],
             labels: SecurityEventResource::stringArray($data['labels'] ?? []),
@@ -235,10 +246,19 @@ class ViewSecurityEvent extends ViewRecord
             abort(403);
         }
 
+        $trackerId = (string) $data['tracker'];
+        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+        if ($missing !== []) {
+            $this->notifyMissingPersonalCredentials($trackerId, $missing);
+
+            return false;
+        }
+
         app(WorkItemService::class)->linkExisting(
             eventIds: [$this->eventRecord()->id],
             userId: $user->id,
-            trackerId: (string) $data['tracker'],
+            trackerId: $trackerId,
             workItemId: (string) $data['selected_work_item'],
             projectKey: (string) ($data['project'] ?? ''),
         );
@@ -269,25 +289,28 @@ class ViewSecurityEvent extends ViewRecord
         return trim($value);
     }
 
-    private function repositoryUrl(): ?string
-    {
-        /** @var array<string, mixed>|null $metadata */
-        $metadata = $this->eventRecord()->getAttribute('metadata');
-
-        if ($metadata === null) {
-            return null;
-        }
-
-        $value = $metadata['repository_url'] ?? null;
-
-        return is_string($value) && $value !== '' ? $value : null;
-    }
-
     private function eventRecord(): SecurityEvent
     {
         /** @var SecurityEvent $record */
         $record = $this->getRecord();
 
         return $record;
+    }
+
+    /** @param list<string> $missing */
+    private function notifyMissingPersonalCredentials(string $trackerId, array $missing): void
+    {
+        $fields = implode(', ', $missing);
+
+        Notification::make()
+            ->title('Personal tracker credentials required')
+            ->body("{$trackerId} is missing personal credentials: {$fields}.")
+            ->warning()
+            ->actions([
+                FilamentAction::make('openProfileIntegrations')
+                    ->label('Open profile integrations')
+                    ->url(ProfileIntegrationsPage::getUrl()),
+            ])
+            ->send();
     }
 }
