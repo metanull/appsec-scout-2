@@ -11,6 +11,8 @@ use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelatio
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\SecurityEvents\EntityNavigationCatalog;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -42,6 +44,15 @@ class SoftwareSystemResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with([
+            'curatedLinks',
+            'trackerProjectLinks',
+            'repositoryMappings',
+        ]);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -79,6 +90,29 @@ class SoftwareSystemResource extends Resource
                         ->placeholder('-'),
                 ])
                 ->columns(4),
+
+            Section::make('Navigation')
+                ->visible(fn (SoftwareSystem $record): bool => self::navigationRows($record) !== [])
+                ->schema([
+                    RepeatableEntry::make('_navigation_links')
+                        ->label('')
+                        ->state(fn (SoftwareSystem $record): array => self::navigationRows($record))
+                        ->schema([
+                            TextEntry::make('label')
+                                ->label('Label')
+                                ->wrap(),
+                            TextEntry::make('kind_label')
+                                ->label('Kind')
+                                ->badge()
+                                ->color('gray'),
+                            TextEntry::make('url')
+                                ->label('URL')
+                                ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                                ->openUrlInNewTab()
+                                ->placeholder('-'),
+                        ])
+                        ->columns(3),
+                ]),
         ]);
     }
 
@@ -121,5 +155,13 @@ class SoftwareSystemResource extends Resource
             'index' => ListSoftwareSystems::route('/'),
             'view' => ViewSoftwareSystem::route('/{record}'),
         ];
+    }
+
+    /**
+     * @return list<array{label: string, url: string, kind: string, kind_label: string, external: bool}>
+     */
+    private static function navigationRows(SoftwareSystem $record): array
+    {
+        return app(EntityNavigationCatalog::class)->buildForSoftwareSystem($record);
     }
 }
