@@ -23,6 +23,7 @@ class SoftwareSystem extends Model
     {
         static::deleting(function (SoftwareSystem $system): void {
             $system->trackerProjectLinks()->delete();
+            $system->repositoryMappings()->delete();
         });
     }
 
@@ -53,6 +54,12 @@ class SoftwareSystem extends Model
     public function trackerProjectLinks(): MorphMany
     {
         return $this->morphMany(TrackerProjectLink::class, 'owner');
+    }
+
+    /** @return MorphMany<RepositoryMapping, $this> */
+    public function repositoryMappings(): MorphMany
+    {
+        return $this->morphMany(RepositoryMapping::class, 'owner');
     }
 
     /** @return BelongsToMany<SoftwareSystemLink, $this> */
