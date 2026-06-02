@@ -16,8 +16,8 @@ The repository contains a committed personal access token.
 Rotate the token and move it into the credential vault.
 
 ### Occurrences
-- Payments API/payments-service/config/secrets.php:18 ([alert](https://example.test/alerts/secret-101))
-- Payments API/payments-service/database/seeders/DemoSeeder.php:44 ([alert](https://example.test/alerts/secret-102))
+- Payments API/payments-service/config/secrets.php:18 ([source alert](https://example.test/alerts/secret-101))
+- Payments API/payments-service/database/seeders/DemoSeeder.php:44 ([source alert](https://example.test/alerts/secret-102))
 
 ## Vulnerability
 
@@ -30,4 +30,4 @@ Unsanitized input reaches a SQL query.
 Use parameterized queries for every database call.
 
 ### Occurrences
-- Payments API/payments-service/src/Repositories/UserRepository.php:71 ([alert](https://example.test/alerts/vuln-201))
+- Payments API/payments-service/src/Repositories/UserRepository.php:71 ([source alert](https://example.test/alerts/vuln-201))
