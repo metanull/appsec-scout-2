@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\CuratedLink;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\WorkItemLink;
 use App\SecurityEvents\EventLinkCatalog;
 
@@ -124,6 +127,72 @@ describe('EventLinkCatalog', function () {
 
         $urls = array_column($catalog, 'url');
         expect($urls)->toContain('https://jira.example.com/browse/PROJ-42');
+    });
+
+    it('prefers alert curated links over container and system curated links', function () {
+        $system = SoftwareSystem::factory()->make([
+            'url' => 'https://docs.example.com/shared-link',
+        ]);
+        $system->setRelation('curatedLinks', collect([
+            CuratedLink::factory()->make([
+                'label' => 'System curated link',
+                'kind' => 'source',
+                'url' => 'https://docs.example.com/shared-link',
+            ]),
+        ]));
+
+        $container = SecurityContainer::factory()->forSystem($system)->make([
+            'url' => 'https://docs.example.com/shared-link',
+        ]);
+        $container->setRelation('curatedLinks', collect([
+            CuratedLink::factory()->make([
+                'label' => 'Container curated link',
+                'kind' => 'remediation',
+                'url' => 'https://docs.example.com/shared-link',
+            ]),
+        ]));
+
+        $event = new SecurityEvent;
+        $event->forceFill([
+        ]);
+        $event->setRelation('softwareSystem', $system);
+        $event->setRelation('container', $container);
+        $event->setRelation('curatedLinks', collect([
+            CuratedLink::factory()->make([
+                'label' => 'Alert curated link',
+                'kind' => 'code',
+                'url' => 'https://docs.example.com/shared-link',
+            ]),
+        ]));
+        $event->setRelation('workItemLinks', collect());
+
+        $catalog = app(EventLinkCatalog::class)->build($event);
+
+        expect(array_column($catalog, 'url'))->toHaveCount(1)
+            ->and($catalog[0]['label'])->toBe('Alert curated link')
+            ->and($catalog[0]['kind'])->toBe('code');
+    });
+
+    it('ignores unsafe curated links at render time', function () {
+        $event = new SecurityEvent;
+        $event->forceFill([
+            'url' => 'https://example.com/alert/unsafe-curated',
+        ]);
+        $event->setRelation('softwareSystem', null);
+        $event->setRelation('container', null);
+        $event->setRelation('curatedLinks', collect([
+            CuratedLink::factory()->make([
+                'label' => 'Unsafe curated link',
+                'kind' => 'source',
+                'url' => 'javascript:alert(1)',
+            ]),
+        ]));
+        $event->setRelation('workItemLinks', collect());
+
+        $catalog = app(EventLinkCatalog::class)->build($event);
+
+        expect(array_column($catalog, 'url'))->toContain('https://example.com/alert/unsafe-curated')
+            ->and(array_column($catalog, 'url'))->not()->toContain('javascript:alert(1)');
     });
 
     it('skips unsafe non-http URLs', function () {

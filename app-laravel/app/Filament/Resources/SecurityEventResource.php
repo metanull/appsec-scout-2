@@ -73,8 +73,11 @@ class SecurityEventResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with([
+            'curatedLinks',
             'softwareSystem',
+            'softwareSystem.curatedLinks',
             'container',
+            'container.curatedLinks',
             'workItemLinks',
         ]);
     }
