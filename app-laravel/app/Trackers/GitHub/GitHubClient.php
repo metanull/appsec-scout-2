@@ -62,6 +62,8 @@ final class GitHubClient
                     key: (string) $repo['full_name'],
                     name: (string) $repo['full_name'],
                     url: isset($repo['html_url']) ? (string) $repo['html_url'] : null,
+                    owner: isset($repo['owner']['login']) ? (string) $repo['owner']['login'] : null,
+                    repository: isset($repo['name']) ? (string) $repo['name'] : null,
                 );
             }
 

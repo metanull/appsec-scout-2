@@ -142,3 +142,32 @@ it('tests jira connectivity through the tracker contract', function () {
 
     expect($tracker->testConnection()->ok)->toBeTrue();
 });
+
+it('maps jira projects with consistent key and name fields', function () {
+    $tracker = new JiraTracker(app(Vault::class));
+    injectJiraClient($tracker, new JiraClient(
+        'https://example.atlassian.net',
+        'ops@example.test',
+        'token',
+        new Client(['handler' => new MockHandler([
+            new Response(200, [], json_encode([
+                'startAt' => 0,
+                'maxResults' => 50,
+                'isLast' => true,
+                'values' => [
+                    [
+                        'key' => 'APP',
+                        'name' => 'Application',
+                        'self' => 'https://example.atlassian.net/rest/api/3/project/10001',
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+        ])]),
+    ));
+
+    $projects = iterator_to_array($tracker->fetchProjects(), false);
+
+    expect($projects)->toHaveCount(1)
+        ->and($projects[0]->key)->toBe('APP')
+        ->and($projects[0]->name)->toBe('Application');
+});

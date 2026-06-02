@@ -8,6 +8,7 @@ use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
+use App\Sources\Context\SourceContextFacts;
 
 final class TrackerProjectLinker
 {
@@ -60,6 +61,8 @@ final class TrackerProjectLinker
         ?string $projectName,
         ?int $userId,
     ): void {
+        $metadata = $this->buildMetadata($trackerId, $projectKey, $projectName);
+
         $existing = TrackerProjectLink::query()
             ->where('owner_type', $ownerType)
             ->where('owner_id', $ownerId)
@@ -68,8 +71,22 @@ final class TrackerProjectLinker
             ->first();
 
         if ($existing instanceof TrackerProjectLink) {
+            $existingMetadataRaw = $existing->getAttribute('metadata');
+            $existingMetadata = is_array($existingMetadataRaw) ? $existingMetadataRaw : [];
+            $mergedMetadata = array_replace_recursive($existingMetadata, $metadata);
+
+            $updates = [];
+
             if ($projectName !== null && $existing->project_name === null) {
-                $existing->forceFill(['project_name' => $projectName])->save();
+                $updates['project_name'] = $projectName;
+            }
+
+            if ($mergedMetadata !== $existingMetadata) {
+                $updates['metadata'] = $mergedMetadata;
+            }
+
+            if ($updates !== []) {
+                $existing->forceFill($updates)->save();
             }
 
             return;
@@ -83,6 +100,40 @@ final class TrackerProjectLinker
             'project_name' => $projectName,
             'is_default' => false,
             'created_by_user_id' => $userId,
+            'metadata' => $metadata,
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildMetadata(string $trackerId, string $projectKey, ?string $projectName): array
+    {
+        $metadata = [];
+
+        if ($trackerId === 'jira') {
+            $metadata = SourceContextFacts::set($metadata, SourceContextFacts::TRACKER_JIRA_PROJECT_KEY, $projectKey);
+            $metadata = SourceContextFacts::set($metadata, 'tracker.jira.project_name', $projectName);
+
+            return $metadata;
+        }
+
+        if ($trackerId !== 'github') {
+            return $metadata;
+        }
+
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::TRACKER_GITHUB_REPOSITORY, $projectKey);
+        $metadata = SourceContextFacts::set($metadata, 'tracker.github.project_name', $projectName);
+
+        $parts = explode('/', $projectKey, 2);
+
+        if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
+            return $metadata;
+        }
+
+        $metadata = SourceContextFacts::set($metadata, 'tracker.github.owner', $parts[0]);
+        $metadata = SourceContextFacts::set($metadata, 'tracker.github.name', $parts[1]);
+
+        return $metadata;
     }
 }

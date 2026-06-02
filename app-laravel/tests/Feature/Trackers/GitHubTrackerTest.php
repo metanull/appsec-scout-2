@@ -123,3 +123,31 @@ it('tests github connectivity through the tracker contract', function () {
 
     expect($tracker->testConnection()->ok)->toBeTrue();
 });
+
+it('maps github repositories to project dto with owner and repository facts', function () {
+    $tracker = new GitHubTracker(app(Vault::class));
+    injectGitHubClient($tracker, new GitHubClient(
+        'token',
+        'https://api.github.com',
+        new Client(['handler' => new MockHandler([
+            new Response(200, [], json_encode([
+                [
+                    'full_name' => 'octo-org/appsec-scout',
+                    'name' => 'appsec-scout',
+                    'html_url' => 'https://github.com/octo-org/appsec-scout',
+                    'owner' => ['login' => 'octo-org'],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+            new Response(200, [], json_encode([], JSON_THROW_ON_ERROR)),
+        ])]),
+    ));
+
+    $projects = iterator_to_array($tracker->fetchProjects(), false);
+
+    expect($projects)->toHaveCount(1)
+        ->and($projects[0]->key)->toBe('octo-org/appsec-scout')
+        ->and($projects[0]->name)->toBe('octo-org/appsec-scout')
+        ->and($projects[0]->owner)->toBe('octo-org')
+        ->and($projects[0]->repository)->toBe('appsec-scout')
+        ->and($projects[0]->url)->toBe('https://github.com/octo-org/appsec-scout');
+});
