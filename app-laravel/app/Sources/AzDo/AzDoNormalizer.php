@@ -17,17 +17,18 @@ final class AzDoNormalizer
 
     public static function toSystem(AzDoProject $project): SystemDto
     {
+        $webUrl = self::buildProjectWebUrl($project);
         $metadata = [];
 
         $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_PROJECT_ID, $project->id);
         $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_PROJECT_NAME, $project->name);
-        $metadata = SourceContextFacts::set($metadata, 'azdo.project.web_url', self::buildProjectWebUrl($project));
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_PROJECT_WEB_URL, $webUrl);
 
         return new SystemDto(
             sourceSystemId: $project->id,
             name: $project->name,
             description: $project->description,
-            url: self::buildProjectWebUrl($project),
+            url: $webUrl,
             metadata: $metadata,
         );
     }
@@ -41,7 +42,7 @@ final class AzDoNormalizer
         $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_REPOSITORY_WEB_URL, $repo->webUrl);
         $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL, $repo->remoteUrl);
         $metadata = SourceContextFacts::set($metadata, SourceContextFacts::CODE_DEFAULT_BRANCH, self::normalizeBranch($repo->defaultBranch));
-        $metadata = SourceContextFacts::set($metadata, 'source.provider', 'azure-repos');
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::SOURCE_PROVIDER, 'azure-repos');
 
         return new ContainerDto(
             sourceContainerId: $repo->id,
@@ -230,8 +231,8 @@ final class AzDoNormalizer
         $meta = SourceContextFacts::set($meta, SourceContextFacts::AZDO_REPOSITORY_NAME, $repo?->name);
         $meta = SourceContextFacts::set($meta, SourceContextFacts::CODE_COMMIT_SHA, $location['versionControl']['commitHash'] ?? null);
         $meta = SourceContextFacts::set($meta, SourceContextFacts::CODE_DEFAULT_BRANCH, self::normalizeBranch($location['versionControl']['branch'] ?? $repo?->defaultBranch));
-        $meta = SourceContextFacts::set($meta, 'code.file_path', $location['filePath'] ?? null);
-        $meta = SourceContextFacts::set($meta, 'azdo.alert.type', $alert->alertType);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::CODE_FILE_PATH, $location['filePath'] ?? null);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::AZDO_ALERT_TYPE, $alert->alertType);
 
         if ($alert->truncatedSecret !== null) {
             $meta['truncatedSecret'] = $alert->truncatedSecret;

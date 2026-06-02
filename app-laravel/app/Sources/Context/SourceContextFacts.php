@@ -18,6 +18,8 @@ final class SourceContextFacts
 
     public const AZDO_PROJECT_NAME = 'azdo.project.name';
 
+    public const AZDO_PROJECT_WEB_URL = 'azdo.project.web_url';
+
     public const AZDO_REPOSITORY_ID = 'azdo.repository.id';
 
     public const AZDO_REPOSITORY_NAME = 'azdo.repository.name';
@@ -30,6 +32,8 @@ final class SourceContextFacts
 
     public const CODE_COMMIT_SHA = 'code.commit_sha';
 
+    public const CODE_FILE_PATH = 'code.file_path';
+
     public const SECURITY_CVE = 'security.cve';
 
     public const SECURITY_CWE = 'security.cwe';
@@ -39,6 +43,10 @@ final class SourceContextFacts
     public const PACKAGE_VERSION = 'package.version';
 
     public const PACKAGE_ECOSYSTEM = 'package.ecosystem';
+
+    public const SOURCE_PROVIDER = 'source.provider';
+
+    public const AZDO_ALERT_TYPE = 'azdo.alert.type';
 
     public const TRACKER_JIRA_PROJECT_KEY = 'tracker.jira.project_key';
 
@@ -53,17 +61,21 @@ final class SourceContextFacts
             self::SOURCE_ALERT_WEB_URL,
             self::AZDO_PROJECT_ID,
             self::AZDO_PROJECT_NAME,
+            self::AZDO_PROJECT_WEB_URL,
             self::AZDO_REPOSITORY_ID,
             self::AZDO_REPOSITORY_NAME,
             self::AZDO_REPOSITORY_WEB_URL,
             self::AZDO_REPOSITORY_REMOTE_URL,
             self::CODE_DEFAULT_BRANCH,
             self::CODE_COMMIT_SHA,
+            self::CODE_FILE_PATH,
             self::SECURITY_CVE,
             self::SECURITY_CWE,
             self::PACKAGE_NAME,
             self::PACKAGE_VERSION,
             self::PACKAGE_ECOSYSTEM,
+            self::SOURCE_PROVIDER,
+            self::AZDO_ALERT_TYPE,
             self::TRACKER_JIRA_PROJECT_KEY,
             self::TRACKER_GITHUB_REPOSITORY,
         ];
