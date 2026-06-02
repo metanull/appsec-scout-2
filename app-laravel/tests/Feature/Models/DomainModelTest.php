@@ -37,10 +37,10 @@ it('enforces unique constraint on software_systems (source_id, source_system_id)
 });
 
 it('allows same source_system_id for different sources', function () {
-    SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'same-id']);
-    SoftwareSystem::factory()->create(['source_id' => 'asoc', 'source_system_id' => 'same-id']);
+    $azdoSystem = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'same-id']);
+    $asocSystem = SoftwareSystem::factory()->create(['source_id' => 'asoc', 'source_system_id' => 'same-id']);
 
-    expect(SoftwareSystem::count())->toBe(2);
+    expect(SoftwareSystem::query()->whereKey([$azdoSystem->id, $asocSystem->id])->count())->toBe(2);
 });
 
 // --- SecurityContainer ---

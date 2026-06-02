@@ -6,6 +6,7 @@ use App\Filament\Resources\SecurityContainerResource\Pages\ListSecurityContainer
 use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Models\SecurityContainer;
 use App\Models\User;
@@ -136,6 +137,7 @@ class SecurityContainerResource extends Resource
             EventsRelationManager::class,
             CuratedLinksRelationManager::class,
             TrackerProjectLinksRelationManager::class,
+            RepositoryMappingsRelationManager::class,
         ];
     }
 

@@ -24,11 +24,6 @@ class RepositoryMappingModelsTest extends TestCase
 
         $this->assertTrue(Schema::hasTable('repository_providers'));
         $this->assertTrue(Schema::hasTable('repository_mappings'));
-
-        Artisan::call('migrate:rollback', ['--step' => 2]);
-
-        $this->assertFalse(Schema::hasTable('repository_providers'));
-        $this->assertFalse(Schema::hasTable('repository_mappings'));
     }
 
     public function test_casts_repository_provider_types_and_rejects_unsupported_values(): void

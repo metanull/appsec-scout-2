@@ -9,13 +9,10 @@ use App\Sync\CredentialResolver;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 
-beforeEach(function () {
-    $this->recorder = new Recorder;
-    $this->vault = new Vault($this->recorder, app(CredentialResolver::class));
-});
-
 it('stores value encrypted in the database', function () {
-    $this->vault->set('azdo.pat', null, 'super-secret-token');
+    $vault = new Vault(new Recorder, app(CredentialResolver::class));
+
+    $vault->set('azdo.pat', null, 'super-secret-token');
 
     $raw = DB::table('credentials')
         ->where('integration_key', 'azdo.pat')
@@ -26,13 +23,17 @@ it('stores value encrypted in the database', function () {
 });
 
 it('round-trips get after set', function () {
-    $this->vault->set('azdo.pat', null, 'my-pat-value');
+    $vault = new Vault(new Recorder, app(CredentialResolver::class));
 
-    expect($this->vault->get('azdo.pat', null))->toBe('my-pat-value');
+    $vault->set('azdo.pat', null, 'my-pat-value');
+
+    expect($vault->get('azdo.pat', null))->toBe('my-pat-value');
 });
 
 it('returns null for missing credential', function () {
-    expect($this->vault->get('missing.key', null))->toBeNull();
+    $vault = new Vault(new Recorder, app(CredentialResolver::class));
+
+    expect($vault->get('missing.key', null))->toBeNull();
 });
 
 it('returns null when credential payload cannot be decrypted', function () {
@@ -42,11 +43,11 @@ it('returns null when credential payload cannot be decrypted', function () {
         'value' => 'invalid-payload',
     ]);
 
-    expect($this->vault->get('azdo.pat', null))->toBeNull();
+    expect(vault()->get('azdo.pat', null))->toBeNull();
 });
 
 it('writes audit row on set with value redacted', function () {
-    $this->vault->set('azdo.pat', null, 'secret');
+    vault()->set('azdo.pat', null, 'secret');
 
     $log = AuditLog::where('action', 'credential_change')->first();
     expect($log)->not()->toBeNull();
@@ -58,16 +59,20 @@ it('writes audit row on set with value redacted', function () {
 });
 
 it('updates existing credential on re-set', function () {
-    $this->vault->set('azdo.pat', null, 'first-value');
-    $this->vault->set('azdo.pat', null, 'second-value');
+    $vault = vault();
+
+    $vault->set('azdo.pat', null, 'first-value');
+    $vault->set('azdo.pat', null, 'second-value');
 
     expect(Credential::count())->toBe(1)
-        ->and($this->vault->get('azdo.pat', null))->toBe('second-value');
+        ->and($vault->get('azdo.pat', null))->toBe('second-value');
 });
 
 it('test probe returns ok on success', function () {
-    $this->vault->set('azdo.pat', null, 'valid-token');
-    $result = $this->vault->test('azdo.pat', null, fn (string $v) => true);
+    $vault = vault();
+
+    $vault->set('azdo.pat', null, 'valid-token');
+    $result = $vault->test('azdo.pat', null, fn (string $v) => true);
 
     expect($result->ok)->toBeTrue()
         ->and($result->missing)->toBeFalse();
@@ -77,8 +82,10 @@ it('test probe returns ok on success', function () {
 });
 
 it('test probe returns fail on exception', function () {
-    $this->vault->set('azdo.pat', null, 'bad-token');
-    $result = $this->vault->test('azdo.pat', null, function () {
+    $vault = vault();
+
+    $vault->set('azdo.pat', null, 'bad-token');
+    $result = $vault->test('azdo.pat', null, function () {
         throw new RuntimeException('Auth failed');
     });
 
@@ -87,36 +94,47 @@ it('test probe returns fail on exception', function () {
 });
 
 it('test returns missing when credential does not exist', function () {
-    $result = $this->vault->test('nonexistent.key', null, fn (string $v) => null);
+    $result = vault()->test('nonexistent.key', null, fn (string $v) => null);
 
     expect($result->missing)->toBeTrue();
 });
 
 it('system and user credentials are stored separately', function () {
     $user = User::factory()->create();
-    $this->vault->set('azdo.pat', null, 'system-token');
-    $this->vault->set('azdo.pat', $user->id, 'user-token');
+    $vault = vault();
 
-    expect($this->vault->get('azdo.pat', null))->toBe('system-token')
-        ->and($this->vault->get('azdo.pat', $user->id))->toBe('user-token');
+    $vault->set('azdo.pat', null, 'system-token');
+    $vault->set('azdo.pat', $user->id, 'user-token');
+
+    expect($vault->get('azdo.pat', null))->toBe('system-token')
+        ->and($vault->get('azdo.pat', $user->id))->toBe('user-token');
 });
 
 it('prefers the authenticated user credential when resolving without an explicit owner', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $this->vault->set('azdo.pat', null, 'system-token');
-    $this->vault->set('azdo.pat', $user->id, 'user-token');
+    $vault = vault();
 
-    expect($this->vault->get('azdo.pat', null))->toBe('user-token');
+    $vault->set('azdo.pat', null, 'system-token');
+    $vault->set('azdo.pat', $user->id, 'user-token');
+
+    expect($vault->get('azdo.pat', null))->toBe('user-token');
 });
 
 it('supports strict owner scoping for integration tests', function () {
     $user = User::factory()->create();
-    $this->vault->set('azdo.pat', null, 'system-token');
-    $this->vault->set('azdo.pat', $user->id, 'user-token');
+    $vault = vault();
 
-    $resolved = $this->vault->runAsOwner(null, fn (): ?string => $this->vault->get('azdo.pat', null));
+    $vault->set('azdo.pat', null, 'system-token');
+    $vault->set('azdo.pat', $user->id, 'user-token');
+
+    $resolved = $vault->runAsOwner(null, fn (): ?string => $vault->get('azdo.pat', null));
 
     expect($resolved)->toBe('system-token');
 });
+
+function vault(): Vault
+{
+    return new Vault(new Recorder, app(CredentialResolver::class));
+}
