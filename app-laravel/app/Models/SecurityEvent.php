@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'source_id', 'source_event_id', 'software_system_id', 'container_id',
@@ -48,6 +49,13 @@ class SecurityEvent extends Model
             'start_line' => 'integer',
             'end_line' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (SecurityEvent $event): void {
+            $event->curatedLinks()->delete();
+        });
     }
 
     /** @return BelongsTo<SoftwareSystem, $this> */
@@ -86,6 +94,12 @@ class SecurityEvent extends Model
         return $this->hasMany(AuditLog::class, 'subject_id', 'id')
             ->where('subject_type', static::class)
             ->orderByDesc('created_at');
+    }
+
+    /** @return MorphMany<CuratedLink, $this> */
+    public function curatedLinks(): MorphMany
+    {
+        return $this->morphMany(CuratedLink::class, 'owner');
     }
 
     /**

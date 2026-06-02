@@ -5,8 +5,10 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SecurityContainerResource\Pages\ListSecurityContainers;
 use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Models\SecurityContainer;
+use App\Models\User;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -30,7 +32,9 @@ class SecurityContainerResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        $user = Auth::user();
+
+        return $user instanceof User && $user->can('alerts.view');
     }
 
     public static function form(Schema $schema): Schema
@@ -96,6 +100,7 @@ class SecurityContainerResource extends Resource
     {
         return [
             EventsRelationManager::class,
+            CuratedLinksRelationManager::class,
             TrackerProjectLinksRelationManager::class,
         ];
     }

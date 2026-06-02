@@ -10,6 +10,7 @@ use App\Filament\Resources\SecurityEventResource\RelationManagers\AuditHistoryRe
 use App\Filament\Resources\SecurityEventResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Filament\Resources\SecurityEventResource\Support\SecurityEventTableQuery;
+use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -721,6 +722,7 @@ class SecurityEventResource extends Resource
     {
         return [
             CommentsRelationManager::class,
+            CuratedLinksRelationManager::class,
             WorkItemLinksRelationManager::class,
             AttachmentsRelationManager::class,
             AuditHistoryRelationManager::class,

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\Pages\ListSoftwareSystems;
 use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
@@ -9,6 +10,7 @@ use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRel
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Models\SoftwareSystem;
+use App\Models\User;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -32,7 +34,9 @@ class SoftwareSystemResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        $user = Auth::user();
+
+        return $user instanceof User && $user->can('alerts.view');
     }
 
     public static function form(Schema $schema): Schema
@@ -105,6 +109,7 @@ class SoftwareSystemResource extends Resource
         return [
             EventsRelationManager::class,
             ContainersRelationManager::class,
+            CuratedLinksRelationManager::class,
             LinksRelationManager::class,
             TrackerProjectLinksRelationManager::class,
         ];

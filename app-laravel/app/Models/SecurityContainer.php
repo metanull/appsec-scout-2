@@ -24,6 +24,7 @@ class SecurityContainer extends Model
         static::deleting(function (SecurityContainer $container): void {
             $container->trackerProjectLinks()->delete();
             $container->repositoryMappings()->delete();
+            $container->curatedLinks()->delete();
         });
     }
 
@@ -60,5 +61,11 @@ class SecurityContainer extends Model
     public function repositoryMappings(): MorphMany
     {
         return $this->morphMany(RepositoryMapping::class, 'owner');
+    }
+
+    /** @return MorphMany<CuratedLink, $this> */
+    public function curatedLinks(): MorphMany
+    {
+        return $this->morphMany(CuratedLink::class, 'owner');
     }
 }
