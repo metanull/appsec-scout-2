@@ -17,6 +17,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
 use App\Models\User;
+use App\SecurityEvents\EventLinkCatalog;
 use App\SecurityEvents\SourceLinkHelper;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\WorkItemFormOptions;
@@ -66,6 +67,15 @@ class SecurityEventResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with([
+            'softwareSystem',
+            'container',
+            'workItemLinks',
+        ]);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -160,23 +170,11 @@ class SecurityEventResource extends Resource
                     ]),
                 ]),
 
-            Section::make('Links')
-                ->collapsible()
-                ->visible(fn (SecurityEvent $record): bool => filled($record->url) || filled($record->version_control_url))
-                ->schema([
-                    Grid::make(2)->schema([
-                        TextEntry::make('url')
-                            ->label('Source alert')
-                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
-                        TextEntry::make('version_control_url')
-                            ->label('Version control')
-                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
-                    ]),
-                ]),
+            self::linkCatalogSection('source'),
+            self::linkCatalogSection('code'),
+            self::linkCatalogSection('remediation'),
+            self::linkCatalogSection('standard'),
+            self::linkCatalogSection('tracker'),
 
             Section::make('Secret Details')
                 ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Secret))
@@ -850,6 +848,53 @@ class SecurityEventResource extends Resource
             ->all();
 
         return array_merge($physical, $virtual);
+    }
+
+    private static function linkCatalogSection(string $kind): Section
+    {
+        return Section::make(EventLinkCatalog::kindLabel($kind))
+            ->collapsible()
+            ->visible(fn (SecurityEvent $record): bool => self::linkCatalogRows($record, $kind) !== [])
+            ->schema([
+                RepeatableEntry::make('_link_catalog_' . $kind)
+                    ->label('')
+                    ->state(fn (SecurityEvent $record): array => self::linkCatalogRows($record, $kind))
+                    ->schema([
+                        TextEntry::make('label')
+                            ->label('Label')
+                            ->wrap(),
+                        TextEntry::make('kind_label')
+                            ->label('Kind')
+                            ->badge()
+                            ->color('gray'),
+                        TextEntry::make('url')
+                            ->label('URL')
+                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                    ])
+                    ->columns(3),
+            ]);
+    }
+
+    /**
+     * @return list<array{label: string, kind: string, kind_label: string, url: string, external: bool}>
+     */
+    private static function linkCatalogRows(SecurityEvent $record, string $kind): array
+    {
+        return array_values(array_map(
+            static fn (array $link): array => [
+                'label' => $link['label'],
+                'kind' => $link['kind'],
+                'kind_label' => EventLinkCatalog::kindLabel($link['kind']),
+                'url' => $link['url'],
+                'external' => $link['external'],
+            ],
+            array_filter(
+                app(EventLinkCatalog::class)->build($record),
+                static fn (array $link): bool => $link['kind'] === $kind,
+            ),
+        ));
     }
 
     /**

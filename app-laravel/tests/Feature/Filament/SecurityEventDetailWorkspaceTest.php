@@ -5,7 +5,9 @@ use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\AuditHistoryRelationManager;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Models\Enums\EventType;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use Database\Seeders\RolePermissionSeeder;
@@ -15,7 +17,7 @@ beforeEach(function () {
     (new RolePermissionSeeder)->run();
 });
 
-it('renders the links section for an alert with a source URL', function () {
+it('renders the typed link catalog for an alert with all link kinds', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -23,16 +25,59 @@ it('renders the links section for an alert with a source URL', function () {
     ]);
     $user->syncRoles(['Plan']);
 
-    $event = SecurityEvent::factory()->create([
-        'url' => 'https://dev.azure.com/org/project/_alerts/7',
+    $system = SoftwareSystem::factory()->create([
+        'name' => 'Acme App',
+        'url' => 'https://dev.azure.com/org/project',
+    ]);
+
+    $container = SecurityContainer::factory()->forSystem($system)->create([
+        'name' => 'Acme Repo',
+        'url' => 'https://dev.azure.com/org/project/_git/acme-repo',
+    ]);
+
+    $event = SecurityEvent::factory()->forContainer($container)->create([
+        'title' => 'Alert with catalog links',
         'type' => EventType::Secret,
+        'url' => 'https://dev.azure.com/org/project/_alerts/7',
+        'version_control_url' => 'https://dev.azure.com/org/project/_git/acme-repo?path=/src/app.php&version=GBmain&line=42',
+        'metadata' => [
+            'ruleHelpUri' => 'https://docs.example.com/rule/1',
+            'cve' => 'CVE-2023-99999',
+            'detector' => 'Example detector',
+        ],
+    ]);
+
+    WorkItemLink::query()->create([
+        'event_id' => $event->id,
+        'tracker_id' => 'jira',
+        'work_item_id' => 'PROJ-42',
+        'work_item_title' => 'Fix the alert',
+        'work_item_state' => 'Open',
+        'work_item_url' => 'https://jira.example.com/browse/PROJ-42',
+        'created_at' => now(),
+        'synced_at' => now(),
     ]);
 
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('Links')
-        ->assertSee('https://dev.azure.com/org/project/_alerts/7');
+        ->assertSee('Source')
+        ->assertSee('Code')
+        ->assertSee('Remediation')
+        ->assertSee('Standards')
+        ->assertSee('Tracker')
+        ->assertSee('Source alert')
+        ->assertSee('System')
+        ->assertSee('Repository')
+        ->assertSee('Source file')
+        ->assertSee('Rule documentation')
+        ->assertSee('CVE: CVE-2023-99999')
+        ->assertSee('jira: Fix the alert')
+        ->assertSee('https://dev.azure.com/org/project/_alerts/7')
+        ->assertSee('https://dev.azure.com/org/project/_git/acme-repo?path=/src/app.php&version=GBmain&line=42')
+        ->assertSee('https://docs.example.com/rule/1')
+        ->assertSee('https://nvd.nist.gov/vuln/detail/CVE-2023-99999', false)
+        ->assertSee('https://jira.example.com/browse/PROJ-42');
 });
 
 it('renders the links section with CVE links from metadata', function () {
