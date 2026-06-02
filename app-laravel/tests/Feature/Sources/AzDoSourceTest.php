@@ -6,6 +6,8 @@ use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Sources\AzDo\AzDoClient;
 use App\Sources\AzDo\AzDoSource;
+use App\Sources\Context\SourceContextFacts;
+use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -59,7 +61,20 @@ it('fetches systems, containers, and events from fixtures', function () {
     expect($systems)->toHaveCount(2)
         ->and($containers)->toHaveCount(2)
         ->and($events)->toHaveCount(7)
-        ->and($events[0]->sourceSystemId)->toBe('project-001');
+        ->and($events[0]->sourceSystemId)->toBe('project-001')
+        ->and(SourceContextFacts::get($systems[0]->metadata ?? [], SourceContextFacts::AZDO_PROJECT_ID))->toBe('project-001')
+        ->and(SourceContextFacts::get($containers[0]->metadata ?? [], SourceContextFacts::AZDO_REPOSITORY_ID))->toBe('repo-001')
+        ->and(SourceContextFacts::get($containers[0]->metadata ?? [], SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('main');
+
+    $dependency = collect($events)->first(fn ($event) => $event->type === EventType::Dependency);
+    expect($dependency)->not->toBeNull()
+        ->and(SourceContextFacts::get($dependency->metadata ?? [], SourceContextFacts::PACKAGE_NAME))->toBe('lodash')
+        ->and(SourceContextFacts::get($dependency->metadata ?? [], SourceContextFacts::SECURITY_CVE))->toBe('CVE-2020-8203');
+
+    $codeAlert = collect($events)->first(fn ($event) => $event->type === EventType::Vulnerability);
+    expect($codeAlert)->not->toBeNull()
+        ->and(SourceContextFacts::get($codeAlert->metadata ?? [], SourceContextFacts::SOURCE_ALERT_WEB_URL))->toBeString()
+        ->and(SourceContextFacts::get($codeAlert->metadata ?? [], SourceContextFacts::CODE_COMMIT_SHA))->toBeString();
 });
 
 it('returns stable dependency fingerprint across re-fetches', function () {
@@ -188,9 +203,12 @@ it('enriches secret event with occurrences list', function () {
 
     $enriched = $source->enrichEvent($event);
 
-    expect($enriched)->not->toBeNull()
-        ->and($enriched->metadata['occurrences'])->toBeArray()
-        ->and($enriched->metadata['occurrences'])->toHaveCount(2);
+    if (! $enriched instanceof EventDto) {
+        throw new RuntimeException('Expected enriched AzDo secret event dto.');
+    }
+
+    expect($enriched->metadata['occurrences'] ?? null)->toBeArray()
+        ->and($enriched->metadata['occurrences'] ?? null)->toHaveCount(2);
 });
 
 it('pushes dismissed state with expected payload shape', function () {

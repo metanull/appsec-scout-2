@@ -98,6 +98,7 @@ final class AzDoSource implements Source
                 sourceSystemId: $system->sourceSystemId,
                 kind: $dto->kind,
                 url: $dto->url,
+                metadata: $dto->metadata,
             );
         }
     }
@@ -111,6 +112,7 @@ final class AzDoSource implements Source
 
         if ($system !== null) {
             $repos = $client->listRepositories($system->sourceSystemId);
+            $project = new AzDoProject(id: $system->sourceSystemId, name: $system->name);
 
             foreach ($repos as $repo) {
                 foreach ($alertTypes as $alertType) {
@@ -119,7 +121,7 @@ final class AzDoSource implements Source
                     foreach ($alerts as $alert) {
                         $alert = $this->fullAlert($client, $system->sourceSystemId, $repo->id, $alert);
 
-                        yield $this->buildEventDto($alert, $system->sourceSystemId, $repo->id);
+                        yield $this->buildEventDto($alert, $system->sourceSystemId, $repo->id, $project, $repo);
                     }
                 }
             }
@@ -137,7 +139,7 @@ final class AzDoSource implements Source
                     foreach ($alerts as $alert) {
                         $alert = $this->fullAlert($client, $project->id, $repo->id, $alert);
 
-                        yield $this->buildEventDto($alert, $project->id, $repo->id);
+                        yield $this->buildEventDto($alert, $project->id, $repo->id, $project, $repo);
                     }
                 }
             }
@@ -221,9 +223,14 @@ final class AzDoSource implements Source
         );
     }
 
-    private function buildEventDto(AzDoAlert $alert, string $projectId, string $repoId): EventDto
-    {
-        $dto = AzDoNormalizer::toEvent($alert, $repoId);
+    private function buildEventDto(
+        AzDoAlert $alert,
+        string $projectId,
+        string $repoId,
+        ?AzDoProject $project = null,
+        ?AzDoRepository $repo = null,
+    ): EventDto {
+        $dto = AzDoNormalizer::toEvent($alert, $repoId, $project, $repo);
 
         $meta = $dto->metadata ?? [];
         $meta['sourceProjectId'] = $projectId;

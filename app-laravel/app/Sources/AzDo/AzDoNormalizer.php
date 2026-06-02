@@ -6,6 +6,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\SecurityEvents\SourceLinkHelper;
+use App\Sources\Context\SourceContextFacts;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
@@ -16,30 +17,53 @@ final class AzDoNormalizer
 
     public static function toSystem(AzDoProject $project): SystemDto
     {
+        $metadata = [];
+
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_PROJECT_ID, $project->id);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_PROJECT_NAME, $project->name);
+        $metadata = SourceContextFacts::set($metadata, 'azdo.project.web_url', self::buildProjectWebUrl($project));
+
         return new SystemDto(
             sourceSystemId: $project->id,
             name: $project->name,
             description: $project->description,
-            url: $project->url,
+            url: self::buildProjectWebUrl($project),
+            metadata: $metadata,
         );
     }
 
     public static function toContainer(AzDoRepository $repo): ContainerDto
     {
+        $metadata = [];
+
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_REPOSITORY_ID, $repo->id);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_REPOSITORY_NAME, $repo->name);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_REPOSITORY_WEB_URL, $repo->webUrl);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL, $repo->remoteUrl);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::CODE_DEFAULT_BRANCH, self::normalizeBranch($repo->defaultBranch));
+        $metadata = SourceContextFacts::set($metadata, 'source.provider', 'azure-repos');
+
         return new ContainerDto(
             sourceContainerId: $repo->id,
             name: $repo->name,
             sourceSystemId: '',
             kind: 'repository',
             url: $repo->webUrl,
+            metadata: $metadata,
         );
     }
 
-    public static function toEvent(AzDoAlert $alert, string $repoId = ''): EventDto
-    {
+    public static function toEvent(
+        AzDoAlert $alert,
+        string $repoId = '',
+        ?AzDoProject $project = null,
+        ?AzDoRepository $repo = null,
+    ): EventDto {
         $type = self::mapType($alert);
         $rule = self::extractRule($alert);
         $location = self::extractLocation($alert);
+        $alertWebUrl = self::buildAlertWebUrl($alert, $project, $repo);
+        $metadata = self::buildMetadata($alert, $project, $repo, $location, $alertWebUrl);
 
         return new EventDto(
             sourceEventId: (string) $alert->alertId,
@@ -51,16 +75,16 @@ final class AzDoNormalizer
             description: self::buildDescription($alert, $rule),
             ruleId: $rule['opaqueId'] ?? $rule['id'] ?? null,
             fingerprint: self::buildFingerprint($alert, $repoId),
-            url: $alert->alertUri,
+            url: $alertWebUrl,
             remediation: $rule['helpMessage'] ?? null,
             filePath: $location['filePath'] ?? null,
             startLine: isset($location['region']['startLine']) ? (int) $location['region']['startLine'] : null,
             endLine: isset($location['region']['endLine']) ? (int) $location['region']['endLine'] : null,
             snippet: $location['region']['snippet']['text'] ?? null,
             commitSha: $location['versionControl']['commitHash'] ?? null,
-            branch: $location['versionControl']['branch'] ?? null,
+            branch: $location['versionControl']['branch'] ?? self::normalizeBranch($repo?->defaultBranch),
             versionControlUrl: $location['versionControl']['itemUrl'] ?? null,
-            metadata: self::buildMetadata($alert),
+            metadata: $metadata,
             firstSeenAt: $alert->firstSeenDate !== null ? new \DateTime($alert->firstSeenDate) : null,
             lastSeenAt: $alert->lastSeenDate !== null ? new \DateTime($alert->lastSeenDate) : null,
         );
@@ -187,11 +211,27 @@ final class AzDoNormalizer
     }
 
     /**
+     * @param  array<string, mixed>  $location
      * @return array<string, mixed>
      */
-    private static function buildMetadata(AzDoAlert $alert): array
-    {
+    private static function buildMetadata(
+        AzDoAlert $alert,
+        ?AzDoProject $project,
+        ?AzDoRepository $repo,
+        array $location,
+        ?string $alertWebUrl,
+    ): array {
         $meta = [];
+
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::SOURCE_ALERT_WEB_URL, $alertWebUrl);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::AZDO_PROJECT_ID, $project?->id);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::AZDO_PROJECT_NAME, $project?->name);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::AZDO_REPOSITORY_ID, $repo?->id);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::AZDO_REPOSITORY_NAME, $repo?->name);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::CODE_COMMIT_SHA, $location['versionControl']['commitHash'] ?? null);
+        $meta = SourceContextFacts::set($meta, SourceContextFacts::CODE_DEFAULT_BRANCH, self::normalizeBranch($location['versionControl']['branch'] ?? $repo?->defaultBranch));
+        $meta = SourceContextFacts::set($meta, 'code.file_path', $location['filePath'] ?? null);
+        $meta = SourceContextFacts::set($meta, 'azdo.alert.type', $alert->alertType);
 
         if ($alert->truncatedSecret !== null) {
             $meta['truncatedSecret'] = $alert->truncatedSecret;
@@ -212,6 +252,11 @@ final class AzDoNormalizer
                 if (is_string($helpUri) && SourceLinkHelper::isSafeUrl($helpUri)) {
                     $meta['ruleHelpUri'] = $helpUri;
                 }
+
+                $cweId = self::extractCweFromRule($rule);
+                if ($cweId !== null) {
+                    $meta = SourceContextFacts::set($meta, SourceContextFacts::SECURITY_CWE, $cweId);
+                }
             }
         }
 
@@ -222,10 +267,15 @@ final class AzDoNormalizer
                     'version' => $alert->additionalData['packageVersion'] ?? null,
                     'ecosystem' => $alert->additionalData['ecosystem'] ?? null,
                 ];
+
+                $meta = SourceContextFacts::set($meta, SourceContextFacts::PACKAGE_NAME, $alert->additionalData['packageName']);
+                $meta = SourceContextFacts::set($meta, SourceContextFacts::PACKAGE_VERSION, $alert->additionalData['packageVersion'] ?? null);
+                $meta = SourceContextFacts::set($meta, SourceContextFacts::PACKAGE_ECOSYSTEM, $alert->additionalData['ecosystem'] ?? null);
             }
 
             if (isset($alert->additionalData['cveId'])) {
                 $meta['cve'] = $alert->additionalData['cveId'];
+                $meta = SourceContextFacts::set($meta, SourceContextFacts::SECURITY_CVE, $alert->additionalData['cveId']);
             }
         }
 
@@ -236,8 +286,8 @@ final class AzDoNormalizer
         // Build links array for EventLinkCatalog
         $links = [];
 
-        if ($alert->alertUri !== null && SourceLinkHelper::isSafeUrl($alert->alertUri)) {
-            $links[] = ['label' => 'Source alert', 'url' => $alert->alertUri];
+        if (is_string($alertWebUrl) && SourceLinkHelper::isSafeUrl($alertWebUrl)) {
+            $links[] = ['label' => 'Source alert', 'url' => $alertWebUrl];
         }
 
         // Item URL from physical locations (version control link to source file)
@@ -268,6 +318,81 @@ final class AzDoNormalizer
         }
 
         return $meta ?: [];
+    }
+
+    private static function buildAlertWebUrl(
+        AzDoAlert $alert,
+        ?AzDoProject $project,
+        ?AzDoRepository $repo,
+    ): ?string {
+        if ($alert->alertUri !== null && SourceLinkHelper::isSafeUrl($alert->alertUri)) {
+            return $alert->alertUri;
+        }
+
+        if ($repo?->webUrl !== null && SourceLinkHelper::isSafeUrl($repo->webUrl)) {
+            return rtrim($repo->webUrl, '/') . '/alerts/' . $alert->alertId;
+        }
+
+        if ($repo?->apiUrl === null || $project?->name === null) {
+            return null;
+        }
+
+        $parts = explode('/_apis/', $repo->apiUrl, 2);
+        $orgUrl = $parts[0];
+
+        if (! SourceLinkHelper::isSafeUrl($orgUrl) || $repo->name === '') {
+            return null;
+        }
+
+        return rtrim($orgUrl, '/')
+            . '/'
+            . rawurlencode($project->name)
+            . '/_git/'
+            . rawurlencode($repo->name)
+            . '/alerts/'
+            . $alert->alertId;
+    }
+
+    private static function buildProjectWebUrl(AzDoProject $project): ?string
+    {
+        if ($project->url === null || $project->url === '') {
+            return null;
+        }
+
+        return str_replace('/_apis/projects/', '/', $project->url);
+    }
+
+    private static function normalizeBranch(?string $branch): ?string
+    {
+        if (! is_string($branch) || $branch === '') {
+            return null;
+        }
+
+        return str_starts_with($branch, 'refs/heads/')
+            ? substr($branch, strlen('refs/heads/'))
+            : $branch;
+    }
+
+    /** @param array<string, mixed> $rule */
+    private static function extractCweFromRule(array $rule): ?string
+    {
+        $candidates = [
+            $rule['id'] ?? null,
+            $rule['opaqueId'] ?? null,
+            $rule['friendlyName'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate)) {
+                continue;
+            }
+
+            if (preg_match('/CWE-?(\d+)/i', $candidate, $matches) === 1) {
+                return 'CWE-' . $matches[1];
+            }
+        }
+
+        return null;
     }
 
     /**
