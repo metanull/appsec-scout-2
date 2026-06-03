@@ -12,44 +12,17 @@ use Illuminate\Validation\ValidationException;
 
 final class InferenceSuggestionReviewService
 {
-    public function __construct(private readonly Recorder $recorder) {}
+    public function __construct(
+        private readonly Recorder $recorder,
+        private readonly InferenceSuggestionApplier $applier,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $acceptedInput
      */
     public function accept(InferenceSuggestion $suggestion, User $reviewer, array $acceptedInput = []): InferenceSuggestion
     {
-        $this->assertReviewer($reviewer);
-        $this->assertPending($suggestion);
-
-        return DB::transaction(function () use ($suggestion, $reviewer, $acceptedInput): InferenceSuggestion {
-            $evidenceRaw = $suggestion->getAttribute('evidence');
-            $evidence = is_array($evidenceRaw) ? $evidenceRaw : [];
-
-            if ($acceptedInput !== []) {
-                $evidence['accepted_input'] = $acceptedInput;
-            }
-
-            $suggestion->forceFill([
-                'status' => InferenceSuggestionStatus::Accepted,
-                'reviewed_by_user_id' => $reviewer->id,
-                'reviewed_at' => now(),
-                'review_note' => null,
-                'evidence' => $evidence,
-            ])->save();
-
-            $this->recorder->recordAdminAction('inference_suggestion_accepted', [
-                'inference_suggestion_id' => $suggestion->id,
-                'suggestion_type' => $suggestion->suggestion_type,
-                'proposed_action' => $suggestion->proposed_action,
-                'subject_type' => $suggestion->subject_type,
-                'subject_id' => $suggestion->subject_id,
-                'target_type' => $suggestion->target_type,
-                'target_id' => $suggestion->target_id,
-            ]);
-
-            return $suggestion->refresh();
-        });
+        return $this->applier->accept($suggestion, $reviewer, $acceptedInput);
     }
 
     public function reject(InferenceSuggestion $suggestion, User $reviewer, string $reviewNote): InferenceSuggestion
