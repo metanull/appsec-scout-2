@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
@@ -49,6 +50,14 @@ class SecurityContainer extends Model
     public function events(): HasMany
     {
         return $this->hasMany(SecurityEvent::class, 'container_id');
+    }
+
+    /** @return BelongsToMany<SecurityContainerLink, $this> */
+    public function links(): BelongsToMany
+    {
+        return $this->belongsToMany(SecurityContainerLink::class, 'security_container_link_members', 'security_container_id', 'link_id')
+            ->withPivot('sort_order')
+            ->orderByPivot('sort_order');
     }
 
     /** @return MorphMany<TrackerProjectLink, $this> */

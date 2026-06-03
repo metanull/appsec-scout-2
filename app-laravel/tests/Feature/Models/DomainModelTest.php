@@ -5,6 +5,7 @@ use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\EventComment;
 use App\Models\SecurityContainer;
+use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
@@ -206,6 +207,52 @@ it('enforces unique member per link (primary key)', function () {
 
     expect(fn () => $link->members()->attach($system->id, ['sort_order' => 2]))
         ->toThrow(QueryException::class);
+});
+
+// --- SecurityContainerLink ---
+
+it('creates a container link and attaches members in sort order', function () {
+    $link = SecurityContainerLink::factory()->create(['name' => 'Critical Repositories']);
+    $first = SecurityContainer::factory()->create();
+    $second = SecurityContainer::factory()->create();
+
+    $link->members()->attach([
+        $second->id => ['sort_order' => 2],
+        $first->id => ['sort_order' => 1],
+    ]);
+
+    expect($link->members()->count())->toBe(2)
+        ->and($link->members()->pluck('security_containers.id')->all())->toBe([$first->id, $second->id]);
+});
+
+it('enforces unique container member per link (primary key)', function () {
+    $link = SecurityContainerLink::factory()->create();
+    $container = SecurityContainer::factory()->create();
+
+    $link->members()->attach($container->id, ['sort_order' => 1]);
+
+    expect(fn () => $link->members()->attach($container->id, ['sort_order' => 2]))
+        ->toThrow(QueryException::class);
+});
+
+it('cascades link memberships when deleting links or containers', function () {
+    $link = SecurityContainerLink::factory()->create();
+    $container = SecurityContainer::factory()->create();
+
+    $link->members()->attach($container->id, ['sort_order' => 1]);
+
+    $container->delete();
+
+    expect($link->members()->count())->toBe(0)
+        ->and(SecurityContainerLink::query()->whereKey($link->id)->exists())->toBeTrue();
+
+    $replacement = SecurityContainer::factory()->create();
+    $link->members()->attach($replacement->id, ['sort_order' => 1]);
+
+    $link->delete();
+
+    expect(SecurityContainerLink::query()->whereKey($link->id)->exists())->toBeFalse()
+        ->and(SecurityContainer::query()->whereKey($replacement->id)->exists())->toBeTrue();
 });
 
 // --- SecurityEvent::scopeForVirtualSystem ---
