@@ -3,6 +3,9 @@
 use App\Filament\Resources\SecurityContainerLinkResource;
 use App\Filament\Resources\SecurityContainerLinkResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SecurityContainerLinkResource\RelationManagers\MembersRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Models\SecurityContainer;
 use App\Models\SecurityContainerLink;
 use App\Models\User;
@@ -21,7 +24,13 @@ it('registers virtual container pages and relation managers', function () {
         ->toHaveKeys(['index', 'create', 'view', 'edit']);
 
     expect(SecurityContainerLinkResource::getRelations())
-        ->toContain(MembersRelationManager::class, EventsRelationManager::class);
+        ->toContain(
+            MembersRelationManager::class,
+            EventsRelationManager::class,
+            TrackerProjectLinksRelationManager::class,
+            RepositoryMappingsRelationManager::class,
+            CuratedLinksRelationManager::class,
+        );
 });
 
 it('allows reader users to browse but not mutate virtual containers', function () {

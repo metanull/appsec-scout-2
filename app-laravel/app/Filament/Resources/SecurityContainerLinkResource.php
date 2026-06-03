@@ -8,7 +8,9 @@ use App\Filament\Resources\SecurityContainerLinkResource\Pages\ListSecurityConta
 use App\Filament\Resources\SecurityContainerLinkResource\Pages\ViewSecurityContainerLink;
 use App\Filament\Resources\SecurityContainerLinkResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SecurityContainerLinkResource\RelationManagers\MembersRelationManager;
-use App\Models\Enums\EventState;
+use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Models\SecurityContainerLink;
 use App\Models\User;
 use Filament\Actions\EditAction;
@@ -87,7 +89,7 @@ class SecurityContainerLinkResource extends Resource
                         ->state(fn (SecurityContainerLink $record): int => $record->members()->count()),
                     TextEntry::make('open_alerts_count')
                         ->label('Open alerts')
-                        ->state(fn (SecurityContainerLink $record): int => $record->events()->where('state', EventState::Open->value)->count()),
+                        ->state(fn (SecurityContainerLink $record): int => $record->openAlertsCount()),
                     TextEntry::make('updated_at')
                         ->label('Last updated')
                         ->since()
@@ -102,14 +104,14 @@ class SecurityContainerLinkResource extends Resource
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->withCount('members')
-                ->withCount([
-                    'events as open_alerts_count' => fn (Builder $eventQuery) => $eventQuery->whereRaw('state = ?', [EventState::Open->value]),
-                ]))
+            )
             ->columns([
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('description')->limit(80)->wrap()->placeholder('-'),
                 TextColumn::make('members_count')->label('Members')->sortable(),
-                TextColumn::make('open_alerts_count')->label('Open alerts')->sortable(),
+                TextColumn::make('open_alerts_count')
+                    ->label('Open alerts')
+                    ->state(fn (SecurityContainerLink $record): int => $record->openAlertsCount()),
                 TextColumn::make('updated_at')->label('Updated')->since(),
             ])
             ->actions([
@@ -125,6 +127,9 @@ class SecurityContainerLinkResource extends Resource
         return [
             MembersRelationManager::class,
             EventsRelationManager::class,
+            TrackerProjectLinksRelationManager::class,
+            RepositoryMappingsRelationManager::class,
+            CuratedLinksRelationManager::class,
         ];
     }
 

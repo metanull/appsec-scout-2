@@ -5,11 +5,13 @@ namespace App\Filament\Resources\SecurityContainerLinkResource\RelationManagers;
 use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
+use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
@@ -24,6 +26,12 @@ class EventsRelationManager extends RelationManager
         $user = Auth::user();
 
         return $user instanceof User && $user->can('alerts.view');
+    }
+
+    /** @return Builder<SecurityEvent> */
+    public function getRelationship(): Builder
+    {
+        return $this->ownerLink()->eventsQuery();
     }
 
     public function table(Table $table): Table
@@ -55,5 +63,16 @@ class EventsRelationManager extends RelationManager
             ])
             ->recordUrl(fn (SecurityEvent $record): string => SecurityEventResource::getUrl('view', ['record' => $record]))
             ->paginated([10, 25, 50]);
+    }
+
+    private function ownerLink(): SecurityContainerLink
+    {
+        $ownerRecord = $this->getOwnerRecord();
+
+        if (! $ownerRecord instanceof SecurityContainerLink) {
+            abort(500);
+        }
+
+        return $ownerRecord;
     }
 }

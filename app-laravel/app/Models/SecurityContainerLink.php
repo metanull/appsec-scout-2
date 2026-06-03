@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Audit\Recorder;
 use Database\Factories\SecurityContainerLinkFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable(['name', 'description'])]
 class SecurityContainerLink extends Model
@@ -17,6 +19,12 @@ class SecurityContainerLink extends Model
 
     protected static function booted(): void
     {
+        static::deleting(function (self $link): void {
+            $link->trackerProjectLinks()->delete();
+            $link->repositoryMappings()->delete();
+            $link->curatedLinks()->delete();
+        });
+
         static::created(function (self $link): void {
             app(Recorder::class)->recordAdminAction('security_container_link_created', [
                 'security_container_link_id' => $link->id,
@@ -51,10 +59,22 @@ class SecurityContainerLink extends Model
             ->orderByPivot('sort_order');
     }
 
-    /** @return BelongsToMany<SecurityEvent, $this> */
-    public function events(): BelongsToMany
+    /** @return MorphMany<TrackerProjectLink, $this> */
+    public function trackerProjectLinks(): MorphMany
     {
-        return $this->belongsToMany(SecurityEvent::class, 'security_container_link_members', 'link_id', 'security_container_id', 'id', 'container_id');
+        return $this->morphMany(TrackerProjectLink::class, 'owner');
+    }
+
+    /** @return MorphMany<RepositoryMapping, $this> */
+    public function repositoryMappings(): MorphMany
+    {
+        return $this->morphMany(RepositoryMapping::class, 'owner');
+    }
+
+    /** @return MorphMany<CuratedLink, $this> */
+    public function curatedLinks(): MorphMany
+    {
+        return $this->morphMany(CuratedLink::class, 'owner');
     }
 
     public function addMember(SecurityContainer $container, int $sortOrder): void
@@ -87,5 +107,22 @@ class SecurityContainerLink extends Model
             'security_container_id' => $container->id,
             'sort_order' => $sortOrder,
         ]);
+    }
+
+    /** @return Builder<SecurityEvent> */
+    public function eventsQuery(): Builder
+    {
+        $memberIds = $this->members()->pluck('security_containers.id')->map(fn (mixed $id): int => (int) $id)->all();
+
+        if ($memberIds === []) {
+            return SecurityEvent::query()->whereRaw('1 = 0');
+        }
+
+        return SecurityEvent::query()->whereIn('container_id', $memberIds);
+    }
+
+    public function openAlertsCount(): int
+    {
+        return $this->eventsQuery()->where('state', 'open')->count();
     }
 }

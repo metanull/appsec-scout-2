@@ -4,11 +4,13 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\EventComment;
+use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
 use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
+use App\Models\User;
 use App\Models\WorkItemLink;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -253,6 +255,43 @@ it('cascades link memberships when deleting links or containers', function () {
 
     expect(SecurityContainerLink::query()->whereKey($link->id)->exists())->toBeFalse()
         ->and(SecurityContainer::query()->whereKey($replacement->id)->exists())->toBeTrue();
+});
+
+it('stores tracker curated and repository mappings on virtual container links', function () {
+    $link = SecurityContainerLink::factory()->create();
+    $user = User::factory()->create();
+    $provider = RepositoryProvider::factory()->github()->create();
+
+    $trackerLink = $link->trackerProjectLinks()->create([
+        'tracker_id' => 'jira',
+        'project_key' => 'VIRT',
+        'project_name' => 'Virtual Container Project',
+        'is_default' => true,
+        'created_by_user_id' => $user->id,
+    ]);
+
+    $repositoryMapping = $link->repositoryMappings()->create([
+        'repository_provider_id' => $provider->id,
+        'repository_name' => 'virtual-container',
+        'repository_url' => 'https://github.com/acme/virtual-container',
+        'default_branch' => 'main',
+        'path_prefix' => 'services/virtual',
+        'created_by_user_id' => $user->id,
+    ]);
+
+    $curatedLink = $link->curatedLinks()->create([
+        'label' => 'Virtual container docs',
+        'url' => 'https://docs.example.com/virtual-container',
+        'kind' => 'source',
+        'created_by_user_id' => $user->id,
+    ]);
+
+    expect($link->trackerProjectLinks()->count())->toBe(1)
+        ->and($link->repositoryMappings()->count())->toBe(1)
+        ->and($link->curatedLinks()->count())->toBe(1)
+        ->and($trackerLink->owner_id)->toBe($link->id)
+        ->and($repositoryMapping->owner_id)->toBe($link->id)
+        ->and($curatedLink->owner_id)->toBe($link->id);
 });
 
 // --- SecurityEvent::scopeForVirtualSystem ---
