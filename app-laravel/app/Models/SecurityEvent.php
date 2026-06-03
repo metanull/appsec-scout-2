@@ -114,4 +114,18 @@ class SecurityEvent extends Model
 
         $query->whereIn('software_system_id', $systemIds);
     }
+
+    /**
+     * Scope to events belonging to member containers of a virtual container link.
+     *
+     * @param  Builder<SecurityEvent>  $query
+     */
+    public function scopeForVirtualContainer(Builder $query, int $linkId): void
+    {
+        $containerIds = SecurityContainerLinkMember::query()
+            ->where('link_id', $linkId)
+            ->pluck('security_container_id');
+
+        $query->whereIn('container_id', $containerIds);
+    }
 }

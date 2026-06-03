@@ -272,3 +272,21 @@ it('scopes events for virtual system through link members', function () {
 
     expect(SecurityEvent::forVirtualSystem($link->id)->count())->toBe(5);
 });
+
+it('scopes events for virtual container through link members only', function () {
+    $system = SoftwareSystem::factory()->create();
+    $containerA = SecurityContainer::factory()->forSystem($system)->create();
+    $containerB = SecurityContainer::factory()->forSystem($system)->create();
+    $containerC = SecurityContainer::factory()->forSystem($system)->create();
+
+    SecurityEvent::factory()->forContainer($containerA)->count(2)->create();
+    SecurityEvent::factory()->forContainer($containerB)->count(3)->create();
+    SecurityEvent::factory()->forContainer($containerC)->count(1)->create();
+    SecurityEvent::factory()->forSystem($system)->create(['container_id' => null]);
+
+    $link = SecurityContainerLink::factory()->create();
+    $link->members()->attach($containerA->id, ['sort_order' => 1]);
+    $link->members()->attach($containerB->id, ['sort_order' => 2]);
+
+    expect(SecurityEvent::forVirtualContainer($link->id)->count())->toBe(5);
+});

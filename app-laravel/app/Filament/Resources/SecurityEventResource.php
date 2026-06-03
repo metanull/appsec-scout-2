@@ -14,6 +14,8 @@ use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\Models\SecurityContainer;
+use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
@@ -442,11 +444,12 @@ class SecurityEventResource extends Resource
                     ->searchable()
                     ->options(fn (): array => self::systemScopeOptions())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applySystemScopes($query, self::stringArray($data['values'] ?? []))),
-                SelectFilter::make('container_id')
+                SelectFilter::make('container_scope')
                     ->label('Container')
-                    ->relationship('container', 'name')
+                    ->multiple()
                     ->searchable()
-                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyContainer($query, self::nullableInt($data['value'] ?? null))),
+                    ->options(fn (): array => self::containerScopeOptions())
+                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyContainerScopes($query, self::stringArray($data['values'] ?? []))),
                 SelectFilter::make('type')
                     ->multiple()
                     ->options(collect(EventType::cases())->mapWithKeys(fn (EventType $type) => [$type->value => str($type->value)->replace('_', ' ')->title()->toString()])->all())
@@ -804,15 +807,6 @@ class SecurityEventResource extends Resource
         return is_string($value) ? $value : null;
     }
 
-    private static function nullableInt(mixed $value): ?int
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return (int) $value;
-    }
-
     private static function nullableString(mixed $value): ?string
     {
         if (! is_string($value) || trim($value) === '') {
@@ -852,6 +846,24 @@ class SecurityEventResource extends Resource
             ->orderBy('name')
             ->get(['id', 'name'])
             ->mapWithKeys(fn (SoftwareSystemLink $link): array => ['virtual:' . $link->id => '[Virtual] ' . $link->name])
+            ->all();
+
+        return array_merge($physical, $virtual);
+    }
+
+    /** @return array<string, string> */
+    private static function containerScopeOptions(): array
+    {
+        $physical = SecurityContainer::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SecurityContainer $container): array => ['physical:' . $container->id => '[Container] ' . $container->name])
+            ->all();
+
+        $virtual = SecurityContainerLink::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SecurityContainerLink $link): array => ['virtual:' . $link->id => '[Virtual] ' . $link->name])
             ->all();
 
         return array_merge($physical, $virtual);
