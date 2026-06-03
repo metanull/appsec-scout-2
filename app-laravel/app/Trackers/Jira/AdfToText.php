@@ -2,6 +2,8 @@
 
 namespace App\Trackers\Jira;
 
+use App\Trackers\Reconciliation\UrlExtractor;
+
 final class AdfToText
 {
     /**
@@ -25,9 +27,7 @@ final class AdfToText
      */
     public static function extractUrls(array $adf): array
     {
-        $text = self::toText($adf);
-
-        return self::urlsFromText($text);
+        return UrlExtractor::extractFromAdf($adf);
     }
 
     /**
@@ -37,11 +37,7 @@ final class AdfToText
      */
     public static function urlsFromText(string $text): array
     {
-        preg_match_all('#https?://\S+#', $text, $matches);
-
-        $urls = array_map(fn (string $url): string => rtrim($url, '.,;:\'")'), $matches[0]);
-
-        return array_values(array_unique(array_filter($urls)));
+        return UrlExtractor::extractFromText($text);
     }
 
     /**
