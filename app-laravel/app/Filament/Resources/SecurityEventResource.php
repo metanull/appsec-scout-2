@@ -75,8 +75,10 @@ class SecurityEventResource extends Resource
         return parent::getEloquentQuery()->with([
             'curatedLinks',
             'softwareSystem',
+            'softwareSystem.repositoryMappings.repositoryProvider',
             'softwareSystem.curatedLinks',
             'container',
+            'container.repositoryMappings.repositoryProvider',
             'container.curatedLinks',
             'workItemLinks',
         ]);

@@ -386,9 +386,13 @@ final class DescriptionBuilder
             return $this->catalogCache[$key];
         }
 
-        $event->loadMissing(['softwareSystem', 'container', 'workItemLinks']);
+        $event->loadMissing([
+            'softwareSystem.repositoryMappings.repositoryProvider',
+            'container.repositoryMappings.repositoryProvider',
+            'workItemLinks',
+        ]);
 
-        $catalog = ($this->eventLinkCatalog ?? new EventLinkCatalog)->build($event);
+        $catalog = ($this->eventLinkCatalog ?? app(EventLinkCatalog::class))->build($event);
         $this->catalogCache[$key] = $catalog;
 
         return $catalog;
