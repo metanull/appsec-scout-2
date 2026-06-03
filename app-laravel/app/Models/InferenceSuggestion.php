@@ -30,6 +30,22 @@ class InferenceSuggestion extends Model
     /** @use HasFactory<InferenceSuggestionFactory> */
     use HasFactory;
 
+    public const TYPE_VIRTUAL_SYSTEM_MEMBERSHIP = 'virtual_system_membership_candidate';
+
+    public const TYPE_VIRTUAL_CONTAINER_MEMBERSHIP = 'virtual_container_membership_candidate';
+
+    public const TYPE_REPOSITORY_MAPPING = 'repository_mapping_candidate';
+
+    public const TYPE_TRACKER_PROJECT_MAPPING = 'tracker_project_mapping_candidate';
+
+    public const ACTION_ADD_SYSTEM_TO_VIRTUAL_SYSTEM = 'add_system_to_virtual_system';
+
+    public const ACTION_ADD_CONTAINER_TO_VIRTUAL_CONTAINER = 'add_container_to_virtual_container';
+
+    public const ACTION_CREATE_REPOSITORY_MAPPING = 'create_repository_mapping';
+
+    public const ACTION_CREATE_TRACKER_PROJECT_LINK = 'create_tracker_project_link';
+
     /** @return array<string, string> */
     protected function casts(): array
     {
