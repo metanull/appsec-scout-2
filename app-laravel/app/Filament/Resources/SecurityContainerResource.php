@@ -8,6 +8,7 @@ use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRela
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
+use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\SecurityContainer;
 use App\Models\User;
 use App\SecurityEvents\EntityNavigationCatalog;
@@ -23,6 +24,8 @@ use Illuminate\Support\Facades\Auth;
 
 class SecurityContainerResource extends Resource
 {
+    use ContextQualityIndicatorSupport;
+
     protected static ?string $model = SecurityContainer::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-archive-box';
@@ -88,6 +91,19 @@ class SecurityContainerResource extends Resource
                         ->placeholder('-'),
                 ])
                 ->columns(4),
+
+            Section::make('Context quality')
+                ->schema([
+                    TextEntry::make('_context_quality')
+                        ->label('Quality indicators')
+                        ->badge()
+                        ->color(fn (SecurityContainer $record): string => self::qualityColor($record))
+                        ->state(fn (SecurityContainer $record): string => self::qualitySummary($record))
+                        ->url(fn (SecurityContainer $record): ?string => self::qualityUrl($record))
+                        ->openUrlInNewTab()
+                        ->wrap()
+                        ->placeholder('-'),
+                ]),
 
             Section::make('Navigation')
                 ->visible(fn (SecurityContainer $record): bool => self::navigationRows($record) !== [])

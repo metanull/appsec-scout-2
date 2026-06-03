@@ -11,6 +11,7 @@ use App\Filament\Resources\SecurityContainerLinkResource\RelationManagers\Member
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
+use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\SecurityContainerLink;
 use App\Models\User;
 use Filament\Actions\EditAction;
@@ -28,6 +29,8 @@ use Illuminate\Support\Facades\Auth;
 
 class SecurityContainerLinkResource extends Resource
 {
+    use ContextQualityIndicatorSupport;
+
     protected static ?string $model = SecurityContainerLink::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-squares-2x2';
@@ -96,6 +99,19 @@ class SecurityContainerLinkResource extends Resource
                         ->placeholder('-'),
                 ])
                 ->columns(3),
+
+            Section::make('Context quality')
+                ->schema([
+                    TextEntry::make('_context_quality')
+                        ->label('Quality indicators')
+                        ->badge()
+                        ->color(fn (SecurityContainerLink $record): string => self::qualityColor($record))
+                        ->state(fn (SecurityContainerLink $record): string => self::qualitySummary($record))
+                        ->url(fn (SecurityContainerLink $record): ?string => self::qualityUrl($record))
+                        ->openUrlInNewTab()
+                        ->wrap()
+                        ->placeholder('-'),
+                ]),
         ]);
     }
 

@@ -10,6 +10,7 @@ use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
+use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\EntityNavigationCatalog;
@@ -25,6 +26,8 @@ use Illuminate\Support\Facades\Auth;
 
 class SoftwareSystemResource extends Resource
 {
+    use ContextQualityIndicatorSupport;
+
     protected static ?string $model = SoftwareSystem::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-group';
@@ -91,6 +94,19 @@ class SoftwareSystemResource extends Resource
                         ->placeholder('-'),
                 ])
                 ->columns(4),
+
+            Section::make('Context quality')
+                ->schema([
+                    TextEntry::make('_context_quality')
+                        ->label('Quality indicators')
+                        ->badge()
+                        ->color(fn (SoftwareSystem $record): string => self::qualityColor($record))
+                        ->state(fn (SoftwareSystem $record): string => self::qualitySummary($record))
+                        ->url(fn (SoftwareSystem $record): ?string => self::qualityUrl($record))
+                        ->openUrlInNewTab()
+                        ->wrap()
+                        ->placeholder('-'),
+                ]),
 
             Section::make('Navigation')
                 ->visible(fn (SoftwareSystem $record): bool => self::navigationRows($record) !== [])

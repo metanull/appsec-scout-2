@@ -7,7 +7,9 @@ use App\Filament\Resources\SoftwareSystemLinkResource\Pages\EditSoftwareSystemLi
 use App\Filament\Resources\SoftwareSystemLinkResource\Pages\ListSoftwareSystemLinks;
 use App\Filament\Resources\SoftwareSystemLinkResource\Pages\ViewSoftwareSystemLink;
 use App\Filament\Resources\SoftwareSystemLinkResource\RelationManagers\MembersRelationManager;
+use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\SoftwareSystemLink;
+use App\Models\User;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -22,6 +24,8 @@ use Illuminate\Support\Facades\Auth;
 
 class SoftwareSystemLinkResource extends Resource
 {
+    use ContextQualityIndicatorSupport;
+
     protected static ?string $model = SoftwareSystemLink::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-link';
@@ -34,7 +38,9 @@ class SoftwareSystemLinkResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->can('admin.integrations') ?? false;
+        $user = Auth::user();
+
+        return $user instanceof User && $user->can('admin.integrations');
     }
 
     public static function form(Schema $schema): Schema
@@ -75,6 +81,19 @@ class SoftwareSystemLinkResource extends Resource
                         ->placeholder('-'),
                 ])
                 ->columns(3),
+
+            Section::make('Context quality')
+                ->schema([
+                    TextEntry::make('_context_quality')
+                        ->label('Quality indicators')
+                        ->badge()
+                        ->color(fn (SoftwareSystemLink $record): string => self::qualityColor($record))
+                        ->state(fn (SoftwareSystemLink $record): string => self::qualitySummary($record))
+                        ->url(fn (SoftwareSystemLink $record): ?string => self::qualityUrl($record))
+                        ->openUrlInNewTab()
+                        ->wrap()
+                        ->placeholder('-'),
+                ]),
         ]);
     }
 

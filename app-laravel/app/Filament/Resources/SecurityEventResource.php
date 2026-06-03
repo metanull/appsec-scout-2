@@ -11,6 +11,7 @@ use App\Filament\Resources\SecurityEventResource\RelationManagers\CommentsRelati
 use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Filament\Resources\SecurityEventResource\Support\SecurityEventTableQuery;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -52,6 +53,8 @@ use Illuminate\Support\Str;
 
 class SecurityEventResource extends Resource
 {
+    use ContextQualityIndicatorSupport;
+
     protected static ?string $model = SecurityEvent::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-exclamation';
@@ -146,6 +149,19 @@ class SecurityEventResource extends Resource
                             ->placeholder('-')
                             ->columnSpanFull(),
                     ]),
+                ]),
+
+            Section::make('Context quality')
+                ->schema([
+                    TextEntry::make('_context_quality')
+                        ->label('Quality indicators')
+                        ->badge()
+                        ->color(fn (SecurityEvent $record): string => self::qualityColor($record))
+                        ->state(fn (SecurityEvent $record): string => self::qualitySummary($record))
+                        ->url(fn (SecurityEvent $record): ?string => self::qualityUrl($record))
+                        ->openUrlInNewTab()
+                        ->wrap()
+                        ->placeholder('-'),
                 ]),
 
             Section::make('Pending Sync')
