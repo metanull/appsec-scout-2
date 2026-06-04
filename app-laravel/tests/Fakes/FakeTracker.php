@@ -21,6 +21,8 @@ final class FakeTracker implements Tracker
 
     public int $searchCalls = 0;
 
+    public int $reconciliationCalls = 0;
+
     /** @var list<ProjectDto> */
     private array $projects = [];
 
@@ -32,6 +34,12 @@ final class FakeTracker implements Tracker
 
     /** @var array<string, WorkItemDto> */
     private array $workItems = [];
+
+    /** @var array<string, list<ReconciliationCandidateDto>> */
+    private array $reconciliationCandidatesByProject = [];
+
+    /** @var array<string, true> */
+    private array $reconciliationFailuresByProject = [];
 
     private bool $connectionOk = true;
 
@@ -158,7 +166,13 @@ final class FakeTracker implements Tracker
     /** @return iterable<ReconciliationCandidateDto> */
     public function reconciliationCandidates(string $projectKey): iterable
     {
-        return [];
+        $this->reconciliationCalls++;
+
+        if (isset($this->reconciliationFailuresByProject[$projectKey])) {
+            throw new \RuntimeException("Reconciliation failed for project {$projectKey}");
+        }
+
+        return $this->reconciliationCandidatesByProject[$projectKey] ?? [];
     }
 
     public function withProjects(ProjectDto ...$projects): self
@@ -192,6 +206,20 @@ final class FakeTracker implements Tracker
     public function withExistingWorkItem(WorkItemDto $workItem): self
     {
         $this->workItems[$workItem->id] = $workItem;
+
+        return $this;
+    }
+
+    public function withReconciliationCandidates(string $projectKey, ReconciliationCandidateDto ...$candidates): self
+    {
+        $this->reconciliationCandidatesByProject[$projectKey] = $candidates;
+
+        return $this;
+    }
+
+    public function withReconciliationFailure(string $projectKey): self
+    {
+        $this->reconciliationFailuresByProject[$projectKey] = true;
 
         return $this;
     }

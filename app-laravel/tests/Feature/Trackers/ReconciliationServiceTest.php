@@ -1,10 +1,11 @@
 <?php
 
-use App\Audit\AuditLog;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
+use App\Models\TrackerProjectLink;
 use App\Models\User;
 use App\Models\WorkItemLink;
-use App\Trackers\Dto\WorkItemDto;
+use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Reconciliation\ReconciliationService;
 use Database\Seeders\RolePermissionSeeder;
 use Tests\Fakes\FakeTracker;
@@ -13,151 +14,165 @@ beforeEach(function () {
     (new RolePermissionSeeder)->run();
 });
 
-it('returns empty results when event has no urls', function () {
-    bindFakeWorkItemTracker(new FakeTracker);
-
-    $event = SecurityEvent::factory()->secret()->create([
-        'url' => null,
-        'version_control_url' => null,
-        'metadata' => null,
-    ]);
-
-    $operator = reconciliationOperator();
-
-    $results = app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
-
-    expect($results)->toBe([]);
-});
-
-it('returns already-linked result when event url matches existing work item url', function () {
-    $tracker = new FakeTracker;
-    $workItem = new WorkItemDto(
-        id: 'APP#1',
-        projectKey: 'APP',
-        title: 'Existing WI',
+it('creates link for matching reconciliation candidate in scoped project', function () {
+    $tracker = (new FakeTracker)->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: 'APP#101',
+        workItemUrl: 'https://tracker.test/APP%23101',
+        title: 'Security issue',
         state: 'Open',
-        url: 'https://tracker.test/APP%231',
-        description: null,
-    );
-    $tracker->withExistingWorkItem($workItem);
+        labels: ['security'],
+        extractedUrls: ['https://tracker.test/APP%23101'],
+        searchStrategy: 'project=APP',
+    ));
     bindFakeWorkItemTracker($tracker);
 
     $event = SecurityEvent::factory()->secret()->create([
-        'url' => 'https://tracker.test/APP%231',
+        'url' => 'https://tracker.test/APP%23101',
     ]);
 
-    WorkItemLink::query()->create([
-        'event_id' => SecurityEvent::factory()->secret()->create()->id,
-        'tracker_id' => 'fake-tracker',
-        'work_item_id' => 'APP#1',
-        'work_item_url' => 'https://tracker.test/APP%231',
-        'work_item_title' => 'Existing WI',
-        'work_item_state' => 'Open',
-        'created_by_user_id' => null,
-        'created_at' => now(),
-        'synced_at' => now(),
-    ]);
+    attachTrackerProject($event->softwareSystem, 'fake-tracker', 'APP');
 
-    // First reconcile event - should link it
     $operator = reconciliationOperator();
 
     $results = app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
 
     expect($results)->toHaveCount(1)
-        ->and($results[0]->linkedEventIds)->toContain($event->id)
-        ->and($results[0]->alreadyLinked)->toBeFalse();
+        ->and($results[0]->alreadyLinked)->toBeFalse()
+        ->and(WorkItemLink::query()->where('event_id', $event->id)->where('tracker_id', 'fake-tracker')->where('work_item_id', 'APP#101')->exists())->toBeTrue();
 });
 
-it('returns already-linked result when link already exists', function () {
-    $tracker = new FakeTracker;
-    $workItem = new WorkItemDto(
-        id: 'APP#1',
-        projectKey: 'APP',
-        title: 'Existing WI',
+it('skips already existing work item links', function () {
+    $tracker = (new FakeTracker)->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: 'APP#77',
+        workItemUrl: 'https://tracker.test/APP%2377',
+        title: 'Existing issue',
         state: 'Open',
-        url: 'https://tracker.test/APP%231',
-    );
-    $tracker->withExistingWorkItem($workItem);
+        labels: ['security'],
+        extractedUrls: ['https://tracker.test/APP%2377'],
+        searchStrategy: 'project=APP',
+    ));
     bindFakeWorkItemTracker($tracker);
 
     $event = SecurityEvent::factory()->secret()->create([
-        'url' => 'https://tracker.test/APP%231',
+        'url' => 'https://tracker.test/APP%2377',
     ]);
+
+    attachTrackerProject($event->softwareSystem, 'fake-tracker', 'APP');
 
     WorkItemLink::query()->create([
         'event_id' => $event->id,
         'tracker_id' => 'fake-tracker',
-        'work_item_id' => 'APP#1',
-        'work_item_url' => 'https://tracker.test/APP%231',
-        'work_item_title' => 'Existing WI',
+        'work_item_id' => 'APP#77',
+        'work_item_url' => 'https://tracker.test/APP%2377',
+        'work_item_title' => 'Existing issue',
         'work_item_state' => 'Open',
         'created_by_user_id' => null,
         'created_at' => now(),
         'synced_at' => now(),
     ]);
 
-    WorkItemLink::query()->create([
-        'event_id' => SecurityEvent::factory()->secret()->create()->id,
-        'tracker_id' => 'fake-tracker',
-        'work_item_id' => 'APP#1',
-        'work_item_url' => 'https://tracker.test/APP%231',
-        'work_item_title' => 'Existing WI',
-        'work_item_state' => 'Open',
-        'created_by_user_id' => null,
-        'created_at' => now(),
-        'synced_at' => now(),
-    ]);
-
-    $operator = reconciliationOperator();
-
-    $results = app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
+    $results = app(ReconciliationService::class)->reconcileAll();
 
     expect($results)->toHaveCount(1)
-        ->and($results[0]->alreadyLinked)->toBeTrue();
+        ->and($results[0]->alreadyLinked)->toBeTrue()
+        ->and(WorkItemLink::query()->where('event_id', $event->id)->where('tracker_id', 'fake-tracker')->where('work_item_id', 'APP#77')->count())->toBe(1);
 });
 
-it('creates a work item link when reconciliation finds a url match', function () {
+it('returns empty result and makes no tracker calls when no tracker project links exist', function () {
     $tracker = new FakeTracker;
-    $workItem = new WorkItemDto(
-        id: 'APP#5',
-        projectKey: 'APP',
-        title: 'Work item 5',
-        state: 'Open',
-        url: 'https://tracker.test/APP%235',
-    );
-    $tracker->withExistingWorkItem($workItem);
     bindFakeWorkItemTracker($tracker);
 
-    $sibling = SecurityEvent::factory()->secret()->create();
+    SecurityEvent::factory()->secret()->create([
+        'url' => 'https://tracker.test/APP%2310',
+    ]);
+
+    $results = app(ReconciliationService::class)->reconcileAll();
+
+    expect($results)->toBe([])
+        ->and($tracker->reconciliationCalls)->toBe(0);
+});
+
+it('continues reconciliation when one project search throws', function () {
+    $tracker = (new FakeTracker)
+        ->withReconciliationFailure('BROKEN')
+        ->withReconciliationCandidates('OK', new ReconciliationCandidateDto(
+            trackerId: 'fake-tracker',
+            workItemId: 'OK#1',
+            workItemUrl: 'https://tracker.test/OK%231',
+            title: 'Recoverable issue',
+            state: 'Open',
+            labels: ['security'],
+            extractedUrls: ['https://tracker.test/OK%231'],
+            searchStrategy: 'project=OK',
+        ));
+    bindFakeWorkItemTracker($tracker);
+
     $event = SecurityEvent::factory()->secret()->create([
-        'url' => 'https://tracker.test/APP%235',
+        'url' => 'https://tracker.test/OK%231',
     ]);
 
-    // Another event is already linked to APP#5
-    WorkItemLink::query()->create([
-        'event_id' => $sibling->id,
-        'tracker_id' => 'fake-tracker',
-        'work_item_id' => 'APP#5',
-        'work_item_url' => 'https://tracker.test/APP%235',
-        'work_item_title' => 'Work item 5',
-        'work_item_state' => 'Open',
-        'created_by_user_id' => null,
-        'created_at' => now(),
-        'synced_at' => now(),
+    attachTrackerProject($event->softwareSystem, 'fake-tracker', 'BROKEN');
+    attachTrackerProject($event->softwareSystem, 'fake-tracker', 'OK');
+
+    $results = app(ReconciliationService::class)->reconcileAll();
+
+    expect(collect($results)->firstWhere('alreadyLinked', false))->not->toBeNull()
+        ->and(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'OK#1')->exists())->toBeTrue();
+});
+
+it('creates links for multiple events matching one work item', function () {
+    $sharedUrl = 'https://tracker.test/APP%2350';
+
+    $tracker = (new FakeTracker)->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: 'APP#50',
+        workItemUrl: $sharedUrl,
+        title: 'Shared issue',
+        state: 'Open',
+        labels: ['security'],
+        extractedUrls: [$sharedUrl],
+        searchStrategy: 'project=APP',
+    ));
+    bindFakeWorkItemTracker($tracker);
+
+    $first = SecurityEvent::factory()->secret()->create(['url' => $sharedUrl]);
+    $second = SecurityEvent::factory()->secret()->create(['url' => $sharedUrl]);
+
+    attachTrackerProject($first->softwareSystem, 'fake-tracker', 'APP');
+    attachTrackerProject($second->softwareSystem, 'fake-tracker', 'APP');
+
+    app(ReconciliationService::class)->reconcileAll();
+
+    expect(WorkItemLink::query()->where('work_item_id', 'APP#50')->pluck('event_id')->all())
+        ->toContain($first->id, $second->id);
+});
+
+it('matches by prefix when work item links to repository root', function () {
+    $repoRoot = 'https://dev.azure.com/acme/proj/_git/repo';
+
+    $tracker = (new FakeTracker)->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: 'APP#90',
+        workItemUrl: 'https://tracker.test/APP%2390',
+        title: 'Repository fix',
+        state: 'Open',
+        labels: ['security'],
+        extractedUrls: [$repoRoot],
+        searchStrategy: 'project=APP',
+    ));
+    bindFakeWorkItemTracker($tracker);
+
+    $event = SecurityEvent::factory()->secret()->create([
+        'url' => $repoRoot . '/alerts/123',
     ]);
 
-    $operator = reconciliationOperator();
+    attachTrackerProject($event->softwareSystem, 'fake-tracker', 'APP');
 
-    app(ReconciliationService::class)->reconcileEvent($event, $operator->id);
+    app(ReconciliationService::class)->reconcileAll();
 
-    expect(WorkItemLink::query()
-        ->where('event_id', $event->id)
-        ->where('tracker_id', 'fake-tracker')
-        ->where('work_item_id', 'APP#5')
-        ->where('created_by_user_id', $operator->id)
-        ->exists())->toBeTrue();
-
-    expect(AuditLog::query()->where('action', 'work_item_linked')->exists())->toBeTrue();
+    expect(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'APP#90')->exists())->toBeTrue();
 });
 
 function reconciliationOperator(): User
@@ -165,41 +180,16 @@ function reconciliationOperator(): User
     return User::factory()->create();
 }
 
-it('reconcileAll processes all events', function () {
-    $tracker = new FakeTracker;
-    $workItem = new WorkItemDto(
-        id: 'APP#10',
-        projectKey: 'APP',
-        title: 'WI 10',
-        state: 'Open',
-        url: 'https://tracker.test/APP%2310',
-    );
-    $tracker->withExistingWorkItem($workItem);
-    bindFakeWorkItemTracker($tracker);
-
-    $sibling = SecurityEvent::factory()->secret()->create();
-    WorkItemLink::query()->create([
-        'event_id' => $sibling->id,
-        'tracker_id' => 'fake-tracker',
-        'work_item_id' => 'APP#10',
-        'work_item_url' => 'https://tracker.test/APP%2310',
-        'work_item_title' => 'WI 10',
-        'work_item_state' => 'Open',
+function attachTrackerProject(SoftwareSystem $system, string $trackerId, string $projectKey): void
+{
+    TrackerProjectLink::query()->create([
+        'owner_type' => SoftwareSystem::class,
+        'owner_id' => $system->id,
+        'tracker_id' => $trackerId,
+        'project_key' => $projectKey,
+        'project_name' => $projectKey,
+        'is_default' => false,
         'created_by_user_id' => null,
-        'created_at' => now(),
-        'synced_at' => now(),
+        'metadata' => null,
     ]);
-
-    $matchingEvent = SecurityEvent::factory()->secret()->create([
-        'url' => 'https://tracker.test/APP%2310',
-    ]);
-
-    SecurityEvent::factory()->secret()->create(['url' => null]);
-
-    $results = app(ReconciliationService::class)->reconcileAll();
-
-    $new = collect($results)->filter(fn ($r) => ! $r->alreadyLinked);
-
-    expect($new)->toHaveCount(1)
-        ->and($new->first()->linkedEventIds)->toContain($matchingEvent->id);
-});
+}
