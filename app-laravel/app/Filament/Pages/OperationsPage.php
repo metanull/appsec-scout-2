@@ -34,8 +34,11 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 class OperationsPage extends Page implements HasTable
@@ -72,7 +75,9 @@ class OperationsPage extends Page implements HasTable
     {
         $user = Auth::user();
 
-        return $user instanceof User ? $user->can('admin.queue') : false;
+        return $user instanceof User
+            ? $user->can('admin.queue') || $user->can('work-items.sync')
+            : false;
     }
 
     public function mount(): void
@@ -114,10 +119,11 @@ class OperationsPage extends Page implements HasTable
                 ->action(fn (array $data) => $this->dispatchSelectedTracker($data['tracker_id'])),
 
             Action::make('reconcileWorkItems')
-                ->label('Reconcile work items')
+                ->label('Reconcile all tracker links')
                 ->icon('heroicon-o-arrows-pointing-in')
+                ->visible(fn (): bool => Gate::allows('admin.queue') || Gate::allows('work-items.sync'))
                 ->requiresConfirmation()
-                ->modalDescription('Queue a reconciliation job to find and create missing links between alerts and tracker work items.')
+                ->modalDescription('Queue a global reconciliation run to discover and link existing tracker work items.')
                 ->action(fn () => $this->dispatchReconcileAll()),
 
             ActionGroup::make([
@@ -346,10 +352,43 @@ class OperationsPage extends Page implements HasTable
 
     public function dispatchReconcileAll(): void
     {
+        Gate::authorize('work-items.sync');
+
+        if ($this->isReconcileAllQueued()) {
+            Notification::make()->title('Reconciliation is already queued or running.')->info()->send();
+
+            return;
+        }
+
         ReconcileAllJob::dispatch();
         app(Recorder::class)->recordAdminAction('operations.reconcile_work_items');
 
-        Notification::make()->title('Work item reconciliation queued')->success()->send();
+        Notification::make()->title('Reconciliation started. You will see new work item links when the job completes.')->success()->send();
+    }
+
+    public function reconciliationLastRunSummary(): string
+    {
+        $timestampRaw = Cache::get('reconciliation:last_run_at');
+        $linksCreated = (int) Cache::get('reconciliation:last_run_new_links', 0);
+
+        if (! is_string($timestampRaw) || trim($timestampRaw) === '') {
+            return 'Reconciliation has not run successfully yet.';
+        }
+
+        $timestamp = Carbon::parse($timestampRaw);
+
+        return sprintf(
+            'Last run: %s (%d new link(s) created).',
+            $timestamp->toDayDateTimeString(),
+            $linksCreated,
+        );
+    }
+
+    private function isReconcileAllQueued(): bool
+    {
+        return DB::table('jobs')
+            ->where('payload', 'like', '%ReconcileAllJob%')
+            ->exists();
     }
 
     public function pruneAuditLogsNow(): void
