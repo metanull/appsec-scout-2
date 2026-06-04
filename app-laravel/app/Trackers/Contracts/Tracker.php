@@ -5,6 +5,7 @@ namespace App\Trackers\Contracts;
 use App\Credentials\CredentialField;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\ProjectDto;
+use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\UserDto;
 use App\Trackers\Dto\WorkItemDto;
@@ -41,4 +42,11 @@ interface Tracker
 
     /** @return iterable<WorkItemDto> */
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): iterable;
+
+    /**
+     * @return iterable<ReconciliationCandidateDto>
+     *
+     * @throws \Throwable
+     */
+    public function reconciliationCandidates(string $projectKey): iterable;
 }

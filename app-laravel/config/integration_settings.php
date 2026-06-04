@@ -19,6 +19,11 @@ return [
     'jira' => [
         'enabled' => (bool) env('TRACKER_JIRA_ENABLED', false),
         'interval_minutes' => (int) env('TRACKER_JIRA_INTERVAL_MINUTES', 30),
+        'reconciliation_labels' => [
+            'security',
+            'vulnerability',
+            'appsec-scout',
+        ],
     ],
     'github' => [
         'enabled' => (bool) env('TRACKER_GITHUB_ENABLED', false),

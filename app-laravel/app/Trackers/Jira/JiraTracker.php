@@ -6,6 +6,7 @@ use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
+use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\ValueObjects\TestResult;
@@ -97,6 +98,16 @@ final class JiraTracker implements Tracker
         return $this->getClient()->searchWorkItems($projectKey, $query, $limit);
     }
 
+    /** @return iterable<ReconciliationCandidateDto> */
+    public function reconciliationCandidates(string $projectKey): iterable
+    {
+        if (trim($projectKey) === '') {
+            return [];
+        }
+
+        return $this->getClient()->searchForReconciliation($projectKey, 500);
+    }
+
     private function getClient(): JiraClient
     {
         if ($this->client instanceof JiraClient && $this->clientFingerprint === null) {
@@ -115,6 +126,9 @@ final class JiraTracker implements Tracker
 
         $this->clientFingerprint = $fingerprint;
 
-        return $this->client = new JiraClient($host, $email, $apiToken);
+        $labels = config('integration_settings.jira.reconciliation_labels', ['security', 'vulnerability', 'appsec-scout']);
+        $reconciliationLabels = is_array($labels) ? array_values(array_filter(array_map('strval', $labels), static fn (string $label): bool => $label !== '')) : ['security', 'vulnerability', 'appsec-scout'];
+
+        return $this->client = new JiraClient($host, $email, $apiToken, null, $reconciliationLabels);
     }
 }

@@ -6,6 +6,7 @@ use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
+use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\ValueObjects\TestResult;
@@ -93,6 +94,16 @@ final class GitHubTracker implements Tracker
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): iterable
     {
         return $this->getClient()->searchWorkItems($projectKey, $query, $limit);
+    }
+
+    /** @return iterable<ReconciliationCandidateDto> */
+    public function reconciliationCandidates(string $projectKey): iterable
+    {
+        if (trim($projectKey) === '') {
+            return [];
+        }
+
+        return $this->getClient()->searchForReconciliation($projectKey, 500);
     }
 
     private function getClient(): GitHubClient

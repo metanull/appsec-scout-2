@@ -171,3 +171,90 @@ it('maps jira projects with consistent key and name fields', function () {
         ->and($projects[0]->key)->toBe('APP')
         ->and($projects[0]->name)->toBe('Application');
 });
+
+it('fetches reconciliation candidates from jira with adf extraction and pagination', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(200, [], json_encode([
+            'isLast' => false,
+            'nextPageToken' => 'page-2',
+            'issues' => [[
+                'key' => 'APP-101',
+                'fields' => [
+                    'summary' => 'Security finding one',
+                    'status' => ['name' => 'Open'],
+                    'labels' => ['security'],
+                    'description' => [
+                        'type' => 'doc',
+                        'content' => [[
+                            'type' => 'paragraph',
+                            'content' => [[
+                                'type' => 'text',
+                                'text' => 'Alert link',
+                                'marks' => [[
+                                    'type' => 'link',
+                                    'attrs' => ['href' => 'https://example.com/finding/101'],
+                                ]],
+                            ]],
+                        ]],
+                    ],
+                ],
+            ]],
+        ], JSON_THROW_ON_ERROR)),
+        new Response(200, [], json_encode([
+            'isLast' => true,
+            'issues' => [[
+                'key' => 'APP-102',
+                'fields' => [
+                    'summary' => 'Security finding two',
+                    'status' => ['name' => 'Open'],
+                    'labels' => ['vulnerability'],
+                    'description' => [
+                        'type' => 'doc',
+                        'content' => [[
+                            'type' => 'paragraph',
+                            'content' => [[
+                                'type' => 'inlineCard',
+                                'attrs' => ['url' => 'https://example.com/finding/102'],
+                            ]],
+                        ]],
+                    ],
+                ],
+            ]],
+        ], JSON_THROW_ON_ERROR)),
+    ]));
+    $stack->push(Middleware::history($history));
+
+    $tracker = new JiraTracker(app(Vault::class));
+    injectJiraClient($tracker, new JiraClient(
+        'https://example.atlassian.net',
+        'ops@example.test',
+        'token',
+        new Client(['handler' => $stack]),
+    ));
+
+    $candidates = iterator_to_array($tracker->reconciliationCandidates('APP'), false);
+
+    expect($candidates)->toHaveCount(2)
+        ->and($candidates[0]->workItemId)->toBe('APP-101')
+        ->and($candidates[0]->extractedUrls)->toContain('https://example.com/finding/101')
+        ->and($candidates[1]->workItemId)->toBe('APP-102')
+        ->and($candidates[1]->extractedUrls)->toContain('https://example.com/finding/102')
+        ->and($history)->toHaveCount(2);
+
+    parse_str($history[1]['request']->getUri()->getQuery(), $secondPageQuery);
+
+    expect($secondPageQuery['nextPageToken'] ?? null)->toBe('page-2');
+});
+
+it('returns empty reconciliation candidates for empty jira project key', function () {
+    $tracker = new JiraTracker(app(Vault::class));
+    injectJiraClient($tracker, new JiraClient(
+        'https://example.atlassian.net',
+        'ops@example.test',
+        'token',
+        new Client(['handler' => new MockHandler([])]),
+    ));
+
+    expect(iterator_to_array($tracker->reconciliationCandidates(''), false))->toBe([]);
+});

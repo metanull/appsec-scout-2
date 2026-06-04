@@ -6,6 +6,7 @@ use App\Credentials\CredentialField;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\ProjectDto;
+use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\UserDto;
 use App\Trackers\Dto\WorkItemDto;
@@ -152,6 +153,12 @@ final class FakeTracker implements Tracker
             fn (WorkItemDto $workItem): bool => $workItem->projectKey === $projectKey
                 && str_contains(strtolower($workItem->title), strtolower($query)),
         )), 0, $limit);
+    }
+
+    /** @return iterable<ReconciliationCandidateDto> */
+    public function reconciliationCandidates(string $projectKey): iterable
+    {
+        return [];
     }
 
     public function withProjects(ProjectDto ...$projects): self

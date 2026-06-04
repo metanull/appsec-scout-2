@@ -151,3 +151,62 @@ it('maps github repositories to project dto with owner and repository facts', fu
         ->and($projects[0]->repository)->toBe('appsec-scout')
         ->and($projects[0]->url)->toBe('https://github.com/octo-org/appsec-scout');
 });
+
+it('fetches reconciliation candidates from github with markdown extraction and pagination', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(200, [], json_encode([
+            'total_count' => 2,
+            'items' => [[
+                'number' => 101,
+                'title' => 'Security issue one',
+                'state' => 'open',
+                'html_url' => 'https://github.com/octo-org/appsec-scout/issues/101',
+                'labels' => [['name' => 'security']],
+                'body' => 'See [Alert](https://example.com/finding/101)',
+            ]],
+        ], JSON_THROW_ON_ERROR)),
+        new Response(200, [], json_encode([
+            'total_count' => 2,
+            'items' => [[
+                'number' => 102,
+                'title' => 'Security issue two',
+                'state' => 'open',
+                'html_url' => 'https://github.com/octo-org/appsec-scout/issues/102',
+                'labels' => [['name' => 'security']],
+                'body' => 'Repository root https://dev.azure.com/acme/proj/_git/repo',
+            ]],
+        ], JSON_THROW_ON_ERROR)),
+    ]));
+    $stack->push(Middleware::history($history));
+
+    $tracker = new GitHubTracker(app(Vault::class));
+    injectGitHubClient($tracker, new GitHubClient(
+        'token',
+        'https://api.github.com',
+        new Client(['handler' => $stack]),
+    ));
+
+    $candidates = iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false);
+
+    expect($candidates)->toHaveCount(2)
+        ->and($candidates[0]->workItemId)->toBe('octo-org/appsec-scout#101')
+        ->and($candidates[0]->extractedUrls)->toContain('https://example.com/finding/101')
+        ->and($candidates[1]->workItemId)->toBe('octo-org/appsec-scout#102')
+        ->and($history)->toHaveCount(2);
+
+    parse_str($history[1]['request']->getUri()->getQuery(), $secondPageQuery);
+
+    expect((int) ($secondPageQuery['page'] ?? 0))->toBe(2);
+});
+
+it('returns empty reconciliation candidates for empty github project key', function () {
+    $tracker = new GitHubTracker(app(Vault::class));
+    injectGitHubClient($tracker, new GitHubClient(
+        'token',
+        'https://api.github.com',
+        new Client(['handler' => new MockHandler([])]),
+    ));
+
+    expect(iterator_to_array($tracker->reconciliationCandidates(''), false))->toBe([]);
+});
