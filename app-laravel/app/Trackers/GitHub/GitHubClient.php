@@ -5,9 +5,11 @@ namespace App\Trackers\GitHub;
 use App\Http\OutboundHttpFactory;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\ProjectDto;
+use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\UserDto;
 use App\Trackers\Dto\WorkItemDto;
+use App\Trackers\Reconciliation\UrlExtractor;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 
@@ -62,6 +64,8 @@ final class GitHubClient
                     key: (string) $repo['full_name'],
                     name: (string) $repo['full_name'],
                     url: isset($repo['html_url']) ? (string) $repo['html_url'] : null,
+                    owner: isset($repo['owner']['login']) ? (string) $repo['owner']['login'] : null,
+                    repository: isset($repo['name']) ? (string) $repo['name'] : null,
                 );
             }
 
@@ -168,6 +172,65 @@ final class GitHubClient
             fn (array $issue): WorkItemDto => $this->mapWorkItem($issue, $projectKey, $this->extractParentFromBody($issue['body'] ?? null)),
             $payload['items'] ?? [],
         ));
+    }
+
+    /** @return list<ReconciliationCandidateDto> */
+    public function searchForReconciliation(string $projectKey, int $limit = 500): array
+    {
+        if (trim($projectKey) === '' || $limit <= 0) {
+            return [];
+        }
+
+        [$owner, $repo] = $this->splitProjectKey($projectKey);
+        $since = now()->subDays(365)->toDateString();
+        $queryString = sprintf('type:issue label:security repo:%s/%s created:>=%s', $owner, $repo, $since);
+
+        $results = [];
+        $page = 1;
+        $perPage = 100;
+
+        do {
+            $payload = $this->decode($this->http->get('search/issues', [
+                'query' => [
+                    'q' => $queryString,
+                    'per_page' => min($perPage, max(1, $limit - count($results))),
+                    'page' => $page,
+                ],
+            ]));
+
+            $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
+
+            foreach ($items as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $number = (int) ($item['number'] ?? 0);
+                if ($number <= 0) {
+                    continue;
+                }
+
+                $results[] = new ReconciliationCandidateDto(
+                    trackerId: 'github',
+                    workItemId: sprintf('%s/%s#%d', $owner, $repo, $number),
+                    workItemUrl: isset($item['html_url']) ? (string) $item['html_url'] : null,
+                    title: (string) ($item['title'] ?? ''),
+                    state: $this->displayState((string) ($item['state'] ?? 'open'), isset($item['state_reason']) ? (string) $item['state_reason'] : null),
+                    labels: array_values(array_map(static fn (array|string $label): string => is_array($label) ? (string) ($label['name'] ?? '') : (string) $label, $item['labels'] ?? [])),
+                    extractedUrls: UrlExtractor::extractFromMarkdown((string) ($item['body'] ?? '')),
+                    searchStrategy: $queryString,
+                );
+
+                if (count($results) >= $limit) {
+                    break;
+                }
+            }
+
+            $totalCount = (int) ($payload['total_count'] ?? 0);
+            $page++;
+        } while ($items !== [] && count($results) < min($limit, $totalCount === 0 ? $limit : $totalCount));
+
+        return $results;
     }
 
     /** @param  array<string, mixed>  $payload */

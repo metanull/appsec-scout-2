@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
@@ -23,6 +24,8 @@ class SecurityContainer extends Model
     {
         static::deleting(function (SecurityContainer $container): void {
             $container->trackerProjectLinks()->delete();
+            $container->repositoryMappings()->delete();
+            $container->curatedLinks()->delete();
         });
     }
 
@@ -49,9 +52,29 @@ class SecurityContainer extends Model
         return $this->hasMany(SecurityEvent::class, 'container_id');
     }
 
+    /** @return BelongsToMany<SecurityContainerLink, $this> */
+    public function links(): BelongsToMany
+    {
+        return $this->belongsToMany(SecurityContainerLink::class, 'security_container_link_members', 'security_container_id', 'link_id')
+            ->withPivot('sort_order')
+            ->orderByPivot('sort_order');
+    }
+
     /** @return MorphMany<TrackerProjectLink, $this> */
     public function trackerProjectLinks(): MorphMany
     {
         return $this->morphMany(TrackerProjectLink::class, 'owner');
+    }
+
+    /** @return MorphMany<RepositoryMapping, $this> */
+    public function repositoryMappings(): MorphMany
+    {
+        return $this->morphMany(RepositoryMapping::class, 'owner');
+    }
+
+    /** @return MorphMany<CuratedLink, $this> */
+    public function curatedLinks(): MorphMany
+    {
+        return $this->morphMany(CuratedLink::class, 'owner');
     }
 }

@@ -3,6 +3,7 @@
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Sources\Asoc\AsocNormalizer;
+use App\Sources\Context\SourceContextFacts;
 
 it('normalizes all ASoC issue variants', function () {
     $payload = json_decode((string) file_get_contents(base_path('tests/Fixtures/Asoc/issues-variants.json')), true, 512, JSON_THROW_ON_ERROR);
@@ -13,10 +14,14 @@ it('normalizes all ASoC issue variants', function () {
     expect($events[0]->type)->toBe(EventType::Vulnerability)
         ->and($events[0]->filePath)->toBe('src/Repositories/UserRepo.php')
         ->and($events[0]->startLine)->toBe(42)
-        ->and($events[0]->metadata['cwe'])->toBe('CWE-89');
+        ->and($events[0]->metadata['cwe'])->toBe('CWE-89')
+        ->and(SourceContextFacts::get($events[0]->metadata ?? [], SourceContextFacts::SECURITY_CWE))->toBe('CWE-89')
+        ->and(SourceContextFacts::get($events[0]->metadata ?? [], 'asoc.application.id'))->toBe('app-001')
+        ->and(SourceContextFacts::get($events[0]->metadata ?? [], 'asoc.scan.id'))->toBe('scan-001');
 
     expect($events[1]->type)->toBe(EventType::Dependency)
-        ->and($events[1]->metadata['cve'])->toBe('CVE-2024-9999');
+        ->and($events[1]->metadata['cve'])->toBe('CVE-2024-9999')
+        ->and(SourceContextFacts::get($events[1]->metadata ?? [], SourceContextFacts::SECURITY_CVE))->toBe('CVE-2024-9999');
 
     expect($events[2]->type)->toBe(EventType::Secret)
         ->and($events[2]->metadata['fingerprint'])->toBe('sec-fp-1')
@@ -24,8 +29,15 @@ it('normalizes all ASoC issue variants', function () {
 
     expect($events[3]->type)->toBe(EventType::Vulnerability)
         ->and($events[3]->metadata['apiVulnName'])->toBe('Missing HSTS')
+        ->and(SourceContextFacts::get($events[3]->metadata ?? [], SourceContextFacts::SOURCE_ALERT_WEB_URL))->toBe('https://api.example.test/v1/orders')
+        ->and(SourceContextFacts::get($events[3]->metadata ?? [], 'asoc.article.url'))->toBe('https://api.example.test/v1/orders')
         ->and($events[3]->state)->toBe(EventState::InProgress);
 
     expect($events[4]->type)->toBe(EventType::Misconfiguration)
         ->and($events[4]->state)->toBe(EventState::Dismissed);
+
+    expect($events[0]->metadata['links'] ?? [])->not->toContain([
+        'label' => 'Source file',
+        'url' => 'src/Repositories/UserRepo.php',
+    ]);
 });

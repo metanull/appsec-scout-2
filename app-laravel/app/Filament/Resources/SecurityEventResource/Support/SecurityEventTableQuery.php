@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SecurityEventResource\Support;
 
+use App\Models\SecurityContainerLinkMember;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystemLinkMember;
 use App\Models\WorkItemLink;
@@ -103,6 +104,44 @@ final class SecurityEventTableQuery
     public static function applyContainer(Builder $query, ?int $containerId): Builder
     {
         return $query->when($containerId !== null, fn (Builder $q) => $q->where('container_id', $containerId));
+    }
+
+    /**
+     * @param  Builder<SecurityEvent>  $query
+     * @param  list<string>  $selections
+     * @return Builder<SecurityEvent>
+     */
+    public static function applyContainerScopes(Builder $query, array $selections): Builder
+    {
+        if ($selections === []) {
+            return $query;
+        }
+
+        $physicalIds = [];
+        $virtualIds = [];
+
+        foreach ($selections as $selection) {
+            if (str_starts_with($selection, 'physical:')) {
+                $physicalIds[] = (int) str_replace('physical:', '', $selection);
+            }
+
+            if (str_starts_with($selection, 'virtual:')) {
+                $virtualIds[] = (int) str_replace('virtual:', '', $selection);
+            }
+        }
+
+        $virtualMemberIds = SecurityContainerLinkMember::query()
+            ->whereIn('link_id', $virtualIds)
+            ->pluck('security_container_id')
+            ->all();
+
+        $ids = array_values(array_unique(array_merge($physicalIds, array_map(fn (mixed $id): int => (int) $id, $virtualMemberIds))));
+
+        if ($ids === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn('container_id', $ids);
     }
 
     /**

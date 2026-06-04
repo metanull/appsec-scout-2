@@ -4,10 +4,13 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\EventComment;
+use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
+use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
+use App\Models\User;
 use App\Models\WorkItemLink;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,10 +40,10 @@ it('enforces unique constraint on software_systems (source_id, source_system_id)
 });
 
 it('allows same source_system_id for different sources', function () {
-    SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'same-id']);
-    SoftwareSystem::factory()->create(['source_id' => 'asoc', 'source_system_id' => 'same-id']);
+    $azdoSystem = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'same-id']);
+    $asocSystem = SoftwareSystem::factory()->create(['source_id' => 'asoc', 'source_system_id' => 'same-id']);
 
-    expect(SoftwareSystem::count())->toBe(2);
+    expect(SoftwareSystem::query()->whereKey([$azdoSystem->id, $asocSystem->id])->count())->toBe(2);
 });
 
 // --- SecurityContainer ---
@@ -208,6 +211,89 @@ it('enforces unique member per link (primary key)', function () {
         ->toThrow(QueryException::class);
 });
 
+// --- SecurityContainerLink ---
+
+it('creates a container link and attaches members in sort order', function () {
+    $link = SecurityContainerLink::factory()->create(['name' => 'Critical Repositories']);
+    $first = SecurityContainer::factory()->create();
+    $second = SecurityContainer::factory()->create();
+
+    $link->members()->attach([
+        $second->id => ['sort_order' => 2],
+        $first->id => ['sort_order' => 1],
+    ]);
+
+    expect($link->members()->count())->toBe(2)
+        ->and($link->members()->pluck('security_containers.id')->all())->toBe([$first->id, $second->id]);
+});
+
+it('enforces unique container member per link (primary key)', function () {
+    $link = SecurityContainerLink::factory()->create();
+    $container = SecurityContainer::factory()->create();
+
+    $link->members()->attach($container->id, ['sort_order' => 1]);
+
+    expect(fn () => $link->members()->attach($container->id, ['sort_order' => 2]))
+        ->toThrow(QueryException::class);
+});
+
+it('cascades link memberships when deleting links or containers', function () {
+    $link = SecurityContainerLink::factory()->create();
+    $container = SecurityContainer::factory()->create();
+
+    $link->members()->attach($container->id, ['sort_order' => 1]);
+
+    $container->delete();
+
+    expect($link->members()->count())->toBe(0)
+        ->and(SecurityContainerLink::query()->whereKey($link->id)->exists())->toBeTrue();
+
+    $replacement = SecurityContainer::factory()->create();
+    $link->members()->attach($replacement->id, ['sort_order' => 1]);
+
+    $link->delete();
+
+    expect(SecurityContainerLink::query()->whereKey($link->id)->exists())->toBeFalse()
+        ->and(SecurityContainer::query()->whereKey($replacement->id)->exists())->toBeTrue();
+});
+
+it('stores tracker curated and repository mappings on virtual container links', function () {
+    $link = SecurityContainerLink::factory()->create();
+    $user = User::factory()->create();
+    $provider = RepositoryProvider::factory()->github()->create();
+
+    $trackerLink = $link->trackerProjectLinks()->create([
+        'tracker_id' => 'jira',
+        'project_key' => 'VIRT',
+        'project_name' => 'Virtual Container Project',
+        'is_default' => true,
+        'created_by_user_id' => $user->id,
+    ]);
+
+    $repositoryMapping = $link->repositoryMappings()->create([
+        'repository_provider_id' => $provider->id,
+        'repository_name' => 'virtual-container',
+        'repository_url' => 'https://github.com/acme/virtual-container',
+        'default_branch' => 'main',
+        'path_prefix' => 'services/virtual',
+        'created_by_user_id' => $user->id,
+    ]);
+
+    $curatedLink = $link->curatedLinks()->create([
+        'label' => 'Virtual container docs',
+        'url' => 'https://docs.example.com/virtual-container',
+        'kind' => 'source',
+        'created_by_user_id' => $user->id,
+    ]);
+
+    expect($link->trackerProjectLinks()->count())->toBe(1)
+        ->and($link->repositoryMappings()->count())->toBe(1)
+        ->and($link->curatedLinks()->count())->toBe(1)
+        ->and($trackerLink->owner_id)->toBe($link->id)
+        ->and($repositoryMapping->owner_id)->toBe($link->id)
+        ->and($curatedLink->owner_id)->toBe($link->id);
+});
+
 // --- SecurityEvent::scopeForVirtualSystem ---
 
 it('scopes events for virtual system through link members', function () {
@@ -224,4 +310,22 @@ it('scopes events for virtual system through link members', function () {
     $link->members()->attach($systemB->id, ['sort_order' => 2]);
 
     expect(SecurityEvent::forVirtualSystem($link->id)->count())->toBe(5);
+});
+
+it('scopes events for virtual container through link members only', function () {
+    $system = SoftwareSystem::factory()->create();
+    $containerA = SecurityContainer::factory()->forSystem($system)->create();
+    $containerB = SecurityContainer::factory()->forSystem($system)->create();
+    $containerC = SecurityContainer::factory()->forSystem($system)->create();
+
+    SecurityEvent::factory()->forContainer($containerA)->count(2)->create();
+    SecurityEvent::factory()->forContainer($containerB)->count(3)->create();
+    SecurityEvent::factory()->forContainer($containerC)->count(1)->create();
+    SecurityEvent::factory()->forSystem($system)->create(['container_id' => null]);
+
+    $link = SecurityContainerLink::factory()->create();
+    $link->members()->attach($containerA->id, ['sort_order' => 1]);
+    $link->members()->attach($containerB->id, ['sort_order' => 2]);
+
+    expect(SecurityEvent::forVirtualContainer($link->id)->count())->toBe(5);
 });

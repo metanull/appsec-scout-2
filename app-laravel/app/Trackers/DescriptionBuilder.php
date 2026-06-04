@@ -6,7 +6,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
-use App\SecurityEvents\SourceLinkHelper;
+use App\SecurityEvents\EventLinkCatalog;
 use Illuminate\Support\Carbon;
 
 final class DescriptionBuilder
@@ -14,6 +14,13 @@ final class DescriptionBuilder
     private const DEFAULT_MAX_BYTES = 16384;
 
     private const TRUNCATION_MARKER = '...(truncated)';
+
+    /** @var array<int, list<array{label: string, url: string, kind: string, external: bool}>> */
+    private array $catalogCache = [];
+
+    public function __construct(
+        private readonly ?EventLinkCatalog $eventLinkCatalog = null,
+    ) {}
 
     public function buildSingle(SecurityEvent $event): string
     {
@@ -25,6 +32,7 @@ final class DescriptionBuilder
             $this->buildEventDescription($event),
             $this->buildRemediation($event),
             $this->buildRemediationLinks($event),
+            $this->buildTrackerLinks($event),
             $this->buildOccurrences([$event]),
         ])));
     }
@@ -49,6 +57,7 @@ final class DescriptionBuilder
             $sections[] = sprintf('## %s', $this->typeLabel($group['type']));
             $sections[] = $this->buildSharedDescription($group['events']);
             $sections[] = $this->buildRemediation($this->firstWithValue($group['events'], 'remediation') ?? $group['events'][0]);
+            $sections[] = $this->buildGroupStandardLinks($group['events']);
             $sections[] = $this->buildGroupRemediationLinks($group['events']);
             $sections[] = $this->buildOccurrences($group['events']);
         }
@@ -139,15 +148,14 @@ final class DescriptionBuilder
      */
     private function buildAlertLinks(SecurityEvent $event): ?string
     {
-        if (! is_string($event->url) || $event->url === '') {
+        $alert = collect($this->catalog($event))
+            ->first(fn (array $entry): bool => $entry['kind'] === 'source' && strtolower($entry['label']) === 'source alert');
+
+        if (! is_array($alert)) {
             return null;
         }
 
-        if (! SourceLinkHelper::isSafeUrl($event->url)) {
-            return null;
-        }
-
-        return sprintf("### Alert\n\n- [View alert](%s)", $event->url);
+        return sprintf("### Alert\n\n- [View alert](%s)", $alert['url']);
     }
 
     /**
@@ -156,7 +164,17 @@ final class DescriptionBuilder
      */
     private function buildSourceLinks(SecurityEvent $event): ?string
     {
-        $items = $this->extractSourceLinks($event);
+        $items = collect($this->catalog($event))
+            ->filter(function (array $entry): bool {
+                if (strtolower($entry['label']) === 'source alert') {
+                    return false;
+                }
+
+                return in_array($entry['kind'], ['source', 'code', 'standard'], true);
+            })
+            ->map(fn (array $entry): array => [$entry['label'], $entry['url']])
+            ->values()
+            ->all();
 
         if ($items === []) {
             return null;
@@ -178,15 +196,15 @@ final class DescriptionBuilder
      */
     private function buildGroupRemediationLinks(array $events): ?string
     {
-        foreach ($events as $event) {
-            $result = $this->buildRemediationLinks($event);
+        return $this->buildSharedKindLinks($events, 'remediation', '### Remediation References');
+    }
 
-            if ($result !== null) {
-                return $result;
-            }
-        }
-
-        return null;
+    /**
+     * @param  list<SecurityEvent>  $events
+     */
+    private function buildGroupStandardLinks(array $events): ?string
+    {
+        return $this->buildSharedKindLinks($events, 'standard', '### Standards');
     }
 
     /**
@@ -194,7 +212,11 @@ final class DescriptionBuilder
      */
     private function buildRemediationLinks(SecurityEvent $event): ?string
     {
-        $items = $this->extractRemediationLinks($event);
+        $items = collect($this->catalog($event))
+            ->filter(fn (array $entry): bool => $entry['kind'] === 'remediation')
+            ->map(fn (array $entry): array => [$entry['label'], $entry['url']])
+            ->values()
+            ->all();
 
         if ($items === []) {
             return null;
@@ -209,102 +231,25 @@ final class DescriptionBuilder
         return implode("\n", $lines);
     }
 
-    /**
-     * @return list<array{0: string, 1: string}>
-     */
-    private function extractSourceLinks(SecurityEvent $event): array
+    private function buildTrackerLinks(SecurityEvent $event): ?string
     {
-        $items = [];
-        /** @var array<string, mixed>|null $metadata */
-        $metadata = $event->getAttribute('metadata');
+        $items = collect($this->catalog($event))
+            ->filter(fn (array $entry): bool => $entry['kind'] === 'tracker')
+            ->map(fn (array $entry): array => [$entry['label'], $entry['url']])
+            ->values()
+            ->all();
 
-        if (is_array($metadata)) {
-            // CVE
-            if (isset($metadata['cve']) && is_string($metadata['cve'])) {
-                $url = SourceLinkHelper::cveLinkUrl($metadata['cve']);
-                if ($url !== null) {
-                    $items[] = ['CVE: ' . strtoupper($metadata['cve']), $url];
-                }
-            }
-
-            // CWE
-            if (isset($metadata['cwe'])) {
-                $url = SourceLinkHelper::cweLinkUrl($metadata['cwe']);
-                if ($url !== null) {
-                    $items[] = ['CWE: ' . $metadata['cwe'], $url];
-                }
-            }
-
-            // Generic metadata.links (source/code kinds produced by normalizers)
-            if (isset($metadata['links']) && is_array($metadata['links'])) {
-                foreach ($metadata['links'] as $entry) {
-                    if (! is_array($entry)) {
-                        continue;
-                    }
-
-                    $label = is_string($entry['label'] ?? null) ? (string) $entry['label'] : 'Link';
-                    $url = is_string($entry['url'] ?? null) ? (string) $entry['url'] : null;
-
-                    if ($url === null || ! SourceLinkHelper::isSafeUrl($url)) {
-                        continue;
-                    }
-
-                    // Skip remediation-kind links; they go into buildRemediationLinks
-                    $lower = strtolower($label);
-                    if (str_contains($lower, 'rule') || str_contains($lower, 'remediat') || str_contains($lower, 'doc')) {
-                        continue;
-                    }
-
-                    $items[] = [$label, $url];
-                }
-            }
+        if ($items === []) {
+            return null;
         }
 
-        return $items;
-    }
+        $lines = ['### Tracker Links'];
 
-    /**
-     * @return list<array{0: string, 1: string}>
-     */
-    private function extractRemediationLinks(SecurityEvent $event): array
-    {
-        $items = [];
-        /** @var array<string, mixed>|null $metadata */
-        $metadata = $event->getAttribute('metadata');
-
-        if (is_array($metadata)) {
-            if (isset($metadata['ruleHelpUri']) && is_string($metadata['ruleHelpUri']) && SourceLinkHelper::isSafeUrl($metadata['ruleHelpUri'])) {
-                $items[] = ['Rule documentation', $metadata['ruleHelpUri']];
-            }
-
-            if (isset($metadata['articleUrl']) && is_string($metadata['articleUrl']) && SourceLinkHelper::isSafeUrl($metadata['articleUrl'])) {
-                $items[] = ['Issue article', $metadata['articleUrl']];
-            }
-
-            // Rule-kind entries from metadata.links
-            if (isset($metadata['links']) && is_array($metadata['links'])) {
-                foreach ($metadata['links'] as $entry) {
-                    if (! is_array($entry)) {
-                        continue;
-                    }
-
-                    $label = is_string($entry['label'] ?? null) ? (string) $entry['label'] : 'Link';
-                    $url = is_string($entry['url'] ?? null) ? (string) $entry['url'] : null;
-
-                    if ($url === null || ! SourceLinkHelper::isSafeUrl($url)) {
-                        continue;
-                    }
-
-                    $lower = strtolower($label);
-
-                    if (str_contains($lower, 'rule') || str_contains($lower, 'remediat') || str_contains($lower, 'doc')) {
-                        $items[] = [$label, $url];
-                    }
-                }
-            }
+        foreach ($items as [$label, $url]) {
+            $lines[] = sprintf('- [%s](%s)', $label, $url);
         }
 
-        return $items;
+        return implode("\n", $lines);
     }
 
     private function buildEventDescription(SecurityEvent $event): ?string
@@ -373,17 +318,84 @@ final class DescriptionBuilder
 
         $line = '- ' . implode('/', $parts);
 
-        // Alert URL (primary link)
-        if ($event->url !== null && SourceLinkHelper::isSafeUrl($event->url)) {
-            $line .= sprintf(' ([alert](%s))', $event->url);
-        }
+        $navigationLinks = collect($this->catalog($event))
+            ->filter(fn (array $entry): bool => in_array($entry['kind'], ['source', 'code'], true))
+            ->take(3)
+            ->map(fn (array $entry): string => sprintf('[%s](%s)', strtolower($entry['label']), $entry['url']))
+            ->values()
+            ->all();
 
-        // Source-code / version-control link
-        if (is_string($event->version_control_url) && $event->version_control_url !== '' && SourceLinkHelper::isSafeUrl($event->version_control_url)) {
-            $line .= sprintf(' ([source](%s))', $event->version_control_url);
+        if ($navigationLinks !== []) {
+            $line .= ' (' . implode(', ', $navigationLinks) . ')';
         }
 
         return $line;
+    }
+
+    /**
+     * @param  list<SecurityEvent>  $events
+     */
+    private function buildSharedKindLinks(array $events, string $kind, string $heading): ?string
+    {
+        if ($events === []) {
+            return null;
+        }
+
+        $shared = [];
+        $isFirst = true;
+        $labelsByUrl = [];
+
+        foreach ($events as $event) {
+            $kindLinks = collect($this->catalog($event))
+                ->filter(fn (array $entry): bool => $entry['kind'] === $kind)
+                ->mapWithKeys(fn (array $entry): array => [$entry['url'] => $entry['label']])
+                ->all();
+
+            if ($kindLinks === []) {
+                return null;
+            }
+
+            $labelsByUrl = array_replace($labelsByUrl, $kindLinks);
+            $urls = array_keys($kindLinks);
+            $shared = $isFirst ? $urls : array_values(array_intersect($shared, $urls));
+            $isFirst = false;
+
+            if ($shared === []) {
+                return null;
+            }
+        }
+
+        $lines = [$heading];
+
+        foreach ($shared as $url) {
+            $label = $labelsByUrl[$url] ?? 'Link';
+            $lines[] = sprintf('- [%s](%s)', $label, $url);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return list<array{label: string, url: string, kind: string, external: bool}>
+     */
+    private function catalog(SecurityEvent $event): array
+    {
+        $key = spl_object_id($event);
+
+        if (isset($this->catalogCache[$key])) {
+            return $this->catalogCache[$key];
+        }
+
+        $event->loadMissing([
+            'softwareSystem.repositoryMappings.repositoryProvider',
+            'container.repositoryMappings.repositoryProvider',
+            'workItemLinks',
+        ]);
+
+        $catalog = ($this->eventLinkCatalog ?? app(EventLinkCatalog::class))->build($event);
+        $this->catalogCache[$key] = $catalog;
+
+        return $catalog;
     }
 
     /**

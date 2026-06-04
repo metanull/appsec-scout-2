@@ -21,4 +21,4 @@ The repository contains a committed personal access token.
 Rotate the token and move it into the credential vault.
 
 ### Occurrences
-- Payments API/payments-service/config/secrets.php:18 ([alert](https://example.test/alerts/secret-101))
+- Payments API/payments-service/config/secrets.php:18 ([source alert](https://example.test/alerts/secret-101))

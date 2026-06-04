@@ -6,6 +6,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\SecurityEvents\SourceLinkHelper;
+use App\Sources\Context\SourceContextFacts;
 use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
 
@@ -17,13 +18,17 @@ final class DetectifyNormalizer
     public static function toSystem(array $domain): SystemDto
     {
         $token = (string) ($domain['token'] ?? $domain['asset_token'] ?? '');
+        $name = (string) ($domain['name'] ?? $domain['host'] ?? 'Unknown Domain');
+        $metadata = $domain;
+        $metadata['detectify']['domain']['token'] = $token;
+        $metadata['detectify']['domain']['name'] = $name;
 
         return new SystemDto(
             sourceSystemId: $token,
-            name: (string) ($domain['name'] ?? $domain['host'] ?? 'Unknown Domain'),
+            name: $name,
             description: null,
             url: self::toNullableString($domain['url'] ?? null),
-            metadata: $domain,
+            metadata: $metadata,
         );
     }
 
@@ -31,21 +36,44 @@ final class DetectifyNormalizer
     public static function toEvent(array $finding): EventDto
     {
         $domainToken = self::toNullableString($finding['asset_token'] ?? $finding['domain_token'] ?? null);
+        $domainName = self::toNullableString($finding['domain_name'] ?? $finding['domain'] ?? null);
+        $detailsPage = self::toNullableString($finding['links']['details_page'] ?? null);
+        $safeDetailsPage = is_string($detailsPage) && SourceLinkHelper::isSafeUrl($detailsPage) ? $detailsPage : null;
+        $cwe = self::toNullableString($finding['cwe'] ?? null);
+        $category = self::toNullableString($finding['category'] ?? null);
+        $remediation = self::toNullableString($finding['definition']['remediation'] ?? null);
 
         $links = [];
         $metadata = [
             'domainToken' => $domainToken,
-            'cwe' => self::toNullableString($finding['cwe'] ?? null),
+            'cwe' => $cwe,
+            'detectify' => [
+                'domain' => [
+                    'token' => $domainToken,
+                    'name' => $domainName,
+                ],
+                'finding' => [
+                    'uuid' => self::toNullableString($finding['uuid'] ?? null),
+                    'category' => $category,
+                    'details_page_url' => $safeDetailsPage,
+                ],
+            ],
         ];
 
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::SOURCE_ALERT_WEB_URL, $safeDetailsPage);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::SECURITY_CWE, $cwe);
+        $metadata = SourceContextFacts::set($metadata, 'detectify.finding.uuid', self::toNullableString($finding['uuid'] ?? null));
+        $metadata = SourceContextFacts::set($metadata, 'detectify.finding.category', $category);
+        $metadata = SourceContextFacts::set($metadata, 'detectify.finding.details_page_url', $safeDetailsPage);
+        $metadata = SourceContextFacts::set($metadata, 'detectify.remediation.text', $remediation);
+
         // Details page link
-        $detailsPage = self::toNullableString($finding['links']['details_page'] ?? null);
-        if ($detailsPage !== null && SourceLinkHelper::isSafeUrl($detailsPage)) {
-            $links[] = ['label' => 'Details page', 'url' => $detailsPage];
+        if ($safeDetailsPage !== null) {
+            $links[] = ['label' => 'Details page', 'url' => $safeDetailsPage];
         }
 
         // CWE link
-        $cweId = $metadata['cwe'];
+        $cweId = $cwe;
         if (is_string($cweId)) {
             $cweUrl = SourceLinkHelper::cweLinkUrl($cweId);
             if ($cweUrl !== null) {
@@ -56,12 +84,20 @@ final class DetectifyNormalizer
         // Additional reference links from finding definition
         $references = $finding['definition']['references'] ?? $finding['references'] ?? null;
         if (is_array($references)) {
+            $structuredReferences = [];
+
             foreach ($references as $ref) {
                 $refUrl = is_string($ref['url'] ?? null) ? (string) $ref['url'] : (is_string($ref) ? $ref : null);
                 $refLabel = is_string($ref['name'] ?? null) ? (string) $ref['name'] : 'Reference';
+
                 if ($refUrl !== null && SourceLinkHelper::isSafeUrl($refUrl)) {
                     $links[] = ['label' => $refLabel, 'url' => $refUrl];
+                    $structuredReferences[] = ['label' => $refLabel, 'url' => $refUrl];
                 }
+            }
+
+            if ($structuredReferences !== []) {
+                $metadata = SourceContextFacts::set($metadata, 'detectify.definition.references', $structuredReferences);
             }
         }
 
@@ -78,10 +114,10 @@ final class DetectifyNormalizer
             type: self::mapType($finding),
             sourceContainerId: null,
             description: self::toNullableString($finding['description'] ?? $finding['definition']['description'] ?? null),
-            ruleId: self::toNullableString($finding['cwe'] ?? null),
+            ruleId: $cwe,
             fingerprint: self::toNullableString($finding['fingerprint'] ?? $finding['uuid'] ?? null),
-            url: $detailsPage,
-            remediation: self::toNullableString($finding['definition']['remediation'] ?? null),
+            url: $safeDetailsPage,
+            remediation: $remediation,
             filePath: self::toNullableString($finding['location'] ?? null),
             startLine: null,
             endLine: null,

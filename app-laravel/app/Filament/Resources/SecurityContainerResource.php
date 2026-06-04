@@ -5,8 +5,14 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SecurityContainerResource\Pages\ListSecurityContainers;
 use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
+use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\SecurityContainer;
+use App\Models\User;
+use App\SecurityEvents\EntityNavigationCatalog;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -18,6 +24,8 @@ use Illuminate\Support\Facades\Auth;
 
 class SecurityContainerResource extends Resource
 {
+    use ContextQualityIndicatorSupport;
+
     protected static ?string $model = SecurityContainer::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-archive-box';
@@ -30,12 +38,23 @@ class SecurityContainerResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        $user = Auth::user();
+
+        return $user instanceof User && $user->can('alerts.view');
     }
 
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with([
+            'curatedLinks',
+            'trackerProjectLinks',
+            'repositoryMappings',
+        ]);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -72,6 +91,42 @@ class SecurityContainerResource extends Resource
                         ->placeholder('-'),
                 ])
                 ->columns(4),
+
+            Section::make('Context quality')
+                ->schema([
+                    TextEntry::make('_context_quality')
+                        ->label('Quality indicators')
+                        ->badge()
+                        ->color(fn (SecurityContainer $record): string => self::qualityColor($record))
+                        ->state(fn (SecurityContainer $record): string => self::qualitySummary($record))
+                        ->url(fn (SecurityContainer $record): ?string => self::qualityUrl($record))
+                        ->openUrlInNewTab()
+                        ->wrap()
+                        ->placeholder('-'),
+                ]),
+
+            Section::make('Navigation')
+                ->visible(fn (SecurityContainer $record): bool => self::navigationRows($record) !== [])
+                ->schema([
+                    RepeatableEntry::make('_navigation_links')
+                        ->label('')
+                        ->state(fn (SecurityContainer $record): array => self::navigationRows($record))
+                        ->schema([
+                            TextEntry::make('label')
+                                ->label('Label')
+                                ->wrap(),
+                            TextEntry::make('kind_label')
+                                ->label('Kind')
+                                ->badge()
+                                ->color('gray'),
+                            TextEntry::make('url')
+                                ->label('URL')
+                                ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                                ->openUrlInNewTab()
+                                ->placeholder('-'),
+                        ])
+                        ->columns(3),
+                ]),
         ]);
     }
 
@@ -96,7 +151,9 @@ class SecurityContainerResource extends Resource
     {
         return [
             EventsRelationManager::class,
+            CuratedLinksRelationManager::class,
             TrackerProjectLinksRelationManager::class,
+            RepositoryMappingsRelationManager::class,
         ];
     }
 
@@ -106,5 +163,13 @@ class SecurityContainerResource extends Resource
             'index' => ListSecurityContainers::route('/'),
             'view' => ViewSecurityContainer::route('/{record}'),
         ];
+    }
+
+    /**
+     * @return list<array{label: string, url: string, kind: string, kind_label: string, external: bool}>
+     */
+    private static function navigationRows(SecurityContainer $record): array
+    {
+        return app(EntityNavigationCatalog::class)->buildForSecurityContainer($record);
     }
 }

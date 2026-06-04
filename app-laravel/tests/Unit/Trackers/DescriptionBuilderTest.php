@@ -3,6 +3,7 @@
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\Models\WorkItemLink;
 use App\Trackers\DescriptionBuilder;
 use Illuminate\Support\Carbon;
 
@@ -208,11 +209,11 @@ it('appends source code link to occurrence when version_control_url is set', fun
     ]));
 
     expect($markdown)
-        ->toContain('([alert](https://example.test/alerts/5))')
-        ->toContain('([source](https://github.test/org/repo/blob/main/src/Foo.php#L10))');
+        ->toContain('[source alert](https://example.test/alerts/5)')
+        ->toContain('[source file](https://github.test/org/repo/blob/main/src/Foo.php#L10)');
 });
 
-it('shares remediation reference links across a grouped type section', function () {
+it('only includes grouped remediation links when common across the group', function () {
     $builder = new DescriptionBuilder;
 
     $events = [
@@ -228,6 +229,68 @@ it('shares remediation reference links across a grouped type section', function 
 
     $markdown = $builder->buildGrouped($events);
 
-    // Rule doc link appears once from the first event that has it
-    expect(substr_count($markdown, '[Rule documentation](https://docs.example.test/rules/SQL-1)'))->toBe(1);
+    expect($markdown)->not->toContain('[Rule documentation](https://docs.example.test/rules/SQL-1)');
+});
+
+it('includes rich categorized links from the link catalog in single descriptions', function () {
+    $builder = new DescriptionBuilder;
+
+    $event = makeEvent([
+        'url' => 'https://example.test/alerts/42',
+        'version_control_url' => 'https://github.test/org/repo/blob/main/src/Foo.php#L10',
+        'metadata' => [
+            'cve' => 'CVE-2024-12345',
+            'ruleHelpUri' => 'https://docs.example.test/rules/SQL-1',
+            'links' => [
+                ['label' => 'Repository', 'url' => 'https://github.test/org/repo'],
+                ['label' => 'Unsafe', 'url' => 'file:///etc/passwd'],
+            ],
+        ],
+    ]);
+
+    $workItem = new WorkItemLink;
+    $workItem->tracker_id = 'jira';
+    $workItem->work_item_id = 'APP-42';
+    $workItem->work_item_title = 'Fix SQL issue';
+    $workItem->work_item_url = 'https://jira.example.test/browse/APP-42';
+    $event->setRelation('workItemLinks', collect([$workItem]));
+
+    $markdown = $builder->buildSingle($event);
+
+    expect($markdown)
+        ->toContain('### References')
+        ->toContain('[Repository](https://github.test/org/repo)')
+        ->toContain('[CVE: CVE-2024-12345](https://nvd.nist.gov/vuln/detail/CVE-2024-12345)')
+        ->toContain('### Remediation References')
+        ->toContain('[Rule documentation](https://docs.example.test/rules/SQL-1)')
+        ->toContain('### Tracker Links')
+        ->toContain('[jira: Fix SQL issue](https://jira.example.test/browse/APP-42)');
+
+    expect($markdown)->not->toContain('file:///etc/passwd');
+});
+
+it('includes shared standards and remediation links once per grouped section when common', function () {
+    $builder = new DescriptionBuilder;
+
+    $events = [
+        makeEvent([
+            'type' => EventType::Vulnerability,
+            'metadata' => [
+                'cve' => 'CVE-2024-7777',
+                'ruleHelpUri' => 'https://docs.example.test/rules/SQL-2',
+            ],
+        ]),
+        makeEvent([
+            'type' => EventType::Vulnerability,
+            'metadata' => [
+                'cve' => 'CVE-2024-7777',
+                'ruleHelpUri' => 'https://docs.example.test/rules/SQL-2',
+            ],
+        ]),
+    ];
+
+    $markdown = $builder->buildGrouped($events);
+
+    expect(substr_count($markdown, '[CVE: CVE-2024-7777](https://nvd.nist.gov/vuln/detail/CVE-2024-7777)'))->toBe(1)
+        ->and(substr_count($markdown, '[Rule documentation](https://docs.example.test/rules/SQL-2)'))->toBe(1);
 });

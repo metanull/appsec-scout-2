@@ -44,7 +44,7 @@ try {
         throw "Pint check failed."
     }
 
-    docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M -q
+    docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
     if ($LASTEXITCODE -ne 0) {
         throw "PHPStan check failed."
     }

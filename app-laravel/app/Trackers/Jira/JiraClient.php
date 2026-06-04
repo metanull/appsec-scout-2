@@ -5,9 +5,11 @@ namespace App\Trackers\Jira;
 use App\Http\OutboundHttpFactory;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\ProjectDto;
+use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\UserDto;
 use App\Trackers\Dto\WorkItemDto;
+use App\Trackers\Reconciliation\UrlExtractor;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 
@@ -20,6 +22,8 @@ final class JiraClient
         string $email,
         string $apiToken,
         ?Client $httpClient = null,
+        /** @var list<string> */
+        private readonly array $reconciliationLabels = ['security', 'vulnerability', 'appsec-scout'],
     ) {
         if ($httpClient !== null) {
             $this->http = $httpClient;
@@ -191,6 +195,82 @@ final class JiraClient
         ]));
 
         return array_values(array_map(fn (array $issue): WorkItemDto => $this->mapWorkItem($issue), $payload['issues'] ?? []));
+    }
+
+    /** @return list<ReconciliationCandidateDto> */
+    public function searchForReconciliation(string $projectKey, int $limit = 500): array
+    {
+        if (trim($projectKey) === '' || $limit <= 0) {
+            return [];
+        }
+
+        $results = [];
+        $nextPageToken = null;
+        $jql = $this->reconciliationJql($projectKey);
+
+        do {
+            $query = [
+                'jql' => $jql,
+                'fields' => 'summary,status,description,labels',
+                'maxResults' => min(100, max(1, $limit - count($results))),
+            ];
+
+            if ($nextPageToken !== null) {
+                $query['nextPageToken'] = $nextPageToken;
+            }
+
+            $payload = $this->decode($this->http->get('rest/api/3/search/jql', ['query' => $query]));
+
+            foreach ($payload['issues'] ?? [] as $issue) {
+                if (! is_array($issue)) {
+                    continue;
+                }
+
+                $fields = is_array($issue['fields'] ?? null) ? $issue['fields'] : [];
+                $description = $fields['description'] ?? null;
+
+                $extractedUrls = is_array($description)
+                    ? UrlExtractor::extractFromAdf($description)
+                    : (is_string($description) ? UrlExtractor::extractFromText($description) : []);
+
+                $results[] = new ReconciliationCandidateDto(
+                    trackerId: 'jira',
+                    workItemId: (string) ($issue['key'] ?? ''),
+                    workItemUrl: isset($issue['key']) ? rtrim($this->host, '/') . '/browse/' . $issue['key'] : null,
+                    title: (string) ($fields['summary'] ?? ''),
+                    state: (string) ($fields['status']['name'] ?? 'Unknown'),
+                    labels: array_values(array_map('strval', $fields['labels'] ?? [])),
+                    extractedUrls: $extractedUrls,
+                    searchStrategy: $jql,
+                );
+
+                if (count($results) >= $limit) {
+                    break;
+                }
+            }
+
+            $nextPageTokenValue = $payload['nextPageToken'] ?? null;
+            $nextPageToken = is_string($nextPageTokenValue) && $nextPageTokenValue !== '' ? $nextPageTokenValue : null;
+            $isLast = (bool) ($payload['isLast'] ?? true);
+        } while (! $isLast && $nextPageToken !== null && count($results) < $limit);
+
+        return $results;
+    }
+
+    private function reconciliationJql(string $projectKey): string
+    {
+        $quotedLabels = array_map(
+            static fn (string $label): string => '"' . addcslashes($label, '"\\') . '"',
+            array_values(array_filter(array_map('strval', $this->reconciliationLabels), static fn (string $label): bool => $label !== '')),
+        );
+
+        $labelsClause = $quotedLabels === [] ? '"security"' : implode(', ', $quotedLabels);
+
+        return sprintf(
+            'project = "%s" AND labels in (%s) AND created >= -365d ORDER BY created DESC',
+            addcslashes($projectKey, '"\\'),
+            $labelsClause,
+        );
     }
 
     /** @return array<string, mixed> */

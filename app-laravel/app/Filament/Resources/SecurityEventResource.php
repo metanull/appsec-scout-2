@@ -10,13 +10,18 @@ use App\Filament\Resources\SecurityEventResource\RelationManagers\AuditHistoryRe
 use App\Filament\Resources\SecurityEventResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Filament\Resources\SecurityEventResource\Support\SecurityEventTableQuery;
+use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\Models\SecurityContainer;
+use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
 use App\Models\User;
+use App\SecurityEvents\EventLinkCatalog;
 use App\SecurityEvents\SourceLinkHelper;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\WorkItemFormOptions;
@@ -48,6 +53,8 @@ use Illuminate\Support\Str;
 
 class SecurityEventResource extends Resource
 {
+    use ContextQualityIndicatorSupport;
+
     protected static ?string $model = SecurityEvent::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-exclamation';
@@ -66,6 +73,20 @@ class SecurityEventResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with([
+            'curatedLinks',
+            'softwareSystem',
+            'softwareSystem.repositoryMappings.repositoryProvider',
+            'softwareSystem.curatedLinks',
+            'container',
+            'container.repositoryMappings.repositoryProvider',
+            'container.curatedLinks',
+            'workItemLinks',
+        ]);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -130,6 +151,19 @@ class SecurityEventResource extends Resource
                     ]),
                 ]),
 
+            Section::make('Context quality')
+                ->schema([
+                    TextEntry::make('_context_quality')
+                        ->label('Quality indicators')
+                        ->badge()
+                        ->color(fn (SecurityEvent $record): string => self::qualityColor($record))
+                        ->state(fn (SecurityEvent $record): string => self::qualitySummary($record))
+                        ->url(fn (SecurityEvent $record): ?string => self::qualityUrl($record))
+                        ->openUrlInNewTab()
+                        ->wrap()
+                        ->placeholder('-'),
+                ]),
+
             Section::make('Pending Sync')
                 ->visible(fn (SecurityEvent $record): bool => (bool) $record->is_dirty)
                 ->schema([
@@ -160,23 +194,11 @@ class SecurityEventResource extends Resource
                     ]),
                 ]),
 
-            Section::make('Links')
-                ->collapsible()
-                ->visible(fn (SecurityEvent $record): bool => filled($record->url) || filled($record->version_control_url))
-                ->schema([
-                    Grid::make(2)->schema([
-                        TextEntry::make('url')
-                            ->label('Source alert')
-                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
-                        TextEntry::make('version_control_url')
-                            ->label('Version control')
-                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
-                    ]),
-                ]),
+            self::linkCatalogSection('source'),
+            self::linkCatalogSection('code'),
+            self::linkCatalogSection('remediation'),
+            self::linkCatalogSection('standard'),
+            self::linkCatalogSection('tracker'),
 
             Section::make('Secret Details')
                 ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Secret))
@@ -438,11 +460,12 @@ class SecurityEventResource extends Resource
                     ->searchable()
                     ->options(fn (): array => self::systemScopeOptions())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applySystemScopes($query, self::stringArray($data['values'] ?? []))),
-                SelectFilter::make('container_id')
+                SelectFilter::make('container_scope')
                     ->label('Container')
-                    ->relationship('container', 'name')
+                    ->multiple()
                     ->searchable()
-                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyContainer($query, self::nullableInt($data['value'] ?? null))),
+                    ->options(fn (): array => self::containerScopeOptions())
+                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyContainerScopes($query, self::stringArray($data['values'] ?? []))),
                 SelectFilter::make('type')
                     ->multiple()
                     ->options(collect(EventType::cases())->mapWithKeys(fn (EventType $type) => [$type->value => str($type->value)->replace('_', ' ')->title()->toString()])->all())
@@ -581,7 +604,7 @@ class SecurityEventResource extends Resource
                         ->label('Link existing work item')
                         ->icon('heroicon-o-link')
                         ->visible(fn (): bool => self::currentUserCan('work-items.link'))
-                        ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                        ->form(fn (SecurityEvent $record): array => app(WorkItemFormOptions::class)->linkSchema([$record]))
                         ->action(function (SecurityEvent $record, array $data): void {
                             /** @var User|null $user */
                             $user = Auth::user();
@@ -641,7 +664,9 @@ class SecurityEventResource extends Resource
                     ->label('Create grouped work item')
                     ->icon('heroicon-o-ticket')
                     ->visible(fn (): bool => self::currentUserCan('work-items.create'))
-                    ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema())
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->createSchema(
+                        array_values($records->filter(fn (mixed $record): bool => $record instanceof SecurityEvent)->all())
+                    ))
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, SecurityEvent> $records */
                         /** @var User|null $user */
@@ -679,7 +704,9 @@ class SecurityEventResource extends Resource
                     ->label('Link existing')
                     ->icon('heroicon-o-link')
                     ->visible(fn (): bool => self::currentUserCan('work-items.link'))
-                    ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->linkSchema(
+                        array_values($records->filter(fn (mixed $record): bool => $record instanceof SecurityEvent)->all())
+                    ))
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, SecurityEvent> $records */
                         /** @var User|null $user */
@@ -719,6 +746,7 @@ class SecurityEventResource extends Resource
     {
         return [
             CommentsRelationManager::class,
+            CuratedLinksRelationManager::class,
             WorkItemLinksRelationManager::class,
             AttachmentsRelationManager::class,
             AuditHistoryRelationManager::class,
@@ -795,15 +823,6 @@ class SecurityEventResource extends Resource
         return is_string($value) ? $value : null;
     }
 
-    private static function nullableInt(mixed $value): ?int
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return (int) $value;
-    }
-
     private static function nullableString(mixed $value): ?string
     {
         if (! is_string($value) || trim($value) === '') {
@@ -846,6 +865,71 @@ class SecurityEventResource extends Resource
             ->all();
 
         return array_merge($physical, $virtual);
+    }
+
+    /** @return array<string, string> */
+    private static function containerScopeOptions(): array
+    {
+        $physical = SecurityContainer::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SecurityContainer $container): array => ['physical:' . $container->id => '[Container] ' . $container->name])
+            ->all();
+
+        $virtual = SecurityContainerLink::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SecurityContainerLink $link): array => ['virtual:' . $link->id => '[Virtual] ' . $link->name])
+            ->all();
+
+        return array_merge($physical, $virtual);
+    }
+
+    private static function linkCatalogSection(string $kind): Section
+    {
+        return Section::make(EventLinkCatalog::kindLabel($kind))
+            ->collapsible()
+            ->visible(fn (SecurityEvent $record): bool => self::linkCatalogRows($record, $kind) !== [])
+            ->schema([
+                RepeatableEntry::make('_link_catalog_' . $kind)
+                    ->label('')
+                    ->state(fn (SecurityEvent $record): array => self::linkCatalogRows($record, $kind))
+                    ->schema([
+                        TextEntry::make('label')
+                            ->label('Label')
+                            ->wrap(),
+                        TextEntry::make('kind_label')
+                            ->label('Kind')
+                            ->badge()
+                            ->color('gray'),
+                        TextEntry::make('url')
+                            ->label('URL')
+                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                            ->openUrlInNewTab()
+                            ->placeholder('-'),
+                    ])
+                    ->columns(3),
+            ]);
+    }
+
+    /**
+     * @return list<array{label: string, kind: string, kind_label: string, url: string, external: bool}>
+     */
+    private static function linkCatalogRows(SecurityEvent $record, string $kind): array
+    {
+        return array_values(array_map(
+            static fn (array $link): array => [
+                'label' => $link['label'],
+                'kind' => $link['kind'],
+                'kind_label' => EventLinkCatalog::kindLabel($link['kind']),
+                'url' => $link['url'],
+                'external' => $link['external'],
+            ],
+            array_filter(
+                app(EventLinkCatalog::class)->build($record),
+                static fn (array $link): bool => $link['kind'] === $kind,
+            ),
+        ));
     }
 
     /**

@@ -5,6 +5,8 @@ namespace App\Sources\Asoc;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
+use App\SecurityEvents\SourceLinkHelper;
+use App\Sources\Context\SourceContextFacts;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
@@ -17,26 +19,38 @@ final class AsocNormalizer
     public static function toSystem(array $application): SystemDto
     {
         $appId = (string) ($application['Id'] ?? $application['id'] ?? '');
+        $appName = (string) ($application['Name'] ?? $application['name'] ?? 'Unknown App');
+
+        $metadata = $application;
+        $metadata['asoc']['application']['id'] = $appId;
+        $metadata['asoc']['application']['name'] = $appName;
 
         return new SystemDto(
             sourceSystemId: $appId,
-            name: (string) ($application['Name'] ?? $application['name'] ?? 'Unknown App'),
+            name: $appName,
             description: self::toNullableString($application['Description'] ?? $application['description'] ?? null),
             url: self::toNullableString($application['Url'] ?? $application['url'] ?? null),
-            metadata: $application,
+            metadata: $metadata,
         );
     }
 
     /** @param array<string, mixed> $scan */
     public static function toContainer(array $scan, string $sourceSystemId): ContainerDto
     {
+        $scanId = (string) ($scan['Id'] ?? $scan['id'] ?? '');
+        $scanName = (string) ($scan['Name'] ?? $scan['name'] ?? 'Unnamed Scan');
+
+        $metadata = $scan;
+        $metadata['asoc']['scan']['id'] = $scanId;
+        $metadata['asoc']['scan']['name'] = $scanName;
+
         return new ContainerDto(
-            sourceContainerId: (string) ($scan['Id'] ?? $scan['id'] ?? ''),
-            name: (string) ($scan['Name'] ?? $scan['name'] ?? 'Unnamed Scan'),
+            sourceContainerId: $scanId,
+            name: $scanName,
             sourceSystemId: $sourceSystemId,
             kind: 'scan',
             url: null,
-            metadata: $scan,
+            metadata: $metadata,
         );
     }
 
@@ -122,37 +136,84 @@ final class AsocNormalizer
      */
     private static function buildMetadata(array $issue): array
     {
+        $issueTypeId = self::toNullableString($issue['IssueTypeId'] ?? null);
+        $language = self::toNullableString($issue['Language'] ?? null);
+        $scanner = self::toNullableString($issue['Scanner'] ?? null);
+        $fixGroupId = self::toNullableString($issue['FixGroupId'] ?? null);
+        $cve = self::toNullableString($issue['CveId'] ?? null);
+        $cwe = self::toNullableString($issue['Cwe'] ?? null);
+        $apiVulnName = self::toNullableString($issue['ApiVulnName'] ?? null);
+        $classification = self::toNullableString($issue['Classification'] ?? null);
+        $sourceFile = self::toNullableString($issue['SourceFile'] ?? null);
+        $articleUrl = self::toNullableString($issue['Url'] ?? $issue['Location'] ?? null);
+
         $metadata = [
-            'issueTypeId' => self::toNullableString($issue['IssueTypeId'] ?? null),
-            'language' => self::toNullableString($issue['Language'] ?? null),
-            'scanner' => self::toNullableString($issue['Scanner'] ?? null),
-            'fixGroupId' => self::toNullableString($issue['FixGroupId'] ?? null),
-            'cve' => self::toNullableString($issue['CveId'] ?? null),
-            'cwe' => self::toNullableString($issue['Cwe'] ?? null),
+            'issueTypeId' => $issueTypeId,
+            'language' => $language,
+            'scanner' => $scanner,
+            'fixGroupId' => $fixGroupId,
+            'cve' => $cve,
+            'cwe' => $cwe,
             'api' => self::toNullableString($issue['Api'] ?? null),
-            'apiVulnName' => self::toNullableString($issue['ApiVulnName'] ?? null),
+            'apiVulnName' => $apiVulnName,
             'fingerprint' => self::toNullableString($issue['Fingerprint'] ?? null),
-            'classification' => self::toNullableString($issue['Classification'] ?? null),
+            'classification' => $classification,
+            'asoc' => [
+                'application' => [
+                    'id' => self::toNullableString($issue['ApplicationId'] ?? null),
+                    'name' => self::toNullableString($issue['ApplicationName'] ?? null),
+                ],
+                'scan' => [
+                    'id' => self::toNullableString($issue['ScanId'] ?? null),
+                    'name' => self::toNullableString($issue['ScanName'] ?? null),
+                ],
+                'issue_type' => [
+                    'id' => $issueTypeId,
+                ],
+                'scanner' => $scanner,
+                'classification' => $classification,
+                'language' => $language,
+                'api_vulnerability' => [
+                    'name' => $apiVulnName,
+                ],
+                'fix_group' => [
+                    'id' => $fixGroupId,
+                ],
+            ],
         ];
+
+        $safeArticleUrl = is_string($articleUrl) && SourceLinkHelper::isSafeUrl($articleUrl) ? $articleUrl : null;
+
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::SECURITY_CVE, $cve);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::SECURITY_CWE, $cwe);
+        $metadata = SourceContextFacts::set($metadata, SourceContextFacts::SOURCE_ALERT_WEB_URL, $safeArticleUrl);
+        $metadata = SourceContextFacts::set($metadata, 'source.file.path', $sourceFile);
+        $metadata = SourceContextFacts::set($metadata, 'asoc.article.url', $safeArticleUrl);
 
         $links = [];
 
         $cveId = $metadata['cve'];
         if (is_string($cveId) && $cveId !== '') {
-            $links[] = ['label' => 'NVD', 'url' => 'https://nvd.nist.gov/vuln/detail/' . $cveId];
+            $cveUrl = SourceLinkHelper::cveLinkUrl($cveId);
+            if ($cveUrl !== null) {
+                $links[] = ['label' => 'NVD', 'url' => $cveUrl];
+            }
         }
 
         $cweId = $metadata['cwe'];
         if (is_string($cweId) && $cweId !== '') {
-            $cweNumber = preg_replace('/^CWE-?/i', '', $cweId);
-            if (is_string($cweNumber) && $cweNumber !== '') {
-                $links[] = ['label' => 'CWE', 'url' => 'https://cwe.mitre.org/data/definitions/' . $cweNumber . '.html'];
+            $cweUrl = SourceLinkHelper::cweLinkUrl($cweId);
+            if ($cweUrl !== null) {
+                $links[] = ['label' => 'CWE', 'url' => $cweUrl];
             }
         }
 
-        $sourceFile = self::toNullableString($issue['SourceFile'] ?? null);
-        if ($sourceFile !== null) {
+        if ($sourceFile !== null && SourceLinkHelper::isSafeUrl($sourceFile)) {
             $links[] = ['label' => 'Source file', 'url' => $sourceFile];
+        }
+
+        if ($safeArticleUrl !== null) {
+            $links[] = ['label' => 'Issue article', 'url' => $safeArticleUrl];
         }
 
         if ($links !== []) {

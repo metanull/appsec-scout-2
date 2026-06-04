@@ -6,10 +6,13 @@ use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
+use App\Models\TrackerProjectLink;
 use App\Models\User;
 use App\Sync\RefetchEventJob;
-use App\Trackers\ReconcileEventJob;
+use App\Trackers\Reconciliation\ReconciliationService;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
 use App\Triage\AttachmentService;
@@ -72,14 +75,14 @@ class ViewSecurityEvent extends ViewRecord
                 ->label('Link existing')
                 ->icon('heroicon-o-link')
                 ->visible(fn (): bool => Gate::allows('work-items.link'))
-                ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema([$this->eventRecord()]))
                 ->action(fn (array $data): bool => $this->linkExistingWorkItem($data)),
             Action::make('reconcileWorkItems')
-                ->label('Reconcile work items')
+                ->label('Find existing work items')
                 ->icon('heroicon-o-arrows-pointing-in')
-                ->visible(fn (): bool => Gate::allows('work-items.link'))
+                ->visible(fn (): bool => Gate::allows('work-items.link') || Gate::allows('work-items.sync'))
                 ->requiresConfirmation()
-                ->modalDescription('Queue a reconciliation job to find and create missing links for this alert.')
+                ->modalDescription('Search configured tracker projects and link any existing work items that match this alert.')
                 ->action(fn (): bool => $this->dispatchReconcileEvent()),
             Action::make('addAttachment')
                 ->label('Add attachment')
@@ -271,7 +274,9 @@ class ViewSecurityEvent extends ViewRecord
 
     private function dispatchReconcileEvent(): bool
     {
-        Gate::authorize('work-items.link');
+        if (! Gate::allows('work-items.link') && ! Gate::allows('work-items.sync')) {
+            abort(403);
+        }
 
         /** @var User|null $user */
         $user = Auth::user();
@@ -280,11 +285,59 @@ class ViewSecurityEvent extends ViewRecord
             abort(403);
         }
 
-        ReconcileEventJob::dispatch($this->eventRecord()->id, $user->id);
+        if (! $this->hasApplicableTrackerMappings($this->eventRecord())) {
+            Notification::make()
+                ->title('No tracker project mappings configured for this system or container.')
+                ->info()
+                ->send();
 
-        Notification::make()->title('Work item reconciliation queued for this alert')->success()->send();
+            return true;
+        }
+
+        $results = app(ReconciliationService::class)->reconcileEvent($this->eventRecord(), $user->id);
+        $newLinks = count(array_filter($results, fn ($result): bool => $result->alreadyLinked === false));
+
+        if ($newLinks > 0) {
+            Notification::make()
+                ->title("{$newLinks} new work item links found")
+                ->success()
+                ->send();
+        } else {
+            Notification::make()
+                ->title('No new links found. Existing links are up to date.')
+                ->info()
+                ->send();
+        }
+
+        $this->refreshFormData([]);
 
         return true;
+    }
+
+    private function hasApplicableTrackerMappings(SecurityEvent $event): bool
+    {
+        $softwareSystemId = $event->getAttribute('software_system_id');
+        $containerId = $event->getAttribute('container_id');
+
+        $query = TrackerProjectLink::query();
+
+        $query->where(function ($scope) use ($softwareSystemId, $containerId): void {
+            if (is_int($softwareSystemId)) {
+                $scope->orWhere(function ($inner) use ($softwareSystemId): void {
+                    $inner->where('owner_type', SoftwareSystem::class)
+                        ->where('owner_id', $softwareSystemId);
+                });
+            }
+
+            if (is_int($containerId)) {
+                $scope->orWhere(function ($inner) use ($containerId): void {
+                    $inner->where('owner_type', SecurityContainer::class)
+                        ->where('owner_id', $containerId);
+                });
+            }
+        });
+
+        return $query->exists();
     }
 
     private function nullableString(mixed $value): ?string

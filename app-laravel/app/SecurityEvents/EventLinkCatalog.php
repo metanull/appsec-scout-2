@@ -2,8 +2,14 @@
 
 namespace App\SecurityEvents;
 
+use App\Models\CuratedLink;
+use App\Models\RepositoryMapping;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\WorkItemLink;
+use App\SourceCode\CodeLocation;
+use App\SourceCode\RepositoryCodeUrlGenerator;
 
 /**
  * Builds a deduplicated, typed link catalog for a SecurityEvent from all
@@ -24,6 +30,11 @@ final class EventLinkCatalog
 
     private const KIND_TRACKER = 'tracker';
 
+    public function __construct(
+        private readonly RepositoryMappingResolver $repositoryMappingResolver,
+        private readonly RepositoryCodeUrlGenerator $repositoryCodeUrlGenerator,
+    ) {}
+
     /**
      * Returns the deduplicated link list for the given event.
      * The event should have softwareSystem, container, and workItemLinks loaded.
@@ -35,7 +46,7 @@ final class EventLinkCatalog
         $links = [];
         $seen = [];
 
-        $add = function (string $label, ?string $url, string $kind) use (&$links, &$seen): void {
+        $add = function (string $label, ?string $url, string $kind, int $priority = 0) use (&$links, &$seen): void {
             if ($url === null || $url === '') {
                 return;
             }
@@ -45,10 +56,25 @@ final class EventLinkCatalog
             }
 
             if (isset($seen[$url])) {
+                if ($priority <= $seen[$url]['priority']) {
+                    return;
+                }
+
+                $links[$seen[$url]['index']] = [
+                    'label' => $label,
+                    'url' => $url,
+                    'kind' => $kind,
+                    'external' => true,
+                ];
+                $seen[$url]['priority'] = $priority;
+
                 return;
             }
 
-            $seen[$url] = true;
+            $seen[$url] = [
+                'priority' => $priority,
+                'index' => count($links),
+            ];
             $links[] = [
                 'label' => $label,
                 'url' => $url,
@@ -58,22 +84,28 @@ final class EventLinkCatalog
         };
 
         // Source alert URL
-        $add('Source alert', $event->url, self::KIND_SOURCE);
+        $add('Source alert', $event->url, self::KIND_SOURCE, 3);
 
         // Source system URL
-        $system = $event->getRelationValue('softwareSystem');
-        if ($system !== null && is_string($system->url)) {
-            $add('System', $system->url, self::KIND_SOURCE);
+        $system = $event->relationLoaded('softwareSystem') ? $event->getRelation('softwareSystem') : null;
+        if ($system instanceof SoftwareSystem && is_string($system->url)) {
+            $add('System', $system->url, self::KIND_SOURCE, 1);
+
+            $this->addCuratedLinks($system->relationLoaded('curatedLinks') ? $system->getRelation('curatedLinks') : null, $add, 1);
         }
 
         // Container URL
-        $container = $event->getRelationValue('container');
-        if ($container !== null && is_string($container->url)) {
-            $add('Repository', $container->url, self::KIND_SOURCE);
+        $container = $event->relationLoaded('container') ? $event->getRelation('container') : null;
+        if ($container instanceof SecurityContainer && is_string($container->url)) {
+            $add('Repository', $container->url, self::KIND_SOURCE, 2);
+
+            $this->addCuratedLinks($container->relationLoaded('curatedLinks') ? $container->getRelation('curatedLinks') : null, $add, 2);
         }
 
         // Version control / source file URL
-        $add('Source file', $event->version_control_url, self::KIND_CODE);
+        $add('Source file', $event->version_control_url, self::KIND_CODE, 3);
+
+        $this->addRepositoryLinks($event, $add);
 
         // Normalised metadata links array: [['label'=>..., 'url'=>...], ...]
         /** @var array<string, mixed>|null $metadata */
@@ -84,18 +116,35 @@ final class EventLinkCatalog
         }
 
         // Work item links
-        $workItemLinks = $event->getRelationValue('workItemLinks');
+        $workItemLinks = $event->relationLoaded('workItemLinks') ? $event->getRelation('workItemLinks') : null;
         if ($workItemLinks !== null) {
             foreach ($workItemLinks as $link) {
                 /** @var WorkItemLink $link */
                 if (is_string($link->work_item_url) && $link->work_item_url !== '') {
                     $label = trim(sprintf('%s: %s', $link->tracker_id, $link->work_item_title ?? $link->work_item_id));
-                    $add($label, $link->work_item_url, self::KIND_TRACKER);
+                    $add($label, $link->work_item_url, self::KIND_TRACKER, 0);
                 }
             }
         }
 
+        $this->addCuratedLinks($event->relationLoaded('curatedLinks') ? $event->getRelation('curatedLinks') : null, $add, 3);
+
         return $links;
+    }
+
+    /**
+     * @param  iterable<CuratedLink>|null  $links
+     * @param  callable(string, ?string, string, int): void  $add
+     */
+    private function addCuratedLinks(?iterable $links, callable $add, int $priority): void
+    {
+        if ($links === null) {
+            return;
+        }
+
+        foreach ($links as $link) {
+            $add($link->label, $link->url, $link->kind, $priority);
+        }
     }
 
     /**
@@ -145,6 +194,38 @@ final class EventLinkCatalog
         if (isset($metadata['detailsPage']) && is_string($metadata['detailsPage'])) {
             $add('Details page', $metadata['detailsPage'], self::KIND_SOURCE);
         }
+    }
+
+    /**
+     * @param  callable(string, ?string, string, int): void  $add
+     */
+    private function addRepositoryLinks(SecurityEvent $event, callable $add): void
+    {
+        $mapping = $this->repositoryMappingResolver->resolve($event);
+
+        if (! $mapping instanceof RepositoryMapping) {
+            return;
+        }
+
+        $repositoryUrl = $this->repositoryCodeUrlGenerator->repositoryUrl($mapping);
+        $add('Repository', $repositoryUrl, self::KIND_CODE, 3);
+
+        $filePath = $event->file_path;
+
+        if (! is_string($filePath) || $filePath === '') {
+            return;
+        }
+
+        $location = new CodeLocation(
+            filePath: $filePath,
+            startLine: is_int($event->start_line) ? $event->start_line : null,
+            endLine: is_int($event->end_line) ? $event->end_line : null,
+            branch: is_string($event->branch) ? $event->branch : null,
+            commitSha: is_string($event->commit_sha) ? $event->commit_sha : null,
+        );
+
+        $fileUrl = $this->repositoryCodeUrlGenerator->fileUrl($mapping, $location);
+        $add('Source file', $fileUrl, self::KIND_CODE, 3);
     }
 
     private function inferKindFromLabel(string $label): string

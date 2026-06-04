@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'source_id', 'source_event_id', 'software_system_id', 'container_id',
@@ -48,6 +49,13 @@ class SecurityEvent extends Model
             'start_line' => 'integer',
             'end_line' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (SecurityEvent $event): void {
+            $event->curatedLinks()->delete();
+        });
     }
 
     /** @return BelongsTo<SoftwareSystem, $this> */
@@ -88,6 +96,12 @@ class SecurityEvent extends Model
             ->orderByDesc('created_at');
     }
 
+    /** @return MorphMany<CuratedLink, $this> */
+    public function curatedLinks(): MorphMany
+    {
+        return $this->morphMany(CuratedLink::class, 'owner');
+    }
+
     /**
      * Scope to events belonging to a virtual (linked) system.
      *
@@ -99,5 +113,19 @@ class SecurityEvent extends Model
             ->pluck('software_system_id');
 
         $query->whereIn('software_system_id', $systemIds);
+    }
+
+    /**
+     * Scope to events belonging to member containers of a virtual container link.
+     *
+     * @param  Builder<SecurityEvent>  $query
+     */
+    public function scopeForVirtualContainer(Builder $query, int $linkId): void
+    {
+        $containerIds = SecurityContainerLinkMember::query()
+            ->where('link_id', $linkId)
+            ->pluck('security_container_id');
+
+        $query->whereIn('container_id', $containerIds);
     }
 }

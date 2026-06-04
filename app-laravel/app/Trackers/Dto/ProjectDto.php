@@ -8,5 +8,7 @@ final class ProjectDto
         public readonly string $key,
         public readonly string $name,
         public readonly ?string $url = null,
+        public readonly ?string $owner = null,
+        public readonly ?string $repository = null,
     ) {}
 }

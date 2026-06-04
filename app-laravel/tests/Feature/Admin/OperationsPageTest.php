@@ -9,10 +9,12 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
+use App\Trackers\ReconcileAllJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
@@ -28,6 +30,12 @@ it('authorizes the operations page only for admins', function () {
     $this->actingAs($reader);
 
     expect(OperationsPage::canAccess())->toBeFalse();
+
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+    $this->actingAs($sync);
+
+    expect(OperationsPage::canAccess())->toBeTrue();
 
     $admin = operationsAdmin();
     $this->actingAs($admin);
@@ -202,6 +210,53 @@ it('header actions render for admin', function () {
         ->assertActionExists('dispatchDueIntegrations')
         ->assertActionExists('fetchSource')
         ->assertActionExists('refreshTracker');
+});
+
+it('sync users can trigger global reconciliation action', function () {
+    Bus::fake();
+
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->call('dispatchReconcileAll');
+
+    Bus::assertDispatched(ReconcileAllJob::class);
+});
+
+it('does not dispatch global reconciliation when it is already queued', function () {
+    Bus::fake();
+
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    DB::table('jobs')->insert([
+        'queue' => 'default',
+        'payload' => json_encode(['displayName' => ReconcileAllJob::class], JSON_THROW_ON_ERROR),
+        'attempts' => 0,
+        'reserved_at' => null,
+        'available_at' => now()->timestamp,
+        'created_at' => now()->timestamp,
+    ]);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->call('dispatchReconcileAll');
+
+    Bus::assertNotDispatched(ReconcileAllJob::class);
+});
+
+it('shows reconciliation last-run summary on operations page', function () {
+    $admin = operationsAdmin();
+
+    Cache::put('reconciliation:last_run_at', now()->toIso8601String());
+    Cache::put('reconciliation:last_run_new_links', 3);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Last run:')
+        ->assertSee('3 new link(s) created');
 });
 
 it('header action dispatches source by form data', function () {
