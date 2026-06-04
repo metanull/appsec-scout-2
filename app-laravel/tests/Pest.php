@@ -68,8 +68,12 @@ function makeEvent(array $overrides = []): SecurityEvent
         'last_seen_at' => Carbon::parse('2026-05-20 09:30:00'),
     ], $overrides));
 
+    $system->setRelation('repositoryMappings', collect());
+    $container->setRelation('repositoryMappings', collect());
+
     $event->setRelation('softwareSystem', $system);
     $event->setRelation('container', $container);
+    $event->setRelation('workItemLinks', collect());
 
     return $event;
 }

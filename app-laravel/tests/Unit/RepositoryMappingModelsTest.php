@@ -9,7 +9,6 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 use ValueError;
@@ -20,8 +19,7 @@ class RepositoryMappingModelsTest extends TestCase
 
     public function test_applies_and_rolls_back_repository_provider_migrations_cleanly(): void
     {
-        Artisan::call('migrate:fresh');
-
+        // RefreshDatabase already ran all migrations; just verify the tables exist.
         $this->assertTrue(Schema::hasTable('repository_providers'));
         $this->assertTrue(Schema::hasTable('repository_mappings'));
     }

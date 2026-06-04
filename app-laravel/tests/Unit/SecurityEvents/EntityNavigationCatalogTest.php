@@ -35,17 +35,17 @@ it('builds a system navigation catalog from all supported sources', function () 
         ]),
     ]));
     $system->setRelation('trackerProjectLinks', collect([
-        TrackerProjectLink::factory()->make([
+        tap(new TrackerProjectLink, fn ($l) => $l->forceFill([
             'tracker_id' => 'fake-tracker',
             'project_key' => 'APP',
             'project_name' => 'App Project',
-        ]),
+        ])),
     ]));
     $system->setRelation('repositoryMappings', collect([
-        RepositoryMapping::factory()->make([
+        tap(new RepositoryMapping, fn ($m) => $m->forceFill([
             'repository_name' => 'acme-app',
             'repository_url' => 'https://github.com/acme/acme-app',
-        ]),
+        ])),
     ]));
 
     $catalog = app(EntityNavigationCatalog::class)->buildForSoftwareSystem($system);
@@ -93,17 +93,17 @@ it('builds a container navigation catalog from all supported sources', function 
         ]),
     ]));
     $container->setRelation('trackerProjectLinks', collect([
-        TrackerProjectLink::factory()->make([
+        tap(new TrackerProjectLink, fn ($l) => $l->forceFill([
             'tracker_id' => 'fake-tracker',
             'project_key' => 'OPS',
             'project_name' => 'Ops Project',
-        ]),
+        ])),
     ]));
     $container->setRelation('repositoryMappings', collect([
-        RepositoryMapping::factory()->make([
+        tap(new RepositoryMapping, fn ($m) => $m->forceFill([
             'repository_name' => 'acme-container',
             'repository_url' => 'https://github.com/acme/acme-container',
-        ]),
+        ])),
     ]));
 
     $catalog = app(EntityNavigationCatalog::class)->buildForSecurityContainer($container);
