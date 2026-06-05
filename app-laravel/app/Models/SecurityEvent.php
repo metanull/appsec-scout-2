@@ -103,6 +103,37 @@ class SecurityEvent extends Model
     }
 
     /**
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    public function scopeOpen(Builder $query): Builder
+    {
+        return $query->where('state', EventState::Open);
+    }
+
+    /**
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    public function scopeWithSeverity(Builder $query, EventSeverity $severity): Builder
+    {
+        return $query->where('severity', $severity);
+    }
+
+    /**
+     * Order by severity priority: critical, high, medium, low, informational.
+     *
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    public function scopeBySeverityPriority(Builder $query): Builder
+    {
+        return $query->orderByRaw(
+            "CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END DESC"
+        );
+    }
+
+    /**
      * Scope to events belonging to a virtual (linked) system.
      *
      * @param  Builder<SecurityEvent>  $query

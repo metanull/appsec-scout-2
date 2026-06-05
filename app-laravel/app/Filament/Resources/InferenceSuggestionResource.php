@@ -61,7 +61,7 @@ class InferenceSuggestionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->orderByRaw("CASE status WHEN 'pending' THEN 0 ELSE 1 END")->orderByDesc('created_at'))
+            ->modifyQueryUsing(fn (Builder $query) => $query->pendingFirst())
             ->groups([
                 Group::make('subject_type')
                     ->label('Entity type')

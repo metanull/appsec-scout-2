@@ -380,7 +380,7 @@ class SecurityEventResource extends Resource
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->with('workItemLinks')
-                ->orderByRaw("CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END DESC")
+                ->bySeverityPriority()
                 ->orderByDesc('last_seen_at'))
             ->columns([
                 TextColumn::make('severity')
@@ -480,8 +480,8 @@ class SecurityEventResource extends Resource
                 TernaryFilter::make('is_dirty')
                     ->label('Pending sync')
                     ->queries(
-                        true: fn (Builder $query) => $query->whereRaw('is_dirty = 1'),
-                        false: fn (Builder $query) => $query->whereRaw('is_dirty = 0'),
+                        true: fn (Builder $query) => $query->where('is_dirty', true),
+                        false: fn (Builder $query) => $query->where('is_dirty', false),
                         blank: fn (Builder $query) => $query,
                     ),
                 SelectFilter::make('tags')

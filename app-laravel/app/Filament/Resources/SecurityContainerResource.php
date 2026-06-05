@@ -75,7 +75,7 @@ class SecurityContainerResource extends Resource
                         ->placeholder('-'),
                     TextEntry::make('open_events_count')
                         ->label('Open alerts')
-                        ->state(fn (SecurityContainer $record): int => $record->events()->whereRaw("state = 'open'")->count())
+                        ->state(fn (SecurityContainer $record): int => $record->events()->open()->count())
                         ->placeholder('-'),
                     TextEntry::make('first_seen_at')
                         ->label('First seen')
@@ -134,7 +134,7 @@ class SecurityContainerResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
-                'events as open_events_count' => fn (Builder $events) => $events->whereRaw("state = 'open'"),
+                'events as open_events_count' => fn (Builder $events) => $events->open(),
             ]))
             ->columns([
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Enums\InferenceSuggestionStatus;
 use Database\Factories\InferenceSuggestionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -73,5 +74,18 @@ class InferenceSuggestion extends Model
     public function reviewedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by_user_id');
+    }
+
+    /**
+     * Order pending suggestions before non-pending, then newest first.
+     *
+     * @param  Builder<InferenceSuggestion>  $query
+     * @return Builder<InferenceSuggestion>
+     */
+    public function scopePendingFirst(Builder $query): Builder
+    {
+        return $query
+            ->orderByRaw("CASE status WHEN 'pending' THEN 0 ELSE 1 END")
+            ->orderByDesc('created_at');
     }
 }

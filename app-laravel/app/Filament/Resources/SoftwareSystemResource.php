@@ -11,6 +11,7 @@ use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRel
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Models\Enums\EventSeverity;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\EntityNavigationCatalog;
@@ -74,19 +75,19 @@ class SoftwareSystemResource extends Resource
                         ->placeholder('-'),
                     TextEntry::make('open_events_count')
                         ->label('Open alerts')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("state = 'open'")->count())
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->open()->count())
                         ->placeholder('-'),
                     TextEntry::make('critical_events_count')
                         ->label('Critical')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'critical'")->count())
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->withSeverity(EventSeverity::Critical)->count())
                         ->placeholder('-'),
                     TextEntry::make('high_events_count')
                         ->label('High')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'high'")->count())
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->withSeverity(EventSeverity::High)->count())
                         ->placeholder('-'),
                     TextEntry::make('medium_events_count')
                         ->label('Medium')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'medium'")->count())
+                        ->state(fn (SoftwareSystem $record): int => $record->events()->withSeverity(EventSeverity::Medium)->count())
                         ->placeholder('-'),
                     TextEntry::make('updated_at')
                         ->label('Last updated')
@@ -137,10 +138,10 @@ class SoftwareSystemResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
-                'events as open_events_count' => fn (Builder $events) => $events->whereRaw("state = 'open'"),
-                'events as critical_events_count' => fn (Builder $events) => $events->whereRaw("severity = 'critical'"),
-                'events as high_events_count' => fn (Builder $events) => $events->whereRaw("severity = 'high'"),
-                'events as medium_events_count' => fn (Builder $events) => $events->whereRaw("severity = 'medium'"),
+                'events as open_events_count' => fn (Builder $events) => $events->open(),
+                'events as critical_events_count' => fn (Builder $events) => $events->withSeverity(EventSeverity::Critical),
+                'events as high_events_count' => fn (Builder $events) => $events->withSeverity(EventSeverity::High),
+                'events as medium_events_count' => fn (Builder $events) => $events->withSeverity(EventSeverity::Medium),
             ]))
             ->columns([
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
