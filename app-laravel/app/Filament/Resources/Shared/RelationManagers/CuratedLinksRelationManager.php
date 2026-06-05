@@ -177,7 +177,7 @@ class CuratedLinksRelationManager extends RelationManager
     {
         $user = Auth::user();
 
-        return $user instanceof User && $user->hasAnyRole(['Plan', 'Admin']);
+        return $user instanceof User && $user->can('context.curate');
     }
 
     private function curatedLinkOwner(): SecurityEvent|SecurityContainer|SoftwareSystem

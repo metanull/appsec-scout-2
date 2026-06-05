@@ -60,7 +60,7 @@ trait ContextQualityIndicatorSupport
             if ($indicator['label'] === 'Pending suggestions' && $indicator['message'] !== 'No pending suggestions') {
                 $user = Auth::user();
 
-                if ($user instanceof User && $user->hasAnyRole(['Plan', 'Admin'])) {
+                if ($user instanceof User && $user->can('inference.review')) {
                     return InferenceSuggestionResource::getUrl('index');
                 }
             }

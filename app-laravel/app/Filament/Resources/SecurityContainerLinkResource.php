@@ -163,6 +163,6 @@ class SecurityContainerLinkResource extends Resource
     {
         $user = Auth::user();
 
-        return $user instanceof User && $user->hasAnyRole(['Plan', 'Admin']);
+        return $user instanceof User && $user->can('context.curate');
     }
 }

@@ -394,7 +394,7 @@ class InferenceSuggestionResource extends Resource
     {
         $user = Auth::user();
 
-        return $user instanceof User && $user->hasAnyRole(['Plan', 'Admin']);
+        return $user instanceof User && $user->can('inference.review');
     }
 
     protected static function isPending(InferenceSuggestion $record): bool

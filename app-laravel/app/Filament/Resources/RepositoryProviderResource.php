@@ -36,7 +36,7 @@ class RepositoryProviderResource extends Resource
     {
         $user = Auth::user();
 
-        return $user instanceof User && $user->hasAnyRole(['Plan', 'Admin']);
+        return $user instanceof User && $user->can('admin.repository-providers');
     }
 
     public static function canCreate(): bool
