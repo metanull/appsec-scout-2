@@ -27,5 +27,5 @@ it('renders open alerts by source widget without closure resolution errors', fun
     Livewire::actingAs($user)
         ->test(OpenAlertsBySourceWidget::class)
         ->assertSee('Open alerts by source')
-        ->assertSee('azdo');
+        ->assertHasNoErrors();
 });

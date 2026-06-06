@@ -62,8 +62,6 @@ class IntegrationSettingsPage extends Page implements HasTable
 
     protected static ?string $slug = 'admin/integrations';
 
-    protected string $view = 'filament.pages.integration-settings-page';
-
     public static function canAccess(): bool
     {
         $user = Auth::user();

@@ -17,8 +17,6 @@ class ProfileIntegrationsPage extends Page implements HasForms
 
     protected static bool $shouldRegisterNavigation = false;
 
-    protected string $view = 'filament.pages.integration-credentials-page';
-
     public function mount(): void
     {
         $this->mountManagesIntegrationCredentials();

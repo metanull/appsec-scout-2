@@ -22,8 +22,6 @@ class SystemCredentialsPage extends Page implements HasForms
 
     protected static ?string $slug = 'admin/system-credentials';
 
-    protected string $view = 'filament.pages.integration-credentials-page';
-
     public function mount(): void
     {
         $this->mountManagesIntegrationCredentials();
