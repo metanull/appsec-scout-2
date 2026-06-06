@@ -143,7 +143,7 @@ Add a Filament confirmation modal to the curated link delete action while preser
 2. On `Action::make('delete')`, add `->requiresConfirmation()` before the action callback.
 3. Keep the existing `label`, `icon`, `color`, `visible`, `CuratedLinkService::delete()`, and success notification behavior unchanged.
 4. Add or update a Pest feature test that mounts a supported owner relation manager and verifies the curated link is not deleted unless the confirmation flow is completed.
-5. Run Pint, PHPStan, and the relevant Pest tests through Docker from the repository root.
+5. Run quality check after implementing, using exclusively scripts/invoke-check.ps1
 
 ### Definition of Done
 

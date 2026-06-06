@@ -128,6 +128,7 @@ class CuratedLinksRelationManager extends RelationManager
                     ->icon('heroicon-o-trash')
                     ->color('danger')
                     ->visible(fn (): bool => $this->canMutate())
+                    ->requiresConfirmation()
                     ->action(function (CuratedLink $record): void {
                         $user = Auth::user();
 

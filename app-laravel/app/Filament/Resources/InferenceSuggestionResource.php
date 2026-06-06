@@ -61,7 +61,7 @@ class InferenceSuggestionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->pendingFirst())
+            ->modifyQueryUsing(fn (Builder $query) => InferenceSuggestion::query()->pendingFirst())
             ->groups([
                 Group::make('subject_type')
                     ->label('Entity type')

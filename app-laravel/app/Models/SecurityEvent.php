@@ -24,6 +24,11 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
     'first_seen_at', 'last_seen_at', 'synced_at', 'updated_at',
     'is_dirty', 'pending_state', 'pending_severity', 'pending_comment',
 ])]
+/**
+ * @property bool $is_dirty
+ *
+ * @mixin \Eloquent
+ */
 class SecurityEvent extends Model
 {
     /** @use HasFactory<SecurityEventFactory> */
@@ -108,7 +113,7 @@ class SecurityEvent extends Model
      */
     public function scopeOpen(Builder $query): Builder
     {
-        return $query->where('state', EventState::Open);
+        return $query->where('state', EventState::Open->value);
     }
 
     /**
@@ -117,7 +122,7 @@ class SecurityEvent extends Model
      */
     public function scopeWithSeverity(Builder $query, EventSeverity $severity): Builder
     {
-        return $query->where('severity', $severity);
+        return $query->where('severity', $severity->value);
     }
 
     /**

@@ -152,6 +152,17 @@ it('allows plan users to edit and delete curated links and records audit entries
             'kind' => 'code',
             'url' => 'https://docs.example.com/updated-wiki',
         ])
+        ->mountTableAction('delete', $link);
+
+    // Mounting the delete action should not remove the link (confirmation step)
+    expect(CuratedLink::query()->whereKey($link->id)->exists())->toBeTrue();
+
+    Livewire::actingAs($user)
+        ->test(CuratedLinksRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => ViewSecurityEvent::class,
+        ])
+        ->call('loadTable')
         ->callTableAction('delete', $link);
 
     expect(CuratedLink::query()->whereKey($link->id)->exists())->toBeFalse()
