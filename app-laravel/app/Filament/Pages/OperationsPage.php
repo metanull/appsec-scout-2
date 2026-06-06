@@ -165,6 +165,7 @@ class OperationsPage extends Page implements HasTable
                 TextColumn::make('job')
                     ->label('Job')
                     ->getStateUsing(fn (FailedJob $record): string => $this->jobName($record->payload))
+                    ->formatStateUsing(fn (?string $state): string => $state ?? 'Unknown job')
                     ->wrap()
                     ->placeholder('Unknown job')
                     ->searchable(query: fn (Builder $query, string $search) => $query->whereRaw('payload LIKE ?', ["%{$search}%"])),
