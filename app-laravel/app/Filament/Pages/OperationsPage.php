@@ -222,8 +222,9 @@ class OperationsPage extends Page implements HasTable
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Close'),
             ])
-            ->emptyStateDescription('No failed jobs recorded.')
-            ->heading('Failed jobs');
+                ->paginated(false)
+                ->emptyStateDescription('No failed jobs recorded.')
+                ->heading('Failed jobs');
     }
 
     public function queuedJobCount(): int
