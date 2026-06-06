@@ -61,7 +61,7 @@ class InferenceSuggestionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->orderByRaw("CASE status WHEN 'pending' THEN 0 ELSE 1 END")->orderByDesc('created_at'))
+            ->modifyQueryUsing(fn (Builder $query) => InferenceSuggestion::query()->pendingFirst())
             ->groups([
                 Group::make('subject_type')
                     ->label('Entity type')
@@ -394,7 +394,7 @@ class InferenceSuggestionResource extends Resource
     {
         $user = Auth::user();
 
-        return $user instanceof User && $user->hasAnyRole(['Plan', 'Admin']);
+        return $user instanceof User && $user->can('inference.review');
     }
 
     protected static function isPending(InferenceSuggestion $record): bool

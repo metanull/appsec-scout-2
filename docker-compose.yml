@@ -70,6 +70,10 @@ services:
         volumes:
             - redis_data:/data
 
+    trivy:
+        image: aquasec/trivy
+        volumes:
+            - /appsec-scout-2:/appsec-scout-2:ro
 volumes:
     mysql_data:
     redis_data:

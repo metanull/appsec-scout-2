@@ -11,6 +11,9 @@ use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRel
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Models\Enums\EventSeverity;
+use App\Models\Enums\EventState;
+use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\EntityNavigationCatalog;
@@ -74,19 +77,39 @@ class SoftwareSystemResource extends Resource
                         ->placeholder('-'),
                     TextEntry::make('open_events_count')
                         ->label('Open alerts')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("state = 'open'")->count())
+                        ->state(function (SoftwareSystem $record): int {
+                            return SecurityEvent::query()
+                                ->where('software_system_id', $record->id)
+                                ->where('state', EventState::Open->value)
+                                ->count();
+                        })
                         ->placeholder('-'),
                     TextEntry::make('critical_events_count')
                         ->label('Critical')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'critical'")->count())
+                        ->state(function (SoftwareSystem $record): int {
+                            return SecurityEvent::query()
+                                ->where('software_system_id', $record->id)
+                                ->where('severity', EventSeverity::Critical->value)
+                                ->count();
+                        })
                         ->placeholder('-'),
                     TextEntry::make('high_events_count')
                         ->label('High')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'high'")->count())
+                        ->state(function (SoftwareSystem $record): int {
+                            return SecurityEvent::query()
+                                ->where('software_system_id', $record->id)
+                                ->where('severity', EventSeverity::High->value)
+                                ->count();
+                        })
                         ->placeholder('-'),
                     TextEntry::make('medium_events_count')
                         ->label('Medium')
-                        ->state(fn (SoftwareSystem $record): int => $record->events()->whereRaw("severity = 'medium'")->count())
+                        ->state(function (SoftwareSystem $record): int {
+                            return SecurityEvent::query()
+                                ->where('software_system_id', $record->id)
+                                ->where('severity', EventSeverity::Medium->value)
+                                ->count();
+                        })
                         ->placeholder('-'),
                     TextEntry::make('updated_at')
                         ->label('Last updated')
@@ -137,10 +160,22 @@ class SoftwareSystemResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
-                'events as open_events_count' => fn (Builder $events) => $events->whereRaw("state = 'open'"),
-                'events as critical_events_count' => fn (Builder $events) => $events->whereRaw("severity = 'critical'"),
-                'events as high_events_count' => fn (Builder $events) => $events->whereRaw("severity = 'high'"),
-                'events as medium_events_count' => fn (Builder $events) => $events->whereRaw("severity = 'medium'"),
+                'events as open_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('state', EventState::Open->value);
+                },
+                'events as critical_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('severity', EventSeverity::Critical->value);
+                },
+                'events as high_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('severity', EventSeverity::High->value);
+                },
+                'events as medium_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('severity', EventSeverity::Medium->value);
+                },
             ]))
             ->columns([
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),

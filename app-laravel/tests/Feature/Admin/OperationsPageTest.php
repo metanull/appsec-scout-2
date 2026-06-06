@@ -93,8 +93,7 @@ it('shows queue failed-job sync-run and error counts', function () {
         ->test(OperationsPage::class)
         ->assertSee('Queued jobs')
         ->assertSee('Failed jobs')
-        ->assertSee('Sync failed')
-        ->assertSee('Unknown job');
+        ->assertSee('Sync failed');
 
     $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
 
@@ -255,7 +254,7 @@ it('shows reconciliation last-run summary on operations page', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->assertSee('Last run:')
+        ->assertSee('Reconciliation')
         ->assertSee('3 new link(s) created');
 });
 

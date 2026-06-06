@@ -89,7 +89,7 @@ FROM php:8.4-fpm-trixie AS final
 
 ARG BFG_VERSION=1.15.0
 ARG BFG_SHA256=dfe2885adc2916379093f02a80181200536856c9a987bf21c492e452adefef7a
-ARG TRIVY_VERSION=0.70.0
+ARG TRIVY_VERSION=0.71.0
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
@@ -105,30 +105,37 @@ COPY .docker/certs/ /tmp/appsec-scout-certs/
 
 # System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nginx \
-    supervisor \
-    git \
-    curl \
-    gpg \
-    unzip \
-    ca-certificates \
-    libicu-dev \
-    libzip-dev \
+        nginx \
+        supervisor \
+        git \
+        curl \
+        gpg \
+        unzip \
+        ca-certificates \
+        libicu-dev \
+        libzip-dev \
     && if find /tmp/appsec-scout-certs -type f -name '*.crt' -print -quit | grep -q .; then \
         find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
             -exec cp {} /usr/local/share/ca-certificates/ \; ; \
         update-ca-certificates; \
     fi \
     && install -d -m 0755 /etc/apt/keyrings \
-    && curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key \
-        | gpg --dearmor -o /etc/apt/keyrings/trivy.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
-        > /etc/apt/sources.list.d/trivy.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        openjdk-21-jre-headless \
-        trivy=${TRIVY_VERSION} \
     && rm -rf /var/lib/apt/lists/*
+
+# Download Trivy  (SHA-256 verified)
+#RUN apt-get install -y --no-install-recommends \
+#        apt-transport-https \
+#        gnupg \
+#        openjdk-21-jre-headless \
+#    && curl -fsSL https://get.trivy.dev/deb/public.key \
+#        | gpg --dearmor -o /etc/apt/keyrings/trivy.gpg \
+#    && echo "deb [signed-by=/etc/apt/keyrings/trivy.gpg] https://get.trivy.dev/deb generic main" \
+#        > /etc/apt/sources.list.d/trivy.list \
+#    && apt-get update \
+#    && apt-get install -y --no-install-recommends \
+#        trivy=${TRIVY_VERSION} \
+#    && rm -rf /var/lib/apt/lists/*
+
 
 # Download BFG 1.15.0 jar (SHA-256 verified)
 RUN mkdir -p /opt/bfg \

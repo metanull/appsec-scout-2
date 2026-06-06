@@ -24,6 +24,11 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
     'first_seen_at', 'last_seen_at', 'synced_at', 'updated_at',
     'is_dirty', 'pending_state', 'pending_severity', 'pending_comment',
 ])]
+/**
+ * @property bool $is_dirty
+ *
+ * @mixin \Eloquent
+ */
 class SecurityEvent extends Model
 {
     /** @use HasFactory<SecurityEventFactory> */
@@ -100,6 +105,37 @@ class SecurityEvent extends Model
     public function curatedLinks(): MorphMany
     {
         return $this->morphMany(CuratedLink::class, 'owner');
+    }
+
+    /**
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    public function scopeOpen(Builder $query): Builder
+    {
+        return $query->where('state', EventState::Open->value);
+    }
+
+    /**
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    public function scopeWithSeverity(Builder $query, EventSeverity $severity): Builder
+    {
+        return $query->where('severity', $severity->value);
+    }
+
+    /**
+     * Order by severity priority: critical, high, medium, low, informational.
+     *
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    public function scopeBySeverityPriority(Builder $query): Builder
+    {
+        return $query->orderByRaw(
+            "CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END DESC"
+        );
     }
 
     /**

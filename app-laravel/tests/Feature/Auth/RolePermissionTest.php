@@ -52,5 +52,5 @@ it('seeder is idempotent on re-run', function () {
     (new RolePermissionSeeder)->run();
 
     expect(Role::count())->toBe(5)
-        ->and(Permission::count())->toBe(16);
+        ->and(Permission::count())->toBe(19);
 });

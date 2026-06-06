@@ -9,7 +9,9 @@ use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Models\Enums\EventState;
 use App\Models\SecurityContainer;
+use App\Models\SecurityEvent;
 use App\Models\User;
 use App\SecurityEvents\EntityNavigationCatalog;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -75,7 +77,12 @@ class SecurityContainerResource extends Resource
                         ->placeholder('-'),
                     TextEntry::make('open_events_count')
                         ->label('Open alerts')
-                        ->state(fn (SecurityContainer $record): int => $record->events()->whereRaw("state = 'open'")->count())
+                        ->state(function (SecurityContainer $record): int {
+                            return SecurityEvent::query()
+                                ->where('container_id', $record->id)
+                                ->where('state', EventState::Open->value)
+                                ->count();
+                        })
                         ->placeholder('-'),
                     TextEntry::make('first_seen_at')
                         ->label('First seen')
@@ -134,7 +141,10 @@ class SecurityContainerResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
-                'events as open_events_count' => fn (Builder $events) => $events->whereRaw("state = 'open'"),
+                'events as open_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('state', EventState::Open->value);
+                },
             ]))
             ->columns([
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
