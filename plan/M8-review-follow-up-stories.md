@@ -186,7 +186,8 @@ Render the Operations page using Filament page, widget, stats, and table primiti
 6. Remove custom layout classes and manual `@livewire` widget rendering from `app-laravel/resources/views/filament/pages/operations-page.blade.php`.
 7. If a minimal Blade view remains necessary for Filament page/table rendering, it must contain only the Filament page component and the Filament table output, with no custom presentation classes or manual widget rendering.
 8. Add or update Pest/Livewire tests verifying that authorized users can access the Operations page, see the reconciliation summary through the Filament widget, and see the failed-jobs table.
-9. Run Pint, PHPStan, and the relevant Pest tests through Docker from the repository root.
+9. Run lint fix after implementeing, using exclusively `scripts/invoke-lint-fix.ps1`
+10. Run quality check after implementing, using exclusively `scripts/invoke-check.ps1` fix unil all green
 
 ### Definition of Done
 

@@ -255,7 +255,7 @@ it('shows reconciliation last-run summary on operations page', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->assertSee('Last run:')
+        ->assertSee('Reconciliation')
         ->assertSee('3 new link(s) created');
 });
 
