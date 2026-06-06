@@ -166,6 +166,7 @@ class OperationsPage extends Page implements HasTable
                     ->label('Job')
                     ->getStateUsing(fn (FailedJob $record): string => $this->jobName($record->payload))
                     ->wrap()
+                    ->placeholder('Unknown job')
                     ->searchable(query: fn (Builder $query, string $search) => $query->whereRaw('payload LIKE ?', ["%{$search}%"])),
                 TextColumn::make('exception_summary')
                     ->label('Exception')
