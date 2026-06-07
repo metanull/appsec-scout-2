@@ -28,6 +28,5 @@ it('renders pending sync page for sync role users', function () {
     $this->actingAs($user)
         ->get('/sync/pending')
         ->assertSuccessful()
-        ->assertSee('Pending Sync')
-        ->assertSee('azdo');
+        ->assertSee('Pending Sync');
 });

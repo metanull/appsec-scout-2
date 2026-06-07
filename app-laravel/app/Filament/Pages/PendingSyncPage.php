@@ -31,8 +31,6 @@ class PendingSyncPage extends Page implements HasTable
 
     protected static ?string $slug = 'sync/pending';
 
-    protected string $view = 'filament.pages.pending-sync-page';
-
     public static function canAccess(): bool
     {
         /** @var User|null $user */
