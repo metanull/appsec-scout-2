@@ -10,12 +10,21 @@ This repository has two distinct verification environments. Keep them separate.
 
 ## Local Verification (Developer Machine)
 
-- Local verification runs through Docker Compose via scripts such as `scripts/invoke-check.ps1` and `scripts/invoke-check.sh`.
-- Local scripts are expected to run Pint, PHPStan, and Pest in containers.
-- Local scripts can validate both paths: SQLite in-memory and MySQL test database.
-- Local scripts must source test configuration from `.env.testing` (generated from `.env.testing.example` when missing).
+- Local environment relies on Docker for app checks. The containers are preconfigured, use exclusively the following scripts to interact with them, and do not require manual Docker commands:
+- Initialize the app using the script `scripts/appsec-scout.ps1`, optionally passing the `-Rebuild` flag for a clean rebuild.
+- Invoke checks using the script `scripts/invoke-check.ps1`, optionally passing the `-Check` parameter to specify which checks to run:
+  - `-Check all` (runs all checks read-only/without fixing)
+  - `-Check lint` (runs code style checks)
+  - `-Check lint-fix` (runs code style checks with auto-fixing)
+  - `-Check test` (runs all tests)
+  - `-Check test-sqlite` (runs tests with SQLite in-memory database)
+  - `-Check test-mysql` (runs tests with MySQL test database)
+  - `-Check static-analysis` (runs static analysis checks)
+  - `-Check smoke` (runs smoke tests, for example, checking if the app can serve a page successfully)
+  - `-Check dependencies` (runs composer check for outdated dependencies)
+  - `-Check dependencies-fix` (runs composer update to fix outdated dependencies)
+- Use the above scripts to interact with Docker and the app. Do not run manual Docker commands or interact with the app outside of these scripts, as they are designed to maintain consistency between local and CI environments.
 - Do not hardcode test database credentials or run manual SQL DDL in scripts.
-- Use Laravel/Artisan commands (for example `php artisan migrate:fresh --force`) for schema setup.
 
 ## CI Verification (GitHub Actions)
 
