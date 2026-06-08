@@ -211,4 +211,6 @@ RUN composer install \
     --no-progress \
     --no-scripts
 
+RUN composer update --with-dependencies
+
 USER www-data
