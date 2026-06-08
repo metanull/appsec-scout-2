@@ -9,6 +9,8 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\EmbeddedTable;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
@@ -41,6 +43,13 @@ class PendingSyncPage extends Page implements HasTable
         }
 
         return $user->can('work-items.sync') && $user->can('sources.push-state');
+    }
+
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([
+            EmbeddedTable::make(),
+        ]);
     }
 
     public function table(Table $table): Table

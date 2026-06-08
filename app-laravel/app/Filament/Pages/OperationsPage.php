@@ -28,6 +28,8 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\EmbeddedTable;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
@@ -90,6 +92,13 @@ class OperationsPage extends Page implements HasTable
     {
         $this->selectedSourceId = $this->sourceOptions() !== [] ? array_key_first($this->sourceOptions()) : null;
         $this->selectedTrackerId = $this->trackerOptions() !== [] ? array_key_first($this->trackerOptions()) : null;
+    }
+
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([
+            EmbeddedTable::make(),
+        ]);
     }
 
     /** @return array<Action|ActionGroup> */

@@ -13,6 +13,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -48,6 +49,13 @@ trait ManagesIntegrationCredentials
     public function form(Schema $schema): Schema
     {
         return $schema->components($this->credentialSections());
+    }
+
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([
+            EmbeddedSchema::make('form'),
+        ]);
     }
 
     /** @return array<int, Action> */
