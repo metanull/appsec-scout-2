@@ -19,6 +19,8 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\EmbeddedTable;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -67,6 +69,13 @@ class IntegrationSettingsPage extends Page implements HasTable
         $user = Auth::user();
 
         return $user instanceof User ? $user->can('admin.integrations') : false;
+    }
+
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([
+            EmbeddedTable::make(),
+        ]);
     }
 
     public function mount(): void

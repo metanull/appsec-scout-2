@@ -128,6 +128,33 @@ it('stores code alert context facts', function () {
         ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::PACKAGE_ECOSYSTEM))->toBe('npm');
 });
 
+it('preserves full rule description text in event descriptions', function () {
+    $alert = new AzDoAlert(
+        alertId: 7007,
+        alertType: 'code',
+        severity: 'high',
+        state: 'active',
+        title: 'XSS vulnerability',
+        tools: [
+            [
+                'name' => 'CodeQL',
+                'rules' => [
+                    [
+                        'description' => 'Short desc',
+                        'fullDescription' => [
+                            'text' => 'This is a cross-site scripting vulnerability.',
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    );
+
+    $dto = AzDoNormalizer::toEvent($alert);
+
+    expect($dto->description)->toBe("Short desc\n\nThis is a cross-site scripting vulnerability.");
+});
+
 it('stores dependency alert package context facts', function () {
     $project = new AzDoProject(id: 'project-001', name: 'SecurityProject');
     $repo = new AzDoRepository(

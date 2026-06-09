@@ -1,4 +1,5 @@
-﻿param(
+﻿[CmdletBinding()]
+param(
     [string]$OutputDir = (Join-Path $PSScriptRoot '..\.docker\certs')
 )
 

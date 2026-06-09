@@ -18,8 +18,10 @@ it('creates a single work item and links one event', function () {
     $user = User::factory()->create();
     $user->syncRoles(['Plan']);
     $event = SecurityEvent::factory()->secret()->create([
-        'source_id' => 'github',
+        'source_id' => 'azdo',
         'title' => 'Hardcoded PAT in config',
+        'description' => "Short desc\n\nThis is a cross-site scripting vulnerability.",
+        'url' => 'https://example.test/alerts/secret-101',
     ]);
 
     app(WorkItemService::class)->createForEvents(
@@ -35,6 +37,9 @@ it('creates a single work item and links one event', function () {
     $link = WorkItemLink::query()->first();
 
     expect($tracker->createCalls)->toBe(1)
+        ->and($tracker->latestCreateWorkItemRequest)->not->toBeNull()
+        ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('[View alert](https://example.test/alerts/secret-101)')
+        ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('This is a cross-site scripting vulnerability.')
         ->and($link)->not->toBeNull()
         ->and($link?->event_id)->toBe($event->id)
         ->and($link?->tracker_id)->toBe('fake-tracker')
@@ -46,9 +51,19 @@ it('creates one grouped work item and links all selected events', function () {
     $tracker = bindFakeWorkItemTracker(new FakeTracker);
     $user = User::factory()->create();
     $user->syncRoles(['Plan']);
-    $events = SecurityEvent::factory()->count(5)->create([
-        'source_id' => 'github',
-        'title' => 'Grouped alert',
+    $events = collect([
+        SecurityEvent::factory()->create([
+            'source_id' => 'azdo',
+            'title' => 'Grouped alert 1',
+            'description' => "Short desc\n\nThis is a cross-site scripting vulnerability.",
+            'url' => 'https://example.test/alerts/grouped-1',
+        ]),
+        SecurityEvent::factory()->create([
+            'source_id' => 'azdo',
+            'title' => 'Grouped alert 2',
+            'description' => "Short desc\n\nThis is a cross-site scripting vulnerability.",
+            'url' => 'https://example.test/alerts/grouped-2',
+        ]),
     ]);
 
     app(WorkItemService::class)->createForEvents(
@@ -65,10 +80,13 @@ it('creates one grouped work item and links all selected events', function () {
     $audit = AuditLog::query()->where('action', 'work_item_created')->latest('id')->first();
 
     expect($tracker->createCalls)->toBe(1)
-        ->and($links)->toHaveCount(5)
+        ->and($tracker->latestCreateWorkItemRequest)->not->toBeNull()
+        ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('[source alert](https://example.test/alerts/grouped-1)')
+        ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('This is a cross-site scripting vulnerability.')
+        ->and($links)->toHaveCount(2)
         ->and($workItemIds)->toHaveCount(1)
         ->and($audit?->payload_json['grouped'])->toBeTrue()
-        ->and($audit?->payload_json['event_ids'])->toHaveCount(5);
+        ->and($audit?->payload_json['event_ids'])->toHaveCount(2);
 });
 
 it('links an existing work item to selected events', function () {

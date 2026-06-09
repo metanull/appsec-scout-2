@@ -204,8 +204,14 @@ final class AzDoNormalizer
     {
         $parts = [];
 
-        if (isset($rule['description']) && $rule['description'] !== '') {
-            $parts[] = $rule['description'];
+        if (isset($rule['description']) && trim((string) $rule['description']) !== '') {
+            $parts[] = (string) $rule['description'];
+        }
+
+        $fullDescription = $rule['fullDescription']['text'] ?? null;
+
+        if (is_string($fullDescription) && trim($fullDescription) !== '') {
+            $parts[] = $fullDescription;
         }
 
         return $parts !== [] ? implode("\n\n", $parts) : null;

@@ -213,12 +213,22 @@ Remove-Item Env:\APP_BUILD_TARGET
 
 Helper scripts for the same dev-container checks:
 
-```bash
-./scripts/invoke-check.sh
-```
-
 ```powershell
+# Run all checks
 .\scripts\invoke-check.ps1
+
+# Run selected check passing the `-Check` parameter to specify which checks to run:
+#  - `-Check all` (runs all checks read-only/without fixing)
+#  - `-Check lint` (runs code style checks)
+#  - `-Check lint-fix` (runs code style checks with auto-fixing)
+#  - `-Check test` (runs all tests)
+#  - `-Check test-sqlite` (runs tests with SQLite in-memory database)
+#  - `-Check test-mysql` (runs tests with MySQL test database)
+#  - `-Check static-analysis` (runs static analysis checks)
+#  - `-Check smoke` (runs smoke tests, for example, checking if the app can serve a page successfully)
+#  - `-Check dependencies` (runs composer check for outdated dependencies)
+#  - `-Check dependencies-fix` (runs composer update to fix outdated dependencies)
+.\scripts\invoke-check.ps1 -Check 'static-analysis'
 ```
 
 CI intentionally stops at the existing Laravel quality gates. It does not build a production image, generate an SBOM, or run Trivy image scans.
@@ -233,39 +243,3 @@ Examples:
 docker compose exec app trivy --version
 docker image inspect appsec-scout:latest --format '{{.Size}}'
 ```
-
-## Backup, Upgrade, And Rollback Notes
-
-Back up before destructive changes:
-
-- MySQL data volume
-- Redis if queue state must be preserved
-- `.env`
-
-Upgrade flow:
-
-```bash
-git pull
-docker compose build
-docker compose up -d
-docker compose exec app php artisan migrate --force
-```
-
-Rollback guidance:
-
-1. restore the previous repository revision and `.env`
-2. rebuild and restart the stack
-3. restore the database backup if the reverted version is not schema-compatible
-
-## Milestone Mapping
-
-The current operator flow reflects the planned sequence in `plan/README.md`:
-
-- M1 foundation
-- M2 sources and reader UI
-- M3 triage and sync
-- M4 planning and trackers
-- M5 triage commands and attachments
-- M6 admin polish and documentation
-
-Defender-specific operations remain deferred from M6.

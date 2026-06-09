@@ -17,6 +17,8 @@ final class FakeTracker implements Tracker
 {
     public int $createCalls = 0;
 
+    public ?CreateWorkItemRequest $latestCreateWorkItemRequest = null;
+
     public int $getCalls = 0;
 
     public int $searchCalls = 0;
@@ -102,6 +104,7 @@ final class FakeTracker implements Tracker
     public function createWorkItem(CreateWorkItemRequest $request): WorkItemDto
     {
         $this->createCalls++;
+        $this->latestCreateWorkItemRequest = $request;
 
         $workItem = new WorkItemDto(
             id: sprintf('%s#%d', $request->projectKey, count($this->workItems) + 1),
