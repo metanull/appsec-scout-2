@@ -25,19 +25,19 @@ $ProjectRoot = Split-Path $MyScriptRoot
 $SavedErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Stop"
 Set-Location $ProjectRoot
+$workspacePath = (Get-Location).Path.Replace('\\', '/') + '/app-laravel'
+$workspaceMount = "${workspacePath}:/var/www/html"
 
 try {
-    $workspacePath = (Get-Location).Path.Replace('\\', '/') + '/app-laravel'
-
     if ($Fix -eq 'all' -or $Fix -eq 'lint-fix') {
-        docker compose run --rm --no-build --no-deps -u root -v "${workspacePath}:/var/www/html" app vendor/bin/pint
+        docker compose run --rm --no-deps -v "$workspaceMount" app vendor/bin/pint
         if ($LASTEXITCODE -ne 0) {
             throw "Pint fix run failed."
         }
     }
 
     if ($Fix -eq 'all' -or $Fix -eq 'dependencies-fix') {
-        docker compose run --rm --no-build --no-deps -u root -v "${workspacePath}:/var/www/html" app sh -c "mkdir -p bootstrap/cache && COMPOSER_CACHE_DIR=/tmp/composer-cache composer update --no-scripts --with-dependencies --no-interaction --no-progress"
+        docker compose run --rm --no-deps -v "$workspaceMount" app composer update --no-scripts --with-dependencies --no-interaction --no-progress
         if ($LASTEXITCODE -ne 0) {
             throw "Composer dependencies fix failed."
         }
