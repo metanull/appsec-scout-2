@@ -16,6 +16,7 @@ use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
 use App\Sync\FetchSourceJob;
+use App\Models\InferenceSuggestion;
 use App\Sync\Upserter;
 use Carbon\Carbon;
 use Tests\Fakes\FakeSource;
@@ -24,7 +25,9 @@ it('syncs systems containers events and preserves dirty/local metadata', functio
     config(['integration_settings.fake.enabled' => true]);
 
     $source = (new FakeSource)
-        ->withSystems(new SystemDto('sys-001', 'Payments API'))
+        ->withSystems(new SystemDto('sys-001', 'Payments API', null, null, [
+            'tracker.github.repository' => 'acme/payments',
+        ]))
         ->withContainers('sys-001', new ContainerDto('cont-001', 'Backend Repo', 'sys-001', 'repository'))
         ->withEvents(new EventDto(
             sourceEventId: 'evt-001',
@@ -78,6 +81,83 @@ it('syncs systems containers events and preserves dirty/local metadata', functio
     expect($run)->not->toBeNull()
         ->and($run->status)->toBe('success')
         ->and($run->counts_json['events_updated'])->toBe(1);
+
+    // The successful sync should have triggered automatic inference
+    // generation and created pending suggestions from the synced metadata.
+    expect(InferenceSuggestion::query()->where('suggestion_type', 'tracker_project_mapping_candidate')->exists())->toBeTrue();
+});
+
+it('does not generate inference suggestions for failed sync runs', function () {
+    config(['integration_settings.partial.enabled' => true]);
+
+    $partialFailureSource = new class implements Source
+    {
+        public function id(): string
+        {
+            return 'partial';
+        }
+
+        public function displayName(): string
+        {
+            return 'Partial Failure Source';
+        }
+
+        public function capabilities(): SourceCapabilities
+        {
+            return new SourceCapabilities;
+        }
+
+        public function credentialFields(): array
+        {
+            return [];
+        }
+
+        public function testConnection(): TestResult
+        {
+            return TestResult::success();
+        }
+
+        public function fetchSystems(): iterable
+        {
+            return [new SystemDto('sys-x', 'Broken But Has Metadata', null, null, [
+                'tracker.github.repository' => 'acme/broken',
+            ])];
+        }
+
+        public function fetchContainers(SystemDto $system): iterable
+        {
+            return [];
+        }
+
+        public function fetchEvents(?Carbon $since = null, ?SystemDto $system = null): iterable
+        {
+            throw new RuntimeException('boom-later');
+        }
+
+        public function pushEventState(SecurityEvent $event): PushResult
+        {
+            return PushResult::failure('broken');
+        }
+
+        public function fetchRawEvent(SecurityEvent $event): EventDto
+        {
+            throw new RuntimeException('broken');
+        }
+
+        public function enrichEvent(SecurityEvent $event): ?EventDto
+        {
+            return null;
+        }
+    };
+
+    $this->app->bind('appsec-scout.source.partial', fn () => $partialFailureSource);
+    $this->app->tag(['appsec-scout.source.partial'], 'appsec-scout.source');
+
+    expect(fn () => (new FetchSourceJob('partial'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class)))
+        ->toThrow(RuntimeException::class, 'boom-later');
+
+    // The run failed; the listener must skip generation and no suggestions created.
+    expect(InferenceSuggestion::query()->where('suggestion_type', 'tracker_project_mapping_candidate')->exists())->toBeFalse();
 });
 
 it('links events to containers when the event only carries the source container id', function () {

@@ -24,7 +24,7 @@ Wire a post-sync inference pass into the existing `SyncRunFinished` event so eve
 7. Add or update `app-laravel/tests/Feature/Sync/FetchSourceJobTest.php` with a fake source that emits deterministic context metadata and assert that a successful sync creates the expected pending `InferenceSuggestion` rows through the new event listener, while a failed sync does not create new suggestions.
 8. Add or update `app-laravel/tests/Feature/Filament/InferenceSuggestionReviewResourceTest.php` so the review page is exercised with suggestions produced by an actual sync run, proving the operator queue is populated by the automatic inference step and not by manual seeding.
 9. Keep the existing direct generator coverage in `app-laravel/tests/Feature/Context/Inference/FuzzyMappingSuggestionGeneratorTest.php` so the deterministic matching rules and idempotency behavior remain covered.
-10. Run the project quality checks after the change, including Pint and the relevant Pest suites, and fix any failures before finishing.
+10. Run the project quality checks after the change: `. ./scripts/invoke-check.ps1 -Check lint-fix` then `. ./scripts/invoke-check.ps1 -Check all`, and fix any failures before finishing.
 
 ## Definition of Done
 - A successful source sync automatically generates pending inference suggestions from normalized metadata facts.
@@ -33,5 +33,5 @@ Wire a post-sync inference pass into the existing `SyncRunFinished` event so eve
 - Relevant automated tests are added or updated for the sync wiring and user-visible review queue behavior.
 - Code is linted.
 - All tests are passing.
-- No warnings or errors appear in lint or tests.
-- No unrelated behavior, migrations, dependencies, or documentation are changed unless this story explicitly requires them.
+- No warnings or errors appear in check results.
+- No unrelated behavior, migrations, dependencies, or documentation are changed.

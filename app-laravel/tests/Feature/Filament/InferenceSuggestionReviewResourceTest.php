@@ -32,30 +32,27 @@ it('allows plan users to access inference review and blocks reader users', funct
 it('renders review filters and delegates table actions to the review service', function () {
     $plan = reviewUser(['Plan']);
 
-    $subject = SoftwareSystem::factory()->create(['name' => 'Payments']);
+    // Produce real suggestions via a successful source sync so the
+    // review page is populated by the automatic inference pass.
+    config(['integration_settings.fake.enabled' => true]);
 
-    $acceptSuggestion = InferenceSuggestion::factory()->forSubject($subject)->forTarget(null)->create([
-        'suggestion_type' => InferenceSuggestion::TYPE_TRACKER_PROJECT_MAPPING,
-        'proposed_action' => InferenceSuggestion::ACTION_CREATE_TRACKER_PROJECT_LINK,
-        'status' => InferenceSuggestionStatus::Pending,
-        'evidence' => [
-            'reason' => 'Exact Jira project key in context metadata suggests a tracker mapping.',
-            'matched_key' => 'tracker.jira.project_key',
-            'matched_value' => 'PAY',
-            'tracker_id' => 'jira',
-        ],
-    ]);
+    $source = (new Tests\Fakes\FakeSource)
+        ->withSystems(
+            new \App\Sources\Dto\SystemDto('sys-001', 'Payments API', null, null, ['tracker.github.repository' => 'acme/payments']),
+            new \App\Sources\Dto\SystemDto('sys-002', 'Orders API', null, null, ['tracker.github.repository' => 'acme/orders'])
+        );
 
-    $rejectSuggestion = InferenceSuggestion::factory()->forSubject($subject)->forTarget(null)->create([
-        'suggestion_type' => InferenceSuggestion::TYPE_REPOSITORY_MAPPING,
-        'proposed_action' => InferenceSuggestion::ACTION_CREATE_REPOSITORY_MAPPING,
-        'status' => InferenceSuggestionStatus::Pending,
-        'evidence' => [
-            'reason' => 'Exact repository URL indicates a concrete provider and repository mapping candidate.',
-            'matched_key' => 'azdo.repository.web_url',
-            'matched_value' => 'https://dev.azure.com/acme/security/_git/payments',
-        ],
-    ]);
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+
+    (new \App\Sync\FetchSourceJob('fake'))->handle(app(\App\Integrations\SystemIntegrationRuntime::class), app(\App\Sync\Upserter::class));
+
+    $suggestions = InferenceSuggestion::query()->limit(2)->get();
+
+    expect($suggestions->count())->toBeGreaterThanOrEqual(2);
+
+    $acceptSuggestion = $suggestions->get(0);
+    $rejectSuggestion = $suggestions->get(1);
 
     $spy = (object) ['accepted' => 0, 'rejected' => 0, 'lastAcceptedInput' => []];
 
