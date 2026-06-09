@@ -29,6 +29,8 @@ $workspacePath = (Get-Location).Path.Replace('\\', '/') + '/app-laravel'
 $workspaceMount = "${workspacePath}:/var/www/html"
 
 try {
+    Remove-Item -Path "app-laravel/bootstrap/cache/*.php" -Force -ErrorAction SilentlyContinue
+
     if ($Fix -eq 'all' -or $Fix -eq 'lint-fix') {
         docker compose run --rm --no-deps -v "$workspaceMount" app vendor/bin/pint
         if ($LASTEXITCODE -ne 0) {

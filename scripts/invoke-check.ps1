@@ -33,6 +33,8 @@ $workspacePath    = (Get-Location).Path.Replace('\\', '/') + '/app-laravel'
 $workspaceMount   = "${workspacePath}:/var/www/html"
 
 try {
+    Remove-Item -Path "app-laravel/bootstrap/cache/*.php" -Force -ErrorAction SilentlyContinue
+
     # Ensure .env.testing exists; copy from the committed example when it is missing.
     if (-not (Test-Path $envTestingPath)) {
         Copy-Item $envExamplePath $envTestingPath
@@ -56,7 +58,7 @@ try {
     }
 
     if ($Check -eq 'all' -or $Check -eq 'static-analysis') {
-         docker compose run --rm -v "$workspaceMount" app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+         docker compose run --rm -v "$workspaceMount" app vendor/bin/phpstan analyse --memory-limit=512M
          if ($LASTEXITCODE -ne 0) {
              throw "PHPStan check failed."
          }
