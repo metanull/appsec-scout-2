@@ -3,12 +3,16 @@
 use App\Context\Inference\InferenceSuggestionReviewService;
 use App\Filament\Resources\InferenceSuggestionResource;
 use App\Filament\Resources\InferenceSuggestionResource\Pages\ListInferenceSuggestions;
+use App\Integrations\SystemIntegrationRuntime;
 use App\Models\Enums\InferenceSuggestionStatus;
 use App\Models\InferenceSuggestion;
-use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\Sources\Dto\SystemDto;
+use App\Sync\FetchSourceJob;
+use App\Sync\Upserter;
 use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
+use Tests\Fakes\FakeSource;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -36,16 +40,16 @@ it('renders review filters and delegates table actions to the review service', f
     // review page is populated by the automatic inference pass.
     config(['integration_settings.fake.enabled' => true]);
 
-    $source = (new Tests\Fakes\FakeSource)
+    $source = (new FakeSource)
         ->withSystems(
-            new \App\Sources\Dto\SystemDto('sys-001', 'Payments API', null, null, ['tracker.github.repository' => 'acme/payments']),
-            new \App\Sources\Dto\SystemDto('sys-002', 'Orders API', null, null, ['tracker.github.repository' => 'acme/orders'])
+            new SystemDto('sys-001', 'Payments API', null, null, ['tracker.github.repository' => 'acme/payments']),
+            new SystemDto('sys-002', 'Orders API', null, null, ['tracker.github.repository' => 'acme/orders'])
         );
 
     $this->app->bind('appsec-scout.source.fake', fn () => $source);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 
-    (new \App\Sync\FetchSourceJob('fake'))->handle(app(\App\Integrations\SystemIntegrationRuntime::class), app(\App\Sync\Upserter::class));
+    (new FetchSourceJob('fake'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class));
 
     $suggestions = InferenceSuggestion::query()->limit(2)->get();
 
