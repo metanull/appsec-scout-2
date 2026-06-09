@@ -32,7 +32,6 @@ RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
         export COMPOSER_CAFILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
     fi; \
     composer install \
-    --no-dev \
     --no-scripts \
     --no-autoloader \
     --prefer-dist \
@@ -40,7 +39,7 @@ RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
 
 COPY app-laravel/ ./
 
-RUN composer dump-autoload --no-dev --optimize --no-scripts
+RUN composer dump-autoload --optimize --no-scripts
 
 # ── Stage 2: build Filament/Vite assets ──────────────────────────────────────
 FROM node:22-alpine AS assets
