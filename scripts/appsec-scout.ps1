@@ -35,7 +35,15 @@ try {
         }
         # Copy the example environment file and generate a new application key
         Copy-Item app-laravel/.env.example .env
-        $appKey = docker compose run --rm app php artisan key:generate --show
+        docker compose build app --quiet
+        if( $LASTEXITCODE -ne 0) {
+            throw "Failed to build the app image. Please check your Docker setup and try again."
+        }
+        docker compose run --rm bootstrap-cache-init
+        if( $LASTEXITCODE -ne 0) {
+            throw "Failed to initialize the bootstrap/cache volume. Please check your Docker setup and try again."
+        }
+        $appKey = docker compose run --rm --no-deps app php artisan key:generate --show
         if( $LASTEXITCODE -ne 0) {
             throw "Failed to generate application key. Please check your Docker setup and try again."
         }

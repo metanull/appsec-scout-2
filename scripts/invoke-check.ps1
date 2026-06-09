@@ -34,7 +34,6 @@ try {
         Copy-Item $envExamplePath $envTestingPath
     }
 
-    <#
     # Generate APP_KEY when absent (equivalent to artisan key:generate; done before
     # the Docker build so the key is stable across all phases of this run).
     $hasKey = (Select-String -Path $envTestingPath -Pattern '^APP_KEY=.+' -Quiet)
@@ -44,7 +43,6 @@ try {
         (Get-Content $envTestingPath) -replace '^APP_KEY=.*', "APP_KEY=$key" |
             Set-Content $envTestingPath
     }
-    #>
 
     # Build the -e argument list from .env.testing so that every docker compose run
     # command below receives the test environment without hardcoded values.
@@ -63,16 +61,23 @@ try {
         throw "Failed to build the dev app image."
     }
     #>
+    docker compose run --rm bootstrap-cache-init
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to initialize the bootstrap/cache volume."
+    }
+
 
     if ($Check -eq 'lint-fix') {
-        docker compose run --rm app vendor/bin/pint --quiet
+        $workspacePath = (Get-Location).Path.Replace('\\', '/') + '/app-laravel'
+
+        docker compose run --rm --no-deps -u root -v "${workspacePath}:/var/www/html" app vendor/bin/pint
         if ($LASTEXITCODE -ne 0) {
             throw "Pint fix check failed."
         }
     }
 
     if ($Check -eq 'all' -or $Check -eq 'lint') {
-         docker compose run --rm app vendor/bin/pint --test --quiet
+         docker compose run --rm app vendor/bin/pint --test
          if ($LASTEXITCODE -ne 0) {
              throw "Pint check failed."
          }
