@@ -1,4 +1,4 @@
-#Requires -Module AzureDevOpsIngest
+﻿#Requires -Module AzureDevOpsIngest
 <#
 .SYNOPSIS
     Collects the .Net versions used in the projects of an Azure DevOps organization and optionally writes the results to an Excel file.
@@ -64,7 +64,7 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> | ForEach-Object {
 
     Write-Progress -Activity "Processing projects" -Status $_.Name -PercentComplete ($CurrentProjectIndex / $Projects.Count * 100)
     $CurrentProjectIndex++
-    
+
     $CurrentProject = $_
     (Get-ProjectRepository -Organization $Organization -ProjectId $_.Id -Credential $Credential | Tee-Object -Variable Repositories).Value
     $Repositories <#| Where-Object {$_.Name -match 'Portal$'}#> | ForEach-Object {
@@ -125,8 +125,8 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> | ForEach-Object {
             }
         }
         Start-Job -ScriptBlock {
-            param($path)
-            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            param($using:path)
+            Remove-Item -Path $using:path -Recurse -Force -ErrorAction SilentlyContinue
         } -ArgumentList "$env:TEMP\$($_.Name).git"
     }
 } | Tee-Object -Variable Results | Foreach-Object {
