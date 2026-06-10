@@ -39,7 +39,12 @@ try {
     }
 
     if ($Fix -eq 'all' -or $Fix -eq 'dependencies-fix') {
-        docker compose run --rm --no-deps -v "$workspaceMount" app composer update --no-scripts --with-dependencies --no-interaction --no-progress
+        docker compose run --rm --no-deps --user root `
+            -e COMPOSER_ALLOW_SUPERUSER=1 `
+            -e COMPOSER_HOME=/tmp/composer-home `
+            -e COMPOSER_CACHE_DIR=/tmp/composer-cache `
+            -v "$workspaceMount" `
+            app /usr/local/bin/composer update --no-scripts --with-dependencies --no-interaction --no-progress
         if ($LASTEXITCODE -ne 0) {
             throw "Composer dependencies fix failed."
         }

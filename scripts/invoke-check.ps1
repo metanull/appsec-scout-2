@@ -79,14 +79,14 @@ try {
     }
 
     if ($Check -eq 'all' -or $Check -eq 'smoke') {
-        docker compose run --rm -v "$workspaceMount" @testEnvArgs app composer smoke
+        docker compose run --rm -v "$workspaceMount" @testEnvArgs app /usr/local/bin/composer smoke
         if ($LASTEXITCODE -ne 0) {
             throw "Composer smoke check failed."
         }
     }
 
     if ($Check -eq 'all' -or $Check -eq 'dependencies') {
-        docker compose run --rm -v "$workspaceMount" @testEnvArgs app composer outdated --strict
+        docker compose run --rm -v "$workspaceMount" @testEnvArgs app /usr/local/bin/composer outdated --strict
         if ($LASTEXITCODE -ne 0) {
             throw "Composer dependencies check failed."
         }
