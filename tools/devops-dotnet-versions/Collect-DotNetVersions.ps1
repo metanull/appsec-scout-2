@@ -60,7 +60,7 @@ Write-Information "Found $($Projects.Count) projects in organization $Organizati
 $CurrentProjectIndex = 0
 Write-Progress -Activity "Processing projects" -Status 'Starting' -PercentComplete 0
 
-$Projects <#| Where-Object {$_.Name -match 'Portal'}#> | Select-Object -First 5 | ForEach-Object {
+$Projects <#| Where-Object {$_.Name -match 'Portal'}#> <#| Select-Object -First 5#> | ForEach-Object {
     $CurrentProject = $_
     Write-Information "Project: $($CurrentProject.Name) ($($CurrentProject.Id))"
 
@@ -130,8 +130,8 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> | Select-Object -First 5 
             $OutputObject | Write-Output
         }
         Start-Job -ScriptBlock {
-            param($using:path)
-            Remove-Item -Path $using:path -Recurse -Force -ErrorAction SilentlyContinue
+            param($path)
+            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
         } -ArgumentList "$env:TEMP\$($CurrentRepository.Name).git" | Out-Null
     }
 } | Tee-Object -Variable Results | Foreach-Object {
