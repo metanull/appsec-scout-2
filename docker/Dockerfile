@@ -104,7 +104,7 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 
 COPY .docker/certs/ /tmp/appsec-scout-certs/
 
-COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+COPY --from=composer-deps /usr/bin/composer /usr/local/bin/composer
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         nginx \
