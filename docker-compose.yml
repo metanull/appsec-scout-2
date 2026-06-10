@@ -3,7 +3,6 @@ services:
         build:
             context: .
             dockerfile: docker/Dockerfile
-            target: "${APP_BUILD_TARGET:-final}"
             args:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -16,33 +15,13 @@ services:
                 condition: service_started
         ports:
             - "${APP_PORT:-8080}:8080"
-        read_only: true
-        cap_drop:
-            - ALL
         environment:
-            APP_ENV: "${APP_ENV:-local}"
-            APP_KEY: "${APP_KEY}"
-            APP_URL: "${APP_URL:-http://localhost:8080}"
-            DB_CONNECTION: mysql
-            DB_HOST: mysql
-            DB_PORT: 3306
-            DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
-            DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
-            DB_PASSWORD: "${DB_PASSWORD:-password}"
-            REDIS_HOST: redis
-            CACHE_STORE: redis
-            SESSION_DRIVER: redis
-            QUEUE_CONNECTION: redis
-            LOG_STACK: "stderr,database"
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
             NO_PROXY: "${NO_PROXY:-}"
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
         volumes:
             - app_storage:/var/www/html/storage
-        tmpfs:
-            - /tmp:mode=1777,uid=33,gid=33
-            - /var/www/html/bootstrap/cache:mode=0775,uid=33,gid=33
         healthcheck:
             test: ["CMD-SHELL", "curl -fsS http://localhost:8080/up || exit 1"]
             interval: 30s
@@ -69,11 +48,6 @@ services:
         image: redis:7-alpine
         volumes:
             - redis_data:/data
-
-    trivy:
-        image: aquasec/trivy
-        volumes:
-            - /appsec-scout-2:/appsec-scout-2:ro
 volumes:
     mysql_data:
     redis_data:
