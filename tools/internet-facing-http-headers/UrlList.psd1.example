@@ -1,0 +1,14 @@
+@{
+    UrlList = @(
+        'https://www.microsoft.com',
+        'https://www.google.com',
+        'https://www.facebook.com',
+        'https://www.amazon.com',
+        'https://www.apple.com',
+        'https://www.linkedin.com',
+        'https://www.twitter.com',
+        'https://www.instagram.com',
+        'https://www.netflix.com',
+        'https://www.reddit.com'
+    )
+}
