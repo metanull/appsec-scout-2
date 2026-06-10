@@ -111,10 +111,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         supervisor \
         curl \
         ca-certificates \
+        git \
         imagemagick \
         libmagickwand-dev \
         libicu-dev \
         libzip-dev \
+        unzip \
     && if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
         find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
             -exec cp {} /usr/local/share/ca-certificates/ \; ; \
