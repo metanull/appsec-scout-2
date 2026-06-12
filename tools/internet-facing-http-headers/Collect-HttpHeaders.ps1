@@ -39,7 +39,7 @@ Begin {
 }
 Process {
     if( $PSCmdlet.ParameterSetName -eq 'File' ) {
-        $UrlListData = Import-PowerShellDataFile -Path $InputFile
+        $UrlListData = Import-PowerShellDataFile -Path $UrlListDataFile
         $UrlList = $UrlListData.UrlList
     } else {
         $UrlList = ,$Url |? { $_ }
@@ -48,7 +48,7 @@ Process {
     $UrlListCount = $UrlList.Count
     $UrlListIndex = 0
     Write-Progress -Activity "Processing URLs" -Status 'Starting' -PercentComplete 0
-    $UrlList | Foreach-Object {
+    $UrlList | Where-Object { $_ } | ForEach-Object {
         $Url = $_.Trim()
         $UrlListIndex++
         Write-Progress -Activity "Processing URLs" -Status "Processing $UrlListIndex of $UrlListCount" -PercentComplete (($UrlListIndex / $UrlListCount) * 100) 
@@ -69,24 +69,27 @@ Process {
             # Send multiple requests with different HTTP versions and methods to capture a wide range of headers
             # Executes each request (a failure does not stop the others) and captures unique headers from successful responses
             $UniqueHeaders = @()
+            $MaxRedirections = 0..3
             foreach ($HttpVersion in $Settings.HttpVersions) {
                 foreach ($Method in $Settings.Methods) {
-                    Write-Debug "Sending $Method request to $Url with HTTP/$HttpVersion"
-                    try {
-                        $Response = Invoke-WebRequest -HttpVersion $HttpVersion -Uri $Url -UseBasicParsing -SkipHttpErrorCheck -DisableKeepAlive -MaximumRedirection 0 -Method $Method
-                        $Response.Headers.GetEnumerator() | ForEach-Object { 
-                            Write-Debug "HTTP/$($HttpVersion) $($Method) $($Url) > $($_.Key): $($_.Value)"
-                            if ($Settings.IgnoredHeaders -notcontains $_.Key) {
-                                $HeaderLine = "$($_.Key): $($_.Value)"
-                                Write-Debug $HeaderLine
-                                if ($UniqueHeaders -notcontains $HeaderLine) {
-                                    $UniqueHeaders += $HeaderLine
-                                    Write-Information -ForegroundColor Green "HTTP/$($HttpVersion) $($Method) $($Url) > $($HeaderLine)"
+                    foreach ($MaxRedirection in $MaxRedirections) {
+                        Write-Progress -Activity "Processing URLs" -Status "Processing $($UrlListIndex) of $($UrlListCount): HTTP/$($HttpVersion) $($Method) $($Url) (MaxRedirection=$($MaxRedirection))" -PercentComplete (($UrlListIndex / $UrlListCount) * 100) 
+                        try {
+                            $Response = Invoke-WebRequest -HttpVersion $HttpVersion -Uri $Url -UseBasicParsing -SkipHttpErrorCheck -DisableKeepAlive -MaximumRedirection $MaxRedirection -Method $Method -ErrorAction Stop
+                            $Response.Headers.GetEnumerator() | ForEach-Object { 
+                                Write-Debug "HTTP/$($HttpVersion) $($Method) $($Url) > $($_.Key): $($_.Value)"
+                                if ($Settings.IgnoredHeaders -notcontains $_.Key) {
+                                    $HeaderLine = "$($_.Key): $($_.Value)"
+                                    Write-Debug $HeaderLine
+                                    if ($UniqueHeaders -notcontains $HeaderLine) {
+                                        $UniqueHeaders += $HeaderLine
+                                        Write-Information -ForegroundColor Green "HTTP/$($HttpVersion) $($Method) $($Url) > $($HeaderLine)"
+                                    }
                                 }
                             }
+                        } catch {
+                            Write-Debug "$Method request failed for $($Url) with HTTP/$($HttpVersion): $($_)"
                         }
-                    } catch {
-                        Write-Debug "$Method request failed for $($Url) with HTTP/$($HttpVersion): $($_)"
                     }
                 }
             }
