@@ -16,6 +16,7 @@
         '1.0'
     )
     IgnoredHeaders = @(
+        'Location'
         'Date'
         'Content-Length'
         'Content-Type'
@@ -48,7 +49,10 @@
         'request-id'
         'Nel'
         'Report-To'
+        'report-to'
+        'Reporting-Endpoints'
         'Access-Control-Allow-Origin'
+        'Cross-Origin-Opener-Policy-Report-Only'
         'ETag'
         'Last-Modified'
         'X-Correlation-ID'
@@ -57,5 +61,6 @@
         'Age'
         'Public'
         'Allow'
+        'Link'
     )
 }

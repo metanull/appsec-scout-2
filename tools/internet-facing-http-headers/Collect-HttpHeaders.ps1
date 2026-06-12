@@ -75,7 +75,7 @@ Process {
                     foreach ($MaxRedirection in $MaxRedirections) {
                         Write-Progress -Activity "Processing URLs" -Status "Processing $($UrlListIndex) of $($UrlListCount): HTTP/$($HttpVersion) $($Method) $($Url) (MaxRedirection=$($MaxRedirection))" -PercentComplete (($UrlListIndex / $UrlListCount) * 100) 
                         try {
-                            $Response = Invoke-WebRequest -HttpVersion $HttpVersion -Uri $Url -UseBasicParsing -SkipHttpErrorCheck -DisableKeepAlive -MaximumRedirection $MaxRedirection -Method $Method -ErrorAction Stop
+                            $Response = Invoke-WebRequest -HttpVersion $HttpVersion -Uri $Url -UseBasicParsing -SkipHttpErrorCheck -DisableKeepAlive -MaximumRedirection $MaxRedirection -Method $Method -ErrorAction SilentlyContinue
                             $Response.Headers.GetEnumerator() | ForEach-Object { 
                                 Write-Debug "HTTP/$($HttpVersion) $($Method) $($Url) > $($_.Key): $($_.Value)"
                                 if ($Settings.IgnoredHeaders -notcontains $_.Key) {
