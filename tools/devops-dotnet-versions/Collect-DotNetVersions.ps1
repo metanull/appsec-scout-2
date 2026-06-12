@@ -10,6 +10,12 @@
     If specified, the script will create an Excel file and write the collected data into it. The Excel file will contain columns for Project, Repository, Framework Version, and other relevant details.
 .PARAMETER Organization
     The name of the Azure DevOps organization to connect to. Defaults to "EESC-CoR".
+.PARAMETER ProjectFilter
+    An optional filter to apply when selecting projects to analyze.
+.PARAMETER RepositoryFilter
+    An optional filter to apply when selecting repositories to analyze.
+.PARAMETER CSProjFilter
+    An optional filter to apply when selecting .csproj files to analyze.
 .EXAMPLE
     # Connects to the Azure DevOps organization using the provided credentials, collects .Net version information from the projects, and writes the results to an Excel file.
     .\Collect-DotNetVersions.ps1 -Credential (Get-Credential -Message 'DevOps Personal Access Token' -UserName 'PAT') -WriteXls
@@ -24,14 +30,29 @@ param(
     [System.Management.Automation.PSCredential]
     $Credential,
 
+    [Parameter(Mandatory = $false)]
     [switch]
     $WriteXls,
 
+    [Parameter(Mandatory = $false)]
     [string]
     $Organization = "EESC-CoR",
 
+    [Parameter(Mandatory = $false)]
     [string]
-    $WorkDirectory = $Env:TEMP
+    $WorkDirectory = $Env:TEMP,
+
+    [Parameter(Mandatory = $false)]
+    [string]
+    $ProjectFilter,
+
+    [Parameter(Mandatory = $false)]
+    [string]
+    $RepositoryFilter,
+
+    [Parameter(Mandatory = $false)]
+    [string]
+    $CSProjFilter
 )
 if (-not $ErrorActionPreference) {
     $ErrorActionPreference = "Stop"
@@ -47,6 +68,8 @@ $SupportPolicy = @{
     # .Net Core
     'net10.0' = Get-Date "2028-11-14"
     'net9.0' = Get-Date "2026-11-10"
+    'net9.0-windows' = Get-Date "2026-11-10"
+    'net9.0-windows10.0.19041.0' = Get-Date "2026-11-10"
     'net8.0' = Get-Date "2026-11-10"
 
     # .Net Framework
@@ -87,13 +110,21 @@ if ($WriteXls.IsPresent -and $WriteXls -eq $true) {
     $sheet.Cells.Item(1,2).Value2 = "Repository"
     $sheet.Cells.Item(1,3).Value2 = "Framework"
     $sheet.Cells.Item(1,4).Value2 = "Version"
-    $sheet.Cells.Item(1,5).Value2 = "CSProj"
+    $sheet.Cells.Item(1,5).Value2 = "End of Support"
     $sheet.Cells.Item(1,6).Value2 = "OutputType"
     $sheet.Cells.Item(1,7).Value2 = "AssemblyName"
     $sheet.Cells.Item(1,8).Value2 = "Git"
-    $sheet.Cells.Item(1,9).Value2 = "End of Support"
+    $sheet.Cells.Item(1,9).Value2 = "CSProj"
+    $sheet.Cells.Item(1,10).Value2 = "SupportRisk"
+    
 }
-$Projects = Get-Project -Organization $Organization -Credential $Credential
+$Projects = Get-Project -Organization $Organization -Credential $Credential | Where-Object {
+    if ($ProjectFilter) {
+        $_.Name -match $ProjectFilter
+    } else {
+        $true
+    }
+}
 Write-Information "Found $($Projects.Count) projects in organization $Organization"
 $CurrentProjectIndex = 0
 Write-Progress -Activity "Processing projects" -Status 'Starting' -PercentComplete 0
@@ -118,7 +149,13 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> <#| Select-Object -First 
     Write-Progress -Activity "Processing projects" -Status $CurrentProject.Name -PercentComplete ($CurrentProjectIndex / $Projects.Count * 100)
     $CurrentProjectIndex++
 
-    $Repositories = Get-ProjectRepository -Organization $Organization -ProjectId $CurrentProject.Id -Credential $Credential
+    $Repositories = Get-ProjectRepository -Organization $Organization -ProjectId $CurrentProject.Id -Credential $Credential | Where-Object {
+        if ($RepositoryFilter) {
+            $_.Name -match $RepositoryFilter
+        } else {
+            $true
+        }
+    }
     $CurrentRepositoryIndex = 0
     Write-Information "  Found $($Repositories.Count) repositories in project $($CurrentProject.Name)"
     $Repositories <#| Where-Object {$_.Name -match 'Portal$'}#> | ForEach-Object {
@@ -167,7 +204,11 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> <#| Select-Object -First 
         $AllFiles | Where-Object {
             $_ -ne $null
         } | Where-Object {
-            "$($_)" -notmatch "Test[^\\]*$"
+            if ($CSProjFilter) {
+                "$($_)" -match $CSProjFilter
+            } else {
+                "$($_)" -notmatch "Test[^\\]*$"
+            }
         } | ForEach-Object {
             $CurrentCSProj = $_
             $Counters.CsProjFiles++
@@ -263,46 +304,43 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> <#| Select-Object -First 
     Foreach-Object {
         if ($WriteXls.IsPresent -and $WriteXls -eq $true) {
             $Row = $sheet.UsedRange.Rows.Count + 1
-            $sheet.Cells.Item($Row,1).Value2 = "$($_.Project)"
-            $sheet.Cells.Item($Row,2).Value2 = "$($_.Repository)"
-            if ($_.DotNetCore -eq $true) {
-                $sheet.Cells.Item($Row,3).Value2 = ".Net Core"
-            }elseif ($_.DotNetCore -eq $false) {
-                $sheet.Cells.Item($Row,3).Value2 = ".Net"
-            }else {
-                $sheet.Cells.Item($Row,3).Value2 = ""
+            $CurrentValues = @{
+                Project = "$($_.Project)"
+                Repository = "$($_.Repository)"
+                Framework = $_.DotNetCore -eq $true ? ".Net Core" : ($_.DotNetCore -eq $false ? ".Net" : "")
+                FrameworkVersion = "$($_.FrameworkVersion)"
+                SupportPolicy = $_.DotNetSupportPolicy -ne $null ? $_.DotNetSupportPolicy : "Not Supported"
+                SupportRisk = 
+                    ($_.DotNetSupportPolicy -ne $null -and $_.DotNetSupportPolicy -ge (Get-Date).AddMonths(12)) ? 0 : (
+                        ($_.DotNetSupportPolicy -ne $null -and $_.DotNetSupportPolicy -ge (Get-Date)) ? 1 : (
+                            ($_.DotNetSupportPolicy -ne $null -and $_.DotNetSupportPolicy -lt (Get-Date)) ? 2 : (3)))
+                OutputType =  $_.More -ne $null -and $_.More.OutputType -ne $null ? "$($_.More.OutputType)" : $null
+                AssemblyName =  $_.More -ne $null -and $_.More.AssemblyName -ne $null ? "$($_.More.AssemblyName)" : $null
+                Git = $_.More -ne $null -and $_.More.Repository -ne $null -and $_.More.Repository.webUrl -ne $null ? "$($_.More.Repository.webUrl)" : $null
+                CSProj = $_.More -ne $null -and $_.More.CSProj -ne $null ? "$($_.More.CSProj)" : $null
             }
-            $sheet.Cells.Item($Row,4).Value2 = "$($_.FrameworkVersion)"
-            if ($_.More -ne $null -and $_.More.CSProj -ne $null){
-                $sheet.Cells.Item($Row,5).Value2 = "$($_.More.CSProj)"
-            }
-            if ($_.More -ne $null -and $_.More.OutputType -ne $null){
-                $sheet.Cells.Item($Row,6).Value2 = "$($_.More.OutputType)"
-            }
-            if ($_.More -ne $null -and $_.More.AssemblyName -ne $null){
-                $sheet.Cells.Item($Row,7).Value2 = "$($_.More.AssemblyName)"
-            }
-            if ($_.More -ne $null -and $_.More.Repository -ne $null -and $_.More.Repository.webUrl -ne $null){
-                $sheet.Cells.Item($Row,8).Value2 = "$($_.More.Repository.webUrl)"
-            }
+            
+            $sheet.Cells.Item($Row,1).Value2 = [string]($CurrentValues.Project)
+            $sheet.Cells.Item($Row,2).Value2 = [string]($CurrentValues.Repository)
+            $sheet.Cells.Item($Row,3).Value2 = [string]($CurrentValues.Framework)
+            $sheet.Cells.Item($Row,4).Value2 = [string]($CurrentValues.FrameworkVersion)
+            $sheet.Cells.Item($Row,5).NumberFormat = '[$-fr-BE]AAAA-MM-JJ;@'
+            $sheet.Cells.Item($Row,5).Value2 = [DateTime]($CurrentValues.SupportPolicy)
+            $sheet.Cells.Item($Row,6).Value2 = [string]($CurrentValues.OutputType)
+            $sheet.Cells.Item($Row,7).Value2 = [string]($CurrentValues.AssemblyName)
+            $sheet.Cells.Item($Row,8).Value2 = [string]($CurrentValues.Git)
+            $sheet.Cells.Item($Row,9).Value2 = [string]($CurrentValues.CSProj)
+            $sheet.Cells.Item($Row,10).Value2 = [string]($CurrentValues.SupportRisk)
 
-            $BackgroundColor = [System.Drawing.Color]::Red
-            if ($_.DotNetSupportPolicy -ne $null) {
-                $sheet.Cells.Item($Row,9).Value2 = $_.DotNetSupportPolicy.ToOADate()
-                if ($_.DotNetSupportPolicy -lt (Get-Date)) {
-                    $BackgroundColor = [System.Drawing.Color]::Red
-                } elseif ($_.DotNetSupportPolicy -lt (Get-Date).AddMonths(12)) {
-                    $BackgroundColor = [System.Drawing.Color]::Yellow
-                } else {
-                    $BackgroundColor = [System.Drawing.Color]::Green
-                }
-            } else {
-                $sheet.Cells.Item($Row,9).Value2 = "Not Supported"
+            switch ($CurrentValues.SupportRisk) {
+                0 { $InteriorColor = [System.Drawing.Color]::Green }
+                1 { $InteriorColor = [System.Drawing.Color]::Yellow }
+                2 { $InteriorColor = [System.Drawing.Color]::Red }
+                default { $InteriorColor = [System.Drawing.Color]::Red }
             }
-            $sheet.Cells.Item($Row,9).Interior.Color = [System.Drawing.ColorTranslator]::ToOle($BackgroundColor)
-            $sheet.Cells.Item($Row,3).Interior.Color = [System.Drawing.ColorTranslator]::ToOle($BackgroundColor)
-            $sheet.Cells.Item($Row,4).Interior.Color = [System.Drawing.ColorTranslator]::ToOle($BackgroundColor)
-
+            @(3,4,5,10) | ForEach-Object {
+                $sheet.Cells.Item($Row,$_).Interior.Color = [System.Drawing.ColorTranslator]::ToOle($InteriorColor)
+            }
         } else {
             $_ | Write-Output
         }
@@ -325,3 +363,11 @@ Write-Warning "  Total .csproj and Directory.Build.props files: $($Counters.CsPr
 Write-Warning "  Projects targeting .Net Core: $($Counters.DotNetCoreProjects)"
 Write-Warning "  Projects targeting .Net Framework: $($Counters.DotNetFrameworkProjects)"
 Write-Warning "  Projects with unknown .Net version: $($Counters.DotNetUnknownProjects)"
+Write-Warning "  Projects with supported .Net versions: $($Counters.DotNetSupportPolicyMatches)"
+Write-Warning "  Projects with unsupported or unknown .Net versions: $($Counters.DotNetSupportPolicyMismatches)"
+
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($sheet) | Out-Null
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($workbook) | Out-Null
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+[GC]::Collect()
+[GC]::WaitForPendingFinalizers()
