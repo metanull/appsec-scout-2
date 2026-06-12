@@ -1,4 +1,9 @@
 @{
+    # Excel DateFormats are dependant to the language of the Excel version. 
+    # Adapt the format to your Excel version if you want the date to be properly formatted.
+    # ExcelDateFormat = '[$-fr-BE]AAAA-MM-JJ;@'
+    # ExcelDateFormat = '[$-en-US]YYYY-MM-DD;@'
+    ExcelDateFormat = '[$-fr-BE]AAAA-MM-JJ;@'
     Methods = @(
         'Head'
         'Get'

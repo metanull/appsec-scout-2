@@ -324,8 +324,12 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> <#| Select-Object -First 
             $sheet.Cells.Item($Row,2).Value2 = [string]($CurrentValues.Repository)
             $sheet.Cells.Item($Row,3).Value2 = [string]($CurrentValues.Framework)
             $sheet.Cells.Item($Row,4).Value2 = [string]($CurrentValues.FrameworkVersion)
-            $sheet.Cells.Item($Row,5).NumberFormat = '[$-fr-BE]AAAA-MM-JJ;@'
-            $sheet.Cells.Item($Row,5).Value2 = [DateTime]($CurrentValues.SupportPolicy)
+            if($CurrentValues.SupportPolicy.GetType() -eq [DateTime].GetType()) {
+                $sheet.Cells.Item($Row,5).NumberFormat = $Settings.ExcelDateFormat
+                $sheet.Cells.Item($Row,5).Value2 = [DateTime]($CurrentValues.SupportPolicy)
+            } else {
+                $sheet.Cells.Item($Row,5).Value2 = [string]($CurrentValues.SupportPolicy)
+            }
             $sheet.Cells.Item($Row,6).Value2 = [string]($CurrentValues.OutputType)
             $sheet.Cells.Item($Row,7).Value2 = [string]($CurrentValues.AssemblyName)
             $sheet.Cells.Item($Row,8).Value2 = [string]($CurrentValues.Git)
