@@ -67,6 +67,7 @@
         'x-ms-request-id'
         'x-ms-srs'
         'X-Trace-Id'
+        'X-UA-Compatible'
         'X-XSS-Protection'
     ) 
 }
