@@ -53,6 +53,7 @@
         'Strict-Transport-Security'
         'Transfer-Encoding'
         'Vary'
+        'Via'
         'x-age'
         'x-Age'
         'X-Content-Type-Options'
