@@ -1,0 +1,7 @@
+[
+  { "id": "1",     "name": "Blocker"  },
+  { "id": "2",     "name": "Critical" },
+  { "id": "3",     "name": "Major"    },
+  { "id": "4",     "name": "Medium"   },
+  { "id": "5",     "name": "Minor"    }
+]

@@ -12,6 +12,7 @@ use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Reconciliation\UrlExtractor;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
+use Illuminate\Support\Facades\Log;
 
 final class JiraClient
 {
@@ -113,6 +114,17 @@ final class JiraClient
         ));
     }
 
+    /** @return list<string> */
+    public function fetchPriorities(): array
+    {
+        $payload = $this->decode($this->http->get('rest/api/3/priority'));
+
+        return array_values(array_map(
+            static fn (array $p): string => (string) $p['name'],
+            is_array($payload) ? $payload : [],
+        ));
+    }
+
     public function createWorkItem(CreateWorkItemRequest $request): WorkItemDto
     {
         $payload = $this->decode($this->http->post('rest/api/3/issue', [
@@ -163,7 +175,7 @@ final class JiraClient
             'labels' => $request->labels,
             'priority' => $request->priority !== null ? ['name' => $request->priority] : null,
             'assignee' => $request->assigneeId !== null ? ['accountId' => $request->assigneeId] : null,
-            'parent' => $request->parentId !== null ? ['key' => $request->parentId] : null,
+            'parent' => $request->parentId !== null && trim((string) $request->parentId) !== '' ? ['key' => $request->parentId] : null,
         ], static fn (mixed $value): bool => $value !== null);
 
         if ($fields !== []) {
@@ -182,11 +194,12 @@ final class JiraClient
     /** @return list<WorkItemDto> */
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): array
     {
-        $payload = $this->decode($this->http->get('rest/api/3/search', [
+        $payload = $this->decode($this->http->get('rest/api/3/search/jql', [
             'query' => [
                 'jql' => sprintf(
-                    'project = "%s" AND summary ~ "%s" ORDER BY created DESC',
-                    $projectKey,
+                    'project = "%s" AND (key = "%s" OR summary ~ "%s") ORDER BY created DESC',
+                    addcslashes($projectKey, '"\\'),
+                    addcslashes($query, '"\\'),
                     addcslashes($query, '"\\'),
                 ),
                 'maxResults' => $limit,
