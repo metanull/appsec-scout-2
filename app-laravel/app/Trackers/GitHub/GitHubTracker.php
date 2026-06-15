@@ -71,6 +71,11 @@ final class GitHubTracker implements Tracker
         return $this->getClient()->fetchItemTypes($projectKey);
     }
 
+    public function fetchPriorities(string $projectKey): iterable
+    {
+        return [];
+    }
+
     public function fetchAssigneeCandidates(string $projectKey, string $query): iterable
     {
         return $this->getClient()->fetchAssigneeCandidates($projectKey, $query);

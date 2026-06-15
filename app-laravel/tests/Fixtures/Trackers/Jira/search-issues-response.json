@@ -1,0 +1,17 @@
+{
+  "isLast": true,
+  "issues": [
+    {
+      "key": "APP-101",
+      "fields": {
+        "summary": "Grouped secret findings",
+        "status": { "name": "To Do" },
+        "labels": ["security"],
+        "priority": { "name": "High" },
+        "assignee": null,
+        "parent": null,
+        "description": null
+      }
+    }
+  ]
+}

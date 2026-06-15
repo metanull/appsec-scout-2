@@ -258,3 +258,46 @@ it('returns empty reconciliation candidates for empty jira project key', functio
 
     expect(iterator_to_array($tracker->reconciliationCandidates(''), false))->toBe([]);
 });
+
+it('searches work items matching by key and by summary', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(200, [], jiraFixture('search-issues-response.json')),
+    ]));
+    $stack->push(Middleware::history($history));
+
+    $tracker = new JiraTracker(app(Vault::class));
+    injectJiraClient($tracker, new JiraClient(
+        'https://example.atlassian.net',
+        'ops@example.test',
+        'token',
+        new Client(['handler' => $stack]),
+    ));
+
+    $results = iterator_to_array($tracker->searchWorkItems('APP', 'APP-101', 20), false);
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]->id)->toBe('APP-101');
+
+    parse_str($history[0]['request']->getUri()->getQuery(), $params);
+    $jql = $params['jql'] ?? '';
+
+    expect($jql)->toContain('key = "APP-101"')
+        ->and($jql)->toContain('summary ~ "APP-101"');
+});
+
+it('fetches available priorities from jira', function () {
+    $tracker = new JiraTracker(app(Vault::class));
+    injectJiraClient($tracker, new JiraClient(
+        'https://example.atlassian.net',
+        'ops@example.test',
+        'token',
+        new Client(['handler' => new MockHandler([
+            new Response(200, [], jiraFixture('priorities-response.json')),
+        ])]),
+    ));
+
+    $priorities = iterator_to_array($tracker->fetchPriorities('APP'), false);
+
+    expect($priorities)->toBe(['Blocker', 'Critical', 'Major', 'Medium', 'Minor']);
+});

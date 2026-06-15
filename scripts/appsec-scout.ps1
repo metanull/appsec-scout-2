@@ -125,86 +125,84 @@ function Export-HostCertificates {
     Write-Host ("Bundle written to {0}" -f $bundlePath)
 }
 
-Set-Location $ProjectRoot
-
-try {
-    docker compose ps | Out-Null
-    if( $LASTEXITCODE -ne 0) {
-        throw "Docker compose is not running. Please start Docker and try again."
+Function Invoke-Docker {
+    docker @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "`$($args -join ' ')` failed with exit code $LASTEXITCODE"
     }
+}
 
-    if ($Rebuild.IsPresent -and $Rebuild) {
-        docker compose down --volumes --remove-orphans
-        if( $LASTEXITCODE -ne 0) {
-            throw "Failed to stop and remove existing Docker containers. Please check your Docker setup and try again."
-        }
-
-        docker compose build app
-        if( $LASTEXITCODE -ne 0) {
-            throw "Failed to build the app image. Please check your Docker setup and try again."
-        }
+Function Test-Docker {
+    Invoke-Docker compose ps | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        return $false
     }
+    return $true
+}
 
-    Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
+Function Wait-DockerServiceHealthy {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
 
-    docker compose build app
-    if( $LASTEXITCODE -ne 0) {
-        throw "Failed to build the app image. Please check your Docker setup and try again."
-    }
-
-    docker compose up -d
-    if( $LASTEXITCODE -ne 0) {
-        throw "Failed to start Docker containers. Please check your Docker setup and try again."
-    }
-
+        [int]$MaxRetries = 10,
+        [int]$SleepTimeSeconds = 3
+    )
     # Wait for the database container to be healthy before running migrations
-    $maxRetries = 10
     $retryCount = 0
-    $sleepTimeSeconds = 3
-    $dbHealthy = $false
-    while (-not $dbHealthy -and $retryCount -lt $maxRetries) {
-        Start-Sleep -Seconds $sleepTimeSeconds
-        $dbStatus = docker compose ps -q mysql | ForEach-Object { 
-            docker inspect -f '{{.State.Health.Status}}' $_ 
-        }
-        if ($dbStatus -eq 'healthy') {
-            $dbHealthy = $true
-        } else {
-            Write-Verbose "Waiting for the database to be healthy... (attempt $($retryCount + 1) of $maxRetries)"
+    while ($retryCount -lt $MaxRetries) {
+        Start-Sleep -Seconds $SleepTimeSeconds
+        try {
+            $containerId = Invoke-Docker compose ps -q $ServiceName
+            if ($containerId) {
+                $serviceStatus = Invoke-Docker inspect -f '{{.State.Health.Status}}' $containerId
+                if ($serviceStatus.Trim() -eq 'healthy') {
+                    return $true
+                }
+            }
+            Write-Verbose "Service '$ServiceName' is not running. (attempt $($retryCount + 1) of $MaxRetries)"
+        } catch {
+            Write-Verbose "Error while checking the health of service '$ServiceName': $_"
+        } finally {
             $retryCount++
         }
     }
-    if (-not $dbHealthy) {
+    return false;
+}
+
+Set-Location $ProjectRoot
+
+if (-not (Test-Docker)) {
+    throw "Docker does not seem to be available or running."
+}
+try {
+    if ($Rebuild.IsPresent -and $Rebuild) {
+        Invoke-Docker compose down --volumes --remove-orphans
+        Invoke-Docker compose build app #--no-cache
+
+        Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
+    }
+    Invoke-Docker compose up -d
+
+    # Wait for the database container to be healthy before running migrations
+    if( -not (Wait-DockerServiceHealthy -ServiceName "mysql")) {
         throw "Database container did not become healthy within the expected time. Please check your Docker setup and try again."
     }
 
-    docker compose exec app php artisan migrate --force
-    if( $LASTEXITCODE -ne 0) {
-        throw "Failed to run database migrations. Please check your Docker setup and try again."
-    }
+    if ($Rebuild.IsPresent -and $Rebuild) {
+        Invoke-Docker compose exec app php artisan migrate --force
+        Invoke-Docker compose exec app php artisan db:seed
+        Invoke-Docker compose exec app php artisan appsec:bootstrap-admin --if-missing --name='Admin' --email='admin@example.com' --password='changeme-now'
 
-    docker compose exec app php artisan db:seed
-    if( $LASTEXITCODE -ne 0) {
-        throw "Failed to seed the database. Please check your Docker setup and try again."
-    }
-
-    docker compose exec app php artisan appsec:bootstrap-admin --if-missing --name="Admin" --email="admin@example.com" --password="changeme-now"
-    if( $LASTEXITCODE -ne 0) {
-        throw "Failed to bootstrap admin user. Please check your Docker setup and try again."
-    }
-
-    if (Test-Path ".credentials.json") {
-        docker compose cp .credentials.json app:/var/www/html/storage/app/private/credentials.json
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to copy .credentials.json into the app container."
+        if (Test-Path ".credentials.json") {
+            Invoke-Docker compose cp .credentials.json app:/var/www/html/storage/app/private/credentials.json
+            Invoke-Docker compose exec app php artisan credentials:system:import /var/www/html/storage/app/private/credentials.json
+            Write-Host "Imported system credentials from .credentials.json"
         }
-
-        docker compose exec app php artisan credentials:system:import /var/www/html/storage/app/private/credentials.json
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to import system credentials from copied JSON file."
-        }
-
-        Write-Host "Imported system credentials from .credentials.json"
+    } else {
+        Invoke-Docker compose exec app composer dump-autoload --optimize
+        Invoke-Docker compose exec app php artisan migrate
+        Invoke-Docker compose exec app php artisan cache:clear
     }
 
     # Assert that the application is up and running before attempting to open it in the browser

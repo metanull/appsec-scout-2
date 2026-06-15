@@ -21,7 +21,13 @@ services:
             NO_PROXY: "${NO_PROXY:-}"
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
         volumes:
+            - ./app-laravel:/var/www/html
             - app_storage:/var/www/html/storage
+            - app_vendor:/var/www/html/vendor
+            - app_public_build:/var/www/html/public/build
+            - app_public_css:/var/www/html/public/css
+            - app_public_js:/var/www/html/public/js
+            - app_bootstrap_cache:/var/www/html/bootstrap/cache
         healthcheck:
             test: ["CMD-SHELL", "curl -fsS http://localhost:8080/up || exit 1"]
             interval: 30s
@@ -52,3 +58,8 @@ volumes:
     mysql_data:
     redis_data:
     app_storage:
+    app_vendor:
+    app_public_build:
+    app_public_css:
+    app_public_js:
+    app_bootstrap_cache:

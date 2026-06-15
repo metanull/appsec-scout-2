@@ -12,7 +12,7 @@ use BackedEnum;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
-use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Illuminate\Support\Facades\Auth;
@@ -46,7 +46,7 @@ final class WorkItemFormOptions
 
     /**
      * @param  list<SecurityEvent>  $events
-     * @return array<int, Placeholder|Select|TagsInput|TextInput>
+     * @return array<int, Placeholder|Select|TagsInput>
      */
     public function createSchema(array $events = []): array
     {
@@ -106,10 +106,14 @@ final class WorkItemFormOptions
                     $get->string('project', isNullable: true),
                 ))
                 ->live(),
-            TextInput::make('priority')
+            Select::make('priority')
                 ->label('Priority')
                 ->visible(fn (Get $get): bool => $this->trackerSupportsPriority($get->string('tracker', isNullable: true)))
-                ->maxLength(255),
+                ->placeholder('Select a priority (optional)')
+                ->options(fn (Get $get): array => $this->priorityOptions(
+                    $get->string('tracker', isNullable: true),
+                    $get->string('project', isNullable: true),
+                )),
             TagsInput::make('labels')
                 ->label('Labels')
                 ->suggestions($this->labelSuggestions($events))
@@ -147,7 +151,7 @@ final class WorkItemFormOptions
 
     /**
      * @param  list<SecurityEvent>  $events
-     * @return array<int, Placeholder|Select|TextInput>
+     * @return array<int, Placeholder|Select>
      */
     public function linkSchema(array $events = []): array
     {
@@ -290,6 +294,27 @@ final class WorkItemFormOptions
     }
 
     /** @return array<string, string> */
+    private function priorityOptions(?string $trackerId, ?string $projectKey): array
+    {
+        $tracker = $this->tracker($trackerId);
+        $operatorUserId = $this->credentialOwnerId();
+
+        if (! $tracker instanceof Tracker || $operatorUserId === null || blank($projectKey) || $this->missingCredentialLabels($tracker) !== []) {
+            return [];
+        }
+
+        /** @var list<string> $priorities */
+        $priorities = Cache::remember('trackers:user:' . $operatorUserId . ':' . $trackerId . ':' . $projectKey . ':priorities', now()->addHour(), function () use ($tracker, $operatorUserId, $projectKey): array {
+            return $this->runtime->runTracker($tracker->id(), $operatorUserId, fn (Tracker $tracker): array => iterator_to_array($tracker->fetchPriorities($projectKey), false));
+        });
+
+        return collect($priorities)
+            ->filter(fn (string $p): bool => $p !== '')
+            ->mapWithKeys(fn (string $p): array => [$p => $p])
+            ->all();
+    }
+
+    /** @return array<string, string> */
     private function assigneeOptions(?string $trackerId, ?string $projectKey, string $search): array
     {
         $tracker = $this->tracker($trackerId);
@@ -299,15 +324,26 @@ final class WorkItemFormOptions
             return [];
         }
 
-        return $this->runtime->runTracker($tracker->id(), $operatorUserId, function (Tracker $tracker) use ($projectKey, $search): array {
-            $resolved = [];
+        try {
+            return $this->runtime->runTracker($tracker->id(), $operatorUserId, function (Tracker $tracker) use ($projectKey, $search): array {
+                $resolved = [];
 
-            foreach ($tracker->fetchAssigneeCandidates($projectKey, $search) as $user) {
-                $resolved[$user->id] = $user->displayName;
-            }
+                foreach ($tracker->fetchAssigneeCandidates($projectKey, $search) as $user) {
+                    $resolved[$user->id] = $user->displayName;
+                }
 
-            return $resolved;
-        });
+                return $resolved;
+            });
+        } catch (\Throwable $e) {
+            Log::warning('Tracker assignee search failed', ['tracker_id' => $trackerId, 'project' => $projectKey, 'error' => $e->getMessage()]);
+            Notification::make()
+                ->title('Tracker lookup failed')
+                ->body('Could not fetch assignee candidates from the tracker: ' . $e->getMessage())
+                ->danger()
+                ->send();
+
+            return [];
+        }
     }
 
     private function assigneeLabel(?string $trackerId, ?string $projectKey, string $value): string
@@ -325,15 +361,26 @@ final class WorkItemFormOptions
             return [];
         }
 
-        return $this->runtime->runTracker($tracker->id(), $operatorUserId, function (Tracker $tracker) use ($projectKey, $search): array {
-            $resolved = [];
+        try {
+            return $this->runtime->runTracker($tracker->id(), $operatorUserId, function (Tracker $tracker) use ($projectKey, $search): array {
+                $resolved = [];
 
-            foreach ($tracker->searchWorkItems($projectKey, $search, 20) as $workItem) {
-                $resolved[$workItem->id] = sprintf('%s (%s)', $workItem->title, $workItem->id);
-            }
+                foreach ($tracker->searchWorkItems($projectKey, $search, 20) as $workItem) {
+                    $resolved[$workItem->id] = sprintf('%s (%s)', $workItem->title, $workItem->id);
+                }
 
-            return $resolved;
-        });
+                return $resolved;
+            });
+        } catch (\Throwable $e) {
+            Log::warning('Tracker work item search failed', ['tracker_id' => $trackerId, 'project' => $projectKey, 'error' => $e->getMessage()]);
+            Notification::make()
+                ->title('Tracker lookup failed')
+                ->body('Could not search work items from the tracker: ' . $e->getMessage())
+                ->danger()
+                ->send();
+
+            return [];
+        }
     }
 
     private function workItemLabel(?string $trackerId, string $workItemId): string

@@ -50,8 +50,6 @@ RUN mkdir -p \
         storage/framework/sessions \
         storage/framework/views \
         storage/logs \
-    && if [ -f .env.example ]; then cp .env.example .env; fi \
-    && php artisan key:generate --force --ansi \
     && composer dump-autoload --optimize --no-scripts
 
 FROM node:22-alpine AS assets
@@ -71,7 +69,6 @@ WORKDIR /app
 
 COPY app-laravel/package.json app-laravel/package-lock.json* ./
 COPY .docker/certs/ /tmp/appsec-scout-certs/
-
 RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
         export SSL_CERT_FILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
         export NODE_EXTRA_CA_CERTS=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
@@ -141,6 +138,9 @@ WORKDIR /var/www/html
 COPY --from=composer-deps /app ./
 COPY --from=assets /app/public/build ./public/build
 
+# Remove the build-time .env; runtime .env is managed by the entrypoint via app_storage volume.
+RUN rm -f .env
+
 RUN mkdir -p \
         bootstrap/cache \
         storage/app/private \
@@ -152,16 +152,21 @@ RUN mkdir -p \
         storage/framework/views \
         storage/logs \
         public/css \
-        public/js \
+        public/js
+
+# Publish Filament assets using a throwaway build-time key (ARG is not persisted in the image ENV).
+ARG BUILD_APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+RUN APP_KEY=${BUILD_APP_KEY} php artisan filament:assets --no-interaction \
     && rm -f bootstrap/cache/*.php \
-    && php artisan filament:assets --no-interaction \
     && test -f public/css/filament/filament/app.css \
     && test -f public/js/filament/filament/app.js
 
 RUN chown -R www-data:www-data storage bootstrap/cache
 
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 EXPOSE 8080
 
-USER www-data
-
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

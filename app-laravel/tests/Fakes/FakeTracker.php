@@ -92,6 +92,12 @@ final class FakeTracker implements Tracker
         return $this->itemTypes;
     }
 
+    /** @return iterable<string> */
+    public function fetchPriorities(string $projectKey): iterable
+    {
+        return [];
+    }
+
     /** @return iterable<UserDto> */
     public function fetchAssigneeCandidates(string $projectKey, string $query): iterable
     {

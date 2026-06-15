@@ -31,6 +31,9 @@ interface Tracker
     /** @return iterable<string> */
     public function fetchItemTypes(string $projectKey): iterable;
 
+    /** @return iterable<string> */
+    public function fetchPriorities(string $projectKey): iterable;
+
     /** @return iterable<UserDto> */
     public function fetchAssigneeCandidates(string $projectKey, string $query): iterable;
 
