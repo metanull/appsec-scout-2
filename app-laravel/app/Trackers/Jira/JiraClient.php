@@ -12,7 +12,6 @@ use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Reconciliation\UrlExtractor;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
-use Illuminate\Support\Facades\Log;
 
 final class JiraClient
 {
