@@ -119,8 +119,7 @@ final class JiraClient
         $payload = $this->decode($this->http->get('rest/api/3/priority'));
 
         return array_values(array_map(
-            static fn (array $p): string => (string) $p['name'],
-            is_array($payload) ? $payload : [],
+            static fn (array $p): string => (string) $p['name'], $payload,
         ));
     }
 
