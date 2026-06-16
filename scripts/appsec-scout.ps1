@@ -7,10 +7,10 @@
     If specified, the script will perform a clean rebuild of the application by stopping and removing existing Docker containers, volumes, and orphans before rebuilding and starting the application.
 .EXAMPLE
     .\appsec-scout.ps1
-    Starts the AppSec Scout application using Docker Compose without rebuilding.
+    Starts the AppSec Scout application using pre-built Docker image.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild
-    Performs a clean rebuild of the AppSec Scout application using Docker Compose, including stopping and removing existing Docker containers, volumes, and orphans before rebuilding and starting the application.
+    (Re)build the AppSec Scout docker image and perform and start the application.
 #>
 [CmdletBinding()]
 param(
@@ -100,7 +100,7 @@ function Export-HostCertificates {
     }
 
     if ($certificatesByThumbprint.Count -eq 0) {
-        Write-Host "No trusted host CA certificates found; continuing without extra exports."
+        Write-Information "No trusted host CA certificates found; continuing without extra exports."
         return
     }
 
@@ -121,14 +121,14 @@ function Export-HostCertificates {
 
     [System.IO.File]::WriteAllText($bundlePath, $bundleBuilder.ToString())
 
-    Write-Host ("Exported {0} trusted certificates to {1}" -f $certificatesByThumbprint.Count, $resolvedOutputDir)
-    Write-Host ("Bundle written to {0}" -f $bundlePath)
+    Write-Information ("Exported {0} trusted certificates to {1}" -f $certificatesByThumbprint.Count, $resolvedOutputDir)
+    Write-Verbose ("Bundle written to {0}" -f $bundlePath)
 }
 
 Function Invoke-Docker {
     docker @args
     if ($LASTEXITCODE -ne 0) {
-        throw "`$($args -join ' ')` failed with exit code $LASTEXITCODE"
+        throw ("{0}$($args -join ' '){0} failed with exit code $LASTEXITCODE" -f '`')
     }
 }
 
@@ -197,7 +197,7 @@ try {
         if (Test-Path ".credentials.json") {
             Invoke-Docker compose cp .credentials.json app:/var/www/html/storage/app/private/credentials.json
             Invoke-Docker compose exec app php artisan credentials:system:import /var/www/html/storage/app/private/credentials.json
-            Write-Host "Imported system credentials from .credentials.json"
+            Write-Information "Imported system credentials from .credentials.json"
         }
     } else {
         Invoke-Docker compose exec app composer dump-autoload --optimize
