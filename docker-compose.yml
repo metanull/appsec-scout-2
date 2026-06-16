@@ -54,6 +54,17 @@ services:
         image: redis:7-alpine
         volumes:
             - redis_data:/data
+
+    node:
+        image: node:22-alpine
+        working_dir: /app
+        profiles:
+            - tools
+        environment:
+            HTTP_PROXY: "${HTTP_PROXY:-}"
+            HTTPS_PROXY: "${HTTPS_PROXY:-}"
+            NO_PROXY: "${NO_PROXY:-}"
+
 volumes:
     mysql_data:
     redis_data:
