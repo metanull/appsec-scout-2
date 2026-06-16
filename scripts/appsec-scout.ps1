@@ -139,11 +139,13 @@ Function Invoke-Docker {
 }
 
 Function Test-Docker {
-    Invoke-Docker compose ps | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    try {
+        Invoke-Docker version --format '{{.Server.Version}}' | Out-Null
+        Invoke-Docker compose version | Out-Null
+        return $true
+    } catch {
         return $false
     }
-    return $true
 }
 
 Function Wait-DockerServiceHealthy {
