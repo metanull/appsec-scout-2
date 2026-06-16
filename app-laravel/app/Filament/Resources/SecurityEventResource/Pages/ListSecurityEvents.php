@@ -44,6 +44,21 @@ class ListSecurityEvents extends ListRecords
      * @param  Builder<SecurityEvent>  $query
      * @return Builder<SecurityEvent>
      */
+    protected function applySortingToTableQuery(Builder $query): Builder
+    {
+        if ($this->getTableSortColumn()) {
+            return parent::applySortingToTableQuery($query);
+        }
+
+        return $query
+            ->orderByRaw("CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END DESC")
+            ->orderByDesc('last_seen_at');
+    }
+
+    /**
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
     protected function applySearchToTableQuery(Builder $query): Builder
     {
         return SecurityEventTableQuery::applySearch($query, $this->tableSearch);
