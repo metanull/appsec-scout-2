@@ -18,21 +18,21 @@ WORKDIR /app
 COPY app-laravel/composer.json app-laravel/composer.lock ./
 COPY .docker/certs/ /tmp/appsec-scout-certs/
 
-RUN apk add --no-cache icu-dev \
-    && docker-php-ext-install intl
-
 RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
         find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
             -exec cp {} /usr/local/share/ca-certificates/ \; ; \
         update-ca-certificates; \
     fi
 
+RUN apk add --no-cache icu-dev \
+    && docker-php-ext-install intl
+
 RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
         export SSL_CERT_FILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
         export CURL_CA_BUNDLE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
         export COMPOSER_CAFILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
     fi;
-    
+
 RUN composer install \
         --prefer-dist \
         --no-interaction \
