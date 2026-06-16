@@ -17,9 +17,9 @@
 #>
 [CmdletBinding()]
 param(
-    # Selects which tests to run; by default, all tests are run. Specify one or more of: lint, test, test-sqlite, test-mysql, static-analysis, smoke, dependencies
+    # Selects which tests to run; by default, all tests are run. Specify one or more of: lint, test, test-sqlite, test-mysql, static-analysis, smoke, dependencies, npm-audit
     [Parameter(Mandatory = $false)]
-    [ValidateSet('all', 'lint', 'test', 'test-sqlite', 'test-mysql', 'static-analysis', 'smoke', 'dependencies')]
+    [ValidateSet('all', 'lint', 'test', 'test-sqlite', 'test-mysql', 'static-analysis', 'smoke', 'dependencies', 'npm-audit')]
     [string]$Check = 'all'
 )
 $MyScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -89,6 +89,14 @@ try {
         docker compose run --rm -v "$workspaceMount" @testEnvArgs app /usr/local/bin/composer outdated --strict
         if ($LASTEXITCODE -ne 0) {
             throw "Composer dependencies check failed."
+        }
+    }
+
+    if ($Check -eq 'all' -or $Check -eq 'npm-audit') {
+        $nodeWorkspaceMount = "${workspacePath}:/app"
+        docker compose --profile tools run --rm --no-deps -v "$nodeWorkspaceMount" node npm audit
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm audit check failed."
         }
     }
 } catch {
