@@ -44,7 +44,9 @@ use Illuminate\Support\Facades\Auth;
  */
 class IntegrationSettingsPage extends Page implements HasTable
 {
-    use InteractsWithTable;
+    use InteractsWithTable {
+        applySortingToTableQuery as private defaultApplySortingToTableQuery;
+    }
 
     /** @var array{source: list<string>, tracker: list<string>}|null */
     private ?array $queuedIntegrationIds = null;
@@ -106,7 +108,7 @@ class IntegrationSettingsPage extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->query(fn (): Builder => IntegrationSetting::query()->orderBy('integration_kind')->orderBy('integration_id'))
+            ->query(fn (): Builder => IntegrationSetting::query())
             ->columns([
                 TextColumn::make('integration_kind')
                     ->label('Kind')
@@ -179,6 +181,19 @@ class IntegrationSettingsPage extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [];
+    }
+
+    /**
+     * @param  Builder<IntegrationSetting>  $query
+     * @return Builder<IntegrationSetting>
+     */
+    protected function applySortingToTableQuery(Builder $query): Builder
+    {
+        if ($this->getTableSortColumn()) {
+            return $this->defaultApplySortingToTableQuery($query);
+        }
+
+        return $query->orderBy('integration_kind')->orderBy('integration_id');
     }
 
     private function displayName(IntegrationSetting $record): string

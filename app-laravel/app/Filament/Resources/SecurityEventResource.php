@@ -379,12 +379,23 @@ class SecurityEventResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => SecurityEvent::query()
-                ->with('workItemLinks')
-                ->orderByRaw("CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END DESC")
-                ->orderByDesc('last_seen_at'))
+                ->with(['workItemLinks', 'softwareSystem', 'container']))
             ->columns([
+                TextColumn::make('softwareSystem.name')
+                    ->label('System')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(),
+                TextColumn::make('container.name')
+                    ->label('Container')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('severity')
                     ->badge()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(
+                        "CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END " . ($direction === 'asc' ? 'ASC' : 'DESC')
+                    ))
                     ->color(fn (EventSeverity|string $state) => match ($state instanceof EventSeverity ? $state->value : $state) {
                         EventSeverity::Critical->value => 'danger',
                         EventSeverity::High->value => 'warning',
@@ -394,6 +405,7 @@ class SecurityEventResource extends Resource
                     }),
                 TextColumn::make('state')
                     ->badge()
+                    ->sortable()
                     ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
                         EventState::Resolved->value => 'success',
                         EventState::Dismissed->value => 'gray',
@@ -407,14 +419,16 @@ class SecurityEventResource extends Resource
                     ->badge()
                     ->color('warning')
                     ->placeholder('-'),
-                TextColumn::make('source_id')->label('Source')->badge(),
+                TextColumn::make('source_id')->label('Source')->badge()->sortable(),
                 TextColumn::make('type')
                     ->badge()
                     ->color('gray')
                     ->formatStateUsing(fn (EventType|string $state): string => str($state instanceof EventType ? $state->value : $state)->replace('_', ' ')->title()->toString())
+                    ->sortable()
                     ->toggleable(),
                 TextColumn::make('title')
                     ->searchable()
+                    ->sortable()
                     ->wrap()
                     ->grow(),
                 TextColumn::make('work_item_state')

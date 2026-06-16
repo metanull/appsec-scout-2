@@ -15,13 +15,16 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
 class PendingSyncPage extends Page implements HasTable
 {
-    use InteractsWithTable;
+    use InteractsWithTable {
+        applySortingToTableQuery as private defaultApplySortingToTableQuery;
+    }
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-up-on-square-stack';
 
@@ -58,8 +61,6 @@ class PendingSyncPage extends Page implements HasTable
             ->query(
                 SecurityEvent::query()
                     ->where('is_dirty', true)
-                    ->orderBy('source_id')
-                    ->orderByDesc('updated_at')
             )
             ->columns([
                 TextColumn::make('source_id')
@@ -126,7 +127,6 @@ class PendingSyncPage extends Page implements HasTable
                     ->since()
                     ->sortable(),
             ])
-            ->defaultSort('source_id')
             ->groups(['source_id'])
             ->defaultGroup('source_id')
             ->bulkActions([
@@ -166,6 +166,19 @@ class PendingSyncPage extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [];
+    }
+
+    /**
+     * @param  Builder<SecurityEvent>  $query
+     * @return Builder<SecurityEvent>
+     */
+    protected function applySortingToTableQuery(Builder $query): Builder
+    {
+        if ($this->getTableSortColumn()) {
+            return $this->defaultApplySortingToTableQuery($query);
+        }
+
+        return $query->orderBy('source_id')->orderByDesc('updated_at');
     }
 
     private function enumString(mixed $state): string

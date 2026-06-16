@@ -3,7 +3,9 @@
 use App\Filament\Resources\SecurityEventResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use Database\Seeders\RolePermissionSeeder;
@@ -106,6 +108,40 @@ it('alert list shows tracker badge for events with work item links', function ()
         ->get(SecurityEventResource::getUrl('index'))
         ->assertOk()
         ->assertSee('In Progress');
+});
+
+it('alert list shows software system name in system column', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Reader']);
+
+    $system = SoftwareSystem::factory()->create(['name' => 'My Test Application']);
+    SecurityEvent::factory()->forSystem($system)->create();
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('index'))
+        ->assertOk()
+        ->assertSee('My Test Application');
+});
+
+it('alert list shows container name in container column', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Reader']);
+
+    $container = SecurityContainer::factory()->create(['name' => 'api-gateway-repo']);
+    SecurityEvent::factory()->forContainer($container)->create();
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('index'))
+        ->assertOk()
+        ->assertSee('api-gateway-repo');
 });
 
 it('dashboard stats widget URLs contain correct filter parameters', function () {
