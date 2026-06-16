@@ -22,7 +22,9 @@ use Illuminate\Support\Facades\Gate;
 
 class PendingSyncPage extends Page implements HasTable
 {
-    use InteractsWithTable;
+    use InteractsWithTable {
+        applySortingToTableQuery as private defaultApplySortingToTableQuery;
+    }
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-up-on-square-stack';
 
@@ -173,7 +175,7 @@ class PendingSyncPage extends Page implements HasTable
     protected function applySortingToTableQuery(Builder $query): Builder
     {
         if ($this->getTableSortColumn()) {
-            return parent::applySortingToTableQuery($query);
+            return $this->defaultApplySortingToTableQuery($query);
         }
 
         return $query->orderBy('source_id')->orderByDesc('updated_at');
