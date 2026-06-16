@@ -5,16 +5,22 @@
     The script checks if Docker Compose is available, exports trusted host CA certificates into .docker/certs when present, builds the app image, starts the containers, runs database migrations and seeds the database, bootstraps an admin user with known credentials for testing purposes, imports system credentials when present, and finally opens the application in the browser.
 .PARAMETER Rebuild
     If specified, the script will perform a clean rebuild of the application by stopping and removing existing Docker containers, volumes, and orphans before rebuilding and starting the application.
+.PARAMETER Force
+    When used in conjunction with -Rebuild, this parameter forces the rebuild process to skip cached docker layers.
 .EXAMPLE
     .\appsec-scout.ps1
     Starts the AppSec Scout application using pre-built Docker image.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild
     (Re)build the AppSec Scout docker image and perform and start the application.
+.EXAMPLE
+    .\appsec-scout.ps1 -Rebuild -Force
+    Force a rebuild of the AppSec Scout docker image and start the application, even if there are potential issues detected.
 #>
 [CmdletBinding()]
 param(
-    [Switch]$Rebuild
+    [Switch]$Rebuild,
+    [Switch]$Force
 )
 $MyScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Split-Path $MyScriptRoot
@@ -178,7 +184,11 @@ if (-not (Test-Docker)) {
 try {
     if ($Rebuild.IsPresent -and $Rebuild) {
         Invoke-Docker compose down --volumes --remove-orphans
-        Invoke-Docker compose build app #--no-cache
+        if ($Force.IsPresent -and $Force) {
+            Invoke-Docker compose build app --no-cache
+        } else {
+            Invoke-Docker compose build app
+        }
 
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
     }
