@@ -13,6 +13,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Auth;
 
 class EventsRelationManager extends RelationManager
@@ -26,6 +27,11 @@ class EventsRelationManager extends RelationManager
         $user = Auth::user();
 
         return $user instanceof User && $user->can('alerts.view');
+    }
+
+    public function getRelationship(): Relation|Builder
+    {
+        return $this->ownerLink()->eventsQuery();
     }
 
     public function table(Table $table): Table
