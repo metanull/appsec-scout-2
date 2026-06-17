@@ -1,18 +1,13 @@
 <?php
 
-use App\Filament\Resources\InferenceSuggestionResource;
 use App\Filament\Resources\SecurityContainerLinkResource;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
-use App\Filament\Resources\SoftwareSystemLinkResource;
 use App\Filament\Resources\SoftwareSystemResource;
-use App\Models\Enums\InferenceSuggestionStatus;
-use App\Models\InferenceSuggestion;
 use App\Models\SecurityContainer;
 use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
-use App\Models\SoftwareSystemLink;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,41 +41,6 @@ it('shows context quality sections for reader-visible pages', function () {
         ->get(SecurityContainerLinkResource::getUrl('view', ['record' => $containerLink]))
         ->assertOk()
         ->assertSee('Context quality');
-});
-
-it('shows action links to inference review only for plan or admin users', function () {
-    $reader = qualityUser(['Reader']);
-    $plan = qualityUser(['Plan']);
-    $admin = qualityUser(['Admin']);
-
-    [$system] = seededQualityGraph();
-
-    InferenceSuggestion::factory()->forSubject($system)->forTarget(null)->create([
-        'suggestion_type' => 'tracker_project_mapping_candidate',
-        'proposed_action' => 'create_tracker_project_link',
-        'status' => InferenceSuggestionStatus::Pending,
-    ]);
-
-    $reviewUrl = InferenceSuggestionResource::getUrl('index');
-
-    $this->actingAs($reader)
-        ->get(SoftwareSystemResource::getUrl('view', ['record' => $system]))
-        ->assertOk()
-        ->assertDontSee($reviewUrl);
-
-    $this->actingAs($plan)
-        ->get(SoftwareSystemResource::getUrl('view', ['record' => $system]))
-        ->assertOk()
-        ->assertSee($reviewUrl);
-
-    $systemLink = SoftwareSystemLink::factory()->create();
-    $systemLink->members()->attach($system->id, ['sort_order' => 1]);
-
-    $this->actingAs($admin)
-        ->get(SoftwareSystemLinkResource::getUrl('view', ['record' => $systemLink]))
-        ->assertOk()
-        ->assertSee('Context quality')
-        ->assertSee($reviewUrl);
 });
 
 /**

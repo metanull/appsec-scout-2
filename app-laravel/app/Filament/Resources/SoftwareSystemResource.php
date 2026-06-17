@@ -125,8 +125,6 @@ class SoftwareSystemResource extends Resource
                         ->badge()
                         ->color(fn (SoftwareSystem $record): string => self::qualityColor($record))
                         ->state(fn (SoftwareSystem $record): string => self::qualitySummary($record))
-                        ->url(fn (SoftwareSystem $record): ?string => self::qualityUrl($record))
-                        ->openUrlInNewTab()
                         ->wrap()
                         ->placeholder('-'),
                 ]),

@@ -1,6 +1,5 @@
 <?php
 
-use App\Filament\Resources\InferenceSuggestionResource;
 use App\Filament\Resources\RepositoryProviderResource;
 use App\Filament\Resources\SecurityContainerLinkResource;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
@@ -84,48 +83,6 @@ it('denies RepositoryProvider access to Reader and Triage roles', function () {
 
     $this->actingAs($triage);
     expect(RepositoryProviderResource::canViewAny())->toBeFalse();
-});
-
-// ---------------------------------------------------------------------------
-// InferenceSuggestionResource — inference.review
-// ---------------------------------------------------------------------------
-
-it('grants inference review access to a user who holds the inference.review permission directly', function () {
-    $user = permissionUser(['inference.review']);
-
-    $this->actingAs($user);
-
-    expect(InferenceSuggestionResource::canViewAny())->toBeTrue();
-});
-
-it('denies inference review access to a user without inference.review', function () {
-    $user = permissionUser();
-
-    $this->actingAs($user);
-
-    expect(InferenceSuggestionResource::canViewAny())->toBeFalse();
-});
-
-it('grants inference review access through Plan and Admin roles via seeder', function () {
-    $plan = permissionUser(roles: ['Plan']);
-    $admin = permissionUser(roles: ['Admin']);
-
-    $this->actingAs($plan);
-    expect(InferenceSuggestionResource::canViewAny())->toBeTrue();
-
-    $this->actingAs($admin);
-    expect(InferenceSuggestionResource::canViewAny())->toBeTrue();
-});
-
-it('denies inference review access to Reader and Triage roles', function () {
-    $reader = permissionUser(roles: ['Reader']);
-    $triage = permissionUser(roles: ['Triage']);
-
-    $this->actingAs($reader);
-    expect(InferenceSuggestionResource::canViewAny())->toBeFalse();
-
-    $this->actingAs($triage);
-    expect(InferenceSuggestionResource::canViewAny())->toBeFalse();
 });
 
 // ---------------------------------------------------------------------------
@@ -223,56 +180,31 @@ it('shows curated link mutation controls to Plan and Admin roles via seeder', fu
 });
 
 // ---------------------------------------------------------------------------
-// ContextQualityIndicatorSupport::qualityUrl — inference.review
-// The trait delegates the URL decision to the inference.review permission.
-// Users without that permission receive null regardless of quality state.
+// Verify permissions exist in the seeder output
 // ---------------------------------------------------------------------------
 
-it('ContextQualityIndicatorSupport uses inference.review permission for the quality URL', function () {
-    $withPermission = permissionUser(['inference.review']);
-    $withoutPermission = permissionUser(roles: ['Reader']);
-
-    // Both users see null when there are no pending suggestions (no data set up)
-    // The key assertion is that a Plan user (who has inference.review) gets the
-    // same null result as a Reader (no suggestions exist), confirming the permission
-    // check does not itself generate a URL—it only unlocks one when suggestions exist.
-    $this->actingAs($withPermission);
-    expect($withPermission->can('inference.review'))->toBeTrue();
-
-    $this->actingAs($withoutPermission);
-    expect($withoutPermission->can('inference.review'))->toBeFalse();
-});
-
-// ---------------------------------------------------------------------------
-// Verify new permissions exist in the seeder output
-// ---------------------------------------------------------------------------
-
-it('seeder creates all three new permissions', function () {
+it('seeder creates the expected permissions', function () {
     expect(Permission::findByName('admin.repository-providers', 'web'))->not->toBeNull()
-        ->and(Permission::findByName('inference.review', 'web'))->not->toBeNull()
         ->and(Permission::findByName('context.curate', 'web'))->not->toBeNull();
 });
 
-it('Plan role receives new permissions through cumulative seeder model', function () {
+it('Plan role receives expected permissions through cumulative seeder model', function () {
     $plan = permissionUser(roles: ['Plan']);
 
     expect($plan->can('admin.repository-providers'))->toBeTrue()
-        ->and($plan->can('inference.review'))->toBeTrue()
         ->and($plan->can('context.curate'))->toBeTrue();
 });
 
-it('Admin role inherits new permissions through cumulative seeder model', function () {
+it('Admin role inherits expected permissions through cumulative seeder model', function () {
     $admin = permissionUser(roles: ['Admin']);
 
     expect($admin->can('admin.repository-providers'))->toBeTrue()
-        ->and($admin->can('inference.review'))->toBeTrue()
         ->and($admin->can('context.curate'))->toBeTrue();
 });
 
-it('Reader role does not have new permissions', function () {
+it('Reader role does not have elevated permissions', function () {
     $reader = permissionUser(roles: ['Reader']);
 
     expect($reader->can('admin.repository-providers'))->toBeFalse()
-        ->and($reader->can('inference.review'))->toBeFalse()
         ->and($reader->can('context.curate'))->toBeFalse();
 });

@@ -5,7 +5,6 @@ namespace App\Providers;
 use App\Credentials\Vault;
 use App\Events\SyncRunFinished;
 use App\Listeners\BustDashboardCache;
-use App\Listeners\GenerateInferenceSuggestions;
 use App\Models\User;
 use App\Sources\Asoc\AsocSource;
 use App\Sources\AzDo\AzDoSource;
@@ -54,7 +53,6 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Event::listen(SyncRunFinished::class, BustDashboardCache::class);
-        Event::listen(SyncRunFinished::class, GenerateInferenceSuggestions::class);
         Event::listen(Login::class, function (Login $event): void {
             if ($event->user instanceof User) {
                 $event->user->forceFill(['last_login_at' => now()])->save();

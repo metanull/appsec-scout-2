@@ -2,8 +2,6 @@
 
 namespace App\Context\Quality;
 
-use App\Models\Enums\InferenceSuggestionStatus;
-use App\Models\InferenceSuggestion;
 use App\Models\SecurityContainer;
 use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
@@ -23,8 +21,6 @@ final class ContextQualityService
 
         $repositoryMappingMissing = $this->hasFilePaths($event) && ! $this->hasRepositoryMapping($system, $container);
         $trackerMappingMissing = ! $this->hasTrackerMapping($system, $container);
-        $pendingSuggestions = $this->suggestionsCount(array_filter([$this->subjectKey($event), $this->subjectKey($system), $this->subjectKey($container)]));
-        $rejectedSuggestions = $this->suggestionsCount(array_filter([$this->subjectKey($event), $this->subjectKey($system), $this->subjectKey($container)]), InferenceSuggestionStatus::Rejected->value);
         $sourceUrlMissing = ! filled($event->url);
 
         return [
@@ -39,18 +35,6 @@ final class ContextQualityService
                 $trackerMappingMissing ? 'Missing tracker mapping' : 'Tracker mapping ready',
                 $trackerMappingMissing ? 'No tracker project link is configured for this alert context.' : 'Tracker project links are configured for this alert context.',
                 $trackerMappingMissing ? 'warning' : 'success',
-            ),
-            $this->indicator(
-                'Pending suggestions',
-                $pendingSuggestions > 0 ? "{$pendingSuggestions} pending suggestion(s)" : 'No pending suggestions',
-                $pendingSuggestions > 0 ? 'Review unresolved inference suggestions for this alert context.' : 'No unresolved inference suggestions were found for this alert context.',
-                $pendingSuggestions > 0 ? 'info' : 'success',
-            ),
-            $this->indicator(
-                'Rejected suggestions',
-                $rejectedSuggestions > 0 ? "{$rejectedSuggestions} rejected suggestion(s)" : 'No rejected suggestions',
-                $rejectedSuggestions > 0 ? 'Rejected evidence exists for this alert context.' : 'No rejected inference suggestions were found for this alert context.',
-                $rejectedSuggestions > 0 ? 'gray' : 'success',
             ),
             $this->indicator(
                 'Source URL',
@@ -68,8 +52,6 @@ final class ContextQualityService
     {
         $repositoryMappingMissing = $this->hasFilePaths($system) && ! $this->hasRepositoryMapping($system, null);
         $trackerMappingMissing = ! $this->hasTrackerMapping($system, null);
-        $pendingSuggestions = $this->suggestionsCount([[$system::class, $system->getKey()]]) + $this->suggestionsCount($this->subjectKeys($system->containers()->get()));
-        $rejectedSuggestions = $this->suggestionsCount([[$system::class, $system->getKey()]], InferenceSuggestionStatus::Rejected->value) + $this->suggestionsCount($this->subjectKeys($system->containers()->get()), InferenceSuggestionStatus::Rejected->value);
         $sourceUrlMissing = ! filled($system->url);
 
         return [
@@ -84,18 +66,6 @@ final class ContextQualityService
                 $trackerMappingMissing ? 'Missing tracker mapping' : 'Tracker mapping ready',
                 $trackerMappingMissing ? 'No tracker project link is configured for this system.' : 'Tracker project links are configured for this system.',
                 $trackerMappingMissing ? 'warning' : 'success',
-            ),
-            $this->indicator(
-                'Pending suggestions',
-                $pendingSuggestions > 0 ? "{$pendingSuggestions} pending suggestion(s)" : 'No pending suggestions',
-                $pendingSuggestions > 0 ? 'Review unresolved inference suggestions for this system.' : 'No unresolved inference suggestions were found for this system.',
-                $pendingSuggestions > 0 ? 'info' : 'success',
-            ),
-            $this->indicator(
-                'Rejected suggestions',
-                $rejectedSuggestions > 0 ? "{$rejectedSuggestions} rejected suggestion(s)" : 'No rejected suggestions',
-                $rejectedSuggestions > 0 ? 'Rejected evidence exists for this system.' : 'No rejected inference suggestions were found for this system.',
-                $rejectedSuggestions > 0 ? 'gray' : 'success',
             ),
             $this->indicator(
                 'Source URL',
@@ -114,8 +84,6 @@ final class ContextQualityService
         $system = $container->softwareSystem;
         $repositoryMappingMissing = $this->hasFilePaths($container) && ! $this->hasRepositoryMapping(null, $container);
         $trackerMappingMissing = ! $this->hasTrackerMapping(null, $container);
-        $pendingSuggestions = $this->suggestionsCount([[$container::class, $container->getKey()]]) + $this->suggestionsCount($system instanceof SoftwareSystem ? [[$system::class, $system->getKey()]] : []);
-        $rejectedSuggestions = $this->suggestionsCount([[$container::class, $container->getKey()]], InferenceSuggestionStatus::Rejected->value) + $this->suggestionsCount($system instanceof SoftwareSystem ? [[$system::class, $system->getKey()]] : [], InferenceSuggestionStatus::Rejected->value);
         $sourceUrlMissing = ! filled($container->url);
 
         return [
@@ -132,18 +100,6 @@ final class ContextQualityService
                 $trackerMappingMissing ? 'warning' : 'success',
             ),
             $this->indicator(
-                'Pending suggestions',
-                $pendingSuggestions > 0 ? "{$pendingSuggestions} pending suggestion(s)" : 'No pending suggestions',
-                $pendingSuggestions > 0 ? 'Review unresolved inference suggestions for this container.' : 'No unresolved inference suggestions were found for this container.',
-                $pendingSuggestions > 0 ? 'info' : 'success',
-            ),
-            $this->indicator(
-                'Rejected suggestions',
-                $rejectedSuggestions > 0 ? "{$rejectedSuggestions} rejected suggestion(s)" : 'No rejected suggestions',
-                $rejectedSuggestions > 0 ? 'Rejected evidence exists for this container.' : 'No rejected inference suggestions were found for this container.',
-                $rejectedSuggestions > 0 ? 'gray' : 'success',
-            ),
-            $this->indicator(
                 'Source URL',
                 $sourceUrlMissing ? 'Source URL unavailable' : 'Source URL available',
                 $sourceUrlMissing ? 'This container does not currently expose a navigable source URL.' : 'A source URL is available for this container.',
@@ -158,8 +114,6 @@ final class ContextQualityService
     public function forSoftwareSystemLink(SoftwareSystemLink $link): array
     {
         $members = $link->members()->get();
-        $pendingSuggestions = $this->suggestionsCount($this->subjectKeys($members));
-        $rejectedSuggestions = $this->suggestionsCount($this->subjectKeys($members), InferenceSuggestionStatus::Rejected->value);
         $sourceUrlMissing = $members->contains(fn (SoftwareSystem $system): bool => ! filled($system->url));
 
         return [
@@ -168,18 +122,6 @@ final class ContextQualityService
                 $members->count() > 0 ? $members->count() . ' system member(s)' : 'No system members',
                 $members->count() > 0 ? 'This virtual system has members that may need quality review.' : 'This virtual system has no members yet.',
                 $members->count() > 0 ? 'info' : 'warning',
-            ),
-            $this->indicator(
-                'Pending suggestions',
-                $pendingSuggestions > 0 ? "{$pendingSuggestions} pending suggestion(s)" : 'No pending suggestions',
-                $pendingSuggestions > 0 ? 'Review unresolved inference suggestions for this virtual system.' : 'No unresolved inference suggestions were found for this virtual system.',
-                $pendingSuggestions > 0 ? 'info' : 'success',
-            ),
-            $this->indicator(
-                'Rejected suggestions',
-                $rejectedSuggestions > 0 ? "{$rejectedSuggestions} rejected suggestion(s)" : 'No rejected suggestions',
-                $rejectedSuggestions > 0 ? 'Rejected evidence exists for this virtual system.' : 'No rejected inference suggestions were found for this virtual system.',
-                $rejectedSuggestions > 0 ? 'gray' : 'success',
             ),
             $this->indicator(
                 'Source URL',
@@ -196,8 +138,6 @@ final class ContextQualityService
     public function forSecurityContainerLink(SecurityContainerLink $link): array
     {
         $members = $link->members()->get();
-        $pendingSuggestions = $this->suggestionsCount($this->subjectKeys($members));
-        $rejectedSuggestions = $this->suggestionsCount($this->subjectKeys($members), InferenceSuggestionStatus::Rejected->value);
         $sourceUrlMissing = $members->contains(fn (SecurityContainer $container): bool => ! filled($container->url));
 
         return [
@@ -208,83 +148,12 @@ final class ContextQualityService
                 $members->count() > 0 ? 'info' : 'warning',
             ),
             $this->indicator(
-                'Pending suggestions',
-                $pendingSuggestions > 0 ? "{$pendingSuggestions} pending suggestion(s)" : 'No pending suggestions',
-                $pendingSuggestions > 0 ? 'Review unresolved inference suggestions for this virtual container.' : 'No unresolved inference suggestions were found for this virtual container.',
-                $pendingSuggestions > 0 ? 'info' : 'success',
-            ),
-            $this->indicator(
-                'Rejected suggestions',
-                $rejectedSuggestions > 0 ? "{$rejectedSuggestions} rejected suggestion(s)" : 'No rejected suggestions',
-                $rejectedSuggestions > 0 ? 'Rejected evidence exists for this virtual container.' : 'No rejected inference suggestions were found for this virtual container.',
-                $rejectedSuggestions > 0 ? 'gray' : 'success',
-            ),
-            $this->indicator(
                 'Source URL',
                 $sourceUrlMissing ? 'Some members lack source URLs' : 'Source URLs available',
                 $sourceUrlMissing ? 'At least one container member does not expose a navigable source URL.' : 'All container members expose navigable source URLs.',
                 $sourceUrlMissing ? 'warning' : 'success',
             ),
         ];
-    }
-
-    /**
-     * @param  array<int, array{0: class-string<Model>, 1: int}|null>  $subjects
-     */
-    private function suggestionsCount(array $subjects, ?string $status = null): int
-    {
-        $normalizedSubjects = [];
-
-        foreach ($subjects as $subject) {
-            if ($subject === null) {
-                continue;
-            }
-
-            $normalizedSubjects[] = [$subject[0], $subject[1]];
-        }
-
-        if ($normalizedSubjects === []) {
-            return 0;
-        }
-
-        return InferenceSuggestion::query()
-            ->when($status !== null, fn ($query) => $query->where('status', $status))
-            ->where(function ($query) use ($normalizedSubjects): void {
-                foreach ($normalizedSubjects as [$type, $id]) {
-                    $query->orWhere(function ($nested) use ($type, $id): void {
-                        $nested->where('subject_type', $type)
-                            ->where('subject_id', $id);
-                    });
-                }
-            })
-            ->count();
-    }
-
-    /**
-     * @param  iterable<Model>  $records
-     * @return list<array{0: class-string<Model>, 1: int}>
-     */
-    private function subjectKeys(iterable $records): array
-    {
-        $subjects = [];
-
-        foreach ($records as $record) {
-            $subjects[] = [$record::class, (int) $record->getKey()];
-        }
-
-        return $subjects;
-    }
-
-    /**
-     * @return array{0: class-string<Model>, 1: int}|null
-     */
-    private function subjectKey(?Model $record): ?array
-    {
-        if (! $record instanceof Model) {
-            return null;
-        }
-
-        return [$record::class, (int) $record->getKey()];
     }
 
     /**

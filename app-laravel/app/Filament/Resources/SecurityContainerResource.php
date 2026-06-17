@@ -106,8 +106,6 @@ class SecurityContainerResource extends Resource
                         ->badge()
                         ->color(fn (SecurityContainer $record): string => self::qualityColor($record))
                         ->state(fn (SecurityContainer $record): string => self::qualitySummary($record))
-                        ->url(fn (SecurityContainer $record): ?string => self::qualityUrl($record))
-                        ->openUrlInNewTab()
                         ->wrap()
                         ->placeholder('-'),
                 ]),
