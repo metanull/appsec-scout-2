@@ -20,6 +20,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 class SoftwareSystemLinkResource extends Resource
@@ -41,6 +42,21 @@ class SoftwareSystemLinkResource extends Resource
         $user = Auth::user();
 
         return $user instanceof User && $user->can('admin.integrations');
+    }
+
+    public static function canCreate(): bool
+    {
+        return static::canViewAny();
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return static::canViewAny();
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return static::canViewAny();
     }
 
     public static function form(Schema $schema): Schema

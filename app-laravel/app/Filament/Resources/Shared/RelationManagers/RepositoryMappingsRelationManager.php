@@ -39,6 +39,11 @@ class RepositoryMappingsRelationManager extends RelationManager
         return $user instanceof User && ($user->can('alerts.view') || $user->hasAnyRole(['Plan', 'Admin']));
     }
 
+    public function isReadOnly(): bool
+    {
+        return false;
+    }
+
     public function table(Table $table): Table
     {
         return $table

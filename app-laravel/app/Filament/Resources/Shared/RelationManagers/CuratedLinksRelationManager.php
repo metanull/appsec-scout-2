@@ -37,6 +37,11 @@ class CuratedLinksRelationManager extends RelationManager
         return $user instanceof User && $user->can('alerts.view');
     }
 
+    public function isReadOnly(): bool
+    {
+        return false;
+    }
+
     public function table(Table $table): Table
     {
         return $table

@@ -30,7 +30,7 @@ class MembersRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('name')->searchable(),
                 TextColumn::make('source_id')->badge(),
-                TextColumn::make('pivot.sort_order')->label('Order')->sortable(),
+                TextColumn::make('pivot.sort_order')->label('Order'),
             ])
             ->headerActions([
                 AttachAction::make()

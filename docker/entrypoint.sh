@@ -16,4 +16,13 @@ else
     cp .env "$STORED_ENV"
 fi
 
+composer install --optimize-autoloader
+php artisan migrate --force
+php artisan db:seed
+php artisan appsec:bootstrap-admin --if-missing --name="${BOOTSTRAP_ADMIN_NAME:-Admin}" --email="${BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}" --password="${BOOTSTRAP_ADMIN_PASSWORD:-changeme-now}"
+php artisan permission:cache-reset
+php artisan optimize:clear
+
+chown -R www-data:www-data storage/
+
 exec "$@"
