@@ -23,4 +23,6 @@ php artisan appsec:bootstrap-admin --if-missing --name="${BOOTSTRAP_ADMIN_NAME:-
 php artisan permission:cache-reset
 php artisan optimize:clear
 
+chown -R www-data:www-data storage/
+
 exec "$@"

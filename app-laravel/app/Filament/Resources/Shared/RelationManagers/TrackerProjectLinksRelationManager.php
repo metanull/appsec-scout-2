@@ -31,6 +31,11 @@ class TrackerProjectLinksRelationManager extends RelationManager
         return Auth::user()?->can('alerts.view') ?? false;
     }
 
+    public function isReadOnly(): bool
+    {
+        return false;
+    }
+
     public function table(Table $table): Table
     {
         return $table
