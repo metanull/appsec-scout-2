@@ -30,12 +30,12 @@ class MembersRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->defaultSort('pivot.sort_order')
+            ->modifyQueryUsing(fn ($query) => $query->orderBy('security_container_link_members.sort_order'))
             ->columns([
                 TextColumn::make('name')->searchable()->wrap()->grow(),
                 TextColumn::make('source_id')->label('Source')->badge(),
                 TextColumn::make('kind')->badge()->placeholder('-'),
-                TextColumn::make('pivot.sort_order')->label('Order')->sortable(),
+                TextColumn::make('pivot.sort_order')->label('Order'),
             ])
             ->headerActions([
                 Action::make('addMember')
