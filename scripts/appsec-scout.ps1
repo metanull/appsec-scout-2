@@ -148,34 +148,25 @@ Function Test-Docker {
     }
 }
 
-Function Wait-DockerServiceHealthy {
+Function Wait-AppReady {
     param(
-        [Parameter(Mandatory)]
-        [string]$ServiceName,
-
-        [int]$MaxRetries = 10,
-        [int]$SleepTimeSeconds = 3
+        [int]$MaxRetries = 40,
+        [int]$SleepTimeSeconds = 5
     )
-    # Wait for the database container to be healthy before running migrations
     $retryCount = 0
     while ($retryCount -lt $MaxRetries) {
         Start-Sleep -Seconds $SleepTimeSeconds
         try {
-            $containerId = Invoke-Docker compose ps -q $ServiceName
-            if ($containerId) {
-                $serviceStatus = Invoke-Docker inspect -f '{{.State.Health.Status}}' $containerId
-                if ($serviceStatus.Trim() -eq 'healthy') {
-                    return $true
-                }
+            $reply = Invoke-WebRequest -Uri "http://localhost:8080/up" -UseBasicParsing -ErrorAction Stop
+            if ($reply.StatusCode -eq 200) {
+                return $true
             }
-            Write-Verbose "Service '$ServiceName' is not running. (attempt $($retryCount + 1) of $MaxRetries)"
         } catch {
-            Write-Verbose "Error while checking the health of service '$ServiceName': $_"
-        } finally {
-            $retryCount++
+            Write-Verbose "App not ready yet (attempt $($retryCount + 1) of $MaxRetries): $_"
         }
+        $retryCount++
     }
-    return false;
+    return $false
 }
 
 Set-Location $ProjectRoot
@@ -196,32 +187,18 @@ try {
     }
     Invoke-Docker compose up -d
 
-    # Wait for the database container to be healthy before running migrations
-    if( -not (Wait-DockerServiceHealthy -ServiceName "mysql")) {
-        throw "Database container did not become healthy within the expected time. Please check your Docker setup and try again."
+    if (-not (Wait-AppReady)) {
+        throw "Application did not become ready within the expected time. Check the container logs with: docker compose logs app"
     }
 
     if ($Rebuild.IsPresent -and $Rebuild) {
-        Invoke-Docker compose exec app php artisan migrate --force
-        Invoke-Docker compose exec app php artisan db:seed
-        Invoke-Docker compose exec app php artisan appsec:bootstrap-admin --if-missing --name='Admin' --email='admin@example.com' --password='changeme-now'
-
         if (Test-Path ".credentials.json") {
             Invoke-Docker compose cp .credentials.json app:/var/www/html/storage/app/private/credentials.json
             Invoke-Docker compose exec app php artisan credentials:system:import /var/www/html/storage/app/private/credentials.json
             Write-Information "Imported system credentials from .credentials.json"
         }
-    } else {
-        Invoke-Docker compose exec app composer dump-autoload --optimize
-        Invoke-Docker compose exec app php artisan migrate
-        Invoke-Docker compose exec app php artisan cache:clear
     }
 
-    # Assert that the application is up and running before attempting to open it in the browser
-    $Reply = Invoke-WebRequest http://localhost:8080/up
-    if( $Reply.StatusCode -ne 200) {
-        throw "Failed to assert that the application is up."
-    }
     Start-Process "http://localhost:8080"
 } catch {
     Write-Error $_.Exception.Message

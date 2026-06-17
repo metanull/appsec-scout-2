@@ -32,20 +32,72 @@ class RolePermissionSeeder extends Seeder
     ];
 
     private const ROLE_PERMISSIONS = [
-        'Reader' => ['alerts.view'],
-        'Triage' => ['alerts.edit', 'alerts.bulk-edit', 'triage.run-trivy', 'triage.run-bfg', 'triage.run-codesearch'],
-        'Plan' => ['work-items.create', 'work-items.link', 'admin.repository-providers', 'inference.review', 'context.curate'],
-        'Sync' => ['work-items.sync', 'sources.push-state'],
+        'Reader' => [
+            'alerts.view',
+        ],
+        'Triage' => [
+            'alerts.view',
+            'alerts.edit',
+            'alerts.bulk-edit',
+            'triage.run-trivy',
+            'triage.run-bfg',
+            'triage.run-codesearch',
+        ],
+        'Plan' => [
+            'alerts.view',
+            'alerts.edit',
+            'alerts.bulk-edit',
+            'triage.run-trivy',
+            'triage.run-bfg',
+            'triage.run-codesearch',
+            'work-items.create',
+            'work-items.link',
+            'admin.repository-providers',
+            'inference.review',
+            'context.curate',
+        ],
+        'Sync' => [
+            'alerts.view',
+            'alerts.edit',
+            'alerts.bulk-edit',
+            'triage.run-trivy',
+            'triage.run-bfg',
+            'triage.run-codesearch',
+            'work-items.create',
+            'work-items.link',
+            'admin.repository-providers',
+            'inference.review',
+            'context.curate',
+            'work-items.sync',
+            'sources.push-state',
+        ],
         'Admin' => [
-            'admin.users', 'admin.system-pats', 'admin.queue',
-            'admin.audit', 'admin.errors', 'admin.integrations',
+            'alerts.view',
+            'alerts.edit',
+            'alerts.bulk-edit',
+            'triage.run-trivy',
+            'triage.run-bfg',
+            'triage.run-codesearch',
+            'work-items.create',
+            'work-items.link',
+            'admin.repository-providers',
+            'inference.review',
+            'context.curate',
+            'work-items.sync',
+            'sources.push-state',
+            'admin.users',
+            'admin.system-pats',
+            'admin.queue',
+            'admin.audit',
+            'admin.errors',
+            'admin.integrations',
         ],
     ];
 
     public function run(): void
     {
         $this->createPermissions();
-        $this->createRolesWithCumulativePermissions();
+        $this->createRolesWithPermissions();
         app(PermissionRegistrar::class)->clearPermissionsCollection();
     }
 
@@ -56,14 +108,11 @@ class RolePermissionSeeder extends Seeder
         }
     }
 
-    private function createRolesWithCumulativePermissions(): void
+    private function createRolesWithPermissions(): void
     {
-        $accumulated = [];
-
-        foreach (self::ROLE_PERMISSIONS as $roleName => $ownPermissions) {
-            $accumulated = array_merge($accumulated, $ownPermissions);
+        foreach (self::ROLE_PERMISSIONS as $roleName => $permissions) {
             $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
-            $role->syncPermissions($accumulated);
+            $role->syncPermissions($permissions);
         }
     }
 }
