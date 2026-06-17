@@ -3,15 +3,12 @@
 namespace App\Filament\Support;
 
 use App\Context\Quality\ContextQualityService;
-use App\Filament\Resources\InferenceSuggestionResource;
 use App\Models\SecurityContainer;
 use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SoftwareSystemLink;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Auth;
 
 trait ContextQualityIndicatorSupport
 {
@@ -50,22 +47,5 @@ trait ContextQualityIndicatorSupport
         }
 
         return 'success';
-    }
-
-    protected static function qualityUrl(Model $record): ?string
-    {
-        $indicators = static::qualityIndicators($record);
-
-        foreach ($indicators as $indicator) {
-            if ($indicator['label'] === 'Pending suggestions' && $indicator['message'] !== 'No pending suggestions') {
-                $user = Auth::user();
-
-                if ($user instanceof User && $user->can('inference.review')) {
-                    return InferenceSuggestionResource::getUrl('index');
-                }
-            }
-        }
-
-        return null;
     }
 }

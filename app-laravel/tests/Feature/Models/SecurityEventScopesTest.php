@@ -2,8 +2,6 @@
 
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
-use App\Models\Enums\InferenceSuggestionStatus;
-use App\Models\InferenceSuggestion;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
@@ -99,64 +97,4 @@ it('bySeverityPriority orders critical before high before medium before low befo
         ->and($highPos)->toBeLessThan($mediumPos)
         ->and($mediumPos)->toBeLessThan($lowPos)
         ->and($lowPos)->toBeLessThan($informationalPos);
-});
-
-// ---------------------------------------------------------------------------
-// InferenceSuggestion::scopePendingFirst
-// ---------------------------------------------------------------------------
-
-it('pendingFirst places pending suggestions before non-pending suggestions', function () {
-    $system = SoftwareSystem::factory()->create();
-
-    $accepted = InferenceSuggestion::factory()->forSubject($system)->forTarget(null)->create([
-        'suggestion_type' => InferenceSuggestion::TYPE_REPOSITORY_MAPPING,
-        'proposed_action' => InferenceSuggestion::ACTION_CREATE_REPOSITORY_MAPPING,
-        'status' => InferenceSuggestionStatus::Accepted,
-    ]);
-
-    $pending = InferenceSuggestion::factory()->forSubject($system)->forTarget(null)->create([
-        'suggestion_type' => InferenceSuggestion::TYPE_REPOSITORY_MAPPING,
-        'proposed_action' => InferenceSuggestion::ACTION_CREATE_REPOSITORY_MAPPING,
-        'status' => InferenceSuggestionStatus::Pending,
-    ]);
-
-    $rejected = InferenceSuggestion::factory()->forSubject($system)->forTarget(null)->create([
-        'suggestion_type' => InferenceSuggestion::TYPE_TRACKER_PROJECT_MAPPING,
-        'proposed_action' => InferenceSuggestion::ACTION_CREATE_TRACKER_PROJECT_LINK,
-        'status' => InferenceSuggestionStatus::Rejected,
-    ]);
-
-    $ordered = InferenceSuggestion::query()->pendingFirst()->pluck('id')->all();
-
-    $pendingPos = array_search($pending->id, $ordered);
-    $acceptedPos = array_search($accepted->id, $ordered);
-    $rejectedPos = array_search($rejected->id, $ordered);
-
-    expect($pendingPos)->toBeLessThan($acceptedPos)
-        ->and($pendingPos)->toBeLessThan($rejectedPos);
-});
-
-it('pendingFirst orders multiple pending suggestions by newest first', function () {
-    $system = SoftwareSystem::factory()->create();
-
-    $olderPending = InferenceSuggestion::factory()->forSubject($system)->forTarget(null)->create([
-        'suggestion_type' => InferenceSuggestion::TYPE_REPOSITORY_MAPPING,
-        'proposed_action' => InferenceSuggestion::ACTION_CREATE_REPOSITORY_MAPPING,
-        'status' => InferenceSuggestionStatus::Pending,
-        'created_at' => now()->subDays(2),
-    ]);
-
-    $newerPending = InferenceSuggestion::factory()->forSubject($system)->forTarget(null)->create([
-        'suggestion_type' => InferenceSuggestion::TYPE_TRACKER_PROJECT_MAPPING,
-        'proposed_action' => InferenceSuggestion::ACTION_CREATE_TRACKER_PROJECT_LINK,
-        'status' => InferenceSuggestionStatus::Pending,
-        'created_at' => now()->subDay(),
-    ]);
-
-    $ordered = InferenceSuggestion::query()->pendingFirst()->pluck('id')->all();
-
-    $newerPos = array_search($newerPending->id, $ordered);
-    $olderPos = array_search($olderPending->id, $ordered);
-
-    expect($newerPos)->toBeLessThan($olderPos);
 });

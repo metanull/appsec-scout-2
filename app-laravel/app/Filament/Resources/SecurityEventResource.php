@@ -158,8 +158,6 @@ class SecurityEventResource extends Resource
                         ->badge()
                         ->color(fn (SecurityEvent $record): string => self::qualityColor($record))
                         ->state(fn (SecurityEvent $record): string => self::qualitySummary($record))
-                        ->url(fn (SecurityEvent $record): ?string => self::qualityUrl($record))
-                        ->openUrlInNewTab()
                         ->wrap()
                         ->placeholder('-'),
                 ]),
@@ -378,7 +376,7 @@ class SecurityEventResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => SecurityEvent::query()
+            ->modifyQueryUsing(fn (Builder $query) => $query
                 ->with(['workItemLinks', 'softwareSystem', 'container']))
             ->columns([
                 TextColumn::make('softwareSystem.name')

@@ -1,8 +1,6 @@
 <?php
 
 use App\Context\Quality\ContextQualityService;
-use App\Models\Enums\InferenceSuggestionStatus;
-use App\Models\InferenceSuggestion;
 use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
@@ -41,7 +39,6 @@ it('reports complete context when mappings and source links exist', function () 
 
     expect(indicatorMessage($indicators, 'Repository mapping'))->toBe('Repository mapping ready')
         ->and(indicatorMessage($indicators, 'Tracker mapping'))->toBe('Tracker mapping ready')
-        ->and(indicatorMessage($indicators, 'Pending suggestions'))->toBe('No pending suggestions')
         ->and(indicatorMessage($indicators, 'Source URL'))->toBe('Source URL available');
 });
 
@@ -63,20 +60,6 @@ it('reports missing tracker project mapping when none exists', function () {
     $indicators = app(ContextQualityService::class)->forSecurityContainer($container);
 
     expect(indicatorMessage($indicators, 'Tracker mapping'))->toBe('Missing tracker mapping');
-});
-
-it('reports pending inference suggestions for related entities', function () {
-    $system = SoftwareSystem::factory()->create();
-
-    InferenceSuggestion::factory()->forSubject($system)->forTarget(null)->create([
-        'suggestion_type' => 'tracker_project_mapping_candidate',
-        'proposed_action' => 'create_tracker_project_link',
-        'status' => InferenceSuggestionStatus::Pending,
-    ]);
-
-    $indicators = app(ContextQualityService::class)->forSoftwareSystem($system);
-
-    expect(indicatorMessage($indicators, 'Pending suggestions'))->toBe('1 pending suggestion(s)');
 });
 
 /**
