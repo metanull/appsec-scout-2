@@ -28,6 +28,12 @@ class EventsRelationManager extends RelationManager
         return $user instanceof User && $user->can('alerts.view');
     }
 
+    /** @return Builder<SecurityEvent> */
+    public function getRelationship(): Builder
+    {
+        return $this->ownerLink()->eventsQuery();
+    }
+
     public function table(Table $table): Table
     {
         return $table
