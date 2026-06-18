@@ -3,8 +3,6 @@
 namespace App\Trackers\Defaults;
 
 use App\Models\SecurityEvent;
-use App\Models\SoftwareSystemLink;
-use App\Models\SoftwareSystemLinkMember;
 use App\Models\TrackerProjectLink;
 use App\Trackers\TrackerConfigRepository;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -18,20 +16,11 @@ final class TrackerProjectDefaultResolver
     public function resolveForEvent(
         SecurityEvent $event,
         string $trackerId,
-        ?TrackerProjectDefaultContext $context = null,
     ): TrackerProjectDefaultResolution {
         $normalizedTrackerId = trim($trackerId);
 
         if ($normalizedTrackerId === '') {
             return TrackerProjectDefaultResolution::none($trackerId, 'Tracker is required to resolve a default project.');
-        }
-
-        if ($context !== null) {
-            $explicitVirtual = $context->virtualContainerDefaultFor($normalizedTrackerId);
-
-            if ($explicitVirtual instanceof TrackerProjectDefaultResolution) {
-                return $explicitVirtual;
-            }
         }
 
         $containerResolution = $this->containerResolution($event, $normalizedTrackerId);
@@ -44,12 +33,6 @@ final class TrackerProjectDefaultResolver
 
         if ($systemResolution instanceof TrackerProjectDefaultResolution) {
             return $systemResolution;
-        }
-
-        $virtualSystemResolution = $this->virtualSystemResolution($event, $normalizedTrackerId, $context);
-
-        if ($virtualSystemResolution instanceof TrackerProjectDefaultResolution) {
-            return $virtualSystemResolution;
         }
 
         $fallback = $this->trackerFallback($normalizedTrackerId);
@@ -70,7 +53,6 @@ final class TrackerProjectDefaultResolver
     public function resolveForEvents(
         iterable $events,
         string $trackerId,
-        ?TrackerProjectDefaultContext $context = null,
     ): TrackerProjectDefaultResolution {
         $normalizedTrackerId = trim($trackerId);
 
@@ -81,7 +63,7 @@ final class TrackerProjectDefaultResolver
         $resolved = [];
 
         foreach ($events as $event) {
-            $resolved[] = $this->resolveForEvent($event, $normalizedTrackerId, $context);
+            $resolved[] = $this->resolveForEvent($event, $normalizedTrackerId);
         }
 
         if ($resolved === []) {
@@ -170,62 +152,6 @@ final class TrackerProjectDefaultResolver
             source: 'system_mapping',
             confidenceLabel: 'System mapping',
             reasonText: 'Resolved from accepted system tracker mapping.',
-        );
-    }
-
-    private function virtualSystemResolution(
-        SecurityEvent $event,
-        string $trackerId,
-        ?TrackerProjectDefaultContext $context,
-    ): ?TrackerProjectDefaultResolution {
-        $virtualSystemLinkIds = [];
-
-        if ($context?->virtualSystemLinkId !== null) {
-            $virtualSystemLinkIds[] = $context->virtualSystemLinkId;
-        }
-
-        $systemId = $event->getAttribute('software_system_id');
-
-        if (is_int($systemId)) {
-            $memberLinkIds = SoftwareSystemLinkMember::query()
-                ->where('software_system_id', $systemId)
-                ->pluck('link_id')
-                ->all();
-
-            foreach ($memberLinkIds as $memberLinkId) {
-                $virtualSystemLinkIds[] = (int) $memberLinkId;
-            }
-        }
-
-        $virtualSystemLinkIds = array_values(array_unique(array_filter($virtualSystemLinkIds, fn (int $id): bool => $id > 0)));
-
-        if ($virtualSystemLinkIds === []) {
-            return null;
-        }
-
-        $knownLinkIds = SoftwareSystemLink::query()
-            ->whereIn('id', $virtualSystemLinkIds)
-            ->pluck('id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->all();
-
-        if ($knownLinkIds === []) {
-            return null;
-        }
-
-        /** @var EloquentCollection<int, TrackerProjectLink> $links */
-        $links = TrackerProjectLink::query()
-            ->where('owner_type', SoftwareSystemLink::class)
-            ->whereIn('owner_id', $knownLinkIds)
-            ->where('tracker_id', $trackerId)
-            ->get();
-
-        return $this->resolveFromLinks(
-            links: $links,
-            trackerId: $trackerId,
-            source: 'virtual_system_context',
-            confidenceLabel: 'Virtual system context',
-            reasonText: 'Resolved from accepted virtual system context mapping.',
         );
     }
 

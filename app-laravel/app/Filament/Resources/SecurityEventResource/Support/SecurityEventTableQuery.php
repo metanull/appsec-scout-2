@@ -2,9 +2,7 @@
 
 namespace App\Filament\Resources\SecurityEventResource\Support;
 
-use App\Models\SecurityContainerLinkMember;
 use App\Models\SecurityEvent;
-use App\Models\SoftwareSystemLinkMember;
 use App\Models\WorkItemLink;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -70,25 +68,7 @@ final class SecurityEventTableQuery
             return $query;
         }
 
-        $physicalIds = [];
-        $virtualIds = [];
-
-        foreach ($selections as $selection) {
-            if (str_starts_with($selection, 'physical:')) {
-                $physicalIds[] = (int) str_replace('physical:', '', $selection);
-            }
-
-            if (str_starts_with($selection, 'virtual:')) {
-                $virtualIds[] = (int) str_replace('virtual:', '', $selection);
-            }
-        }
-
-        $virtualMemberIds = SoftwareSystemLinkMember::query()
-            ->whereIn('link_id', $virtualIds)
-            ->pluck('software_system_id')
-            ->all();
-
-        $ids = array_values(array_unique(array_merge($physicalIds, array_map(fn (mixed $id): int => (int) $id, $virtualMemberIds))));
+        $ids = array_values(array_filter(array_map('intval', $selections), fn (int $id): bool => $id > 0));
 
         if ($ids === []) {
             return $query->whereRaw('1 = 0');
@@ -117,25 +97,7 @@ final class SecurityEventTableQuery
             return $query;
         }
 
-        $physicalIds = [];
-        $virtualIds = [];
-
-        foreach ($selections as $selection) {
-            if (str_starts_with($selection, 'physical:')) {
-                $physicalIds[] = (int) str_replace('physical:', '', $selection);
-            }
-
-            if (str_starts_with($selection, 'virtual:')) {
-                $virtualIds[] = (int) str_replace('virtual:', '', $selection);
-            }
-        }
-
-        $virtualMemberIds = SecurityContainerLinkMember::query()
-            ->whereIn('link_id', $virtualIds)
-            ->pluck('security_container_id')
-            ->all();
-
-        $ids = array_values(array_unique(array_merge($physicalIds, array_map(fn (mixed $id): int => (int) $id, $virtualMemberIds))));
+        $ids = array_values(array_filter(array_map('intval', $selections), fn (int $id): bool => $id > 0));
 
         if ($ids === []) {
             return $query->whereRaw('1 = 0');

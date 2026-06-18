@@ -9,7 +9,6 @@ use App\Filament\Resources\SoftwareSystemResource\Pages\ListSoftwareSystems;
 use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
-use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -194,7 +193,6 @@ class SoftwareSystemResource extends Resource
             EventsRelationManager::class,
             ContainersRelationManager::class,
             CuratedLinksRelationManager::class,
-            LinksRelationManager::class,
             TrackerProjectLinksRelationManager::class,
             RepositoryMappingsRelationManager::class,
         ];

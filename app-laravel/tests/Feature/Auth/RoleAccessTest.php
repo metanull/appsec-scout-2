@@ -1,6 +1,5 @@
 <?php
 
-use App\Filament\Resources\SoftwareSystemLinkResource;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Spatie\Permission\Models\Role;
@@ -75,27 +74,4 @@ it('Admin role user can view error log resource', function () {
     $this->actingAs($user);
 
     expect($user->can('admin.errors'))->toBeTrue();
-});
-
-it('Reader role user cannot view system links resource', function () {
-    $user = User::factory()->create([
-        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
-        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
-        'two_factor_confirmed_at' => now(),
-    ]);
-    $this->actingAs($user);
-
-    expect(SoftwareSystemLinkResource::canViewAny())->toBeFalse();
-});
-
-it('Admin role user can view system links resource', function () {
-    $user = User::factory()->create([
-        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
-        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
-        'two_factor_confirmed_at' => now(),
-    ]);
-    $user->syncRoles(['Admin']);
-    $this->actingAs($user);
-
-    expect(SoftwareSystemLinkResource::canViewAny())->toBeTrue();
 });

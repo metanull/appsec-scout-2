@@ -1,10 +1,8 @@
 <?php
 
 use App\Filament\Resources\RepositoryProviderResource;
-use App\Filament\Resources\SecurityContainerLinkResource;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
-use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -83,57 +81,6 @@ it('denies RepositoryProvider access to Reader and Triage roles', function () {
 
     $this->actingAs($triage);
     expect(RepositoryProviderResource::canViewAny())->toBeFalse();
-});
-
-// ---------------------------------------------------------------------------
-// SecurityContainerLinkResource — context.curate
-// ---------------------------------------------------------------------------
-
-it('grants SecurityContainerLink mutation to a user who holds the context.curate permission directly', function () {
-    $user = permissionUser(['context.curate']);
-    $link = SecurityContainerLink::factory()->create();
-
-    $this->actingAs($user);
-
-    expect(SecurityContainerLinkResource::canCreate())->toBeTrue()
-        ->and(SecurityContainerLinkResource::canEdit($link))->toBeTrue()
-        ->and(SecurityContainerLinkResource::canDelete($link))->toBeTrue();
-});
-
-it('denies SecurityContainerLink mutation to a user without context.curate', function () {
-    $user = permissionUser(['alerts.view']);
-    $link = SecurityContainerLink::factory()->create();
-
-    $this->actingAs($user);
-
-    expect(SecurityContainerLinkResource::canCreate())->toBeFalse()
-        ->and(SecurityContainerLinkResource::canEdit($link))->toBeFalse()
-        ->and(SecurityContainerLinkResource::canDelete($link))->toBeFalse();
-});
-
-it('grants SecurityContainerLink mutation through Plan and Admin roles via seeder', function () {
-    $plan = permissionUser(roles: ['Plan']);
-    $admin = permissionUser(roles: ['Admin']);
-    $link = SecurityContainerLink::factory()->create();
-
-    $this->actingAs($plan);
-    expect(SecurityContainerLinkResource::canCreate())->toBeTrue()
-        ->and(SecurityContainerLinkResource::canEdit($link))->toBeTrue();
-
-    $this->actingAs($admin);
-    expect(SecurityContainerLinkResource::canCreate())->toBeTrue()
-        ->and(SecurityContainerLinkResource::canEdit($link))->toBeTrue();
-});
-
-it('denies SecurityContainerLink mutation to Reader role', function () {
-    $reader = permissionUser(roles: ['Reader']);
-    $link = SecurityContainerLink::factory()->create();
-
-    $this->actingAs($reader);
-
-    expect(SecurityContainerLinkResource::canCreate())->toBeFalse()
-        ->and(SecurityContainerLinkResource::canEdit($link))->toBeFalse()
-        ->and(SecurityContainerLinkResource::canDelete($link))->toBeFalse();
 });
 
 // ---------------------------------------------------------------------------

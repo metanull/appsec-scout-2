@@ -4,10 +4,8 @@ namespace App\Filament\Support;
 
 use App\Context\Quality\ContextQualityService;
 use App\Models\SecurityContainer;
-use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
-use App\Models\SoftwareSystemLink;
 use Illuminate\Database\Eloquent\Model;
 
 trait ContextQualityIndicatorSupport
@@ -21,8 +19,6 @@ trait ContextQualityIndicatorSupport
             $record instanceof SecurityEvent => app(ContextQualityService::class)->forSecurityEvent($record),
             $record instanceof SoftwareSystem => app(ContextQualityService::class)->forSoftwareSystem($record),
             $record instanceof SecurityContainer => app(ContextQualityService::class)->forSecurityContainer($record),
-            $record instanceof SoftwareSystemLink => app(ContextQualityService::class)->forSoftwareSystemLink($record),
-            $record instanceof SecurityContainerLink => app(ContextQualityService::class)->forSecurityContainerLink($record),
             default => [],
         };
     }
