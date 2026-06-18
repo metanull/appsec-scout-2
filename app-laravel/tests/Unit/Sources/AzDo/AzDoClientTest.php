@@ -81,7 +81,7 @@ it('fetches code alerts and sends criteria.modifiedSince query for incremental m
     $uri = (string) $history[0]['request']->getUri();
     parse_str(parse_url($uri, PHP_URL_QUERY) ?: '', $query);
 
-    expect($query['alertType'] ?? null)->toBe('code')
+    expect($query['criteria_alertType'] ?? $query['criteria.alertType'] ?? null)->toBe('code')
         ->and(isset($query['criteria_modifiedSince']) || isset($query['criteria.modifiedSince']))->toBeTrue();
 });
 
