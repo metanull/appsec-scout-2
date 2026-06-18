@@ -16,10 +16,8 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityContainer;
-use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
-use App\Models\SoftwareSystemLink;
 use App\Models\User;
 use App\SecurityEvents\EventLinkCatalog;
 use App\SecurityEvents\SourceLinkHelper;
@@ -867,40 +865,24 @@ class SecurityEventResource extends Resource
             ->send();
     }
 
-    /** @return array<string, string> */
+    /** @return array<int, string> */
     private static function systemScopeOptions(): array
     {
-        $physical = SoftwareSystem::query()
+        return SoftwareSystem::query()
             ->orderBy('name')
             ->get(['id', 'name'])
-            ->mapWithKeys(fn (SoftwareSystem $system): array => ['physical:' . $system->id => '[System] ' . $system->name])
+            ->mapWithKeys(fn (SoftwareSystem $system): array => [$system->id => $system->name])
             ->all();
-
-        $virtual = SoftwareSystemLink::query()
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->mapWithKeys(fn (SoftwareSystemLink $link): array => ['virtual:' . $link->id => '[Virtual] ' . $link->name])
-            ->all();
-
-        return array_merge($physical, $virtual);
     }
 
-    /** @return array<string, string> */
+    /** @return array<int, string> */
     private static function containerScopeOptions(): array
     {
-        $physical = SecurityContainer::query()
+        return SecurityContainer::query()
             ->orderBy('name')
             ->get(['id', 'name'])
-            ->mapWithKeys(fn (SecurityContainer $container): array => ['physical:' . $container->id => '[Container] ' . $container->name])
+            ->mapWithKeys(fn (SecurityContainer $container): array => [$container->id => $container->name])
             ->all();
-
-        $virtual = SecurityContainerLink::query()
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->mapWithKeys(fn (SecurityContainerLink $link): array => ['virtual:' . $link->id => '[Virtual] ' . $link->name])
-            ->all();
-
-        return array_merge($physical, $virtual);
     }
 
     private static function linkCatalogSection(string $kind): Section

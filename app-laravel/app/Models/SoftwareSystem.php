@@ -6,7 +6,6 @@ use Database\Factories\SoftwareSystemFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
@@ -67,13 +66,5 @@ class SoftwareSystem extends Model
     public function curatedLinks(): MorphMany
     {
         return $this->morphMany(CuratedLink::class, 'owner');
-    }
-
-    /** @return BelongsToMany<SoftwareSystemLink, $this> */
-    public function links(): BelongsToMany
-    {
-        return $this->belongsToMany(SoftwareSystemLink::class, 'software_system_link_members', 'software_system_id', 'link_id')
-            ->withPivot('sort_order')
-            ->orderByPivot('sort_order');
     }
 }

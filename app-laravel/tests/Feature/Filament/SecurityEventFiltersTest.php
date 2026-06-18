@@ -5,10 +5,8 @@ use App\Filament\Support\UserViewStateStore;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventType;
 use App\Models\SecurityContainer;
-use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
-use App\Models\SoftwareSystemLink;
 use App\Models\User;
 use App\Models\WorkItemLink;
 
@@ -94,32 +92,10 @@ it('filters by software system', function () {
     expect($count)->toBe(2);
 });
 
-it('filters by virtual system scope', function () {
-    [$systemA] = seedFilterFixture();
-
-    $link = SoftwareSystemLink::factory()->create();
-    $link->members()->attach($systemA->id, ['sort_order' => 1]);
-
-    $count = SecurityEventTableQuery::applySystemScopes(SecurityEvent::query(), ['virtual:' . $link->id])->count();
-
-    expect($count)->toBe(2);
-});
-
 it('filters by container', function () {
     [, , $containerA] = seedFilterFixture();
 
     $count = SecurityEventTableQuery::applyContainer(SecurityEvent::query(), $containerA->id)->count();
-
-    expect($count)->toBe(2);
-});
-
-it('filters by virtual container scope', function () {
-    [, , $containerA] = seedFilterFixture();
-
-    $link = SecurityContainerLink::factory()->create();
-    $link->members()->attach($containerA->id, ['sort_order' => 1]);
-
-    $count = SecurityEventTableQuery::applyContainerScopes(SecurityEvent::query(), ['virtual:' . $link->id])->count();
 
     expect($count)->toBe(2);
 });

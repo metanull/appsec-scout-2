@@ -9,7 +9,6 @@ use App\Filament\Resources\AuditLogResource;
 use App\Filament\Resources\ErrorLogResource;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
-use App\Filament\Resources\SoftwareSystemLinkResource;
 use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\UserResource;
 use App\Models\User;
@@ -32,10 +31,6 @@ it('sets navigation sort 22 for the Integrations page', function () {
 
 it('sets navigation sort 23 for the System credentials page', function () {
     expect(SystemCredentialsPage::getNavigationSort())->toBe(23);
-});
-
-it('sets navigation sort 24 for the System links resource', function () {
-    expect(SoftwareSystemLinkResource::getNavigationSort())->toBe(24);
 });
 
 it('sets navigation sort 25 for the Errors resource', function () {

@@ -1,11 +1,9 @@
 <?php
 
-use App\Filament\Resources\SecurityContainerLinkResource;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SoftwareSystemResource;
 use App\Models\SecurityContainer;
-use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\User;
@@ -20,7 +18,7 @@ beforeEach(function () {
 
 it('shows context quality sections for reader-visible pages', function () {
     $reader = qualityUser(['Reader']);
-    [$system, $container, $event, $containerLink] = seededQualityGraph();
+    [$system, $container, $event] = seededQualityGraph();
 
     $this->actingAs($reader)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
@@ -36,15 +34,10 @@ it('shows context quality sections for reader-visible pages', function () {
         ->get(SecurityContainerResource::getUrl('view', ['record' => $container]))
         ->assertOk()
         ->assertSee('Context quality');
-
-    $this->actingAs($reader)
-        ->get(SecurityContainerLinkResource::getUrl('view', ['record' => $containerLink]))
-        ->assertOk()
-        ->assertSee('Context quality');
 });
 
 /**
- * @return array{SoftwareSystem, SecurityContainer, SecurityEvent, SecurityContainerLink}
+ * @return array{SoftwareSystem, SecurityContainer, SecurityEvent}
  */
 function seededQualityGraph(): array
 {
@@ -52,10 +45,7 @@ function seededQualityGraph(): array
     $container = SecurityContainer::factory()->forSystem($system)->create(['url' => 'https://example.test/containers/payments']);
     $event = SecurityEvent::factory()->forContainer($container)->create(['file_path' => 'src/Payments.php']);
 
-    $containerLink = SecurityContainerLink::factory()->create();
-    $containerLink->members()->attach($container->id, ['sort_order' => 1]);
-
-    return [$system, $container, $event, $containerLink];
+    return [$system, $container, $event];
 }
 
 function qualityUser(array $roles): User

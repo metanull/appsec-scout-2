@@ -3,10 +3,8 @@
 namespace App\Context\Quality;
 
 use App\Models\SecurityContainer;
-use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
-use App\Models\SoftwareSystemLink;
 use Illuminate\Database\Eloquent\Model;
 
 final class ContextQualityService
@@ -103,54 +101,6 @@ final class ContextQualityService
                 'Source URL',
                 $sourceUrlMissing ? 'Source URL unavailable' : 'Source URL available',
                 $sourceUrlMissing ? 'This container does not currently expose a navigable source URL.' : 'A source URL is available for this container.',
-                $sourceUrlMissing ? 'warning' : 'success',
-            ),
-        ];
-    }
-
-    /**
-     * @return list<array{label: string, message: string, state: string, color: string, url: ?string}>
-     */
-    public function forSoftwareSystemLink(SoftwareSystemLink $link): array
-    {
-        $members = $link->members()->get();
-        $sourceUrlMissing = $members->contains(fn (SoftwareSystem $system): bool => ! filled($system->url));
-
-        return [
-            $this->indicator(
-                'Members',
-                $members->count() > 0 ? $members->count() . ' system member(s)' : 'No system members',
-                $members->count() > 0 ? 'This virtual system has members that may need quality review.' : 'This virtual system has no members yet.',
-                $members->count() > 0 ? 'info' : 'warning',
-            ),
-            $this->indicator(
-                'Source URL',
-                $sourceUrlMissing ? 'Some members lack source URLs' : 'Source URLs available',
-                $sourceUrlMissing ? 'At least one system member does not expose a navigable source URL.' : 'All system members expose navigable source URLs.',
-                $sourceUrlMissing ? 'warning' : 'success',
-            ),
-        ];
-    }
-
-    /**
-     * @return list<array{label: string, message: string, state: string, color: string, url: ?string}>
-     */
-    public function forSecurityContainerLink(SecurityContainerLink $link): array
-    {
-        $members = $link->members()->get();
-        $sourceUrlMissing = $members->contains(fn (SecurityContainer $container): bool => ! filled($container->url));
-
-        return [
-            $this->indicator(
-                'Members',
-                $members->count() > 0 ? $members->count() . ' container member(s)' : 'No container members',
-                $members->count() > 0 ? 'This virtual container has members that may need quality review.' : 'This virtual container has no members yet.',
-                $members->count() > 0 ? 'info' : 'warning',
-            ),
-            $this->indicator(
-                'Source URL',
-                $sourceUrlMissing ? 'Some members lack source URLs' : 'Source URLs available',
-                $sourceUrlMissing ? 'At least one container member does not expose a navigable source URL.' : 'All container members expose navigable source URLs.',
                 $sourceUrlMissing ? 'warning' : 'success',
             ),
         ];

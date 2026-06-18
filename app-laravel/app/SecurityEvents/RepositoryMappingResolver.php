@@ -4,13 +4,12 @@ namespace App\SecurityEvents;
 
 use App\Models\RepositoryMapping;
 use App\Models\SecurityContainer;
-use App\Models\SecurityContainerLink;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 
 final class RepositoryMappingResolver
 {
-    public function resolve(SecurityEvent $event, ?SecurityContainerLink $virtualContainer = null): ?RepositoryMapping
+    public function resolve(SecurityEvent $event): ?RepositoryMapping
     {
         $event->loadMissing([
             'container.repositoryMappings.repositoryProvider',
@@ -21,16 +20,6 @@ final class RepositoryMappingResolver
 
         if ($container instanceof SecurityContainer) {
             $mapping = $this->firstRepositoryMapping($container->repositoryMappings);
-
-            if ($mapping !== null) {
-                return $mapping;
-            }
-        }
-
-        if ($virtualContainer instanceof SecurityContainerLink) {
-            $virtualContainer->loadMissing('repositoryMappings.repositoryProvider');
-
-            $mapping = $this->firstRepositoryMapping($virtualContainer->repositoryMappings);
 
             if ($mapping !== null) {
                 return $mapping;

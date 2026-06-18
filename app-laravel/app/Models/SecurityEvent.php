@@ -137,31 +137,4 @@ class SecurityEvent extends Model
             "CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END DESC"
         );
     }
-
-    /**
-     * Scope to events belonging to a virtual (linked) system.
-     *
-     * @param  Builder<SecurityEvent>  $query
-     */
-    public function scopeForVirtualSystem(Builder $query, int $linkId): void
-    {
-        $systemIds = SoftwareSystemLinkMember::where('link_id', $linkId)
-            ->pluck('software_system_id');
-
-        $query->whereIn('software_system_id', $systemIds);
-    }
-
-    /**
-     * Scope to events belonging to member containers of a virtual container link.
-     *
-     * @param  Builder<SecurityEvent>  $query
-     */
-    public function scopeForVirtualContainer(Builder $query, int $linkId): void
-    {
-        $containerIds = SecurityContainerLinkMember::query()
-            ->where('link_id', $linkId)
-            ->pluck('security_container_id');
-
-        $query->whereIn('container_id', $containerIds);
-    }
 }

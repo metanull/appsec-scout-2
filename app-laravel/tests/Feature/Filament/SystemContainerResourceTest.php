@@ -2,17 +2,14 @@
 
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager as ContainerEventsRelationManager;
-use App\Filament\Resources\SoftwareSystemLinkResource;
 use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
-use App\Filament\Resources\SoftwareSystemResource\RelationManagers\LinksRelationManager;
 use App\Models\CuratedLink;
 use App\Models\RepositoryMapping;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
-use App\Models\SoftwareSystemLink;
 use App\Models\TrackerProjectLink;
 use App\Models\User;
 use App\Trackers\Dto\ProjectDto;
@@ -25,7 +22,7 @@ beforeEach(function () {
 
 it('registers relation managers for software systems', function () {
     expect(SoftwareSystemResource::getRelations())
-        ->toContain(EventsRelationManager::class, ContainersRelationManager::class, LinksRelationManager::class);
+        ->toContain(EventsRelationManager::class, ContainersRelationManager::class);
 });
 
 it('registers relation managers for security containers', function () {
@@ -33,17 +30,13 @@ it('registers relation managers for security containers', function () {
         ->toContain(ContainerEventsRelationManager::class);
 });
 
-it('loads related events containers and links for software system view', function () {
+it('loads related events containers for software system view', function () {
     $system = SoftwareSystem::factory()->create(['url' => null, 'metadata' => null]);
     $container = SecurityContainer::factory()->forSystem($system)->create(['url' => null, 'metadata' => null]);
     SecurityEvent::factory()->forSystem($system)->forContainer($container)->create();
 
-    $link = SoftwareSystemLink::factory()->create();
-    $system->links()->attach($link->id, ['sort_order' => 1]);
-
     expect($system->events()->count())->toBe(1)
-        ->and($system->containers()->count())->toBe(1)
-        ->and($system->links()->count())->toBe(1);
+        ->and($system->containers()->count())->toBe(1);
 });
 
 it('loads related events for container view', function () {
@@ -196,9 +189,4 @@ it('hides navigation catalogs when links are missing', function () {
         ->assertDontSee('Container curated')
         ->assertDontSee('Ops Project')
         ->assertDontSee('Repository: acme-container');
-});
-
-it('system links expose create and edit pages', function () {
-    expect(SoftwareSystemLinkResource::getPages())
-        ->toHaveKeys(['index', 'create', 'view', 'edit']);
 });
