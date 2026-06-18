@@ -16,6 +16,7 @@ use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
 use Carbon\Carbon;
+use GuzzleHttp\Exception\ClientException;
 
 final class AzDoSource implements Source
 {
@@ -108,7 +109,7 @@ final class AzDoSource implements Source
     {
         $client = $this->getClient();
         $sinceDate = $since !== null ? $since->toDateTime() : null;
-        $alertTypes = ['code', 'dependency', 'secret'];
+        $alertTypes = ['code', 'dependency', 'secret', 'license'];
 
         if ($system !== null) {
             $repos = $client->listRepositories($system->sourceSystemId);
@@ -271,7 +272,17 @@ final class AzDoSource implements Source
         $cacheKey = implode(':', [$projectId, $repoId, $alert->alertId]);
 
         if (! isset($this->alertDetails[$cacheKey])) {
-            $this->alertDetails[$cacheKey] = $client->getAlert($projectId, $repoId, $alert->alertId);
+            try {
+                $this->alertDetails[$cacheKey] = $client->getAlert($projectId, $repoId, $alert->alertId);
+            } catch (ClientException $e) {
+                $status = $e->getResponse()->getStatusCode();
+                if ($status === 404 || $status === 412) {
+                    // Alert listed but no longer individually accessible (deleted, archived, or transient).
+                    // Use the sparse list data rather than crashing the entire sync.
+                    return $alert;
+                }
+                throw $e;
+            }
         }
 
         return $this->alertDetails[$cacheKey];

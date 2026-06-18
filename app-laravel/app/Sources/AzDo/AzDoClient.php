@@ -92,14 +92,29 @@ final class AzDoClient
      */
     public function listRepositories(string $projectId): array
     {
-        $response = $this->http->get("{$projectId}/_apis/git/repositories", [
-            'query' => ['api-version' => '7.0'],
-        ]);
+        $all = [];
+        $continuationToken = null;
 
-        /** @var array{value: list<array<string,mixed>>} $data */
-        $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        do {
+            $query = ['api-version' => '7.0'];
 
-        return array_map(AzDoRepository::fromArray(...), $data['value']);
+            if ($continuationToken !== null) {
+                $query['continuationToken'] = $continuationToken;
+            }
+
+            $response = $this->http->get("{$projectId}/_apis/git/repositories", ['query' => $query]);
+
+            /** @var array{value: list<array<string,mixed>>} $data */
+            $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+            foreach ($data['value'] as $item) {
+                $all[] = AzDoRepository::fromArray($item);
+            }
+
+            $continuationToken = $response->getHeaderLine('x-ms-continuationtoken') ?: null;
+        } while ($continuationToken !== null);
+
+        return $all;
     }
 
     /**
@@ -112,8 +127,11 @@ final class AzDoClient
 
         try {
             do {
+                // The AzDO Advanced Security API ignores the top-level `alertType` parameter
+                // whenever any `criteria.*` parameter is also present. Use `criteria.alertType`
+                // so the filter is honoured in both full and incremental (modifiedSince) fetches.
                 $query = [
-                    'alertType' => $alertType,
+                    'criteria.alertType' => $alertType,
                     'top' => 500,
                     'expand' => '1',
                     'api-version' => self::API_VERSION,

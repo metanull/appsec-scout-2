@@ -44,9 +44,11 @@ it('fetches systems, containers, and events from fixtures', function () {
             new Response(200, [], azdoFixture('alerts-code.json')),
             new Response(200, [], azdoFixture('alerts-dependency.json')),
             new Response(200, [], azdoFixture('alerts-secret.json')),
-            new Response(200, [], '{"count":0,"value":[]}'),
-            new Response(200, [], '{"count":0,"value":[]}'),
-            new Response(200, [], '{"count":0,"value":[]}'),
+            new Response(200, [], '{"count":0,"value":[]}'),  // repo-001: license
+            new Response(200, [], '{"count":0,"value":[]}'),  // repo-002: code
+            new Response(200, [], '{"count":0,"value":[]}'),  // repo-002: dependency
+            new Response(200, [], '{"count":0,"value":[]}'),  // repo-002: secret
+            new Response(200, [], '{"count":0,"value":[]}'),  // repo-002: license
         ]),
     ]);
 
@@ -98,12 +100,14 @@ it('returns stable dependency fingerprint across re-fetches', function () {
 
     $advSec = new Client([
         'handler' => new MockHandler([
-            new Response(200, [], '{"count":0,"value":[]}'),
-            new Response(200, [], azdoFixture('alerts-dependency.json')),
-            new Response(200, [], '{"count":0,"value":[]}'),
-            new Response(200, [], '{"count":0,"value":[]}'),
-            new Response(200, [], azdoFixture('alerts-dependency.json')),
-            new Response(200, [], '{"count":0,"value":[]}'),
+            new Response(200, [], '{"count":0,"value":[]}'),              // fetch 1: code
+            new Response(200, [], azdoFixture('alerts-dependency.json')), // fetch 1: dependency
+            new Response(200, [], '{"count":0,"value":[]}'),              // fetch 1: secret
+            new Response(200, [], '{"count":0,"value":[]}'),              // fetch 1: license
+            new Response(200, [], '{"count":0,"value":[]}'),              // fetch 2: code
+            new Response(200, [], azdoFixture('alerts-dependency.json')), // fetch 2: dependency
+            new Response(200, [], '{"count":0,"value":[]}'),              // fetch 2: secret
+            new Response(200, [], '{"count":0,"value":[]}'),              // fetch 2: license
         ]),
     ]);
 
@@ -160,10 +164,11 @@ it('hydrates sparse alert list items before building event dtos', function () {
 
     $advSec = new Client([
         'handler' => new MockHandler([
-            new Response(200, [], $sparseList),
-            new Response(200, [], json_encode($detail, JSON_THROW_ON_ERROR)),
-            new Response(200, [], '{"count":0,"value":[]}'),
-            new Response(200, [], '{"count":0,"value":[]}'),
+            new Response(200, [], $sparseList),                           // code: sparse list
+            new Response(200, [], json_encode($detail, JSON_THROW_ON_ERROR)), // getAlert hydration
+            new Response(200, [], '{"count":0,"value":[]}'),              // dependency
+            new Response(200, [], '{"count":0,"value":[]}'),              // secret
+            new Response(200, [], '{"count":0,"value":[]}'),              // license
         ]),
     ]);
 
