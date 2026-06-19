@@ -83,12 +83,38 @@ services:
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
             NO_PROXY: "${NO_PROXY:-}"
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
-            REPO_URL: "${CLAUDE_REPO_URL:-}"
-            REPO_BRANCH: "${CLAUDE_REPO_BRANCH:-main}"
+            REPO_URL: "${REPO_URL:-}"
+            REPO_BRANCH: "${REPO_BRANCH:-main}"
             GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
             GIT_USER_NAME: "${GIT_USER_NAME:-}"
             GIT_USER_EMAIL: "${GIT_USER_EMAIL:-}"
             CLAUDE_TASK: "${CLAUDE_TASK:-}"
+        stdin_open: true
+        tty: true
+
+    ops:
+        build:
+            context: .
+            dockerfile: docker/ops/Dockerfile
+            args:
+                HTTP_PROXY: "${HTTP_PROXY:-}"
+                HTTPS_PROXY: "${HTTPS_PROXY:-}"
+                NO_PROXY: "${NO_PROXY:-}"
+        image: appsec-scout-ops:latest
+        profiles:
+            - ops
+        volumes:
+            - claude_credentials:/home/ops/.claude
+        environment:
+            HTTP_PROXY: "${HTTP_PROXY:-}"
+            HTTPS_PROXY: "${HTTPS_PROXY:-}"
+            NO_PROXY: "${NO_PROXY:-}"
+            SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
+            REPO_URL: "${REPO_URL:-}"
+            REPO_BRANCH: "${REPO_BRANCH:-main}"
+            GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+            GIT_USER_NAME: "${GIT_USER_NAME:-}"
+            GIT_USER_EMAIL: "${GIT_USER_EMAIL:-}"
         stdin_open: true
         tty: true
 

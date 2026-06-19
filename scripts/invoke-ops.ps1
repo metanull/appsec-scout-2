@@ -1,49 +1,43 @@
 <#
 .SYNOPSIS
-    Runs Claude Code in a sandboxed Docker container.
+    Opens an appsec-ops shell in a sandboxed Docker container.
 .DESCRIPTION
-    Launches Claude Code inside an isolated, ephemeral container with no access to the host
-    filesystem. In task mode the container clones the specified repo branch, runs the task
-    autonomously, and submits the result as a GitHub PR. In shell mode an interactive Claude
-    session is opened. Use -Mode login once to authenticate via your Pro/Max subscription.
+    Launches the ops container for hands-on appsec investigation: code analysis,
+    repository archaeology, secret scanning, dependency auditing, and history
+    cleaning. The container opens an interactive bash shell and never auto-launches
+    Claude, though 'claude' is available inside if authenticated.
+    Use -Mode login once to authenticate Claude via your Pro/Max subscription.
 .PARAMETER Mode
-    shell  — Interactive Claude session (default). Clones repo first if CLAUDE_REPO_URL is set.
-    login  — One-time OAuth login; saves credentials to the persistent 'claude_credentials' volume.
-    task   — Autonomous run: clone repo, execute -Task, push branch, open PR.
-.PARAMETER Task
-    The prompt/task description for Claude (required when -Mode task).
+    shell  — Interactive bash shell (default). Clones repo first if OPS_REPO_URL is set.
+    login  — One-time OAuth login; saves credentials to the 'claude_credentials' volume.
 .PARAMETER Repo
-    GitHub HTTPS URL to clone. Overrides CLAUDE_REPO_URL from .env.
+    GitHub HTTPS URL to clone. Overrides OPS_REPO_URL from .env.
 .PARAMETER Branch
-    Branch to clone and use as the PR base. Overrides CLAUDE_REPO_BRANCH from .env.
+    Branch to clone. Overrides OPS_REPO_BRANCH from .env.
 .PARAMETER Name
     Git display name used in commits (e.g. "Pascal HAVELANGE"). Overrides GIT_USER_NAME from .env.
 .PARAMETER Credential
-    GitHub credential for pushing branches and creating PRs.
+    GitHub credential for cloning private repositories.
     UserName = git commit email — overrides GIT_USER_EMAIL from .env.
     Password = GitHub PAT      — overrides GITHUB_TOKEN from .env.
     If omitted, the container falls back to those .env values.
     Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry
     from Windows Credential Manager with Get-StoredCredential (module CredentialManager).
 .PARAMETER Rebuild
-    Export host CA certificates and rebuild the claude Docker image before running.
+    Export host CA certificates and rebuild the ops Docker image before running.
 .EXAMPLE
-    .\invoke-claude.ps1 -Mode login
+    .\invoke-ops.ps1 -Mode login
 .EXAMPLE
-    .\invoke-claude.ps1
+    .\invoke-ops.ps1
 .EXAMPLE
-    .\invoke-claude.ps1 -Mode task -Task "Add input validation to the SecurityEvent edit form"
+    .\invoke-ops.ps1 -Repo https://github.com/org/repo.git -Branch main
 .EXAMPLE
-    .\invoke-claude.ps1 -Mode task -Task "..." -Repo https://github.com/org/repo.git -Branch feature/x
-.EXAMPLE
-    .\invoke-claude.ps1 -Mode task -Task "..." -Credential (Get-Credential) -Name "Pascal HAVELANGE"
+    .\invoke-ops.ps1 -Repo https://github.com/org/repo.git -Credential (Get-Credential) -Name "Pascal HAVELANGE"
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('shell', 'login', 'task')]
+    [ValidateSet('shell', 'login')]
     [string]$Mode = 'shell',
-
-    [string]$Task = '',
 
     [string]$Repo = '',
 
@@ -64,7 +58,7 @@ $SavedErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
-# Helpers (cert export logic mirrors appsec-scout.ps1)
+# Helpers (cert export logic mirrors invoke-claude.ps1)
 # ---------------------------------------------------------------------------
 
 function Convert-ToPem {
@@ -143,24 +137,19 @@ function Invoke-Docker {
 
 Set-Location $ProjectRoot
 
-$ComposeEnvFile = Join-Path $ProjectRoot 'docker\claude\.env'
+$ComposeEnvFile = Join-Path $ProjectRoot 'docker\ops\.env'
 
 try {
-    # Validate -Task is provided for task mode
-    if ($Mode -eq 'task' -and [string]::IsNullOrWhiteSpace($Task)) {
-        throw "'-Task' is required when using '-Mode task'."
-    }
-
     # Build image when requested or when it doesn't exist yet
-    $imageExists = (docker image inspect 'appsec-scout-claude:latest' 2>$null) -ne $null -and $LASTEXITCODE -eq 0
+    $imageExists = (docker image inspect 'appsec-scout-ops:latest' 2>$null) -ne $null -and $LASTEXITCODE -eq 0
     if ($Rebuild -or -not $imageExists) {
         Write-Host "Exporting host CA certificates..."
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
-        Write-Host "Building claude image..."
+        Write-Host "Building ops image..."
         if ($Rebuild) {
-            Invoke-Docker compose --env-file $ComposeEnvFile build claude --no-cache
+            Invoke-Docker compose --env-file $ComposeEnvFile build ops --no-cache
         } else {
-            Invoke-Docker compose --env-file $ComposeEnvFile build claude
+            Invoke-Docker compose --env-file $ComposeEnvFile build ops
         }
     }
 
@@ -187,22 +176,12 @@ try {
     switch ($Mode) {
         'login' {
             Write-Host "Starting OAuth login — your browser will open. Complete the flow, then type /exit."
-            Invoke-Docker compose --env-file $ComposeEnvFile run --rm -it --no-deps @envOverrides claude --login
+            Invoke-Docker compose --env-file $ComposeEnvFile run --rm -it --no-deps @envOverrides ops --login
             Write-Host "Login complete. Credentials saved to the 'claude_credentials' Docker volume."
         }
         'shell' {
-            Write-Host "Starting interactive Claude session. Type /exit to quit."
-            Invoke-Docker compose --env-file $ComposeEnvFile run --rm -it --no-deps @envOverrides claude --shell
-        }
-        'task' {
-            # Pass the task via environment to avoid shell-quoting issues
-            $env:CLAUDE_TASK = $Task
-            try {
-                Write-Host "Running task: $Task"
-                Invoke-Docker compose --env-file $ComposeEnvFile run --rm --no-deps -e CLAUDE_TASK @envOverrides claude
-            } finally {
-                Remove-Item Env:\CLAUDE_TASK -ErrorAction SilentlyContinue
-            }
+            Write-Host "Starting ops shell. Type 'exit' to quit."
+            Invoke-Docker compose --env-file $ComposeEnvFile run --rm -it --no-deps @envOverrides ops
         }
     }
 } catch {
