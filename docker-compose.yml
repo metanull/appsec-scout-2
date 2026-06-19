@@ -65,6 +65,33 @@ services:
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
             NO_PROXY: "${NO_PROXY:-}"
 
+    claude:
+        build:
+            context: .
+            dockerfile: docker/claude/Dockerfile
+            args:
+                HTTP_PROXY: "${HTTP_PROXY:-}"
+                HTTPS_PROXY: "${HTTPS_PROXY:-}"
+                NO_PROXY: "${NO_PROXY:-}"
+        image: appsec-scout-claude:latest
+        profiles:
+            - claude
+        volumes:
+            - claude_credentials:/home/claude/.claude
+        environment:
+            HTTP_PROXY: "${HTTP_PROXY:-}"
+            HTTPS_PROXY: "${HTTPS_PROXY:-}"
+            NO_PROXY: "${NO_PROXY:-}"
+            SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
+            REPO_URL: "${CLAUDE_REPO_URL:-}"
+            REPO_BRANCH: "${CLAUDE_REPO_BRANCH:-main}"
+            GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+            GIT_USER_NAME: "${GIT_USER_NAME:-}"
+            GIT_USER_EMAIL: "${GIT_USER_EMAIL:-}"
+            CLAUDE_TASK: "${CLAUDE_TASK:-}"
+        stdin_open: true
+        tty: true
+
 volumes:
     mysql_data:
     redis_data:
@@ -74,3 +101,4 @@ volumes:
     app_public_css:
     app_public_js:
     app_bootstrap_cache:
+    claude_credentials:
