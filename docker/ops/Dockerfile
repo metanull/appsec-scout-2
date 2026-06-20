@@ -7,7 +7,7 @@ ARG HTTPS_PROXY=""
 ARG NO_PROXY=""
 
 # Tool versions — update these ARGs to pin to newer releases
-ARG TRIVY_VERSION=0.71.1
+# ARG TRIVY_VERSION=0.71.2
 ARG BFG_VERSION=1.14.0
 ARG ROSLYNATOR_VERSION=0.12.0
 
@@ -23,6 +23,7 @@ COPY .docker/certs/ /tmp/appsec-scout-certs/
 # --- Layer 1: Base packages + custom CA certs (mirrors claude Dockerfile) ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
+        openssh-client \
         ca-certificates \
         curl \
         jq \
@@ -116,12 +117,13 @@ RUN dotnet tool install \
 ENV PATH="${PATH}:/usr/local/dotnet-tools"
 
 # --- Layer 10: Trivy (Aqua Security signed apt repo) ---
+    # && apt-get install -y --no-install-recommends trivy=${TRIVY_VERSION} \    # Apparently there is only but one version in the repo anyway
 RUN wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key \
         | gpg --dearmor -o /usr/share/keyrings/trivy.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
         > /etc/apt/sources.list.d/trivy.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends trivy=${TRIVY_VERSION} \
+    && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Layer 11: BFG Repo Cleaner + Java (checksum-verified) ---
