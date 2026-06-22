@@ -1,28 +1,90 @@
-name: Laravel CI
-
-on:
-  pull_request:
-    branches: ["**"]
+name: Mandatory Checks
 
 permissions:
   contents: read
 
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened]
+
+  workflow_dispatch:
+
 jobs:
-  ci:
+
+  audit-composer:
+    name: Audit - Composer (php)
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+
+      - name: "Check > Composer > Validate composer.json"
+        run: |
+          composer validate --with-dependencies --strict
+
+      - name: "Setup > Composer > Install Dependencies"
+        run: |
+          composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+
+      - name: "Check > Composer > Audit Vulnerabilities"
+        run: |
+            composer audit --format=summary
+  
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed_files: ${{ steps.detect.outputs.changed_files }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes paths
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "backend=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          BASE="${{ github.event.pull_request.base.sha }}"
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -qE '^app-laravel/(app|routes|config|database|tests|bootstrap)/|^(composer\.json|composer\.lock|phpunit\.xml|artisan)$'; then
+            echo "changed_files=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed_files=false" >> $GITHUB_OUTPUT
+          fi
+
+  ci-checks:
+    name: Validation
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.changed_files == 'true'
+
+    steps:
+      - uses: actions/checkout@v6
 
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.4"
           extensions: intl, pdo_mysql, bcmath, zip, pcntl
+          tools: pint, phpstan, pest
           coverage: none
 
       - name: Install dependencies
         working-directory: app-laravel
-        run: composer install --no-interaction --prefer-dist --no-progress
+        run: composer install --no-interaction --no-scripts --no-progress --prefer-dist
 
       - name: Copy .env
         working-directory: app-laravel
@@ -46,3 +108,31 @@ jobs:
         env:
           DB_CONNECTION: sqlite
           DB_DATABASE: ":memory:"
+
+  ci:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [audit-composer, detect-changes, ci-checks]
+    if: always()
+
+    steps:
+      - name: "CI Success"
+        run: |
+          changesDetected=${{ needs.detect-changes.outputs.changed_files }}
+          composerAuditResult=${{ needs.audit-composer.result }}
+          ciChecksResult=${{ needs.ci-checks.result }}
+          if [ "$changesDetected" = "true" ]; then
+            if [ "$composerAuditResult" = "success" ] && [ "$ciChecksResult" = "success" ]; then
+              echo "All CI checks passed."
+            else
+              echo "One or more CI checks failed."
+              exit 1
+            fi
+          else
+            if [ "$composerAuditResult" = "success" ]; then
+              echo "No relevant changes detected. Composer audit passed."
+            else
+              echo "No relevant changes detected, but Composer audit failed."
+              exit 1
+            fi
+          fi
