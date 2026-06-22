@@ -10,6 +10,7 @@ final class AzDoAlert
      * @phpstan-param list<array<string, mixed>> $tools
      * @phpstan-param list<array<string, mixed>> $validationFingerprints
      * @phpstan-param array<string, mixed>|null $additionalData
+     * @phpstan-param array<string, mixed>|null $validityDetails
      */
     public function __construct(
         public readonly int $alertId,
@@ -26,13 +27,8 @@ final class AzDoAlert
         public readonly ?string $truncatedSecret = null,
         public readonly array $validationFingerprints = [],
         public readonly ?array $additionalData = null,
+        public readonly ?array $validityDetails = null,
     ) {}
-
-    public function descriptionReady(): bool
-    {
-        return $this->alertUri !== null
-            && ($this->physicalLocations !== [] || $this->logicalLocations !== [] || $this->tools !== [] || $this->additionalData !== null);
-    }
 
     /** @phpstan-param array<string, mixed> $data */
     public static function fromArray(array $data): self
@@ -52,6 +48,7 @@ final class AzDoAlert
             truncatedSecret: isset($data['truncatedSecret']) ? (string) $data['truncatedSecret'] : null,
             validationFingerprints: self::toListOfMaps($data['validationFingerprints'] ?? []),
             additionalData: isset($data['additionalData']) ? (array) $data['additionalData'] : null,
+            validityDetails: isset($data['validityDetails']) ? (array) $data['validityDetails'] : null,
         );
     }
 

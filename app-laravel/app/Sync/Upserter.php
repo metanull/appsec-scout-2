@@ -11,7 +11,7 @@ final class Upserter
      * @param  array<string, int>  $systemIdMap
      * @param  array<string, int>  $containerIdMap
      */
-    public function upsert(string $sourceId, EventDto $dto, array $systemIdMap, array $containerIdMap): bool
+    public function upsert(string $sourceId, EventDto $dto, array $systemIdMap, array $containerIdMap): SecurityEvent
     {
         $softwareSystemId = $systemIdMap[$dto->sourceSystemId] ?? null;
 
@@ -70,14 +70,12 @@ final class Upserter
         ];
 
         if ($existing === null) {
-            SecurityEvent::query()->create(array_merge($payload, [
+            return SecurityEvent::query()->create(array_merge($payload, [
                 'is_dirty' => false,
                 'pending_state' => null,
                 'pending_severity' => null,
                 'pending_comment' => null,
             ]));
-
-            return true;
         }
 
         $payload['is_dirty'] = $existing->is_dirty;
@@ -87,6 +85,6 @@ final class Upserter
 
         $existing->update($payload);
 
-        return false;
+        return $existing;
     }
 }

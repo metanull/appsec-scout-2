@@ -132,7 +132,7 @@ it('returns stable dependency fingerprint across re-fetches', function () {
         ->and($first[1]->fingerprint)->toBe($second[1]->fingerprint);
 });
 
-it('hydrates sparse alert list items before building event dtos', function () {
+it('fetchEvents yields events from list data without making individual getAlert calls', function () {
     $singleRepoResponse = json_encode([
         'count' => 1,
         'value' => [
@@ -144,31 +144,32 @@ it('hydrates sparse alert list items before building event dtos', function () {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $detail = json_decode(azdoFixture('alerts-code.json'), true, 512, JSON_THROW_ON_ERROR)['value'][0];
+    // Sparse list response — only the fields the real API returns from the list endpoint.
+    // fetchEvents() must NOT make individual getAlert() calls; any extra mock response
+    // consumed would cause a "no more handlers" exception, proving the test.
     $sparseList = json_encode([
         'count' => 1,
         'value' => [[
-            'alertId' => $detail['alertId'],
-            'alertType' => $detail['alertType'],
-            'severity' => $detail['severity'],
-            'state' => $detail['state'],
-            'title' => $detail['title'],
+            'alertId' => 1001,
+            'alertType' => 'code',
+            'severity' => 'high',
+            'state' => 'active',
+            'title' => 'SQL injection risk',
+            'tools' => [['name' => 'AdvancedSecurity-Code-Scanning', 'version' => '1.0']],
         ]],
     ], JSON_THROW_ON_ERROR);
 
     $http = new Client([
-        'handler' => new MockHandler([
-            new Response(200, [], $singleRepoResponse),
-        ]),
+        'handler' => new MockHandler([new Response(200, [], $singleRepoResponse)]),
     ]);
 
     $advSec = new Client([
         'handler' => new MockHandler([
-            new Response(200, [], $sparseList),                           // code: sparse list
-            new Response(200, [], json_encode($detail, JSON_THROW_ON_ERROR)), // getAlert hydration
-            new Response(200, [], '{"count":0,"value":[]}'),              // dependency
-            new Response(200, [], '{"count":0,"value":[]}'),              // secret
-            new Response(200, [], '{"count":0,"value":[]}'),              // license
+            new Response(200, [], $sparseList),              // code list
+            new Response(200, [], '{"count":0,"value":[]}'), // dependency
+            new Response(200, [], '{"count":0,"value":[]}'), // secret
+            new Response(200, [], '{"count":0,"value":[]}'), // license
+            // No individual getAlert response queued — consuming one would throw
         ]),
     ]);
 
@@ -179,10 +180,57 @@ it('hydrates sparse alert list items before building event dtos', function () {
     $events = iterator_to_array($source->fetchEvents(null, new SystemDto('project-001', 'SecurityProject')));
 
     expect($events)->toHaveCount(1)
-        ->and($events[0]->description)->not->toBeNull()
-        ->and($events[0]->url)->not->toBeNull()
-        ->and($events[0]->filePath)->not->toBeNull()
-        ->and($events[0]->versionControlUrl)->not->toBeNull();
+        ->and($events[0]->sourceEventId)->toBe('1001')
+        ->and($events[0]->title)->toBe('SQL injection risk');
+});
+
+it('enrichmentJobFor returns a job only for secret events', function () {
+    $source = new AzDoSource(app(Vault::class));
+
+    $secretEvent = SecurityEvent::factory()->secret()->create([
+        'source_id' => 'azdo',
+        'source_event_id' => '3001',
+        'metadata' => ['sourceProjectId' => 'proj-1', 'sourceRepoId' => 'repo-1'],
+    ]);
+
+    $codeEvent = SecurityEvent::factory()->create([
+        'source_id' => 'azdo',
+        'source_event_id' => '1001',
+        'type' => \App\Models\Enums\EventType::Vulnerability,
+        'metadata' => ['sourceProjectId' => 'proj-1', 'sourceRepoId' => 'repo-1'],
+    ]);
+
+    $depEvent = SecurityEvent::factory()->create([
+        'source_id' => 'azdo',
+        'source_event_id' => '2001',
+        'type' => \App\Models\Enums\EventType::Dependency,
+        'metadata' => ['sourceProjectId' => 'proj-1', 'sourceRepoId' => 'repo-1'],
+    ]);
+
+    $secretJob = $source->enrichmentJobFor('azdo', $secretEvent);
+    $codeJob   = $source->enrichmentJobFor('azdo', $codeEvent);
+    $depJob    = $source->enrichmentJobFor('azdo', $depEvent);
+
+    expect($secretJob)->toBeInstanceOf(\App\Sync\EnrichAzDoSecretJob::class)
+        ->and($secretJob->sourceId)->toBe('azdo')
+        ->and($secretJob->eventId)->toBe($secretEvent->id)
+        ->and($secretJob->projectId)->toBe('proj-1')
+        ->and($secretJob->repoId)->toBe('repo-1')
+        ->and($secretJob->alertId)->toBe(3001)
+        ->and($codeJob)->toBeNull()
+        ->and($depJob)->toBeNull();
+});
+
+it('enrichmentJobFor returns null when secret event is missing project or repo metadata', function () {
+    $source = new AzDoSource(app(Vault::class));
+
+    $noMeta = SecurityEvent::factory()->secret()->create([
+        'source_id' => 'azdo',
+        'source_event_id' => '3002',
+        'metadata' => [],
+    ]);
+
+    expect($source->enrichmentJobFor('azdo', $noMeta))->toBeNull();
 });
 
 it('list alert requests do not include expand parameter to avoid API silent truncation', function () {

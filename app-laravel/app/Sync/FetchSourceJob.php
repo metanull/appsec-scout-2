@@ -10,6 +10,7 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
 use App\Sources\Contracts\EnrichesFetchedEvents;
+use App\Sources\Contracts\QueuesEnrichmentJobs;
 use App\Sources\Contracts\Source;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -161,8 +162,15 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                         $eventDto = $source->enrichFetchedEvent($eventDto);
                     }
 
-                    $created = $upserter->upsert($this->sourceId, $eventDto, $systemIdMap, $containerIdMap);
-                    $counts[$created ? 'events_created' : 'events_updated']++;
+                    $event = $upserter->upsert($this->sourceId, $eventDto, $systemIdMap, $containerIdMap);
+                    $counts[$event->wasRecentlyCreated ? 'events_created' : 'events_updated']++;
+
+                    if ($source instanceof QueuesEnrichmentJobs) {
+                        $job = $source->enrichmentJobFor($this->sourceId, $event);
+                        if ($job !== null) {
+                            dispatch($job);
+                        }
+                    }
                 }
             });
 

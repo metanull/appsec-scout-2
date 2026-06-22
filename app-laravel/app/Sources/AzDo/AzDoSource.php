@@ -8,6 +8,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
+use App\Sources\Contracts\QueuesEnrichmentJobs;
 use App\Sources\Contracts\Source;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
@@ -15,17 +16,15 @@ use App\Sources\Dto\SystemDto;
 use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
+use App\Sync\EnrichAzDoSecretJob;
 use Carbon\Carbon;
-use GuzzleHttp\Exception\ClientException;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
-final class AzDoSource implements Source
+final class AzDoSource implements QueuesEnrichmentJobs, Source
 {
     private ?AzDoClient $client = null;
 
     private ?string $clientFingerprint = null;
-
-    /** @var array<string, AzDoAlert> */
-    private array $alertDetails = [];
 
     public function __construct(private readonly Vault $vault) {}
 
@@ -117,11 +116,7 @@ final class AzDoSource implements Source
 
             foreach ($repos as $repo) {
                 foreach ($alertTypes as $alertType) {
-                    $alerts = $client->listAlerts($system->sourceSystemId, $repo->id, $alertType, $sinceDate);
-
-                    foreach ($alerts as $alert) {
-                        $alert = $this->fullAlert($client, $system->sourceSystemId, $repo->id, $alert);
-
+                    foreach ($client->listAlerts($system->sourceSystemId, $repo->id, $alertType, $sinceDate) as $alert) {
                         yield $this->buildEventDto($alert, $system->sourceSystemId, $repo->id, $project, $repo);
                     }
                 }
@@ -135,11 +130,7 @@ final class AzDoSource implements Source
 
             foreach ($repos as $repo) {
                 foreach ($alertTypes as $alertType) {
-                    $alerts = $client->listAlerts($project->id, $repo->id, $alertType, $sinceDate);
-
-                    foreach ($alerts as $alert) {
-                        $alert = $this->fullAlert($client, $project->id, $repo->id, $alert);
-
+                    foreach ($client->listAlerts($project->id, $repo->id, $alertType, $sinceDate) as $alert) {
                         yield $this->buildEventDto($alert, $project->id, $repo->id, $project, $repo);
                     }
                 }
@@ -263,29 +254,22 @@ final class AzDoSource implements Source
         );
     }
 
-    private function fullAlert(AzDoClient $client, string $projectId, string $repoId, AzDoAlert $alert): AzDoAlert
+    public function enrichmentJobFor(string $sourceId, SecurityEvent $event): ?ShouldQueue
     {
-        if ($alert->descriptionReady()) {
-            return $alert;
+        if ($event->type !== EventType::Secret) {
+            return null;
         }
 
-        $cacheKey = implode(':', [$projectId, $repoId, $alert->alertId]);
+        $metadata = self::metadataArray($event);
+        $projectId = $metadata['sourceProjectId'] ?? null;
+        $repoId    = $metadata['sourceRepoId'] ?? null;
+        $alertId   = (int) $event->source_event_id;
 
-        if (! isset($this->alertDetails[$cacheKey])) {
-            try {
-                $this->alertDetails[$cacheKey] = $client->getAlert($projectId, $repoId, $alert->alertId);
-            } catch (ClientException $e) {
-                $status = $e->getResponse()->getStatusCode();
-                if ($status === 404 || $status === 412) {
-                    // Alert listed but no longer individually accessible (deleted, archived, or transient).
-                    // Use the sparse list data rather than crashing the entire sync.
-                    return $alert;
-                }
-                throw $e;
-            }
+        if (! is_string($projectId) || ! is_string($repoId) || $alertId === 0) {
+            return null;
         }
 
-        return $this->alertDetails[$cacheKey];
+        return new EnrichAzDoSecretJob($sourceId, $event->id, $projectId, $repoId, $alertId);
     }
 
     private function getClient(): AzDoClient

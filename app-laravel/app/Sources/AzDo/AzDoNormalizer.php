@@ -244,6 +244,10 @@ final class AzDoNormalizer
             $meta['truncatedSecret'] = $alert->truncatedSecret;
         }
 
+        if ($alert->validityDetails !== null) {
+            $meta['validityDetails'] = $alert->validityDetails;
+        }
+
         if ($alert->validationFingerprints !== []) {
             $meta['validationFingerprints'] = $alert->validationFingerprints;
         }
