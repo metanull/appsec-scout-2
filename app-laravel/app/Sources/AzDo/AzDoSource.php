@@ -256,7 +256,7 @@ final class AzDoSource implements QueuesEnrichmentJobs, Source
 
     public function enrichmentJobFor(string $sourceId, SecurityEvent $event): ?ShouldQueue
     {
-        if ($event->type !== EventType::Secret) {
+        if (self::resolveType($event->type) !== EventType::Secret) {
             return null;
         }
 
