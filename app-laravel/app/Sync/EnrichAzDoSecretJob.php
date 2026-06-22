@@ -36,12 +36,12 @@ final class EnrichAzDoSecretJob implements ShouldQueue
         if ($clientOverride !== null) {
             $client = $clientOverride;
         } else {
-            $pat  = $vault->get('azdo.pat', null, true) ?? throw new \RuntimeException('AzDO PAT not configured');
-            $org  = $vault->get('azdo.organization', null, true) ?? throw new \RuntimeException('AzDO organization not configured');
+            $pat = $vault->get('azdo.pat', null, true) ?? throw new \RuntimeException('AzDO PAT not configured');
+            $org = $vault->get('azdo.organization', null, true) ?? throw new \RuntimeException('AzDO organization not configured');
             $base = $vault->get('azdo.baseUrl', null, true) ?? 'https://dev.azure.com';
             $client = new AzDoClient($org, $pat, $base);
         }
-        $alert  = $client->getAlert($this->projectId, $this->repoId, $this->alertId);
+        $alert = $client->getAlert($this->projectId, $this->repoId, $this->alertId);
 
         $metadata = is_array($event->getAttribute('metadata')) ? $event->getAttribute('metadata') : [];
 

@@ -262,8 +262,8 @@ final class AzDoSource implements QueuesEnrichmentJobs, Source
 
         $metadata = self::metadataArray($event);
         $projectId = $metadata['sourceProjectId'] ?? null;
-        $repoId    = $metadata['sourceRepoId'] ?? null;
-        $alertId   = (int) $event->source_event_id;
+        $repoId = $metadata['sourceRepoId'] ?? null;
+        $alertId = (int) $event->source_event_id;
 
         if (! is_string($projectId) || ! is_string($repoId) || $alertId === 0) {
             return null;

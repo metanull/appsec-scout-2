@@ -1,7 +1,6 @@
 <?php
 
 use App\Credentials\Vault;
-use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Sources\AzDo\AzDoClient;
 use App\Sync\EnrichAzDoSecretJob;
@@ -37,7 +36,7 @@ it('patches validityDetails and validationFingerprints into the event metadata',
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $http   = new Client(['handler' => new MockHandler]);
+    $http = new Client(['handler' => new MockHandler]);
     $advSec = new Client(['handler' => new MockHandler([new Response(200, [], $alertDetail)])]);
     $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec);
 
@@ -75,7 +74,7 @@ it('sets fingerprint only when the event has none yet', function () {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $http   = new Client(['handler' => new MockHandler]);
+    $http = new Client(['handler' => new MockHandler]);
     $advSec = new Client(['handler' => new MockHandler([new Response(200, [], $alertDetail)])]);
     $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec);
 
@@ -95,5 +94,5 @@ it('silently exits when the event has been deleted before the job runs', functio
     // No vault::get calls expected — job exits early
 
     expect(fn () => (new EnrichAzDoSecretJob('azdo', 999999, 'proj-1', 'repo-1', 3001))->handle($vault))
-        ->not->toThrow(\Throwable::class);
+        ->not->toThrow(Throwable::class);
 });

@@ -9,6 +9,7 @@ use App\Sources\AzDo\AzDoSource;
 use App\Sources\Context\SourceContextFacts;
 use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
+use App\Sync\EnrichAzDoSecretJob;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -196,22 +197,22 @@ it('enrichmentJobFor returns a job only for secret events', function () {
     $codeEvent = SecurityEvent::factory()->create([
         'source_id' => 'azdo',
         'source_event_id' => '1001',
-        'type' => \App\Models\Enums\EventType::Vulnerability,
+        'type' => EventType::Vulnerability,
         'metadata' => ['sourceProjectId' => 'proj-1', 'sourceRepoId' => 'repo-1'],
     ]);
 
     $depEvent = SecurityEvent::factory()->create([
         'source_id' => 'azdo',
         'source_event_id' => '2001',
-        'type' => \App\Models\Enums\EventType::Dependency,
+        'type' => EventType::Dependency,
         'metadata' => ['sourceProjectId' => 'proj-1', 'sourceRepoId' => 'repo-1'],
     ]);
 
     $secretJob = $source->enrichmentJobFor('azdo', $secretEvent);
-    $codeJob   = $source->enrichmentJobFor('azdo', $codeEvent);
-    $depJob    = $source->enrichmentJobFor('azdo', $depEvent);
+    $codeJob = $source->enrichmentJobFor('azdo', $codeEvent);
+    $depJob = $source->enrichmentJobFor('azdo', $depEvent);
 
-    expect($secretJob)->toBeInstanceOf(\App\Sync\EnrichAzDoSecretJob::class)
+    expect($secretJob)->toBeInstanceOf(EnrichAzDoSecretJob::class)
         ->and($secretJob->sourceId)->toBe('azdo')
         ->and($secretJob->eventId)->toBe($secretEvent->id)
         ->and($secretJob->projectId)->toBe('proj-1')

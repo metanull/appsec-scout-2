@@ -225,7 +225,8 @@ it('dispatches enrichment jobs returned by a source that implements QueuesEnrich
 
     $dispatchedFor = [];
 
-    $enrichingSource = new class($dispatchedFor) extends FakeSource implements QueuesEnrichmentJobs {
+    $enrichingSource = new class($dispatchedFor) extends FakeSource implements QueuesEnrichmentJobs
+    {
         /** @param array<int, SecurityEvent> $dispatchedFor */
         public function __construct(private array &$dispatchedFor) {}
 
@@ -233,7 +234,8 @@ it('dispatches enrichment jobs returned by a source that implements QueuesEnrich
         {
             $this->dispatchedFor[] = $event;
 
-            return new class implements ShouldQueue {
+            return new class implements ShouldQueue
+            {
                 public function handle(): void {}
             };
         }
