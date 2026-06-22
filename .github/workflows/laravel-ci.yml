@@ -25,13 +25,20 @@ jobs:
           php-version: "8.4"
           extensions: intl, pdo_mysql, bcmath, zip, pcntl
 
-      - name: "Setup > Composer > Install Dependencies"
+      - name: "Validate composer.json"
+        working-directory: app-laravel
+        run: |
+          composer validate --with-dependencies --strict
+
+      - name: "Install Dependencies"
+        working-directory: app-laravel
         run: |
           composer install --no-interaction --no-scripts --prefer-dist
 
-      - name: "Check > Composer > Audit Vulnerabilities"
+      - name: "Audit Vulnerabilities"
+        working-directory: app-laravel
         run: |
-            composer audit --format=summary
+          composer audit --format=summary
   
   detect-changes:
     name: Detect changes
@@ -83,7 +90,8 @@ jobs:
 
       - name: Install dependencies
         working-directory: app-laravel
-        run: composer install --no-interaction --no-scripts --no-progress --prefer-dist
+        run: |
+          composer install --no-interaction --no-scripts --no-progress --prefer-dist
 
       - name: Copy .env
         working-directory: app-laravel
