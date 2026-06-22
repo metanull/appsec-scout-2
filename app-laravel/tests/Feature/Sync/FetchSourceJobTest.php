@@ -8,6 +8,7 @@ use App\Models\ErrorLog;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
+use App\Sources\Contracts\QueuesEnrichmentJobs;
 use App\Sources\Contracts\Source;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
@@ -18,6 +19,8 @@ use App\Sources\ValueObjects\TestResult;
 use App\Sync\FetchSourceJob;
 use App\Sync\Upserter;
 use Carbon\Carbon;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Queue;
 use Tests\Fakes\FakeSource;
 
 it('syncs systems containers events and preserves dirty/local metadata', function () {
@@ -215,4 +218,47 @@ it('stores concise sync failure messages for oversized database values', functio
     $run->refresh();
 
     expect($run->error_message)->toBe('Source azdo sync failed: value too long for security_events.version_control_url. Run migrations and retry the source fetch.');
+});
+
+it('dispatches enrichment jobs returned by a source that implements QueuesEnrichmentJobs', function () {
+    Queue::fake();
+
+    $dispatchedFor = [];
+
+    $enrichingSource = new class($dispatchedFor) extends FakeSource implements QueuesEnrichmentJobs
+    {
+        /** @param array<int, SecurityEvent> $dispatchedFor */
+        public function __construct(private array &$dispatchedFor) {}
+
+        public function enrichmentJobFor(string $sourceId, SecurityEvent $event): ?ShouldQueue
+        {
+            $this->dispatchedFor[] = $event;
+
+            return new class implements ShouldQueue
+            {
+                public function handle(): void {}
+            };
+        }
+    };
+
+    $enrichingSource
+        ->withSystems(new SystemDto('sys-001', 'Test System'))
+        ->withContainers('sys-001', new ContainerDto('cont-001', 'Test Repo', 'sys-001', 'repository'))
+        ->withEvents(
+            new EventDto(sourceEventId: 'evt-a', sourceSystemId: 'sys-001', title: 'Alert A', severity: EventSeverity::High, state: EventState::Open, type: EventType::Vulnerability),
+            new EventDto(sourceEventId: 'evt-b', sourceSystemId: 'sys-001', title: 'Alert B', severity: EventSeverity::Medium, state: EventState::Open, type: EventType::Vulnerability),
+        );
+
+    config(['integration_settings.fake.enabled' => true]);
+    $this->app->bind('appsec-scout.source.fake', fn () => $enrichingSource);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+
+    (new FetchSourceJob('fake'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class));
+
+    // One enrichment job dispatched per event
+    expect($dispatchedFor)->toHaveCount(2)
+        ->and($dispatchedFor[0]->source_event_id)->toBe('evt-a')
+        ->and($dispatchedFor[1]->source_event_id)->toBe('evt-b');
+
+    Queue::assertCount(2);
 });

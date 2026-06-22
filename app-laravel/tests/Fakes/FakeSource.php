@@ -14,7 +14,7 @@ use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
 use Carbon\Carbon;
 
-final class FakeSource implements Source
+class FakeSource implements Source
 {
     /** @var list<SystemDto> */
     private array $systems = [];
