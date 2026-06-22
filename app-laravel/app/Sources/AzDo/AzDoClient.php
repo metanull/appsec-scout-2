@@ -8,7 +8,7 @@ use GuzzleHttp\Exception\ClientException;
 
 final class AzDoClient
 {
-    private const API_VERSION = '7.1-preview.1';
+    private const API_VERSION = '7.2-preview.1';
 
     private readonly Client $http;
 
@@ -130,10 +130,14 @@ final class AzDoClient
                 // The AzDO Advanced Security API ignores the top-level `alertType` parameter
                 // whenever any `criteria.*` parameter is also present. Use `criteria.alertType`
                 // so the filter is honoured in both full and incremental (modifiedSince) fetches.
+                //
+                // Do NOT pass expand=1 on the list request. The API silently truncates the result
+                // set when per-alert payload size causes the response to exceed an undocumented
+                // limit, and it does not emit a continuation token for the dropped records.
+                // Individual alert details are fetched separately via getAlert() as needed.
                 $query = [
                     'criteria.alertType' => $alertType,
                     'top' => 500,
-                    'expand' => '1',
                     'api-version' => self::API_VERSION,
                 ];
 

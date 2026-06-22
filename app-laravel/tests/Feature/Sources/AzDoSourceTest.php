@@ -185,6 +185,39 @@ it('hydrates sparse alert list items before building event dtos', function () {
         ->and($events[0]->versionControlUrl)->not->toBeNull();
 });
 
+it('list alert requests do not include expand parameter to avoid API silent truncation', function () {
+    $singleRepoResponse = json_encode([
+        'count' => 1,
+        'value' => [['id' => 'repo-001', 'name' => 'backend-api', 'webUrl' => 'https://dev.azure.com/testorg/SecurityProject/_git/backend-api']],
+    ], JSON_THROW_ON_ERROR);
+
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(200, [], '{"count":0,"value":[]}'),
+        new Response(200, [], '{"count":0,"value":[]}'),
+        new Response(200, [], '{"count":0,"value":[]}'),
+        new Response(200, [], '{"count":0,"value":[]}'),
+    ]));
+    $stack->push(Middleware::history($history));
+
+    $http = new Client(['handler' => new MockHandler([new Response(200, [], $singleRepoResponse)])]);
+    $advSec = new Client(['handler' => $stack]);
+
+    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec);
+    $source = new AzDoSource(app(Vault::class));
+    injectAzDoClient($source, $client);
+
+    iterator_to_array($source->fetchEvents(null, new SystemDto('project-001', 'SecurityProject')));
+
+    // The AzDO API silently truncates results when expand=1 is used on the list endpoint,
+    // dropping alerts without providing a continuation token. The list query must not pass expand.
+    foreach ($history as $transaction) {
+        $uri = (string) $transaction['request']->getUri();
+        parse_str(parse_url($uri, PHP_URL_QUERY) ?? '', $query);
+        expect($query)->not->toHaveKey('expand', 'list alerts request must not include expand to prevent silent result truncation');
+    }
+});
+
 it('enriches secret event with occurrences list', function () {
     $http = new Client(['handler' => new MockHandler]);
     $advSec = new Client([
