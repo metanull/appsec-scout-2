@@ -95,7 +95,7 @@ See [plan/README.md](plan/README.md) for the full decision log and epic/story br
 | AzDO Advanced Security      | Code, Dependency, Secret               | State + Comments |
 | AppScan on Cloud (ASoC)     | Vulnerability, Code Quality            | State + Comments |
 | Detectify                   | Misconfiguration, Vulnerability        | State            |
-| Defender for Cloud > DevOps | Code, Dependency, Secret, IaC, Posture | Read-only        |
+| Defender for Cloud > DevOps | Code, Dependency, Secret, IaC, Posture | Deferred (not yet implemented) |
 
 ## Trackers Supported
 
