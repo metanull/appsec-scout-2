@@ -58,7 +58,7 @@ it('recordTrackerStateChanged writes a tracker_state_changed row', function () {
 
 it('recordAttachmentCreated writes an attachment_created row', function () {
     $recorder = new Recorder;
-    $recorder->recordAttachmentCreated('App\\Models\\Alert', '7', ['kind' => 'trivy-sarif']);
+    $recorder->recordAttachmentCreated('App\\Models\\Alert', '7', ['kind' => 'codesearch-json']);
 
     $log = AuditLog::first();
     expect($log->action)->toBe('attachment_created');

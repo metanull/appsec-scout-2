@@ -2,7 +2,6 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
-use App\Jobs\UpdateTrivyDbJob;
 use App\Models\ErrorLog;
 use App\Models\FailedJob;
 use App\Models\SyncRun;
@@ -148,17 +147,14 @@ it('queues supported operational actions and records audit rows', function () {
         ->set('selectedTrackerId', 'fake-tracker')
         ->call('dispatchDueIntegrationsNow')
         ->call('dispatchSelectedSource')
-        ->call('dispatchSelectedTracker')
-        ->call('updateTrivyDbNow');
+        ->call('dispatchSelectedTracker');
 
     Bus::assertDispatched(FetchSourceJob::class);
     Bus::assertDispatched(RefreshWorkItemsJob::class);
-    Bus::assertDispatched(UpdateTrivyDbJob::class);
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_due_integrations')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'operations.update_trivy_db')->exists())->toBeTrue();
+        ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
 });
 
 it('retries and forgets failed jobs', function () {

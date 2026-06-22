@@ -31,8 +31,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Triage commands (Artisan namespace `triage:*`)
 
-- `triage:trivy {git_url}` — clones a repo, runs Trivy, captures SARIF output, attaches to the alert. Requires Trivy in the container.
-- `triage:bfg {git_url} {secret_list}` — clones a repo, runs BFG 1.15.0, attaches findings as JSON. Requires Java 21 JRE + `/opt/bfg/bfg.jar` in the container.
 - `triage:codesearch {PAT} {search} [{project|repo_url}]` — AzDO code search, attaches findings with hyperlinks. From the web UI the user's PAT is resolved automatically.
 
 ### Credential resolution order

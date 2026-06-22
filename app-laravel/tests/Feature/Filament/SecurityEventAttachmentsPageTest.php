@@ -24,14 +24,14 @@ it('renders attachments on the alert detail page', function () {
 
     EventAttachment::query()->create([
         'event_id' => $event->id,
-        'kind' => 'trivy-sarif',
-        'mime' => 'application/sarif+json',
-        'name' => 'trivy-results.sarif',
+        'kind' => 'codesearch-json',
+        'mime' => 'application/json',
+        'name' => 'codesearch-results.json',
         'payload' => json_encode([]),
         'size_bytes' => 256,
         'created_at' => now(),
         'created_by_user_id' => $user->id,
-        'created_by_command' => 'triage:trivy',
+        'created_by_command' => 'triage:codesearch',
     ]);
 
     // Ensure the alert detail page renders for this operator.
@@ -46,7 +46,7 @@ it('renders attachments on the alert detail page', function () {
             'pageClass' => SecurityEventResource\Pages\ViewSecurityEvent::class,
         ])
         ->call('loadTable')
-        ->assertSee('trivy-results.sarif');
+        ->assertSee('codesearch-results.json');
 });
 
 it('downloads attachments with the expected headers', function () {

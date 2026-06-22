@@ -10,7 +10,6 @@ use App\Filament\Widgets\ReconciliationSummaryWidget;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
-use App\Jobs\UpdateTrivyDbJob;
 use App\Models\ErrorLog;
 use App\Models\FailedJob;
 use App\Models\SyncRun;
@@ -151,11 +150,6 @@ class OperationsPage extends Page implements HasTable
                     ->label('Prune error logs')
                     ->requiresConfirmation()
                     ->action(fn () => $this->pruneErrorLogsNow()),
-
-                Action::make('updateTrivyDb')
-                    ->label('Update Trivy DB')
-                    ->requiresConfirmation()
-                    ->action(fn () => $this->updateTrivyDbNow()),
             ])->label('Maintenance'),
         ];
     }
@@ -299,7 +293,6 @@ class OperationsPage extends Page implements HasTable
             ['id' => 'integrations:dispatch-due', 'cadence' => 'Every minute'],
             ['id' => 'prune-audit-logs', 'cadence' => 'Daily'],
             ['id' => 'prune-error-logs', 'cadence' => 'Daily'],
-            ['id' => 'update-trivy-db', 'cadence' => 'Daily'],
         ];
     }
 
@@ -423,14 +416,6 @@ class OperationsPage extends Page implements HasTable
         app(Recorder::class)->recordAdminAction('operations.prune_error_logs');
 
         Notification::make()->title('Error logs pruned')->success()->send();
-    }
-
-    public function updateTrivyDbNow(): void
-    {
-        UpdateTrivyDbJob::dispatch();
-        app(Recorder::class)->recordAdminAction('operations.update_trivy_db');
-
-        Notification::make()->title('Trivy DB update queued')->success()->send();
     }
 
     public function retryFailedJob(string $failedJobUuid): void

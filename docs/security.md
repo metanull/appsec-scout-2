@@ -77,14 +77,13 @@ This supports Composer, npm, apt, curl, and the running application without host
 
 ## Triage Command Execution
 
-Supported triage tooling includes Trivy, BFG, and Git.
+The implemented triage command is `triage:codesearch`, which issues HTTP requests to the Azure DevOps code search API.
 
-Security posture for those flows:
+Security posture:
 
-- tools are installed into the single app image
-- intended use is through application services and explicit Artisan commands
-- work directories are isolated under Laravel storage
-- the project rule remains framework APIs and explicit argv lists, not shell-string execution
+- no shell-string execution; outbound HTTP uses the configured Laravel HTTP client
+- work item data is attached to the alert record and never executed
+- the operator's PAT is resolved from the credential vault and never logged
 
 ## Audit Guarantees
 
