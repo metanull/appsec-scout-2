@@ -116,18 +116,19 @@ jobs:
           DB_CONNECTION: sqlite
           DB_DATABASE: ":memory:"
 
-  ci:
+  ci-success:
     name: CI Success
     runs-on: ubuntu-latest
     needs: [audit-composer, detect-changes, ci-checks]
     if: always()
 
     steps:
-      - name: "CI Success"
+      - name: "Check all mandatory checks passed"
         run: |
           changesDetected=${{ needs.detect-changes.outputs.changed_files }}
           composerAuditResult=${{ needs.audit-composer.result }}
           ciChecksResult=${{ needs.ci-checks.result }}
+          
           if [ "$changesDetected" = "true" ]; then
             if [ "$composerAuditResult" = "success" ] && [ "$ciChecksResult" = "success" ]; then
               echo "All CI checks passed."
