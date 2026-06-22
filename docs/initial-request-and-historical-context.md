@@ -3,6 +3,10 @@ name: 'Initial request and Historical context'
 description: 'This document stores the initial request at the origin of the project, and the historical context leading to that request.'
 ---
 
+> **Note — superseded items:** This document reflects the original design intent. Two decisions were revised during implementation:
+> - **Admin role combination**: the original design stated Admin cannot be combined with other roles. The implemented model is cumulative: Admin includes the permissions of all lower roles (Reader, Triage, Plan, Sync).
+> - **Defender for Cloud**: described as an intended source. Defender integration is deferred and not part of the implemented M1–M6 application.
+
 # Initial Request
 
 I intend to create a new GitHub project for this work and file it as **Epics and Stories** in GitHub.

@@ -7,18 +7,14 @@ use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
-use App\Jobs\UpdateTrivyDbJob;
 use App\Sources\Registry as SourceRegistry;
 use App\Trackers\Registry as TrackerRegistry;
-use App\Triage\BfgService;
 use App\Triage\CodesearchService;
-use App\Triage\TrivyService;
 use App\Users\UserAdminService;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-use Symfony\Component\Process\Exception\ExceptionInterface;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -99,59 +95,6 @@ Artisan::command('triage:codesearch {pat} {search} {--scope=} {--attach-to=}', f
 
     return 0;
 })->purpose('Run Azure DevOps code search and optionally attach the JSON result to an alert');
-
-Artisan::command('triage:trivy {git_url} {--attach-to=}', function (): int {
-    $gitUrl = (string) $this->argument('git_url');
-    $attachTo = $this->option('attach-to');
-
-    try {
-        $result = app(TrivyService::class)->run(
-            gitUrl: $gitUrl,
-            attachToEventId: is_numeric($attachTo) ? (int) $attachTo : null,
-        );
-    } catch (InvalidArgumentException|RuntimeException|ExceptionInterface $exception) {
-        $this->error($exception->getMessage());
-
-        return 1;
-    }
-
-    $this->info('Trivy scan completed.');
-
-    if ($result->attachmentId !== null) {
-        $this->info(sprintf('Attached SARIF output to alert %d.', (int) $attachTo));
-    }
-
-    return 0;
-})->purpose('Clone a repository, run Trivy, and optionally attach the SARIF result to an alert');
-
-Artisan::command('triage:bfg {git_url} {secret_list_file} {--attach-to=}', function (): int {
-    $gitUrl = (string) $this->argument('git_url');
-    $secretListFile = (string) $this->argument('secret_list_file');
-    $attachTo = $this->option('attach-to');
-
-    try {
-        $result = app(BfgService::class)->run(
-            gitUrl: $gitUrl,
-            secretListFile: $secretListFile,
-            attachToEventId: is_numeric($attachTo) ? (int) $attachTo : null,
-        );
-    } catch (InvalidArgumentException|RuntimeException|ExceptionInterface $exception) {
-        $this->error($exception->getMessage());
-
-        return 1;
-    }
-
-    $this->info('BFG run completed.');
-
-    if ($result->bundleAttachmentId !== null) {
-        $this->info(sprintf(
-            'Bundle saved at attachment %d. Review via git clone <bundle> and force-push manually if accepted.',
-            $result->bundleAttachmentId,
-        ));
-    }
-
-    return 0;
-})->purpose('Clone a repository mirror, run BFG, and optionally attach the report and bundle to an alert');
 
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
@@ -368,5 +311,4 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
-Schedule::job(new UpdateTrivyDbJob)->daily()->name('update-trivy-db');
 Schedule::command('integrations:dispatch-due')->everyMinute()->withoutOverlapping()->name('integrations:dispatch-due');

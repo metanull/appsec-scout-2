@@ -114,7 +114,6 @@ It supports the following actions:
 - queue a work item reconciliation (find and create missing alert-to-work-item links)
 - prune audit logs
 - prune error logs
-- queue a Trivy DB update
 - retry one failed job
 - forget one failed job
 
@@ -231,15 +230,4 @@ Helper scripts for the same dev-container checks:
 .\scripts\invoke-check.ps1 -Check 'static-analysis'
 ```
 
-CI intentionally stops at the existing Laravel quality gates. It does not build a production image, generate an SBOM, or run Trivy image scans.
-
-## Optional Local Image Checks
-
-The runtime image includes Trivy for supported triage commands, but release-style image scanning is optional and local only.
-
-Examples:
-
-```bash
-docker compose exec app trivy --version
-docker image inspect appsec-scout:latest --format '{{.Size}}'
-```
+CI intentionally stops at the existing Laravel quality gates. It does not build a production image, generate an SBOM, or run image scans.

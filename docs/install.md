@@ -183,13 +183,3 @@ The production-style `app` service runs with:
 - explicit writable mounts for Laravel storage and tmpfs-backed runtime paths
 - port `8080` so no privileged bind capability is required
 
-## Included Triage Tools
-
-| Tool | Location |
-| --- | --- |
-| Trivy | `/usr/bin/trivy` |
-| BFG Repo Cleaner 1.15.0 | `/opt/bfg/bfg.jar` |
-| Git | `/usr/bin/git` |
-| Java 21 JRE | `/usr/bin/java` |
-
-These tools are used by supported triage commands and the Operations page action that queues a Trivy DB update.

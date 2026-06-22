@@ -26,7 +26,7 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
         $queued = app(QueueRuntimeInspector::class)->queuedCount();
         $failed = (int) DB::table('failed_jobs')->count();
         $running = (int) SyncRun::query()->where('status', 'running')->count();
-        $scheduled = 4; // Managed schedule entries: dispatch-due, prune-audit, prune-errors, update-trivy-db
+        $scheduled = 3; // Managed schedule entries: dispatch-due, prune-audit, prune-errors
 
         return [
             Stat::make('Queued jobs', $queued)

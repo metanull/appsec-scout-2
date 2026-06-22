@@ -9,13 +9,13 @@ it('stores binary payloads on event attachments', function () {
 
     $attachment = EventAttachment::query()->create([
         'event_id' => $event->id,
-        'kind' => 'trivy-sarif',
-        'mime' => 'application/sarif+json',
-        'name' => 'trivy-20260521.sarif',
+        'kind' => 'codesearch-json',
+        'mime' => 'application/json',
+        'name' => 'codesearch-20260521.json',
         'payload' => $payload,
         'size_bytes' => strlen($payload),
         'created_at' => now(),
-        'created_by_command' => 'triage:trivy',
+        'created_by_command' => 'triage:codesearch',
     ]);
 
     expect($attachment->payload)->toBe($payload)

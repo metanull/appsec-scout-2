@@ -108,7 +108,6 @@ Supported actions:
 - dispatch one tracker refresh
 - prune audit logs
 - prune error logs
-- queue a Trivy DB update
 - retry a failed job
 - forget a failed job
 

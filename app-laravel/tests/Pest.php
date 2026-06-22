@@ -9,7 +9,6 @@ use App\Models\SoftwareSystem;
 use App\Trackers\Registry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\File;
 use Tests\Fakes\FakeTracker;
 use Tests\TestCase;
 
@@ -31,18 +30,6 @@ function bindFakeWorkItemTracker(FakeTracker $tracker): FakeTracker
     app()->forgetInstance(Registry::class);
 
     return $tracker;
-}
-
-/** @return list<string> */
-function triageWorkspaceDirectories(): array
-{
-    $path = storage_path('app/triage');
-
-    if (! is_dir($path)) {
-        return [];
-    }
-
-    return array_values(File::directories($path));
 }
 
 /** @param array<string, mixed> $overrides */
