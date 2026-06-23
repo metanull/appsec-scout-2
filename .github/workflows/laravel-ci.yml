@@ -55,7 +55,7 @@ jobs:
         id: detect
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "backend=true" >> $GITHUB_OUTPUT
+            echo "changed_files=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -117,7 +117,7 @@ jobs:
           DB_DATABASE: ":memory:"
 
   ci-success:
-    name: CI Success
+    name: ci
     runs-on: ubuntu-latest
     needs: [audit-composer, detect-changes, ci-checks]
     if: always()
