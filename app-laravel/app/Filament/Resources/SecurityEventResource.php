@@ -122,6 +122,18 @@ class SecurityEventResource extends Resource
                         TextEntry::make('source_id')
                             ->label('Source')
                             ->badge(),
+                        TextEntry::make('softwareSystem.name')
+                            ->label('System')
+                            ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem
+                                ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
+                                : null)
+                            ->placeholder('-'),
+                        TextEntry::make('container.name')
+                            ->label('Container')
+                            ->url(fn (SecurityEvent $record): ?string => $record->container
+                                ? SecurityContainerResource::getUrl('view', ['record' => $record->container])
+                                : null)
+                            ->placeholder('-'),
                         TextEntry::make('first_seen_at')
                             ->label('First seen')
                             ->dateTime('d M Y')
