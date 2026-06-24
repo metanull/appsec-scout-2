@@ -3,8 +3,10 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Pages\ProfileIntegrationsPage;
+use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource\Pages\ListSecurityEvents;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
+use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\AuditHistoryRelationManager;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\CommentsRelationManager;
@@ -122,6 +124,18 @@ class SecurityEventResource extends Resource
                         TextEntry::make('source_id')
                             ->label('Source')
                             ->badge(),
+                        TextEntry::make('softwareSystem.name')
+                            ->label('System')
+                            ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem
+                                ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
+                                : null)
+                            ->placeholder('-'),
+                        TextEntry::make('container.name')
+                            ->label('Container')
+                            ->url(fn (SecurityEvent $record): ?string => $record->container
+                                ? SecurityContainerResource::getUrl('view', ['record' => $record->container])
+                                : null)
+                            ->placeholder('-'),
                         TextEntry::make('first_seen_at')
                             ->label('First seen')
                             ->dateTime('d M Y')
