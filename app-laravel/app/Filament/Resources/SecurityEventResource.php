@@ -3,10 +3,8 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Pages\ProfileIntegrationsPage;
-use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource\Pages\ListSecurityEvents;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
-use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\AuditHistoryRelationManager;
 use App\Filament\Resources\SecurityEventResource\RelationManagers\CommentsRelationManager;
