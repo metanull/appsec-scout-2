@@ -108,6 +108,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         supervisor \
         curl \
         ca-certificates \
+        dos2unix \
         git \
         imagemagick \
         libmagickwand-dev \
@@ -164,7 +165,9 @@ RUN APP_KEY=${BUILD_APP_KEY} php artisan filament:assets --no-interaction \
 RUN chown -R www-data:www-data storage bootstrap/cache
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+
+RUN dos2unix /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8080
 
