@@ -105,6 +105,7 @@ services:
             - ops
         volumes:
             - claude_credentials:/home/ops/.claude
+            - ${SBOM_OUTPUT_DIR:-./output/sbom-scan}:/output
         environment:
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -115,6 +116,10 @@ services:
             GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
             GIT_USER_NAME: "${GIT_USER_NAME:-}"
             GIT_USER_EMAIL: "${GIT_USER_EMAIL:-}"
+            AZDO_ORG: "${AZDO_ORG:-}"
+            AZDO_PAT: "${AZDO_PAT:-}"
+            AZDO_PROJECT_FILTER: "${AZDO_PROJECT_FILTER:-}"
+            AZDO_REPO_FILTER: "${AZDO_REPO_FILTER:-}"
         stdin_open: true
         tty: true
 

@@ -152,7 +152,8 @@ ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /workspace
 COPY docker/ops/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY docker/ops/collect-sboms.sh /usr/local/bin/collect-sboms.sh
+RUN chmod +x /entrypoint.sh /usr/local/bin/collect-sboms.sh
 
 USER ops
 ENTRYPOINT ["/entrypoint.sh"]
