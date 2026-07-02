@@ -6,6 +6,11 @@ if [ "$1" = "--login" ]; then
     exec claude
 fi
 
+# --- SBOM scan mode: collects SBOMs from every repo in an AzDO organization ---
+if [ "$1" = "--sbom-scan" ]; then
+    exec /usr/local/bin/collect-sboms.sh
+fi
+
 # --- Auth check: warn only (ops shell is useful without Claude) ---
 if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ ! -f "$HOME/.claude/.credentials.json" ]; then
     echo "WARNING: No Claude authentication found — 'claude' commands will not work."

@@ -8,8 +8,13 @@
     Claude, though 'claude' is available inside if authenticated.
     Use -Mode login once to authenticate Claude via your Pro/Max subscription.
 .PARAMETER Mode
-    shell  — Interactive bash shell (default). Clones repo first if OPS_REPO_URL is set.
-    login  — One-time OAuth login; saves credentials to the 'claude_credentials' volume.
+    shell     — Interactive bash shell (default). Clones repo first if OPS_REPO_URL is set.
+    login     — One-time OAuth login; saves credentials to the 'claude_credentials' volume.
+    sbom-scan — Collects SBOMs (CycloneDX, via Trivy) from every repository in an Azure
+                DevOps organization, restoring/building any *.sln first for precise .NET
+                results. Runs to completion in a single container invocation; each repo is
+                deleted immediately after it is scanned. Output lands on the host under
+                SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\).
 .PARAMETER Repo
     GitHub HTTPS URL to clone. Overrides OPS_REPO_URL from .env.
 .PARAMETER Branch
@@ -23,6 +28,17 @@
     If omitted, the container falls back to those .env values.
     Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry
     from Windows Credential Manager with Get-StoredCredential (module CredentialManager).
+.PARAMETER Organization
+    Azure DevOps organization to scan (-Mode sbom-scan). Overrides AZDO_ORG from .env.
+.PARAMETER AzdoCredential
+    Azure DevOps credential (-Mode sbom-scan). Password = PAT with "Code (Read)" scope
+    across the organization — overrides AZDO_PAT from .env. UserName is not used.
+.PARAMETER ProjectFilter
+    Regex applied to project names (-Mode sbom-scan). Overrides AZDO_PROJECT_FILTER from .env.
+.PARAMETER RepositoryFilter
+    Regex applied to repository names (-Mode sbom-scan). Overrides AZDO_REPO_FILTER from .env.
+.PARAMETER OutputDir
+    Host directory to receive SBOM output (-Mode sbom-scan). Overrides SBOM_OUTPUT_DIR from .env.
 .PARAMETER Rebuild
     Export host CA certificates and rebuild the ops Docker image before running.
 .EXAMPLE
@@ -33,10 +49,14 @@
     .\invoke-ops.ps1 -Repo https://github.com/org/repo.git -Branch main
 .EXAMPLE
     .\invoke-ops.ps1 -Repo https://github.com/org/repo.git -Credential (Get-Credential) -Name "Pascal HAVELANGE"
+.EXAMPLE
+    .\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
+.EXAMPLE
+    .\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential) -ProjectFilter '^Portal$'
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('shell', 'login')]
+    [ValidateSet('shell', 'login', 'sbom-scan')]
     [string]$Mode = 'shell',
 
     [string]$Repo = '',
@@ -48,6 +68,18 @@ param(
     [System.Management.Automation.Credential()]
     [System.Management.Automation.PSCredential]
     $Credential,
+
+    [string]$Organization = '',
+
+    [System.Management.Automation.Credential()]
+    [System.Management.Automation.PSCredential]
+    $AzdoCredential,
+
+    [string]$ProjectFilter = '',
+
+    [string]$RepositoryFilter = '',
+
+    [string]$OutputDir = '',
 
     [Switch]$Rebuild
 )
@@ -153,8 +185,8 @@ try {
         }
     }
 
-    # Inject -Credential and -Name into the PS environment so Docker Compose
-    # picks them up via ${GITHUB_TOKEN:-}, ${GIT_USER_EMAIL:-}, ${GIT_USER_NAME:-}.
+    # Inject -Credential/-Name/-AzdoCredential/etc. into the PS environment so Docker
+    # Compose picks them up via ${GITHUB_TOKEN:-}, ${GIT_USER_EMAIL:-}, ${AZDO_PAT:-}, ...
     # Wiped in the outer finally block regardless of how the script exits.
     if ($Credential) {
         $env:GIT_USER_EMAIL = $Credential.UserName
@@ -162,6 +194,21 @@ try {
     }
     if (-not [string]::IsNullOrWhiteSpace($Name)) {
         $env:GIT_USER_NAME = $Name
+    }
+    if ($AzdoCredential) {
+        $env:AZDO_PAT = $AzdoCredential.GetNetworkCredential().Password
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Organization)) {
+        $env:AZDO_ORG = $Organization
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ProjectFilter)) {
+        $env:AZDO_PROJECT_FILTER = $ProjectFilter
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RepositoryFilter)) {
+        $env:AZDO_REPO_FILTER = $RepositoryFilter
+    }
+    if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
+        $env:SBOM_OUTPUT_DIR = $OutputDir
     }
 
     # Build env-override args for Repo/Branch flags
@@ -183,6 +230,23 @@ try {
             Write-Host "Starting ops shell. Type 'exit' to quit."
             Invoke-Docker compose --env-file $ComposeEnvFile run --rm -it --no-deps @envOverrides ops
         }
+        'sbom-scan' {
+            Write-Host "Starting SBOM scan. This runs to completion in one container session..."
+            Invoke-Docker compose --env-file $ComposeEnvFile run --rm --no-deps @envOverrides ops --sbom-scan
+
+            $resolvedOutputRoot = if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
+                $OutputDir
+            } else {
+                Join-Path $ProjectRoot 'output\sbom-scan'
+            }
+            $latestRun = Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($latestRun) {
+                Write-Host "SBOM output: $($latestRun.FullName)"
+            } else {
+                Write-Warning "SBOM scan finished but no output directory was found under $resolvedOutputRoot"
+            }
+        }
     }
 } catch {
     Write-Error $_.Exception.Message
@@ -193,6 +257,21 @@ try {
     }
     if (-not [string]::IsNullOrWhiteSpace($Name)) {
         Remove-Item Env:\GIT_USER_NAME -ErrorAction SilentlyContinue
+    }
+    if ($AzdoCredential) {
+        Remove-Item Env:\AZDO_PAT -ErrorAction SilentlyContinue
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Organization)) {
+        Remove-Item Env:\AZDO_ORG -ErrorAction SilentlyContinue
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ProjectFilter)) {
+        Remove-Item Env:\AZDO_PROJECT_FILTER -ErrorAction SilentlyContinue
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RepositoryFilter)) {
+        Remove-Item Env:\AZDO_REPO_FILTER -ErrorAction SilentlyContinue
+    }
+    if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
+        Remove-Item Env:\SBOM_OUTPUT_DIR -ErrorAction SilentlyContinue
     }
     $ErrorActionPreference = $SavedErrorActionPreference
 }
