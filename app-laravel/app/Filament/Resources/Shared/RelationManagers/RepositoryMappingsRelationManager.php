@@ -8,6 +8,7 @@ use App\Models\Enums\RepositoryProviderType;
 use App\Models\RepositoryMapping;
 use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SourceCode\RepositoryMappingService;
@@ -199,13 +200,13 @@ class RepositoryMappingsRelationManager extends RelationManager
     }
 
     /**
-     * @return SoftwareSystem|SecurityContainer
+     * @return SoftwareSystem|SecurityContainer|SoftwareAsset
      */
     private function ownerRecord(): Model
     {
         $ownerRecord = $this->getOwnerRecord();
 
-        if ($ownerRecord instanceof SoftwareSystem || $ownerRecord instanceof SecurityContainer) {
+        if ($ownerRecord instanceof SoftwareSystem || $ownerRecord instanceof SecurityContainer || $ownerRecord instanceof SoftwareAsset) {
             return $ownerRecord;
         }
 

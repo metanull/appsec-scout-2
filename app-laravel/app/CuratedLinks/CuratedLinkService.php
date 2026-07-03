@@ -6,6 +6,7 @@ use App\Audit\Recorder;
 use App\Models\CuratedLink;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\SourceLinkHelper;
@@ -19,7 +20,7 @@ final class CuratedLinkService
     /**
      * @param  array{label?: mixed, url?: mixed, kind?: mixed}  $data
      */
-    public function create(SecurityEvent|SecurityContainer|SoftwareSystem $owner, User $author, array $data): CuratedLink
+    public function create(SecurityEvent|SecurityContainer|SoftwareSystem|SoftwareAsset $owner, User $author, array $data): CuratedLink
     {
         $payload = $this->normalize($data);
 

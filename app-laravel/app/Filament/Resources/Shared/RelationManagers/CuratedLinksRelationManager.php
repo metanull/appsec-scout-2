@@ -8,6 +8,7 @@ use App\CuratedLinks\CuratedLinkService;
 use App\Models\CuratedLink;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\EventLinkCatalog;
@@ -186,11 +187,11 @@ class CuratedLinksRelationManager extends RelationManager
         return $user instanceof User && $user->can('context.curate');
     }
 
-    private function curatedLinkOwner(): SecurityEvent|SecurityContainer|SoftwareSystem
+    private function curatedLinkOwner(): SecurityEvent|SecurityContainer|SoftwareSystem|SoftwareAsset
     {
         $owner = $this->getOwnerRecord();
 
-        if ($owner instanceof SecurityEvent || $owner instanceof SecurityContainer || $owner instanceof SoftwareSystem) {
+        if ($owner instanceof SecurityEvent || $owner instanceof SecurityContainer || $owner instanceof SoftwareSystem || $owner instanceof SoftwareAsset) {
             return $owner;
         }
 

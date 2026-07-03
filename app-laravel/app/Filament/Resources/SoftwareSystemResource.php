@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\Shared\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
@@ -55,6 +56,7 @@ class SoftwareSystemResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with([
+            'softwareAsset',
             'curatedLinks',
             'trackerProjectLinks',
             'repositoryMappings',
@@ -69,6 +71,9 @@ class SoftwareSystemResource extends Resource
                     TextEntry::make('name')
                         ->label('Name')
                         ->wrap(),
+                    TextEntry::make('softwareAsset.name')
+                        ->label('Software asset')
+                        ->placeholder('-'),
                     TextEntry::make('source_id')
                         ->label('Source')
                         ->badge()
@@ -195,6 +200,7 @@ class SoftwareSystemResource extends Resource
             CuratedLinksRelationManager::class,
             TrackerProjectLinksRelationManager::class,
             RepositoryMappingsRelationManager::class,
+            AttachmentsRelationManager::class,
         ];
     }
 

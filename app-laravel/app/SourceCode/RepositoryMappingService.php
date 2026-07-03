@@ -6,6 +6,7 @@ use App\Models\Enums\RepositoryProviderType;
 use App\Models\RepositoryMapping;
 use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\SourceLinkHelper;
@@ -18,7 +19,7 @@ final class RepositoryMappingService
     /**
      * @param  array{repository_provider_id?: mixed, repository_name?: mixed, default_branch?: mixed, path_prefix?: mixed}  $data
      */
-    public function create(SoftwareSystem|SecurityContainer $owner, User $author, array $data): RepositoryMapping
+    public function create(SoftwareSystem|SecurityContainer|SoftwareAsset $owner, User $author, array $data): RepositoryMapping
     {
         $payload = $this->normalizePayload($data);
         $provider = $this->resolveProvider($payload['repository_provider_id']);
@@ -258,11 +259,11 @@ final class RepositoryMappingService
         ));
     }
 
-    private function resolveOwner(RepositoryMapping $mapping): SoftwareSystem|SecurityContainer
+    private function resolveOwner(RepositoryMapping $mapping): SoftwareSystem|SecurityContainer|SoftwareAsset
     {
         $owner = $mapping->owner;
 
-        if ($owner instanceof SoftwareSystem || $owner instanceof SecurityContainer) {
+        if ($owner instanceof SoftwareSystem || $owner instanceof SecurityContainer || $owner instanceof SoftwareAsset) {
             return $owner;
         }
 

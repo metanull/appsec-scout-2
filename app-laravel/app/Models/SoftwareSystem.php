@@ -6,11 +6,12 @@ use Database\Factories\SoftwareSystemFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
-    'source_id', 'source_system_id', 'name', 'description',
+    'software_asset_id', 'source_id', 'source_system_id', 'name', 'description',
     'url', 'metadata', 'first_seen_at', 'last_seen_at', 'synced_at',
 ])]
 class SoftwareSystem extends Model
@@ -24,6 +25,7 @@ class SoftwareSystem extends Model
             $system->trackerProjectLinks()->delete();
             $system->repositoryMappings()->delete();
             $system->curatedLinks()->delete();
+            $system->attachments()->delete();
         });
     }
 
@@ -36,6 +38,12 @@ class SoftwareSystem extends Model
             'last_seen_at' => 'datetime',
             'synced_at' => 'datetime',
         ];
+    }
+
+    /** @return BelongsTo<SoftwareAsset, $this> */
+    public function softwareAsset(): BelongsTo
+    {
+        return $this->belongsTo(SoftwareAsset::class);
     }
 
     /** @return HasMany<SecurityContainer, $this> */
@@ -66,5 +74,11 @@ class SoftwareSystem extends Model
     public function curatedLinks(): MorphMany
     {
         return $this->morphMany(CuratedLink::class, 'owner');
+    }
+
+    /** @return MorphMany<Attachment, $this> */
+    public function attachments(): MorphMany
+    {
+        return $this->morphMany(Attachment::class, 'owner');
     }
 }

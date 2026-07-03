@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Assets\AttachmentService;
+use App\Assets\AttachmentTargetResolver;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
@@ -95,6 +97,73 @@ Artisan::command('triage:codesearch {pat} {search} {--scope=} {--attach-to=}', f
 
     return 0;
 })->purpose('Run Azure DevOps code search and optionally attach the JSON result to an alert');
+
+Artisan::command(
+    'assets:import-attachment {source} {system} {kind} {file} '
+    . '{--container=} {--system-name=} {--container-name=} {--container-kind=repository} '
+    . '{--mime=} {--as=} {--user-id=}',
+    function (AttachmentTargetResolver $resolver, AttachmentService $attachments, Filesystem $files): int {
+        $sourceId = (string) $this->argument('source');
+        $sourceSystemId = (string) $this->argument('system');
+        $kind = (string) $this->argument('kind');
+        $path = (string) $this->argument('file');
+
+        if (! $files->exists($path) || ! $files->isFile($path)) {
+            $this->error(sprintf('File not found: %s', $path));
+
+            return self::FAILURE;
+        }
+
+        $containerSourceId = $this->option('container');
+        $systemName = $this->option('system-name');
+        $containerName = $this->option('container-name');
+        $containerKind = (string) $this->option('container-kind');
+        $mimeOption = $this->option('mime');
+        $mime = is_string($mimeOption) && $mimeOption !== '' ? $mimeOption : 'application/octet-stream';
+        $asOption = $this->option('as');
+        $name = is_string($asOption) && $asOption !== '' ? $asOption : basename($path);
+        $userIdOption = $this->option('user-id');
+        $userId = is_numeric($userIdOption) ? (int) $userIdOption : null;
+
+        try {
+            $owner = $resolver->resolveSystem($sourceId, $sourceSystemId, is_string($systemName) ? $systemName : null);
+
+            if (is_string($containerSourceId) && $containerSourceId !== '') {
+                $owner = $resolver->resolveContainer(
+                    $owner,
+                    $containerSourceId,
+                    is_string($containerName) ? $containerName : null,
+                    $containerKind,
+                );
+            }
+
+            $attachment = $attachments->attachTo(
+                owner: $owner,
+                kind: $kind,
+                mime: $mime,
+                name: $name,
+                payload: $files->get($path),
+                createdByUserId: $userId,
+                createdByCommand: 'assets:import-attachment',
+            );
+        } catch (InvalidArgumentException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->info(sprintf(
+            'Attached "%s" (%d bytes, kind=%s) to %s #%d.',
+            $attachment->name,
+            $attachment->size_bytes,
+            $attachment->kind,
+            class_basename($owner),
+            $owner->getKey(),
+        ));
+
+        return self::SUCCESS;
+    },
+)->purpose('Import a file (SBOM, dependency report, HTTP headers, pipeline run, ...) as an attachment on a software system or container');
 
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
