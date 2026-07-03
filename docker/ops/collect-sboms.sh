@@ -62,7 +62,7 @@ azdo_get_all() {
 }
 
 process_repo() {
-    local project_name="$1" repo_name="$2" remote_url="$3"
+    local project_name="$1" repo_name="$2" remote_url="$3" project_id="$4" repo_id="$5"
     local workdir
     workdir=$(mktemp -d)
     trap 'rm -rf "$workdir"' RETURN
@@ -107,13 +107,15 @@ process_repo() {
     jq -nc \
         --arg project "$project_name" \
         --arg repository "$repo_name" \
+        --arg projectId "$project_id" \
+        --arg repositoryId "$repo_id" \
         --arg webUrl "$remote_url" \
         --argjson cloned "$clone_ok" \
         --argjson solutions "$solutions_json" \
         --argjson sbomGenerated "$trivy_ok" \
         --arg sbomPath "$([ "$trivy_ok" = true ] && echo "$safe_project/${safe_repo}.cdx.json" || echo "")" \
-        '{project: $project, repository: $repository, webUrl: $webUrl, cloned: $cloned,
-          solutions: $solutions, sbomGenerated: $sbomGenerated, sbomPath: $sbomPath}' \
+        '{project: $project, repository: $repository, projectId: $projectId, repositoryId: $repositoryId,
+          webUrl: $webUrl, cloned: $cloned, solutions: $solutions, sbomGenerated: $sbomGenerated, sbomPath: $sbomPath}' \
         >> "$RESULTS_FILE"
 }
 
@@ -132,6 +134,7 @@ while IFS= read -r project; do
 
     while IFS= read -r repo; do
         repo_name=$(jq -r '.name' <<<"$repo")
+        repo_id=$(jq -r '.id' <<<"$repo")
         is_disabled=$(jq -r '.isDisabled' <<<"$repo")
         remote_url=$(jq -r '.remoteUrl' <<<"$repo")
         if [ "$is_disabled" = "true" ]; then
@@ -143,7 +146,7 @@ while IFS= read -r project; do
         fi
         repo_count=$((repo_count + 1))
         echo "  Repository: $repo_name"
-        process_repo "$project_name" "$repo_name" "$remote_url"
+        process_repo "$project_name" "$repo_name" "$remote_url" "$project_id" "$repo_id"
     done < <(azdo_get_all "https://dev.azure.com/${AZDO_ORG}/${project_id}/_apis/git/repositories?api-version=${API_VERSION}")
 done < <(azdo_get_all "https://dev.azure.com/${AZDO_ORG}/_apis/projects?api-version=${API_VERSION}")
 

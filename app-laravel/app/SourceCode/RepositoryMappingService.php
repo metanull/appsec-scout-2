@@ -19,7 +19,7 @@ final class RepositoryMappingService
     /**
      * @param  array{repository_provider_id?: mixed, repository_name?: mixed, default_branch?: mixed, path_prefix?: mixed}  $data
      */
-    public function create(SoftwareSystem|SecurityContainer|SoftwareAsset $owner, User $author, array $data): RepositoryMapping
+    public function create(SoftwareSystem|SecurityContainer|SoftwareAsset $owner, ?User $author, array $data): RepositoryMapping
     {
         $payload = $this->normalizePayload($data);
         $provider = $this->resolveProvider($payload['repository_provider_id']);
@@ -35,7 +35,7 @@ final class RepositoryMappingService
                 'repository_url' => $repositoryUrl,
                 'default_branch' => $payload['default_branch'],
                 'path_prefix' => $payload['path_prefix'],
-                'created_by_user_id' => $author->id,
+                'created_by_user_id' => $author?->id,
             ])->refresh();
         });
     }
