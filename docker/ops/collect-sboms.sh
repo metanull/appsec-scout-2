@@ -46,25 +46,46 @@ RUN_DIR="$OUTPUT_DIR/$RUN_TS"
 mkdir -p "$RUN_DIR"
 RESULTS_FILE="$RUN_DIR/run.jsonl"
 : > "$RESULTS_FILE"
+ERROR_FLAG="$RUN_DIR/.azdo_api_error"
 
 sanitize() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
 }
 
 # Emits one JSON object per line (the "value" entries) across every page of
-# an Azure DevOps REST collection endpoint.
+# an Azure DevOps REST collection endpoint. On any transport/auth/format
+# failure, prints a clear diagnostic to stderr, drops a marker at
+# $ERROR_FLAG (checked at the end of the script to force a non-zero exit),
+# and returns without emitting further lines for this call.
 azdo_get_all() {
     local url="$1"
     local sep="?"
     [[ "$url" == *'?'* ]] && sep="&"
     local token=""
-    local headers body
+    local headers body http_status curl_exit
     headers=$(mktemp)
     body=$(mktemp)
     while :; do
         local page_url="$url"
         [ -n "$token" ] && page_url="${url}${sep}continuationToken=${token}"
-        curl -sS --netrc-file "$NETRC_FILE" -D "$headers" "$page_url" -o "$body"
+        http_status=$(curl -sS --netrc-file "$NETRC_FILE" -D "$headers" -o "$body" -w '%{http_code}' "$page_url")
+        curl_exit=$?
+        if [ "$curl_exit" -ne 0 ] || [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ] \
+            || ! jq -e '.value' "$body" >/dev/null 2>&1; then
+            {
+                echo "ERROR: Azure DevOps API request failed for $page_url"
+                [ "$curl_exit" -ne 0 ] && echo "  curl exit code: $curl_exit"
+                echo "  HTTP status: $http_status"
+                echo "  Response body (first 500 chars):"
+                head -c 500 "$body"
+                echo ""
+                echo "  This usually means the PAT is invalid, expired, or lacks required scope."
+                echo "  Verify it with: .\\scripts\\test-AzureDevOpsToken.ps1 -Credential (Get-Secret AzureDevOps)"
+            } >&2
+            touch "$ERROR_FLAG"
+            rm -f "$headers" "$body"
+            return 1
+        fi
         jq -c '.value[]' "$body"
         token=$(grep -i '^x-ms-continuationtoken:' "$headers" | head -1 | cut -d: -f2- | tr -d ' \r\n')
         [ -z "$token" ] && break
@@ -208,3 +229,9 @@ echo "Scan complete (types: ${SCAN_TYPES})."
 echo "  Projects scanned:        $project_count"
 echo "  Repositories considered: $repo_count"
 echo "  Output directory:        $RUN_DIR"
+
+if [ -f "$ERROR_FLAG" ]; then
+    echo "" >&2
+    echo "One or more Azure DevOps API requests failed during this run — results above are incomplete. See ERROR lines above for details." >&2
+    exit 1
+fi
