@@ -26,6 +26,18 @@ it('attaches files to a software asset, a software system, and a security contai
         ->and(AuditLog::query()->where('action', 'attachment_created')->count())->toBe(3);
 });
 
+it('stores payloads larger than a MySQL BLOB (64 KiB) without truncation', function () {
+    $service = app(AttachmentService::class);
+    $asset = SoftwareAsset::factory()->create();
+
+    $payload = str_repeat('a', 200_000);
+
+    $attachment = $service->attachTo($asset, 'sbom', 'application/json', 'large.cdx.json', $payload);
+
+    expect($attachment->fresh()->payload)->toBe($payload)
+        ->and($attachment->size_bytes)->toBe(200_000);
+});
+
 it('records an audit row when deleting an attachment', function () {
     $service = app(AttachmentService::class);
     $asset = SoftwareAsset::factory()->create();
