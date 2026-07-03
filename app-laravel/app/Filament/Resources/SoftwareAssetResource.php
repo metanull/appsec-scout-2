@@ -4,7 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\Shared\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\LocalFindingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Resources\SoftwareAssetResource\Pages\CreateSoftwareAsset;
 use App\Filament\Resources\SoftwareAssetResource\Pages\EditSoftwareAsset;
@@ -168,6 +170,8 @@ class SoftwareAssetResource extends Resource
             TrackerProjectLinksRelationManager::class,
             RepositoryMappingsRelationManager::class,
             AttachmentsRelationManager::class,
+            SoftwareComponentsRelationManager::class,
+            LocalFindingsRelationManager::class,
         ];
     }
 

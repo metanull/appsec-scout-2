@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Assets\AttachmentIngestionService;
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
 use App\Assets\AzDoProjectLinker;
@@ -11,6 +12,7 @@ use App\Integrations\DispatchDueIntegrations;
 use App\Integrations\SystemIntegrationRuntime;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
+use App\Models\Attachment;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
@@ -251,6 +253,26 @@ Artisan::command(
         return self::SUCCESS;
     },
 )->purpose('Sync every Azure DevOps project and repository into SoftwareAsset/SoftwareSystem/SecurityContainer/RepositoryMapping rows, without touching alerts');
+
+Artisan::command(
+    'assets:reparse-attachments {--kind=}',
+    function (AttachmentIngestionService $ingestion): int {
+        $kindOption = $this->option('kind');
+        $kind = is_string($kindOption) && $kindOption !== '' ? $kindOption : null;
+
+        $query = Attachment::query()->when($kind !== null, fn ($q) => $q->where('kind', $kind));
+        $count = 0;
+
+        foreach ($query->cursor() as $attachment) {
+            $ingestion->ingest($attachment);
+            $count++;
+        }
+
+        $this->info(sprintf('Reparsed %d attachment(s)%s.', $count, $kind !== null ? " of kind '{$kind}'" : ''));
+
+        return self::SUCCESS;
+    },
+)->purpose('Re-parse existing sbom/vulnerabilities/secrets attachments into SoftwareComponent/LocalFinding rows (e.g. after a parser fix, without re-scanning)');
 
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');

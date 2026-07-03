@@ -1,0 +1,43 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "fullName": "Trivy Vulnerability Scanner",
+          "name": "Trivy",
+          "rules": [
+            {
+              "id": "CVE-2024-56201",
+              "shortDescription": { "text": "jinja2: Jinja has a sandbox breakout through malicious filenames" },
+              "fullDescription": { "text": "Jinja is an extensible templating engine." },
+              "helpUri": "https://avd.aquasec.com/nvd/cve-2024-56201",
+              "properties": { "tags": ["vulnerability", "security", "MEDIUM"] }
+            }
+          ]
+        }
+      },
+      "originalUriBaseIds": { "ROOTPATH": { "uri": "file:///scan/" } },
+      "results": [
+        {
+          "ruleId": "CVE-2024-56201",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "Package: Jinja2\nInstalled Version: 3.1.4\nVulnerability CVE-2024-56201\nSeverity: MEDIUM\nFixed Version: 3.1.5\nLink: [CVE-2024-56201](https://avd.aquasec.com/nvd/cve-2024-56201)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "vendor/mockery/mockery/docs/requirements.txt", "uriBaseId": "ROOTPATH" },
+                "region": { "startLine": 8, "startColumn": 1, "endLine": 8, "endColumn": 1 }
+              },
+              "message": { "text": "vendor/mockery/mockery/docs/requirements.txt: Jinja2@3.1.4" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.7",
+  "serialNumber": "urn:uuid:6dcf4087-9e7b-4547-973c-62db03b00923",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "bom-ref": "d2a3fad4-161a-4acf-8d7e-f20f22f58dbe",
+      "type": "application",
+      "name": "/tmp/tmp.9luM4Vspne"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "24f70c8b-cf94-415f-bcd0-d621eb2c5666",
+      "type": "library",
+      "name": "System.DirectoryServices.Protocols",
+      "version": "8.0.2",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:nuget/System.DirectoryServices.Protocols@8.0.2",
+      "properties": [
+        { "name": "aquasecurity:trivy:PkgType", "value": "nuget" }
+      ]
+    },
+    {
+      "bom-ref": "27382fb3-f90a-4200-8eb0-edb5b1b36445",
+      "type": "library",
+      "name": "Microsoft.EntityFrameworkCore",
+      "version": "9.0.16",
+      "purl": "pkg:nuget/Microsoft.EntityFrameworkCore@9.0.16",
+      "properties": [
+        { "name": "aquasecurity:trivy:PkgType", "value": "nuget" }
+      ]
+    },
+    {
+      "bom-ref": "33bf39b1-1a45-4e6a-9e0e-0735017afbb1",
+      "type": "application",
+      "name": "src/DiffingTool.Service/packages.lock.json",
+      "properties": [
+        { "name": "aquasecurity:trivy:Class", "value": "lang-pkgs" },
+        { "name": "aquasecurity:trivy:Type", "value": "nuget" }
+      ]
+    }
+  ]
+}

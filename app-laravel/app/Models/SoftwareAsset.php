@@ -44,6 +44,8 @@ class SoftwareAsset extends Model
             $asset->repositoryMappings()->delete();
             $asset->curatedLinks()->delete();
             $asset->attachments()->delete();
+            $asset->softwareComponents()->delete();
+            $asset->localFindings()->delete();
         });
     }
 
@@ -89,5 +91,17 @@ class SoftwareAsset extends Model
     public function attachments(): MorphMany
     {
         return $this->morphMany(Attachment::class, 'owner');
+    }
+
+    /** @return MorphMany<SoftwareComponent, $this> */
+    public function softwareComponents(): MorphMany
+    {
+        return $this->morphMany(SoftwareComponent::class, 'owner');
+    }
+
+    /** @return MorphMany<LocalFinding, $this> */
+    public function localFindings(): MorphMany
+    {
+        return $this->morphMany(LocalFinding::class, 'owner');
     }
 }

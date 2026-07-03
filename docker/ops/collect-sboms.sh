@@ -1,6 +1,7 @@
 #!/bin/bash
-# Collects SBOMs (CycloneDX, via Trivy) for every non-disabled Git repository
-# across every project in an Azure DevOps organization.
+# Collects Trivy reports (SBOM as CycloneDX, vulnerabilities and secrets as
+# SARIF) for every non-disabled Git repository across every project in an
+# Azure DevOps organization.
 #
 # For .NET repos, each *.sln found is restored and built first so Trivy can
 # read resolved package versions from project.assets.json instead of falling
@@ -8,7 +9,10 @@
 # non-fatal — Trivy still runs and produces range-based results.
 #
 # Required environment: AZDO_ORG, AZDO_PAT
-# Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR
+# Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
+#   AZDO_SCAN_TYPES (comma-separated subset of sbom,vuln,secret; default: all three),
+#   TRIVY_TIMEOUT (per-scan Trivy timeout; secret scanning in particular needs more
+#   than the 5m default on large trees — default here is 15m)
 set -uo pipefail
 
 : "${AZDO_ORG:?AZDO_ORG must be set}"
@@ -20,6 +24,13 @@ PROJECT_FILTER="${AZDO_PROJECT_FILTER:-}"
 REPO_FILTER="${AZDO_REPO_FILTER:-}"
 RESTORE_TIMEOUT="${AZDO_RESTORE_TIMEOUT:-600}"
 BUILD_TIMEOUT="${AZDO_BUILD_TIMEOUT:-900}"
+TRIVY_TIMEOUT="${TRIVY_TIMEOUT:-15m}"
+SCAN_TYPES=" ${AZDO_SCAN_TYPES:-sbom,vuln,secret} "
+SCAN_TYPES="${SCAN_TYPES//,/ }"
+
+scan_enabled() {
+    [[ "$SCAN_TYPES" == *" $1 "* ]]
+}
 
 NETRC_FILE="$HOME/.netrc"
 printf 'machine dev.azure.com\n  login azdo\n  password %s\n' "$AZDO_PAT" > "$NETRC_FILE"
@@ -35,25 +46,46 @@ RUN_DIR="$OUTPUT_DIR/$RUN_TS"
 mkdir -p "$RUN_DIR"
 RESULTS_FILE="$RUN_DIR/run.jsonl"
 : > "$RESULTS_FILE"
+ERROR_FLAG="$RUN_DIR/.azdo_api_error"
 
 sanitize() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
 }
 
 # Emits one JSON object per line (the "value" entries) across every page of
-# an Azure DevOps REST collection endpoint.
+# an Azure DevOps REST collection endpoint. On any transport/auth/format
+# failure, prints a clear diagnostic to stderr, drops a marker at
+# $ERROR_FLAG (checked at the end of the script to force a non-zero exit),
+# and returns without emitting further lines for this call.
 azdo_get_all() {
     local url="$1"
     local sep="?"
     [[ "$url" == *'?'* ]] && sep="&"
     local token=""
-    local headers body
+    local headers body http_status curl_exit
     headers=$(mktemp)
     body=$(mktemp)
     while :; do
         local page_url="$url"
         [ -n "$token" ] && page_url="${url}${sep}continuationToken=${token}"
-        curl -sS --netrc-file "$NETRC_FILE" -D "$headers" "$page_url" -o "$body"
+        http_status=$(curl -sS --netrc-file "$NETRC_FILE" -D "$headers" -o "$body" -w '%{http_code}' "$page_url")
+        curl_exit=$?
+        if [ "$curl_exit" -ne 0 ] || [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ] \
+            || ! jq -e '.value' "$body" >/dev/null 2>&1; then
+            {
+                echo "ERROR: Azure DevOps API request failed for $page_url"
+                [ "$curl_exit" -ne 0 ] && echo "  curl exit code: $curl_exit"
+                echo "  HTTP status: $http_status"
+                echo "  Response body (first 500 chars):"
+                head -c 500 "$body"
+                echo ""
+                echo "  This usually means the PAT is invalid, expired, or lacks required scope."
+                echo "  Verify it with: .\\scripts\\test-AzureDevOpsToken.ps1 -Credential (Get-Secret AzureDevOps)"
+            } >&2
+            touch "$ERROR_FLAG"
+            rm -f "$headers" "$body"
+            return 1
+        fi
         jq -c '.value[]' "$body"
         token=$(grep -i '^x-ms-continuationtoken:' "$headers" | head -1 | cut -d: -f2- | tr -d ' \r\n')
         [ -z "$token" ] && break
@@ -67,12 +99,14 @@ process_repo() {
     workdir=$(mktemp -d)
     trap 'rm -rf "$workdir"' RETURN
 
-    local safe_project safe_repo out_dir sbom_path
+    local safe_project safe_repo out_dir sbom_path vuln_path secret_path
     safe_project=$(sanitize "$project_name")
     safe_repo=$(sanitize "$repo_name")
     out_dir="$RUN_DIR/$safe_project"
     mkdir -p "$out_dir"
     sbom_path="$out_dir/${safe_repo}.cdx.json"
+    vuln_path="$out_dir/${safe_repo}.vuln.sarif.json"
+    secret_path="$out_dir/${safe_repo}.secrets.sarif.json"
 
     local clone_ok=false
     if git clone --quiet --depth 1 --no-tags --shallow-submodules "$remote_url" "$workdir" >/dev/null 2>&1; then
@@ -100,8 +134,21 @@ process_repo() {
     fi
 
     local trivy_ok=false
-    if [ "$clone_ok" = true ] && trivy fs --format cyclonedx --output "$sbom_path" "$workdir" >/dev/null 2>&1; then
+    if [ "$clone_ok" = true ] && scan_enabled sbom \
+        && trivy fs --timeout "$TRIVY_TIMEOUT" --format cyclonedx --output "$sbom_path" "$workdir" >/dev/null 2>&1; then
         trivy_ok=true
+    fi
+
+    local vuln_ok=false
+    if [ "$clone_ok" = true ] && scan_enabled vuln \
+        && trivy fs --timeout "$TRIVY_TIMEOUT" --scanners vuln --format sarif --output "$vuln_path" "$workdir" >/dev/null 2>&1; then
+        vuln_ok=true
+    fi
+
+    local secret_ok=false
+    if [ "$clone_ok" = true ] && scan_enabled secret \
+        && trivy fs --timeout "$TRIVY_TIMEOUT" --scanners secret --format sarif --output "$secret_path" "$workdir" >/dev/null 2>&1; then
+        secret_ok=true
     fi
 
     jq -nc \
@@ -114,8 +161,15 @@ process_repo() {
         --argjson solutions "$solutions_json" \
         --argjson sbomGenerated "$trivy_ok" \
         --arg sbomPath "$([ "$trivy_ok" = true ] && echo "$safe_project/${safe_repo}.cdx.json" || echo "")" \
+        --argjson vulnerabilitiesGenerated "$vuln_ok" \
+        --arg vulnerabilitiesPath "$([ "$vuln_ok" = true ] && echo "$safe_project/${safe_repo}.vuln.sarif.json" || echo "")" \
+        --argjson secretsGenerated "$secret_ok" \
+        --arg secretsPath "$([ "$secret_ok" = true ] && echo "$safe_project/${safe_repo}.secrets.sarif.json" || echo "")" \
         '{project: $project, repository: $repository, projectId: $projectId, repositoryId: $repositoryId,
-          webUrl: $webUrl, cloned: $cloned, solutions: $solutions, sbomGenerated: $sbomGenerated, sbomPath: $sbomPath}' \
+          webUrl: $webUrl, cloned: $cloned, solutions: $solutions,
+          sbomGenerated: $sbomGenerated, sbomPath: $sbomPath,
+          vulnerabilitiesGenerated: $vulnerabilitiesGenerated, vulnerabilitiesPath: $vulnerabilitiesPath,
+          secretsGenerated: $secretsGenerated, secretsPath: $secretsPath}' \
         >> "$RESULTS_FILE"
 }
 
@@ -163,13 +217,21 @@ jq -s \
         repositoriesCloned: (map(select(.cloned == true)) | length),
         repositoriesCloneFailed: (map(select(.cloned == false)) | length),
         sbomsGenerated: (map(select(.sbomGenerated == true)) | length),
+        vulnerabilityReportsGenerated: (map(select(.vulnerabilitiesGenerated == true)) | length),
+        secretReportsGenerated: (map(select(.secretsGenerated == true)) | length),
         solutionsRestored: (map(.solutions[]? | select(.restore == true)) | length),
         solutionsBuilt: (map(.solutions[]? | select(.build == true)) | length),
         results: .
     }' "$RESULTS_FILE" > "$RUN_DIR/summary.json"
 
 echo ""
-echo "SBOM scan complete."
+echo "Scan complete (types: ${SCAN_TYPES})."
 echo "  Projects scanned:        $project_count"
 echo "  Repositories considered: $repo_count"
 echo "  Output directory:        $RUN_DIR"
+
+if [ -f "$ERROR_FLAG" ]; then
+    echo "" >&2
+    echo "One or more Azure DevOps API requests failed during this run — results above are incomplete. See ERROR lines above for details." >&2
+    exit 1
+fi
