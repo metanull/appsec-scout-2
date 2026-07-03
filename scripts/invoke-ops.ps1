@@ -14,7 +14,10 @@
                 DevOps organization, restoring/building any *.sln first for precise .NET
                 results. Runs to completion in a single container invocation; each repo is
                 deleted immediately after it is scanned. Output lands on the host under
-                SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\).
+                SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\). Every successful
+                SBOM is then uploaded into appsec-scout as an Attachment on the matching
+                SoftwareSystem/SecurityContainer (via `assets:import-attachment` in the
+                `app` container) unless -SkipUpload is passed.
 .PARAMETER Repo
     GitHub HTTPS URL to clone. Overrides OPS_REPO_URL from .env.
 .PARAMETER Branch
@@ -39,6 +42,9 @@
     Regex applied to repository names (-Mode sbom-scan). Overrides AZDO_REPO_FILTER from .env.
 .PARAMETER OutputDir
     Host directory to receive SBOM output (-Mode sbom-scan). Overrides SBOM_OUTPUT_DIR from .env.
+.PARAMETER SkipUpload
+    Skip uploading generated SBOMs into appsec-scout as attachments (-Mode sbom-scan).
+    Files still land under OutputDir either way.
 .PARAMETER Rebuild
     Export host CA certificates and rebuild the ops Docker image before running.
 .EXAMPLE
@@ -80,6 +86,8 @@ param(
     [string]$RepositoryFilter = '',
 
     [string]$OutputDir = '',
+
+    [Switch]$SkipUpload,
 
     [Switch]$Rebuild
 )
@@ -163,6 +171,57 @@ function Invoke-Docker {
     }
 }
 
+function Invoke-SbomUpload {
+    param(
+        [Parameter(Mandatory)][string]$ComposeEnvFile,
+        [Parameter(Mandatory)][System.IO.DirectoryInfo]$RunDirectory
+    )
+
+    $summaryPath = Join-Path $RunDirectory.FullName 'summary.json'
+    if (-not (Test-Path $summaryPath)) {
+        Write-Warning "No summary.json found under $($RunDirectory.FullName); skipping upload."
+        return
+    }
+
+    $summary = Get-Content $summaryPath -Raw | ConvertFrom-Json
+    $candidates = @($summary.results | Where-Object { $_.sbomGenerated -eq $true -and -not [string]::IsNullOrWhiteSpace($_.sbomPath) })
+
+    if ($candidates.Count -eq 0) {
+        Write-Host "No SBOMs to upload."
+        return
+    }
+
+    Write-Host "Uploading $($candidates.Count) SBOM(s) to appsec-scout..."
+
+    # `exec` reads the container's mount as it was when the container was (re)created, so make
+    # sure `app` is up to date with the current SBOM_OUTPUT_DIR bind mount before uploading.
+    docker compose --env-file $ComposeEnvFile up -d app | Out-Null
+
+    $uploaded = 0
+    $failed = 0
+
+    foreach ($result in $candidates) {
+        $containerPath = "/var/www/html/sbom-import/$($RunDirectory.Name)/$($result.sbomPath)".Replace('\', '/')
+
+        docker compose --env-file $ComposeEnvFile exec -T app php artisan assets:import-attachment `
+            azdo $result.projectId sbom $containerPath `
+            --container $result.repositoryId `
+            --system-name $result.project `
+            --container-name $result.repository `
+            --container-kind repository | Out-Null
+
+        if ($LASTEXITCODE -eq 0) {
+            $uploaded++
+        } else {
+            $failed++
+            Write-Warning "Failed to upload SBOM for $($result.project)/$($result.repository)."
+        }
+    }
+
+    $suffix = if ($failed -gt 0) { " ($failed failed — see warnings above; run 'docker compose up -d app' if uploads report a missing file)" } else { '' }
+    Write-Host "Uploaded $uploaded of $($candidates.Count) SBOM(s) to appsec-scout.$suffix"
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -243,6 +302,12 @@ try {
                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if ($latestRun) {
                 Write-Host "SBOM output: $($latestRun.FullName)"
+
+                if ($SkipUpload) {
+                    Write-Host "Skipping upload to appsec-scout (-SkipUpload)."
+                } else {
+                    Invoke-SbomUpload -ComposeEnvFile $ComposeEnvFile -RunDirectory $latestRun
+                }
             } else {
                 Write-Warning "SBOM scan finished but no output directory was found under $resolvedOutputRoot"
             }

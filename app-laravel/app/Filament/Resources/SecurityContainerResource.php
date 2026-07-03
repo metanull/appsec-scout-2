@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SecurityContainerResource\Pages\ListSecurityContainers;
 use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
@@ -162,6 +163,7 @@ class SecurityContainerResource extends Resource
             CuratedLinksRelationManager::class,
             TrackerProjectLinksRelationManager::class,
             RepositoryMappingsRelationManager::class,
+            AttachmentsRelationManager::class,
         ];
     }
 

@@ -2,12 +2,11 @@
 
 namespace App\Sync;
 
+use App\Assets\AzDoProjectLinker;
 use App\Events\SyncRunFinished;
 use App\Integrations\IntegrationSettingsRepository;
 use App\Integrations\SystemIntegrationRuntime;
 use App\Models\ErrorLog;
-use App\Models\SecurityContainer;
-use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
 use App\Sources\Contracts\EnrichesFetchedEvents;
 use App\Sources\Contracts\QueuesEnrichmentJobs;
@@ -77,8 +76,12 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
         SystemIntegrationRuntime $runtime,
         Upserter $upserter,
         ?IntegrationSettingsRepository $settings = null,
+        ?SystemContainerUpserter $systemContainerUpserter = null,
+        ?AzDoProjectLinker $azDoProjectLinker = null,
     ): void {
         $settings ??= app(IntegrationSettingsRepository::class);
+        $systemContainerUpserter ??= app(SystemContainerUpserter::class);
+        $azDoProjectLinker ??= app(AzDoProjectLinker::class);
 
         $run = SyncRun::query()->create([
             'source_id' => $this->sourceId,
@@ -106,50 +109,20 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
 
             $sinceCarbon = $since !== null ? Carbon::parse((string) $since) : null;
 
-            $runtime->runSource($this->sourceId, function (Source $source) use ($sinceCarbon, $upserter, &$counts): void {
+            $runtime->runSource($this->sourceId, function (Source $source) use ($sinceCarbon, $upserter, $systemContainerUpserter, $azDoProjectLinker, &$counts): void {
                 $systemIdMap = [];
                 $containerIdMap = [];
 
                 foreach ($source->fetchSystems() as $systemDto) {
-                    $system = SoftwareSystem::query()->firstOrNew([
-                        'source_id' => $this->sourceId,
-                        'source_system_id' => $systemDto->sourceSystemId,
-                    ]);
-
-                    $isNew = ! $system->exists;
-
-                    $system->fill([
-                        'name' => $systemDto->name,
-                        'description' => $systemDto->description,
-                        'url' => $systemDto->url,
-                        'metadata' => $systemDto->metadata,
-                        'first_seen_at' => $system->first_seen_at ?? now(),
-                        'last_seen_at' => now(),
-                        'synced_at' => now(),
-                    ]);
-                    $system->save();
+                    ['system' => $system, 'wasCreated' => $isNew] = $systemContainerUpserter->upsertSystem($this->sourceId, $systemDto);
+                    $azDoProjectLinker->linkSystemToAsset($system);
 
                     $systemIdMap[$systemDto->sourceSystemId] = $system->id;
                     $counts[$isNew ? 'systems_created' : 'systems_updated']++;
 
                     foreach ($source->fetchContainers($systemDto) as $containerDto) {
-                        $container = SecurityContainer::query()->firstOrNew([
-                            'software_system_id' => $system->id,
-                            'source_container_id' => $containerDto->sourceContainerId,
-                        ]);
-
-                        $containerIsNew = ! $container->exists;
-
-                        $container->fill([
-                            'name' => $containerDto->name,
-                            'kind' => $containerDto->kind,
-                            'url' => $containerDto->url,
-                            'metadata' => $containerDto->metadata,
-                            'first_seen_at' => $container->first_seen_at ?? now(),
-                            'last_seen_at' => now(),
-                            'synced_at' => now(),
-                        ]);
-                        $container->save();
+                        ['container' => $container, 'wasCreated' => $containerIsNew] = $systemContainerUpserter->upsertContainer($system, $containerDto);
+                        $azDoProjectLinker->ensureRepositoryMapping($container);
 
                         $containerIdMap[$systemDto->sourceSystemId . ':' . $containerDto->sourceContainerId] = $container->id;
                         $containerIdMap[$containerDto->sourceContainerId] = $container->id;

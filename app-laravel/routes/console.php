@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Assets\AttachmentService;
+use App\Assets\AttachmentTargetResolver;
+use App\Assets\AzDoProjectLinker;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
+use App\Integrations\SystemIntegrationRuntime;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
+use App\Sources\AzDo\AzDoNormalizer;
+use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
+use App\Sync\SystemContainerUpserter;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Triage\CodesearchService;
 use App\Users\UserAdminService;
@@ -95,6 +102,155 @@ Artisan::command('triage:codesearch {pat} {search} {--scope=} {--attach-to=}', f
 
     return 0;
 })->purpose('Run Azure DevOps code search and optionally attach the JSON result to an alert');
+
+Artisan::command(
+    'assets:import-attachment {source} {system} {kind} {file} '
+    . '{--container=} {--system-name=} {--container-name=} {--container-kind=repository} '
+    . '{--mime=} {--as=} {--user-id=}',
+    function (AttachmentTargetResolver $resolver, AttachmentService $attachments, Filesystem $files): int {
+        $sourceId = (string) $this->argument('source');
+        $sourceSystemId = (string) $this->argument('system');
+        $kind = (string) $this->argument('kind');
+        $path = (string) $this->argument('file');
+
+        if (! $files->exists($path) || ! $files->isFile($path)) {
+            $this->error(sprintf('File not found: %s', $path));
+
+            return self::FAILURE;
+        }
+
+        $containerSourceId = $this->option('container');
+        $systemName = $this->option('system-name');
+        $containerName = $this->option('container-name');
+        $containerKind = (string) $this->option('container-kind');
+        $mimeOption = $this->option('mime');
+        $mime = is_string($mimeOption) && $mimeOption !== '' ? $mimeOption : 'application/octet-stream';
+        $asOption = $this->option('as');
+        $name = is_string($asOption) && $asOption !== '' ? $asOption : basename($path);
+        $userIdOption = $this->option('user-id');
+        $userId = is_numeric($userIdOption) ? (int) $userIdOption : null;
+
+        try {
+            $owner = $resolver->resolveSystem($sourceId, $sourceSystemId, is_string($systemName) ? $systemName : null);
+
+            if (is_string($containerSourceId) && $containerSourceId !== '') {
+                $owner = $resolver->resolveContainer(
+                    $owner,
+                    $containerSourceId,
+                    is_string($containerName) ? $containerName : null,
+                    $containerKind,
+                );
+            }
+
+            $attachment = $attachments->attachTo(
+                owner: $owner,
+                kind: $kind,
+                mime: $mime,
+                name: $name,
+                payload: $files->get($path),
+                createdByUserId: $userId,
+                createdByCommand: 'assets:import-attachment',
+            );
+        } catch (InvalidArgumentException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->info(sprintf(
+            'Attached "%s" (%d bytes, kind=%s) to %s #%d.',
+            $attachment->name,
+            $attachment->size_bytes,
+            $attachment->kind,
+            class_basename($owner),
+            $owner->getKey(),
+        ));
+
+        return self::SUCCESS;
+    },
+)->purpose('Import a file (SBOM, dependency report, HTTP headers, pipeline run, ...) as an attachment on a software system or container');
+
+Artisan::command(
+    'assets:sync-azdo-projects {--project-filter=} {--repo-filter=}',
+    function (SystemIntegrationRuntime $runtime, SystemContainerUpserter $upserter, AzDoProjectLinker $linker): int {
+        $projectFilter = $this->option('project-filter');
+        $repoFilter = $this->option('repo-filter');
+
+        $matches = static function (?string $pattern, string $value): bool {
+            if (! is_string($pattern) || $pattern === '') {
+                return true;
+            }
+
+            return @preg_match('~' . str_replace('~', '\~', $pattern) . '~', $value) === 1;
+        };
+
+        $counts = [
+            'projects_seen' => 0,
+            'systems_created' => 0,
+            'systems_updated' => 0,
+            'assets_created' => 0,
+            'repos_seen' => 0,
+            'containers_created' => 0,
+            'containers_updated' => 0,
+            'repository_mappings_created' => 0,
+        ];
+
+        try {
+            $runtime->runSource(AzDoNormalizer::SOURCE_ID, function (Source $source) use ($matches, $projectFilter, $repoFilter, $upserter, $linker, &$counts): void {
+                foreach ($source->fetchSystems() as $systemDto) {
+                    if (! $matches($projectFilter, $systemDto->name)) {
+                        continue;
+                    }
+
+                    $counts['projects_seen']++;
+
+                    ['system' => $system, 'wasCreated' => $systemIsNew] = $upserter->upsertSystem(AzDoNormalizer::SOURCE_ID, $systemDto);
+                    $counts[$systemIsNew ? 'systems_created' : 'systems_updated']++;
+
+                    $hadAsset = $system->software_asset_id !== null;
+                    $linker->linkSystemToAsset($system);
+                    if (! $hadAsset && $system->refresh()->software_asset_id !== null) {
+                        $counts['assets_created']++;
+                    }
+
+                    foreach ($source->fetchContainers($systemDto) as $containerDto) {
+                        if (! $matches($repoFilter, $containerDto->name)) {
+                            continue;
+                        }
+
+                        $counts['repos_seen']++;
+
+                        ['container' => $container, 'wasCreated' => $containerIsNew] = $upserter->upsertContainer($system, $containerDto);
+                        $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
+
+                        $hadMapping = $container->repositoryMappings()->exists();
+                        $linker->ensureRepositoryMapping($container);
+                        if (! $hadMapping && $container->repositoryMappings()->exists()) {
+                            $counts['repository_mappings_created']++;
+                        }
+                    }
+                }
+            });
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->table(['Metric', 'Count'], [
+            ['Projects seen', $counts['projects_seen']],
+            ['Software systems created', $counts['systems_created']],
+            ['Software systems updated', $counts['systems_updated']],
+            ['Software assets created', $counts['assets_created']],
+            ['Repositories seen', $counts['repos_seen']],
+            ['Security containers created', $counts['containers_created']],
+            ['Security containers updated', $counts['containers_updated']],
+            ['Repository mappings created', $counts['repository_mappings_created']],
+        ]);
+
+        return self::SUCCESS;
+    },
+)->purpose('Sync every Azure DevOps project and repository into SoftwareAsset/SoftwareSystem/SecurityContainer/RepositoryMapping rows, without touching alerts');
 
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
