@@ -184,14 +184,36 @@ function Invoke-SbomUpload {
     }
 
     $summary = Get-Content $summaryPath -Raw | ConvertFrom-Json
-    $candidates = @($summary.results | Where-Object { $_.sbomGenerated -eq $true -and -not [string]::IsNullOrWhiteSpace($_.sbomPath) })
 
-    if ($candidates.Count -eq 0) {
-        Write-Host "No SBOMs to upload."
+    # One report kind per Trivy scan type; each maps to its own attachment kind
+    # and gets parsed automatically server-side (assets:import-attachment ->
+    # AttachmentIngestionService) into SoftwareComponent/LocalFinding rows.
+    $reportKinds = @(
+        @{ Generated = 'sbomGenerated'; Path = 'sbomPath'; AttachmentKind = 'sbom'; Label = 'SBOM' }
+        @{ Generated = 'vulnerabilitiesGenerated'; Path = 'vulnerabilitiesPath'; AttachmentKind = 'vulnerabilities'; Label = 'vulnerability report' }
+        @{ Generated = 'secretsGenerated'; Path = 'secretsPath'; AttachmentKind = 'secrets'; Label = 'secret report' }
+    )
+
+    $uploads = @()
+    foreach ($reportKind in $reportKinds) {
+        foreach ($result in $summary.results) {
+            if ($result.($reportKind.Generated) -eq $true -and -not [string]::IsNullOrWhiteSpace($result.($reportKind.Path))) {
+                $uploads += [pscustomobject]@{
+                    Result = $result
+                    Path = $result.($reportKind.Path)
+                    AttachmentKind = $reportKind.AttachmentKind
+                    Label = $reportKind.Label
+                }
+            }
+        }
+    }
+
+    if ($uploads.Count -eq 0) {
+        Write-Host "No reports to upload."
         return
     }
 
-    Write-Host "Uploading $($candidates.Count) SBOM(s) to appsec-scout..."
+    Write-Host "Uploading $($uploads.Count) report(s) to appsec-scout..."
 
     # `exec` reads the container's mount as it was when the container was (re)created, so make
     # sure `app` is up to date with the current SBOM_OUTPUT_DIR bind mount before uploading.
@@ -200,11 +222,12 @@ function Invoke-SbomUpload {
     $uploaded = 0
     $failed = 0
 
-    foreach ($result in $candidates) {
-        $containerPath = "/var/www/html/sbom-import/$($RunDirectory.Name)/$($result.sbomPath)".Replace('\', '/')
+    foreach ($upload in $uploads) {
+        $result = $upload.Result
+        $containerPath = "/var/www/html/sbom-import/$($RunDirectory.Name)/$($upload.Path)".Replace('\', '/')
 
         docker compose --env-file $ComposeEnvFile exec -T app php artisan assets:import-attachment `
-            azdo $result.projectId sbom $containerPath `
+            azdo $result.projectId $upload.AttachmentKind $containerPath `
             --container $result.repositoryId `
             --system-name $result.project `
             --container-name $result.repository `
@@ -214,12 +237,12 @@ function Invoke-SbomUpload {
             $uploaded++
         } else {
             $failed++
-            Write-Warning "Failed to upload SBOM for $($result.project)/$($result.repository)."
+            Write-Warning "Failed to upload $($upload.Label) for $($result.project)/$($result.repository)."
         }
     }
 
     $suffix = if ($failed -gt 0) { " ($failed failed — see warnings above; run 'docker compose up -d app' if uploads report a missing file)" } else { '' }
-    Write-Host "Uploaded $uploaded of $($candidates.Count) SBOM(s) to appsec-scout.$suffix"
+    Write-Host "Uploaded $uploaded of $($uploads.Count) report(s) to appsec-scout.$suffix"
 }
 
 # ---------------------------------------------------------------------------

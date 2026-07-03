@@ -11,7 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 final class AttachmentService
 {
-    public function __construct(private readonly Recorder $recorder) {}
+    public function __construct(
+        private readonly Recorder $recorder,
+        private readonly AttachmentIngestionService $ingestion,
+    ) {}
 
     public function attachTo(
         SoftwareAsset|SoftwareSystem|SecurityContainer $owner,
@@ -41,6 +44,8 @@ final class AttachmentService
                 'size_bytes' => $attachment->size_bytes,
                 'created_by_command' => $createdByCommand,
             ]);
+
+            $this->ingestion->ingest($attachment);
 
             return $attachment;
         });

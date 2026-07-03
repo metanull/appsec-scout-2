@@ -1,6 +1,7 @@
 #!/bin/bash
-# Collects SBOMs (CycloneDX, via Trivy) for every non-disabled Git repository
-# across every project in an Azure DevOps organization.
+# Collects Trivy reports (SBOM as CycloneDX, vulnerabilities and secrets as
+# SARIF) for every non-disabled Git repository across every project in an
+# Azure DevOps organization.
 #
 # For .NET repos, each *.sln found is restored and built first so Trivy can
 # read resolved package versions from project.assets.json instead of falling
@@ -8,7 +9,10 @@
 # non-fatal — Trivy still runs and produces range-based results.
 #
 # Required environment: AZDO_ORG, AZDO_PAT
-# Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR
+# Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
+#   AZDO_SCAN_TYPES (comma-separated subset of sbom,vuln,secret; default: all three),
+#   TRIVY_TIMEOUT (per-scan Trivy timeout; secret scanning in particular needs more
+#   than the 5m default on large trees — default here is 15m)
 set -uo pipefail
 
 : "${AZDO_ORG:?AZDO_ORG must be set}"
@@ -20,6 +24,13 @@ PROJECT_FILTER="${AZDO_PROJECT_FILTER:-}"
 REPO_FILTER="${AZDO_REPO_FILTER:-}"
 RESTORE_TIMEOUT="${AZDO_RESTORE_TIMEOUT:-600}"
 BUILD_TIMEOUT="${AZDO_BUILD_TIMEOUT:-900}"
+TRIVY_TIMEOUT="${TRIVY_TIMEOUT:-15m}"
+SCAN_TYPES=" ${AZDO_SCAN_TYPES:-sbom,vuln,secret} "
+SCAN_TYPES="${SCAN_TYPES//,/ }"
+
+scan_enabled() {
+    [[ "$SCAN_TYPES" == *" $1 "* ]]
+}
 
 NETRC_FILE="$HOME/.netrc"
 printf 'machine dev.azure.com\n  login azdo\n  password %s\n' "$AZDO_PAT" > "$NETRC_FILE"
@@ -67,12 +78,14 @@ process_repo() {
     workdir=$(mktemp -d)
     trap 'rm -rf "$workdir"' RETURN
 
-    local safe_project safe_repo out_dir sbom_path
+    local safe_project safe_repo out_dir sbom_path vuln_path secret_path
     safe_project=$(sanitize "$project_name")
     safe_repo=$(sanitize "$repo_name")
     out_dir="$RUN_DIR/$safe_project"
     mkdir -p "$out_dir"
     sbom_path="$out_dir/${safe_repo}.cdx.json"
+    vuln_path="$out_dir/${safe_repo}.vuln.sarif.json"
+    secret_path="$out_dir/${safe_repo}.secrets.sarif.json"
 
     local clone_ok=false
     if git clone --quiet --depth 1 --no-tags --shallow-submodules "$remote_url" "$workdir" >/dev/null 2>&1; then
@@ -100,8 +113,21 @@ process_repo() {
     fi
 
     local trivy_ok=false
-    if [ "$clone_ok" = true ] && trivy fs --format cyclonedx --output "$sbom_path" "$workdir" >/dev/null 2>&1; then
+    if [ "$clone_ok" = true ] && scan_enabled sbom \
+        && trivy fs --timeout "$TRIVY_TIMEOUT" --format cyclonedx --output "$sbom_path" "$workdir" >/dev/null 2>&1; then
         trivy_ok=true
+    fi
+
+    local vuln_ok=false
+    if [ "$clone_ok" = true ] && scan_enabled vuln \
+        && trivy fs --timeout "$TRIVY_TIMEOUT" --scanners vuln --format sarif --output "$vuln_path" "$workdir" >/dev/null 2>&1; then
+        vuln_ok=true
+    fi
+
+    local secret_ok=false
+    if [ "$clone_ok" = true ] && scan_enabled secret \
+        && trivy fs --timeout "$TRIVY_TIMEOUT" --scanners secret --format sarif --output "$secret_path" "$workdir" >/dev/null 2>&1; then
+        secret_ok=true
     fi
 
     jq -nc \
@@ -114,8 +140,15 @@ process_repo() {
         --argjson solutions "$solutions_json" \
         --argjson sbomGenerated "$trivy_ok" \
         --arg sbomPath "$([ "$trivy_ok" = true ] && echo "$safe_project/${safe_repo}.cdx.json" || echo "")" \
+        --argjson vulnerabilitiesGenerated "$vuln_ok" \
+        --arg vulnerabilitiesPath "$([ "$vuln_ok" = true ] && echo "$safe_project/${safe_repo}.vuln.sarif.json" || echo "")" \
+        --argjson secretsGenerated "$secret_ok" \
+        --arg secretsPath "$([ "$secret_ok" = true ] && echo "$safe_project/${safe_repo}.secrets.sarif.json" || echo "")" \
         '{project: $project, repository: $repository, projectId: $projectId, repositoryId: $repositoryId,
-          webUrl: $webUrl, cloned: $cloned, solutions: $solutions, sbomGenerated: $sbomGenerated, sbomPath: $sbomPath}' \
+          webUrl: $webUrl, cloned: $cloned, solutions: $solutions,
+          sbomGenerated: $sbomGenerated, sbomPath: $sbomPath,
+          vulnerabilitiesGenerated: $vulnerabilitiesGenerated, vulnerabilitiesPath: $vulnerabilitiesPath,
+          secretsGenerated: $secretsGenerated, secretsPath: $secretsPath}' \
         >> "$RESULTS_FILE"
 }
 
@@ -163,13 +196,15 @@ jq -s \
         repositoriesCloned: (map(select(.cloned == true)) | length),
         repositoriesCloneFailed: (map(select(.cloned == false)) | length),
         sbomsGenerated: (map(select(.sbomGenerated == true)) | length),
+        vulnerabilityReportsGenerated: (map(select(.vulnerabilitiesGenerated == true)) | length),
+        secretReportsGenerated: (map(select(.secretsGenerated == true)) | length),
         solutionsRestored: (map(.solutions[]? | select(.restore == true)) | length),
         solutionsBuilt: (map(.solutions[]? | select(.build == true)) | length),
         results: .
     }' "$RESULTS_FILE" > "$RUN_DIR/summary.json"
 
 echo ""
-echo "SBOM scan complete."
+echo "Scan complete (types: ${SCAN_TYPES})."
 echo "  Projects scanned:        $project_count"
 echo "  Repositories considered: $repo_count"
 echo "  Output directory:        $RUN_DIR"

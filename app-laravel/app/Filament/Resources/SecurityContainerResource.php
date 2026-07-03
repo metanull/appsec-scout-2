@@ -7,7 +7,9 @@ use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\LocalFindingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
+use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Models\Enums\EventState;
@@ -164,6 +166,8 @@ class SecurityContainerResource extends Resource
             TrackerProjectLinksRelationManager::class,
             RepositoryMappingsRelationManager::class,
             AttachmentsRelationManager::class,
+            SoftwareComponentsRelationManager::class,
+            LocalFindingsRelationManager::class,
         ];
     }
 

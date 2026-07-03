@@ -26,6 +26,8 @@ class SecurityContainer extends Model
             $container->repositoryMappings()->delete();
             $container->curatedLinks()->delete();
             $container->attachments()->delete();
+            $container->softwareComponents()->delete();
+            $container->localFindings()->delete();
         });
     }
 
@@ -74,5 +76,17 @@ class SecurityContainer extends Model
     public function attachments(): MorphMany
     {
         return $this->morphMany(Attachment::class, 'owner');
+    }
+
+    /** @return MorphMany<SoftwareComponent, $this> */
+    public function softwareComponents(): MorphMany
+    {
+        return $this->morphMany(SoftwareComponent::class, 'owner');
+    }
+
+    /** @return MorphMany<LocalFinding, $this> */
+    public function localFindings(): MorphMany
+    {
+        return $this->morphMany(LocalFinding::class, 'owner');
     }
 }
