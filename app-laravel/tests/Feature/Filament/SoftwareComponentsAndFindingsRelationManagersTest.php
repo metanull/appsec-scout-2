@@ -5,6 +5,9 @@ use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationMan
 use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareAsset;
+use App\Models\SoftwareComponent;
+use App\Models\SoftwareSystem;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
@@ -59,4 +62,67 @@ it('renders the local findings tab with severity and correlation status', functi
         ->call('loadTable')
         ->assertSee('Jinja sandbox breakout')
         ->assertSee('MEDIUM');
+});
+
+it('rolls up dependencies and local findings from child containers on the system and asset tabs', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $asset = SoftwareAsset::factory()->create();
+    $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id]);
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+
+    SoftwareComponent::query()->create([
+        'owner_type' => SecurityContainer::class,
+        'owner_id' => $container->id,
+        'software_system_id' => $system->id,
+        'software_asset_id' => $asset->id,
+        'name' => 'Jinja2',
+        'version' => '3.1.4',
+        'purl' => 'pkg:pypi/jinja2@3.1.4',
+    ]);
+
+    LocalFinding::query()->create([
+        'owner_type' => SecurityContainer::class,
+        'owner_id' => $container->id,
+        'software_system_id' => $system->id,
+        'software_asset_id' => $asset->id,
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'CVE-2024-56201',
+        'title' => 'Jinja sandbox breakout',
+        'severity' => 'MEDIUM',
+        'file_path' => 'requirements.txt',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(SoftwareComponentsRelationManager::class, [
+            'ownerRecord' => $system,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Jinja2');
+
+    Livewire::actingAs($user)
+        ->test(SoftwareComponentsRelationManager::class, [
+            'ownerRecord' => $asset,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Jinja2');
+
+    Livewire::actingAs($user)
+        ->test(LocalFindingsRelationManager::class, [
+            'ownerRecord' => $system,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Jinja sandbox breakout');
+
+    Livewire::actingAs($user)
+        ->test(LocalFindingsRelationManager::class, [
+            'ownerRecord' => $asset,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Jinja sandbox breakout');
 });

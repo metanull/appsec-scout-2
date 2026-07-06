@@ -84,15 +84,15 @@ class SoftwareSystem extends Model
         return $this->morphMany(Attachment::class, 'owner');
     }
 
-    /** @return MorphMany<SoftwareComponent, $this> */
-    public function softwareComponents(): MorphMany
+    /** @return HasMany<SoftwareComponent, $this> */
+    public function softwareComponents(): HasMany
     {
-        return $this->morphMany(SoftwareComponent::class, 'owner');
+        return $this->hasMany(SoftwareComponent::class);
     }
 
-    /** @return MorphMany<LocalFinding, $this> */
-    public function localFindings(): MorphMany
+    /** @return HasMany<LocalFinding, $this> */
+    public function localFindings(): HasMany
     {
-        return $this->morphMany(LocalFinding::class, 'owner');
+        return $this->hasMany(LocalFinding::class);
     }
 }
