@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Shared\RelationManagers;
 
+use App\Assets\FindingsZipBuilder;
+use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Resources\SecurityEventResource;
+use App\Filament\Support\LocalFindingOwnerColumns;
 use App\Models\LocalFinding;
+use App\Models\SecurityContainer;
+use App\Models\SoftwareAsset;
+use App\Models\SoftwareSystem;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
@@ -29,6 +37,7 @@ class LocalFindingsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['owner', 'softwareAsset', 'softwareSystem', 'correlatedSecurityEvent']))
             ->columns([
                 TextColumn::make('kind')->badge()->color(fn (string $state): string => $state === LocalFinding::KIND_SECRET ? 'danger' : 'warning'),
                 TextColumn::make('severity')->badge()->color(fn (?string $state): string => LocalFinding::severityColor($state))->placeholder('-'),
@@ -44,6 +53,7 @@ class LocalFindingsRelationManager extends RelationManager
                         ? trim("{$state} {$record->package_version}")
                         : null)
                     ->placeholder('-'),
+                ...LocalFindingOwnerColumns::columns(),
                 TextColumn::make('correlated_security_event_id')
                     ->label('Correlated alert')
                     ->state(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? '#' . $record->correlated_security_event_id : '-')
@@ -53,8 +63,39 @@ class LocalFindingsRelationManager extends RelationManager
                     ->color(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? 'primary' : 'gray'),
                 TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
             ])
+            ->recordUrl(fn (LocalFinding $record): string => LocalFindingResource::getUrl('view', ['record' => $record]))
+            ->headerActions([
+                Action::make('downloadFindings')
+                    ->label('Download findings')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->visible(fn (): bool => app(FindingsZipBuilder::class)->hasFindingAttachment($this->findingsOwner()))
+                    ->url(fn (): string => $this->findingsDownloadUrl())
+                    ->openUrlInNewTab(),
+            ])
             ->defaultSort('severity')
             ->emptyStateDescription('No local findings recorded yet.')
             ->paginated([25, 50, 100]);
+    }
+
+    private function findingsOwner(): SoftwareAsset|SoftwareSystem|SecurityContainer
+    {
+        $owner = $this->getOwnerRecord();
+
+        if ($owner instanceof SoftwareAsset || $owner instanceof SoftwareSystem || $owner instanceof SecurityContainer) {
+            return $owner;
+        }
+
+        abort(500);
+    }
+
+    private function findingsDownloadUrl(): string
+    {
+        $owner = $this->findingsOwner();
+
+        return match (true) {
+            $owner instanceof SecurityContainer => route('security-containers.findings.download', ['container' => $owner->getKey()]),
+            $owner instanceof SoftwareSystem => route('software-systems.findings.download', ['system' => $owner->getKey()]),
+            $owner instanceof SoftwareAsset => route('assets.findings.download', ['asset' => $owner->getKey()]),
+        };
     }
 }

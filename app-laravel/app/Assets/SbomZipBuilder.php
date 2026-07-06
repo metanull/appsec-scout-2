@@ -8,7 +8,6 @@ use App\Models\Attachment;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use ZipArchive;
@@ -20,6 +19,8 @@ use ZipArchive;
  */
 final class SbomZipBuilder
 {
+    public function __construct(private readonly ContainerHierarchyResolver $containers) {}
+
     public function hasSbomAttachment(SoftwareAsset|SoftwareSystem|SecurityContainer $owner): bool
     {
         if ($owner instanceof SecurityContainer) {
@@ -29,7 +30,7 @@ final class SbomZipBuilder
         return Attachment::query()
             ->where('kind', 'sbom')
             ->where('owner_type', SecurityContainer::class)
-            ->whereIn('owner_id', $this->containersFor($owner)->pluck('id'))
+            ->whereIn('owner_id', $this->containers->containersFor($owner)->pluck('id'))
             ->exists();
     }
 
@@ -42,11 +43,9 @@ final class SbomZipBuilder
 
     public function build(SoftwareSystem|SoftwareAsset $owner): ?string
     {
-        $containers = $this->containersFor($owner);
-
         $entries = [];
 
-        foreach ($containers as $container) {
+        foreach ($this->containers->containersFor($owner) as $container) {
             $attachment = $container->attachments()->where('kind', 'sbom')->latest('created_at')->first();
 
             if ($attachment === null) {
@@ -73,18 +72,6 @@ final class SbomZipBuilder
         $zip->close();
 
         return $path;
-    }
-
-    /** @return Collection<int, SecurityContainer> */
-    private function containersFor(SoftwareSystem|SoftwareAsset $owner): Collection
-    {
-        if ($owner instanceof SoftwareSystem) {
-            return $owner->containers;
-        }
-
-        return SecurityContainer::query()
-            ->whereIn('software_system_id', $owner->softwareSystems()->pluck('id'))
-            ->get();
     }
 
     private function sanitizeEntryName(string $name): string
