@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SoftwareComponentResource\Pages\ListSoftwareComponents;
 use App\Filament\Resources\SoftwareComponentResource\Pages\ViewSoftwareComponent;
+use App\Filament\Support\SoftwareComponentOwnerColumns;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareComponent;
@@ -50,7 +51,7 @@ class SoftwareComponentResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with('owner');
+        return parent::getEloquentQuery()->with(['owner', 'softwareAsset', 'softwareSystem']);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -58,15 +59,16 @@ class SoftwareComponentResource extends Resource
         return $schema->components([
             Section::make('Summary')
                 ->schema([
+                    TextEntry::make('_used_by')
+                        ->label('Used by')
+                        ->state(fn (SoftwareComponent $record): string => self::ownerLabel($record))
+                        ->url(fn (SoftwareComponent $record): ?string => self::ownerUrl($record))
+                        ->columnSpanFull(),
                     TextEntry::make('name')->label('Name')->wrap(),
                     TextEntry::make('version')->label('Version')->placeholder('-'),
                     TextEntry::make('ecosystem')->label('Ecosystem')->badge()->color('gray')->placeholder('-'),
                     TextEntry::make('license')->label('License')->placeholder('-'),
                     TextEntry::make('purl')->label('Package URL')->wrap()->copyable(),
-                    TextEntry::make('_used_by')
-                        ->label('Used by')
-                        ->state(fn (SoftwareComponent $record): string => self::ownerLabel($record))
-                        ->url(fn (SoftwareComponent $record): ?string => self::ownerUrl($record)),
                     TextEntry::make('first_seen_at')->label('First seen')->dateTime('d M Y H:i')->placeholder('-'),
                     TextEntry::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
                 ])
@@ -82,11 +84,7 @@ class SoftwareComponentResource extends Resource
                 TextColumn::make('version')->searchable()->sortable()->placeholder('-'),
                 TextColumn::make('ecosystem')->badge()->color('gray')->sortable()->placeholder('-'),
                 TextColumn::make('license')->placeholder('-')->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('_used_by')
-                    ->label('Used by')
-                    ->state(fn (SoftwareComponent $record): string => self::ownerLabel($record))
-                    ->url(fn (SoftwareComponent $record): ?string => self::ownerUrl($record))
-                    ->wrap(),
+                ...SoftwareComponentOwnerColumns::columns(),
                 TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
             ])
             ->filters([
