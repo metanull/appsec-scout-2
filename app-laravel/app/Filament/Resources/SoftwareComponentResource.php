@@ -16,6 +16,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -95,6 +96,17 @@ class SoftwareComponentResource extends Resource
                         ->orderBy('ecosystem')
                         ->pluck('ecosystem', 'ecosystem')
                         ->all()),
+            ])
+            ->groups([
+                Group::make('name')->label('Component'),
+                Group::make('_used_by')
+                    ->label('Used by')
+                    ->getTitleFromRecordUsing(fn (SoftwareComponent $record): string => self::ownerLabel($record))
+                    ->orderQueryUsing(function (Builder $query, string $direction): Builder {
+                        $direction = $direction === 'desc' ? 'desc' : 'asc';
+
+                        return $query->orderBy('owner_type', $direction)->orderBy('owner_id', $direction);
+                    }),
             ])
             ->recordUrl(fn (SoftwareComponent $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultSort('name')

@@ -67,6 +67,48 @@ it('shows the asset, system, and container columns on the list', function () {
         ->assertSee('payments-api');
 });
 
+it('groups the list by component name', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $containerA = SecurityContainer::factory()->create(['name' => 'service-a']);
+    $containerB = SecurityContainer::factory()->create(['name' => 'service-b']);
+
+    $componentA = $containerA->softwareComponents()->create([
+        'name' => 'Jinja2',
+        'version' => '3.1.4',
+        'purl' => 'pkg:pypi/jinja2@3.1.4',
+    ]);
+    $componentB = $containerB->softwareComponents()->create([
+        'name' => 'Jinja2',
+        'version' => '3.1.3',
+        'purl' => 'pkg:pypi/jinja2@3.1.3',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListSoftwareComponents::class)
+        ->set('tableGrouping', 'name')
+        ->assertCanSeeTableRecords([$componentA, $componentB])
+        ->assertSee('Jinja2');
+});
+
+it('groups the list by used by', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $container = SecurityContainer::factory()->create(['name' => 'payments-api']);
+    $component = $container->softwareComponents()->create([
+        'name' => 'Jinja2',
+        'purl' => 'pkg:pypi/jinja2@3.1.4',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListSoftwareComponents::class)
+        ->set('tableGrouping', '_used_by')
+        ->assertCanSeeTableRecords([$component])
+        ->assertSee('Container: payments-api');
+});
+
 it('shows the used by field first on the view page', function () {
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);
