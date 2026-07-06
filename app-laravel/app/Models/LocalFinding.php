@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 #[Fillable([
     'owner_type', 'owner_id', 'attachment_id',
+    'software_system_id', 'software_asset_id',
     'kind', 'rule_id', 'title', 'description', 'severity',
     'file_path', 'start_line', 'end_line',
     'package_name', 'package_version', 'metadata',
@@ -43,6 +44,18 @@ class LocalFinding extends Model
     public function attachment(): BelongsTo
     {
         return $this->belongsTo(Attachment::class);
+    }
+
+    /** @return BelongsTo<SoftwareSystem, $this> */
+    public function softwareSystem(): BelongsTo
+    {
+        return $this->belongsTo(SoftwareSystem::class);
+    }
+
+    /** @return BelongsTo<SoftwareAsset, $this> */
+    public function softwareAsset(): BelongsTo
+    {
+        return $this->belongsTo(SoftwareAsset::class);
     }
 
     /** @return BelongsTo<SecurityEvent, $this> */

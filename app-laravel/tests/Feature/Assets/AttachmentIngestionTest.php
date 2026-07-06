@@ -3,6 +3,7 @@
 use App\Assets\AttachmentService;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
 
@@ -99,4 +100,63 @@ it('cascades deleting components and findings when the owning container is delet
 
     expect(SoftwareComponent::query()->where('owner_id', $container->id)->count())->toBe(0)
         ->and(LocalFinding::query()->where('owner_id', $container->id)->count())->toBe(0);
+});
+
+it('stamps the system and asset hierarchy onto ingested software components', function () {
+    $asset = SoftwareAsset::factory()->create();
+    $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id]);
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'sbom',
+        'application/json',
+        'sbom.cdx.json',
+        trivyFixture('cyclonedx-sample.json'),
+    );
+
+    $component = SoftwareComponent::query()->where('owner_id', $container->id)->firstOrFail();
+
+    expect($component->software_system_id)->toBe($system->id)
+        ->and($component->software_asset_id)->toBe($asset->id)
+        ->and($component->softwareSystem->is($system))->toBeTrue()
+        ->and($component->softwareAsset->is($asset))->toBeTrue();
+});
+
+it('stamps the system and asset hierarchy onto ingested local findings', function () {
+    $asset = SoftwareAsset::factory()->create();
+    $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id]);
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'vulnerabilities',
+        'application/json',
+        'vuln.sarif.json',
+        trivyFixture('vuln-sarif-sample.json'),
+    );
+
+    $finding = LocalFinding::query()->where('owner_id', $container->id)->firstOrFail();
+
+    expect($finding->software_system_id)->toBe($system->id)
+        ->and($finding->software_asset_id)->toBe($asset->id)
+        ->and($finding->softwareSystem->is($system))->toBeTrue()
+        ->and($finding->softwareAsset->is($asset))->toBeTrue();
+});
+
+it('leaves the asset hierarchy null when the system has no asset', function () {
+    $container = SecurityContainer::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'sbom',
+        'application/json',
+        'sbom.cdx.json',
+        trivyFixture('cyclonedx-sample.json'),
+    );
+
+    $component = SoftwareComponent::query()->where('owner_id', $container->id)->firstOrFail();
+
+    expect($component->software_system_id)->toBe($container->software_system_id)
+        ->and($component->software_asset_id)->toBeNull();
 });
