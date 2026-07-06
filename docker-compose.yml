@@ -56,6 +56,82 @@ services:
         volumes:
             - redis_data:/data
 
+    dependencytrack-postgres:
+        image: postgres:16-alpine
+        profiles:
+            - dependencytrack
+        environment:
+            POSTGRES_DB: "${DTRACK_DB_DATABASE:-dtrack}"
+            POSTGRES_USER: "${DTRACK_DB_USERNAME:-dtrack}"
+            POSTGRES_PASSWORD: "${DTRACK_DB_PASSWORD:-dtrack}"
+        volumes:
+            - dependencytrack_postgres_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${DTRACK_DB_USERNAME:-dtrack}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    dependencytrack-apiserver:
+        image: dependencytrack/apiserver:latest
+        profiles:
+            - dependencytrack
+        depends_on:
+            dependencytrack-postgres:
+                condition: service_healthy
+        environment:
+            ALPINE_DATABASE_MODE: external
+            ALPINE_DATABASE_URL: "jdbc:postgresql://dependencytrack-postgres:5432/${DTRACK_DB_DATABASE:-dtrack}"
+            ALPINE_DATABASE_DRIVER: org.postgresql.Driver
+            ALPINE_DATABASE_USERNAME: "${DTRACK_DB_USERNAME:-dtrack}"
+            ALPINE_DATABASE_PASSWORD: "${DTRACK_DB_PASSWORD:-dtrack}"
+        ports:
+            - "${DTRACK_API_PORT:-8091}:8080"
+        volumes:
+            - dependencytrack_data:/data
+
+    dependencytrack-frontend:
+        image: dependencytrack/frontend:latest
+        profiles:
+            - dependencytrack
+        depends_on:
+            - dependencytrack-apiserver
+        environment:
+            API_BASE_URL: "${DTRACK_API_BASE_URL:-http://localhost:8091}"
+        ports:
+            - "${DTRACK_FRONTEND_PORT:-8090}:8080"
+
+    dependencytrack-bootstrap:
+        image: appsec-scout:latest
+        profiles:
+            - dependencytrack
+        depends_on:
+            app:
+                condition: service_healthy
+            dependencytrack-apiserver:
+                condition: service_healthy
+        environment:
+            HTTP_PROXY: "${HTTP_PROXY:-}"
+            HTTPS_PROXY: "${HTTPS_PROXY:-}"
+            NO_PROXY: "${NO_PROXY:-}"
+            SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
+        volumes:
+            - ./app-laravel:/var/www/html
+            - app_storage:/var/www/html/storage
+            - app_vendor:/var/www/html/vendor
+            - app_public_build:/var/www/html/public/build
+            - app_public_css:/var/www/html/public/css
+            - app_public_js:/var/www/html/public/js
+            - app_bootstrap_cache:/var/www/html/bootstrap/cache
+        command:
+            - php
+            - artisan
+            - dependencytrack:bootstrap
+            - --base-url=${DTRACK_INTERNAL_BASE_URL:-http://dependencytrack-apiserver:8080}
+            - --admin-username=${DTRACK_ADMIN_USERNAME:-admin}
+            - --admin-password=${DTRACK_ADMIN_PASSWORD:-admin}
+            - --team=${DTRACK_TEAM:-Automation}
+
     node:
         image: node:22-alpine
         working_dir: /app
@@ -134,3 +210,5 @@ volumes:
     app_public_js:
     app_bootstrap_cache:
     claude_credentials:
+    dependencytrack_postgres_data:
+    dependencytrack_data:

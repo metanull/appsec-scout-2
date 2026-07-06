@@ -6,6 +6,9 @@ use App\Assets\AttachmentIngestionService;
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
 use App\Assets\AzDoProjectLinker;
+use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
+use App\Assets\DependencyTrack\DependencyTrackClientFactory;
+use App\Assets\DependencyTrack\DependencyTrackExporter;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
@@ -13,6 +16,7 @@ use App\Integrations\SystemIntegrationRuntime;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\Attachment;
+use App\Models\SecurityContainer;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
@@ -20,10 +24,12 @@ use App\Sync\SystemContainerUpserter;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Triage\CodesearchService;
 use App\Users\UserAdminService;
+use GuzzleHttp\Exception\ClientException;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -273,6 +279,147 @@ Artisan::command(
         return self::SUCCESS;
     },
 )->purpose('Re-parse existing sbom/vulnerabilities/secrets attachments into SoftwareComponent/LocalFinding rows (e.g. after a parser fix, without re-scanning)');
+
+Artisan::command(
+    'dependencytrack:bootstrap {--base-url=} {--team=Automation} {--admin-username=admin} {--admin-password=admin} {--force}',
+    function (DependencyTrackAdminClientFactory $adminClientFactory, DependencyTrackClientFactory $clientFactory, Vault $vault): int {
+        $baseUrlOption = $this->option('base-url');
+        $baseUrl = is_string($baseUrlOption) && $baseUrlOption !== ''
+            ? $baseUrlOption
+            : ($vault->get('dependencytrack.baseUrl', null, true) ?? 'http://dependencytrack-apiserver:8080');
+        $team = (string) $this->option('team');
+        $adminUsername = (string) $this->option('admin-username');
+        $force = (bool) $this->option('force');
+
+        $existingApiKey = $vault->get('dependencytrack.apiKey', null, true);
+
+        if ($existingApiKey !== null && ! $force && $clientFactory->make($existingApiKey, $baseUrl)->ping()) {
+            $vault->set('dependencytrack.baseUrl', null, $baseUrl);
+            $this->info('Dependency-Track is already configured; nothing to do.');
+
+            return self::SUCCESS;
+        }
+
+        $adminClient = $adminClientFactory->make($baseUrl);
+        $adminPassword = $vault->get('dependencytrack.adminPassword', null, true) ?? (string) $this->option('admin-password');
+
+        try {
+            $token = $adminClient->login($adminUsername, $adminPassword);
+        } catch (ClientException) {
+            $this->error(sprintf(
+                'Could not log in to Dependency-Track as "%s": invalid credentials. '
+                . 'If the admin password was changed outside of AppSec Scout, pass --admin-password with the current value.',
+                $adminUsername,
+            ));
+
+            return self::FAILURE;
+        }
+
+        if ($token === null) {
+            $newPassword = Str::password(32);
+            $adminClient->forceChangePassword($adminUsername, $adminPassword, $newPassword);
+            $vault->set('dependencytrack.adminPassword', null, $newPassword);
+
+            $token = $adminClient->login($adminUsername, $newPassword);
+
+            if ($token === null) {
+                $this->error('Logged in to Dependency-Track immediately after a forced password change, but login failed.');
+
+                return self::FAILURE;
+            }
+        }
+
+        $teamRecord = $adminClient->findOrCreateTeam($token, $team);
+
+        foreach (['BOM_UPLOAD', 'PROJECT_CREATION_UPLOAD'] as $permission) {
+            if (! in_array($permission, $teamRecord['permissions'], true)) {
+                $adminClient->grantPermission($token, $permission, $teamRecord['uuid']);
+            }
+        }
+
+        $existingPublicIds = $teamRecord['apiKeyPublicIds'];
+
+        if ($existingPublicIds === []) {
+            $newApiKey = $adminClient->createApiKey($token, $teamRecord['uuid']);
+        } else {
+            $newApiKey = $adminClient->regenerateApiKey($token, $existingPublicIds[0]);
+
+            foreach (array_slice($existingPublicIds, 1) as $extraPublicId) {
+                $adminClient->deleteApiKey($token, $extraPublicId);
+            }
+        }
+
+        $vault->set('dependencytrack.apiKey', null, $newApiKey);
+        $vault->set('dependencytrack.baseUrl', null, $baseUrl);
+
+        $this->info(sprintf('Dependency-Track bootstrap complete (team "%s", base URL %s).', $team, $baseUrl));
+
+        return self::SUCCESS;
+    },
+)->purpose('Provision the Dependency-Track automation team (permissions + API key) and store the API key in the credential vault; safe to re-run');
+
+Artisan::command(
+    'sbom:export-dependency-track {--api-key=} {--base-url=} {--container=} {--project-version=latest}',
+    function (DependencyTrackClientFactory $clientFactory, Vault $vault): int {
+        $apiKeyOption = $this->option('api-key');
+        $apiKey = is_string($apiKeyOption) && $apiKeyOption !== ''
+            ? $apiKeyOption
+            : $vault->get('dependencytrack.apiKey', null, true);
+
+        if ($apiKey === null) {
+            $this->error('Dependency-Track API key is not configured. Run `php artisan dependencytrack:bootstrap` first, or pass --api-key.');
+
+            return self::FAILURE;
+        }
+
+        $baseUrlOption = $this->option('base-url');
+        $baseUrl = is_string($baseUrlOption) && $baseUrlOption !== ''
+            ? $baseUrlOption
+            : ($vault->get('dependencytrack.baseUrl', null, true) ?? 'http://dependencytrack-apiserver:8080');
+        $containerId = $this->option('container');
+        $projectVersion = (string) $this->option('project-version');
+
+        $query = SecurityContainer::query()->whereHas('attachments', fn ($q) => $q->where('kind', 'sbom'));
+
+        if (is_numeric($containerId)) {
+            $query->whereKey((int) $containerId);
+        }
+
+        $containers = $query->get();
+
+        if ($containers->isEmpty()) {
+            $this->error('No security containers with a stored SBOM attachment were found.');
+
+            return self::FAILURE;
+        }
+
+        $exporter = new DependencyTrackExporter($clientFactory->make($apiKey, $baseUrl));
+        $rows = [];
+        $failures = 0;
+
+        foreach ($containers as $container) {
+            try {
+                $exporter->export($container, $projectVersion);
+                $rows[] = [$container->name, 'Uploaded'];
+            } catch (Throwable $exception) {
+                $failures++;
+                $rows[] = [$container->name, 'Failed: ' . $exception->getMessage()];
+            }
+        }
+
+        $this->table(['Container', 'Result'], $rows);
+
+        if ($failures > 0) {
+            $this->error(sprintf('%d of %d upload(s) failed.', $failures, $containers->count()));
+
+            return self::FAILURE;
+        }
+
+        $this->info(sprintf('Uploaded SBOM for %d container(s) to Dependency-Track.', $containers->count()));
+
+        return self::SUCCESS;
+    },
+)->purpose("Push each security container's latest stored SBOM attachment to OWASP Dependency-Track as a project BOM upload");
 
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
