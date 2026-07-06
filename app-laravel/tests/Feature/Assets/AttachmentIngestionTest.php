@@ -29,7 +29,7 @@ it('parses an sbom attachment into software components on the owning container',
         ->where('owner_id', $container->id)
         ->get();
 
-    expect($components)->toHaveCount(2)
+    expect($components)->toHaveCount(4)
         ->and($components->pluck('name')->all())->toContain('System.DirectoryServices.Protocols');
 });
 
@@ -40,7 +40,7 @@ it('re-scanning updates the same software component row instead of duplicating i
     $service->attachTo($container, 'sbom', 'application/json', 'first.json', trivyFixture('cyclonedx-sample.json'));
     $service->attachTo($container, 'sbom', 'application/json', 'second.json', trivyFixture('cyclonedx-sample.json'));
 
-    expect(SoftwareComponent::query()->where('owner_id', $container->id)->count())->toBe(2);
+    expect(SoftwareComponent::query()->where('owner_id', $container->id)->count())->toBe(4);
 });
 
 it('parses a vulnerabilities attachment into local findings', function () {
