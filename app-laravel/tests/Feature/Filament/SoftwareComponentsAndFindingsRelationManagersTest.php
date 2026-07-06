@@ -126,3 +126,31 @@ it('rolls up dependencies and local findings from child containers on the system
         ->call('loadTable')
         ->assertSee('Jinja sandbox breakout');
 });
+
+it('shows the asset, system, and container columns on the dependencies tab', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id, 'name' => 'payments-service']);
+    $container = SecurityContainer::factory()->forSystem($system)->create(['name' => 'payments-api']);
+
+    SoftwareComponent::query()->create([
+        'owner_type' => SecurityContainer::class,
+        'owner_id' => $container->id,
+        'software_system_id' => $system->id,
+        'software_asset_id' => $asset->id,
+        'name' => 'Jinja2',
+        'purl' => 'pkg:pypi/jinja2@3.1.4',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(SoftwareComponentsRelationManager::class, [
+            'ownerRecord' => $container,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Payments Platform')
+        ->assertSee('payments-service')
+        ->assertSee('payments-api');
+});
