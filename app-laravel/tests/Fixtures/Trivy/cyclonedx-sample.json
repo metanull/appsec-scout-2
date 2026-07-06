@@ -40,6 +40,24 @@
         { "name": "aquasecurity:trivy:Class", "value": "lang-pkgs" },
         { "name": "aquasecurity:trivy:Type", "value": "nuget" }
       ]
+    },
+    {
+      "bom-ref": "6f6a2e0a-6b60-4f38-9d4a-3f2fda6df0cb",
+      "type": "operating-system",
+      "name": "Microsoft.NETCore.App",
+      "version": "8.0.28",
+      "properties": [
+        { "name": "aquasecurity:trivy:Class", "value": "os-pkgs" },
+        { "name": "aquasecurity:trivy:Type", "value": "dotnet-core" }
+      ]
+    },
+    {
+      "bom-ref": "5b0f4b8a-9a1a-4b6f-8f8b-0f2f6b2a1c9d",
+      "type": "framework",
+      "name": "alpine",
+      "properties": [
+        { "name": "aquasecurity:trivy:Class", "value": "os-pkgs" }
+      ]
     }
   ]
 }
