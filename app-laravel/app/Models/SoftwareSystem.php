@@ -28,6 +28,7 @@ class SoftwareSystem extends Model
             $system->attachments()->delete();
             $system->softwareComponents()->delete();
             $system->localFindings()->delete();
+            $system->containers->each->delete();
         });
     }
 

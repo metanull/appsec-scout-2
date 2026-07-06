@@ -1,5 +1,7 @@
 <?php
 
+use App\Assets\AttachmentService;
+use App\Models\Attachment;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareComponent;
@@ -36,4 +38,31 @@ it('rolls up software components and local findings from every child container',
 
     expect($system->softwareComponents()->pluck('name')->all())->toBe(['Jinja2'])
         ->and($system->localFindings()->pluck('title')->all())->toBe(['Jinja sandbox breakout']);
+});
+
+it('deletes descendant containers and their owned rows when the system is deleted', function () {
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+
+    $sbomPayload = (string) file_get_contents(base_path('tests/Fixtures/Trivy/cyclonedx-sample.json'));
+    $attachment = app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', $sbomPayload);
+    $componentId = SoftwareComponent::query()->where('owner_id', $container->id)->value('id');
+
+    expect($componentId)->not()->toBeNull();
+
+    $system->delete();
+
+    expect(SecurityContainer::query()->whereKey($container->id)->exists())->toBeFalse()
+        ->and(Attachment::query()->whereKey($attachment->id)->exists())->toBeFalse()
+        ->and(SoftwareComponent::query()->whereKey($componentId)->exists())->toBeFalse();
+});
+
+it('still allows deleting a security container directly', function () {
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+
+    $container->delete();
+
+    expect(SecurityContainer::query()->whereKey($container->id)->exists())->toBeFalse()
+        ->and(SoftwareSystem::query()->whereKey($system->id)->exists())->toBeTrue();
 });
