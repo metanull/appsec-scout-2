@@ -31,7 +31,7 @@ class LocalFindingsRelationManager extends RelationManager
         return $table
             ->columns([
                 TextColumn::make('kind')->badge()->color(fn (string $state): string => $state === LocalFinding::KIND_SECRET ? 'danger' : 'warning'),
-                TextColumn::make('severity')->badge()->color(fn (?string $state): string => self::severityColor($state))->placeholder('-'),
+                TextColumn::make('severity')->badge()->color(fn (?string $state): string => LocalFinding::severityColor($state))->placeholder('-'),
                 TextColumn::make('title')->searchable()->wrap()->grow(),
                 TextColumn::make('file_path')->label('Location')
                     ->formatStateUsing(fn (LocalFinding $record): string => $record->start_line !== null
@@ -56,16 +56,5 @@ class LocalFindingsRelationManager extends RelationManager
             ->defaultSort('severity')
             ->emptyStateDescription('No local findings recorded yet.')
             ->paginated([25, 50, 100]);
-    }
-
-    private static function severityColor(?string $severity): string
-    {
-        return match (strtoupper((string) $severity)) {
-            'CRITICAL' => 'danger',
-            'HIGH' => 'warning',
-            'MEDIUM' => 'info',
-            'LOW', 'UNKNOWN' => 'gray',
-            default => 'gray',
-        };
     }
 }

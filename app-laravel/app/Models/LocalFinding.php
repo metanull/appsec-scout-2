@@ -63,4 +63,15 @@ class LocalFinding extends Model
     {
         return $this->belongsTo(SecurityEvent::class, 'correlated_security_event_id');
     }
+
+    public static function severityColor(?string $severity): string
+    {
+        return match (strtoupper((string) $severity)) {
+            'CRITICAL' => 'danger',
+            'HIGH' => 'warning',
+            'MEDIUM' => 'info',
+            'LOW', 'UNKNOWN' => 'gray',
+            default => 'gray',
+        };
+    }
 }
