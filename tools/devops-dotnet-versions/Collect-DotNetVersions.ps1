@@ -64,6 +64,10 @@ if (-not $VerbosePreference) {
     $VerbosePreference = "SilentlyContinue"
 }
 
+# Excel DateFormats are dependent on the language of the Excel version.
+# Adapt the format to your Excel version if dates don't render correctly.
+$ExcelDateFormat = '[$-en-US]YYYY-MM-DD;@'
+
 $SupportPolicy = @{
     # .Net Core
     'net10.0' = Get-Date "2028-11-14"
@@ -325,7 +329,7 @@ $Projects <#| Where-Object {$_.Name -match 'Portal'}#> <#| Select-Object -First 
             $sheet.Cells.Item($Row,3).Value2 = [string]($CurrentValues.Framework)
             $sheet.Cells.Item($Row,4).Value2 = [string]($CurrentValues.FrameworkVersion)
             if($CurrentValues.SupportPolicy -is [DateTime]) {
-                $sheet.Cells.Item($Row,5).NumberFormat = $Settings.ExcelDateFormat
+                $sheet.Cells.Item($Row,5).NumberFormat = $ExcelDateFormat
                 $sheet.Cells.Item($Row,5).Value2 = [DateTime]($CurrentValues.SupportPolicy)
             } else {
                 $sheet.Cells.Item($Row,5).Value2 = [string]($CurrentValues.SupportPolicy)
