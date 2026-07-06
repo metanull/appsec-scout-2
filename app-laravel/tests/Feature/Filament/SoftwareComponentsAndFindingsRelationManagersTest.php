@@ -1,5 +1,6 @@
 <?php
 
+use App\Assets\AttachmentService;
 use App\Filament\Resources\Shared\RelationManagers\LocalFindingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
@@ -153,4 +154,54 @@ it('shows the asset, system, and container columns on the dependencies tab', fun
         ->assertSee('Payments Platform')
         ->assertSee('payments-service')
         ->assertSee('payments-api');
+});
+
+it('shows the download sbom action only when there is something to download', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $containerWithSbom = SecurityContainer::factory()->create();
+    app(AttachmentService::class)->attachTo($containerWithSbom, 'sbom', 'application/json', 'sbom.json', '{"components":[]}');
+
+    $containerWithoutSbom = SecurityContainer::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test(SoftwareComponentsRelationManager::class, [
+            'ownerRecord' => $containerWithSbom,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->assertTableActionVisible('downloadSbom');
+
+    Livewire::actingAs($user)
+        ->test(SoftwareComponentsRelationManager::class, [
+            'ownerRecord' => $containerWithoutSbom,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->assertTableActionHidden('downloadSbom');
+});
+
+it('shows the download sbom action for a system when a descendant container has one', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+    app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', '{"components":[]}');
+
+    $emptySystem = SoftwareSystem::factory()->create();
+    SecurityContainer::factory()->forSystem($emptySystem)->create();
+
+    Livewire::actingAs($user)
+        ->test(SoftwareComponentsRelationManager::class, [
+            'ownerRecord' => $system,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->assertTableActionVisible('downloadSbom');
+
+    Livewire::actingAs($user)
+        ->test(SoftwareComponentsRelationManager::class, [
+            'ownerRecord' => $emptySystem,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->assertTableActionHidden('downloadSbom');
 });
