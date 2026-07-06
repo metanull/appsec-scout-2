@@ -2,8 +2,13 @@
 
 use App\Http\Controllers\EventAttachmentDownloadController;
 use App\Http\Controllers\SecurityContainerAttachmentDownloadController;
+use App\Http\Controllers\SecurityContainerFindingsZipDownloadController;
 use App\Http\Controllers\SoftwareAssetAttachmentDownloadController;
+use App\Http\Controllers\SoftwareAssetFindingsZipDownloadController;
+use App\Http\Controllers\SoftwareAssetSbomZipDownloadController;
 use App\Http\Controllers\SoftwareSystemAttachmentDownloadController;
+use App\Http\Controllers\SoftwareSystemFindingsZipDownloadController;
+use App\Http\Controllers\SoftwareSystemSbomZipDownloadController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
@@ -15,4 +20,14 @@ Route::middleware('auth')->group(function () {
         ->name('software-systems.attachments.download');
     Route::get('/security-containers/{container}/attachments/{attachment}/download', SecurityContainerAttachmentDownloadController::class)
         ->name('security-containers.attachments.download');
+    Route::get('/assets/{asset}/sbom.zip', SoftwareAssetSbomZipDownloadController::class)
+        ->name('assets.sbom.download');
+    Route::get('/software-systems/{system}/sbom.zip', SoftwareSystemSbomZipDownloadController::class)
+        ->name('software-systems.sbom.download');
+    Route::get('/assets/{asset}/findings.zip', SoftwareAssetFindingsZipDownloadController::class)
+        ->name('assets.findings.download');
+    Route::get('/software-systems/{system}/findings.zip', SoftwareSystemFindingsZipDownloadController::class)
+        ->name('software-systems.findings.download');
+    Route::get('/security-containers/{container}/findings.zip', SecurityContainerFindingsZipDownloadController::class)
+        ->name('security-containers.findings.download');
 });

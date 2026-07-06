@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 #[Fillable([
     'owner_type', 'owner_id', 'attachment_id',
+    'software_system_id', 'software_asset_id',
     'name', 'version', 'ecosystem', 'purl', 'license', 'metadata',
     'first_seen_at', 'last_seen_at',
 ])]
@@ -34,5 +35,17 @@ class SoftwareComponent extends Model
     public function attachment(): BelongsTo
     {
         return $this->belongsTo(Attachment::class);
+    }
+
+    /** @return BelongsTo<SoftwareSystem, $this> */
+    public function softwareSystem(): BelongsTo
+    {
+        return $this->belongsTo(SoftwareSystem::class);
+    }
+
+    /** @return BelongsTo<SoftwareAsset, $this> */
+    public function softwareAsset(): BelongsTo
+    {
+        return $this->belongsTo(SoftwareAsset::class);
     }
 }

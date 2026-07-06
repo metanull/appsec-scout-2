@@ -60,6 +60,7 @@ final class AttachmentIngestionService
                 'metadata' => $component->metadata,
                 'first_seen_at' => $record->first_seen_at ?? now(),
                 'last_seen_at' => now(),
+                ...$this->hierarchyColumns($owner),
             ]);
 
             if ($isNew) {
@@ -91,6 +92,7 @@ final class AttachmentIngestionService
                 'package_version' => $finding->packageVersion,
                 'metadata' => $finding->metadata,
                 'last_seen_at' => now(),
+                ...$this->hierarchyColumns($owner),
             ]);
 
             if ($isNew) {
@@ -101,5 +103,24 @@ final class AttachmentIngestionService
 
             $this->correlator->correlate($record);
         }
+    }
+
+    /** @return array{software_system_id: ?int, software_asset_id: ?int} */
+    private function hierarchyColumns(SoftwareAsset|SoftwareSystem|SecurityContainer $owner): array
+    {
+        return match (true) {
+            $owner instanceof SecurityContainer => [
+                'software_system_id' => $owner->software_system_id,
+                'software_asset_id' => $owner->softwareSystem?->software_asset_id,
+            ],
+            $owner instanceof SoftwareSystem => [
+                'software_system_id' => $owner->id,
+                'software_asset_id' => $owner->software_asset_id,
+            ],
+            $owner instanceof SoftwareAsset => [
+                'software_system_id' => null,
+                'software_asset_id' => $owner->id,
+            ],
+        };
     }
 }
