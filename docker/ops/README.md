@@ -29,7 +29,7 @@ All usage goes through `invoke-ops.ps1`; see [scripts/README.md](../../scripts/R
 .\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
 ```
 
-Rebuild the image after changing this Dockerfile, `entrypoint.sh`, or `collect-sboms.sh`:
+Every `invoke-ops.ps1` run already rebuilds the image (respecting Docker's layer cache, so it's fast when nothing changed) — a plain `.\scripts\invoke-ops.ps1` picks up changes to this Dockerfile, `entrypoint.sh`, or `collect-sboms.sh` automatically. Use `-Rebuild` only when you want a clean `--no-cache` build or a fresh CA cert export:
 
 ```powershell
 .\scripts\invoke-ops.ps1 -Rebuild

@@ -4,18 +4,27 @@
 .DESCRIPTION
     The script checks if Docker Compose is available, exports trusted host CA certificates into .docker/certs when present, builds the app image, starts the containers, runs database migrations and seeds the database, bootstraps an admin user with known credentials for testing purposes, imports system credentials when present, and finally opens the application in the browser.
 .PARAMETER Rebuild
-    If specified, the script will perform a clean rebuild of the application by stopping and removing existing Docker containers, volumes, and orphans before rebuilding and starting the application.
+    If specified, stops and removes existing containers, volumes, and orphans (wiping the
+    database and all app state) and re-exports host CA certificates before rebuilding and
+    starting the application. Use this for a clean slate, not just to pick up code changes —
+    every run already rebuilds the app image (respecting Docker's layer cache) before starting,
+    so plain `.\appsec-scout.ps1` alone is enough to pick up any source, dependency, or
+    Dockerfile change without losing data.
 .PARAMETER Force
-    When used in conjunction with -Rebuild, this parameter forces the rebuild process to skip cached docker layers.
+    Skips Docker's build cache for the app image on this run (`--no-cache`). Independent of
+    -Rebuild — use it alone if you suspect a stale cache layer, without wiping any data.
 .EXAMPLE
     .\appsec-scout.ps1
-    Starts the AppSec Scout application using pre-built Docker image.
+    Rebuilds the app image (cache permitting) and starts the application, preserving all data.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild
-    (Re)build the AppSec Scout docker image and perform and start the application.
+    Wipes all containers/volumes/data, re-exports host CA certs, then rebuilds and starts fresh.
+.EXAMPLE
+    .\appsec-scout.ps1 -Force
+    Rebuilds the app image from scratch (no cache) and starts the application, preserving all data.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild -Force
-    Force a rebuild of the AppSec Scout docker image and start the application, even if there are potential issues detected.
+    Wipes all data and rebuilds the app image from scratch before starting.
 #>
 [CmdletBinding()]
 param(
@@ -177,14 +186,17 @@ if (-not (Test-Docker)) {
 try {
     if ($Rebuild.IsPresent -and $Rebuild) {
         Invoke-Docker compose down --volumes --remove-orphans
-        if ($Force.IsPresent -and $Force) {
-            Invoke-Docker compose build app --no-cache
-        } else {
-            Invoke-Docker compose build app
-        }
-
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
     }
+
+    # Always rebuild the app image (Docker's layer cache makes this a fast no-op when
+    # nothing changed) so a plain run never silently starts a stale image after a `git pull`.
+    if ($Force.IsPresent -and $Force) {
+        Invoke-Docker compose build app --no-cache
+    } else {
+        Invoke-Docker compose build app
+    }
+
     Invoke-Docker compose up -d
 
     if (-not (Wait-AppReady)) {

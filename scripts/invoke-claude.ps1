@@ -26,7 +26,10 @@
     Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry
     from Windows Credential Manager with Get-StoredCredential (module CredentialManager).
 .PARAMETER Rebuild
-    Export host CA certificates and rebuild the claude Docker image before running.
+    Forces a clean --no-cache rebuild of the claude image and re-exports host CA certificates.
+    Not required to pick up ordinary code changes — every run already rebuilds the image
+    (respecting Docker's layer cache), so a stale image is never used just because -Rebuild
+    was omitted.
 .EXAMPLE
     .\invoke-claude.ps1 -Mode login
 .EXAMPLE
@@ -151,17 +154,19 @@ try {
         throw "'-Task' is required when using '-Mode task'."
     }
 
-    # Build image when requested or when it doesn't exist yet
-    $imageExists = (docker image inspect 'appsec-scout-claude:latest' 2>$null) -ne $null -and $LASTEXITCODE -eq 0
-    if ($Rebuild -or -not $imageExists) {
+    # Always rebuild (Docker's layer cache makes this a fast no-op when nothing changed)
+    # so a plain run never silently uses a stale image after a `git pull`. -Rebuild forces
+    # a clean --no-cache build and re-exports host CA certs; neither is required just to
+    # pick up ordinary Dockerfile/entrypoint.sh changes.
+    if ($Rebuild) {
         Write-Host "Exporting host CA certificates..."
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
-        Write-Host "Building claude image..."
-        if ($Rebuild) {
-            Invoke-Docker compose --env-file $ComposeEnvFile build claude --no-cache
-        } else {
-            Invoke-Docker compose --env-file $ComposeEnvFile build claude
-        }
+    }
+    Write-Host "Building claude image..."
+    if ($Rebuild) {
+        Invoke-Docker compose --env-file $ComposeEnvFile build claude --no-cache
+    } else {
+        Invoke-Docker compose --env-file $ComposeEnvFile build claude
     }
 
     # Inject -Credential and -Name into the PS environment so Docker Compose

@@ -46,7 +46,10 @@
     Skip uploading generated SBOMs into appsec-scout as attachments (-Mode sbom-scan).
     Files still land under OutputDir either way.
 .PARAMETER Rebuild
-    Export host CA certificates and rebuild the ops Docker image before running.
+    Forces a clean --no-cache rebuild of the ops image and re-exports host CA certificates.
+    Not required to pick up ordinary code changes — every run already rebuilds the image
+    (respecting Docker's layer cache), so a stale image is never used just because -Rebuild
+    was omitted.
 .EXAMPLE
     .\invoke-ops.ps1 -Mode login
 .EXAMPLE
@@ -254,17 +257,19 @@ Set-Location $ProjectRoot
 $ComposeEnvFile = Join-Path $ProjectRoot 'docker\ops\.env'
 
 try {
-    # Build image when requested or when it doesn't exist yet
-    $imageExists = (docker image inspect 'appsec-scout-ops:latest' 2>$null) -ne $null -and $LASTEXITCODE -eq 0
-    if ($Rebuild -or -not $imageExists) {
+    # Always rebuild (Docker's layer cache makes this a fast no-op when nothing changed)
+    # so a plain run never silently uses a stale image after a `git pull`. -Rebuild forces
+    # a clean --no-cache build and re-exports host CA certs; neither is required just to
+    # pick up ordinary Dockerfile/entrypoint/collect-sboms.sh changes.
+    if ($Rebuild) {
         Write-Host "Exporting host CA certificates..."
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
-        Write-Host "Building ops image..."
-        if ($Rebuild) {
-            Invoke-Docker compose --env-file $ComposeEnvFile build ops --no-cache
-        } else {
-            Invoke-Docker compose --env-file $ComposeEnvFile build ops
-        }
+    }
+    Write-Host "Building ops image..."
+    if ($Rebuild) {
+        Invoke-Docker compose --env-file $ComposeEnvFile build ops --no-cache
+    } else {
+        Invoke-Docker compose --env-file $ComposeEnvFile build ops
     }
 
     # Inject -Credential/-Name/-AzdoCredential/etc. into the PS environment so Docker
