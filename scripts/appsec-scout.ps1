@@ -174,6 +174,12 @@ Function Wait-AppReady {
             Write-Verbose "App not ready yet (attempt $($retryCount + 1) of $MaxRetries): $_"
         }
         $retryCount++
+        # The entrypoint runs composer install, a frontend asset resync, migrations, seeding,
+        # and admin bootstrap before nginx ever starts serving — visible progress here avoids
+        # this looking hung, especially on a first/cold start.
+        if ($retryCount % 6 -eq 0) {
+            Write-Host "Still waiting for the app to become ready (attempt $retryCount of $MaxRetries)... check 'docker compose logs app' for entrypoint progress."
+        }
     }
     return $false
 }
@@ -199,7 +205,16 @@ try {
 
     Invoke-Docker compose up -d
 
-    if (-not (Wait-AppReady)) {
+    # A -Rebuild run wipes the database, so the entrypoint does a full composer install plus
+    # migrate/seed/bootstrap-admin from scratch on this start — allow it considerably longer
+    # than a warm restart (which only re-verifies already-installed dependencies) before
+    # concluding the app is actually stuck rather than still finishing its first boot.
+    $waitReady = if ($Rebuild.IsPresent -and $Rebuild) {
+        Wait-AppReady -MaxRetries 90 -SleepTimeSeconds 5
+    } else {
+        Wait-AppReady
+    }
+    if (-not $waitReady) {
         throw "Application did not become ready within the expected time. Check the container logs with: docker compose logs app"
     }
 
