@@ -15,15 +15,16 @@ PowerShell entry points for developing, running, and operating AppSec Scout. All
 
 ## appsec-scout.ps1
 
-Starts the app via Docker Compose: builds the image, brings up containers, waits for `/up` to respond, runs migrations/seeders, and opens the app in the browser.
+Starts the app via Docker Compose: rebuilds the `app` image (respecting Docker's layer cache, so this is fast when nothing changed), brings up containers, waits for `/up` to respond, runs migrations/seeders, and opens the app in the browser. Every run rebuilds the image — a plain `.\scripts\appsec-scout.ps1` is enough to pick up source, dependency, or Dockerfile changes; you never need `-Rebuild` just to avoid a stale container.
 
 **Parameters**
-- `-Rebuild` — stop/remove containers and volumes, rebuild the `app` image, then start fresh (also re-imports `.credentials.json` if present).
-- `-Force` — with `-Rebuild`, rebuilds with `--no-cache`.
+- `-Rebuild` — stop/remove containers, volumes, and orphans (wipes the database and all app state) and re-exports host CA certs before rebuilding and starting fresh (also re-imports `.credentials.json` if present). Use this for a clean slate, not for routine restarts.
+- `-Force` — skip Docker's build cache for the app image (`--no-cache`). Independent of `-Rebuild` — use it alone if you suspect a stale cache layer, without wiping any data.
 
 ```powershell
-.\scripts\appsec-scout.ps1
-.\scripts\appsec-scout.ps1 -Rebuild
+.\scripts\appsec-scout.ps1                 # rebuild (cache permitting) + start, preserving data
+.\scripts\appsec-scout.ps1 -Force          # rebuild from scratch (no cache) + start, preserving data
+.\scripts\appsec-scout.ps1 -Rebuild        # wipe all data, re-export certs, rebuild + start fresh
 .\scripts\appsec-scout.ps1 -Rebuild -Force
 ```
 
@@ -54,7 +55,7 @@ Runs mutating fix operations (formatting, dependency updates) — kept separate 
 
 ## invoke-claude.ps1
 
-Runs Claude Code in an isolated, ephemeral container with no access to the host filesystem — either interactively, for one-time login, or as an autonomous task that clones a repo, does the work, and opens a PR.
+Runs Claude Code in an isolated, ephemeral container with no access to the host filesystem — either interactively, for one-time login, or as an autonomous task that clones a repo, does the work, and opens a PR. Every run rebuilds the `claude` image first (respecting Docker's layer cache, so this is fast when nothing changed) — you never need `-Rebuild` just to pick up a Dockerfile/entrypoint change.
 
 **Parameters**
 - `-Mode <shell|login|task>` — default `shell`.
@@ -63,7 +64,7 @@ Runs Claude Code in an isolated, ephemeral container with no access to the host 
 - `-Branch <name>` — branch to clone/PR against; overrides `CLAUDE_REPO_BRANCH`.
 - `-Name <string>` — git commit display name; overrides `GIT_USER_NAME`.
 - `-Credential <PSCredential>` — `UserName` = git commit email, `Password` = GitHub PAT; overrides `GIT_USER_EMAIL`/`GITHUB_TOKEN`.
-- `-Rebuild` — export host CA certs and rebuild the `claude` image first.
+- `-Rebuild` — force a clean `--no-cache` rebuild and re-export host CA certs first. Not required for routine use.
 
 ```powershell
 .\scripts\invoke-claude.ps1 -Mode login
@@ -74,7 +75,7 @@ Runs Claude Code in an isolated, ephemeral container with no access to the host 
 
 ## invoke-ops.ps1
 
-Opens the `ops` sandboxed container for appsec investigation (code analysis, secret scanning, dependency auditing, history cleaning), or runs an org-wide SBOM/vulnerability/secret scan across every Azure DevOps repository.
+Opens the `ops` sandboxed container for appsec investigation (code analysis, secret scanning, dependency auditing, history cleaning), or runs an org-wide SBOM/vulnerability/secret scan across every Azure DevOps repository. Every run rebuilds the `ops` image first (respecting Docker's layer cache, so this is fast when nothing changed) — you never need `-Rebuild` just to pick up a Dockerfile/entrypoint/collect-sboms.sh change.
 
 **Parameters**
 - `-Mode <shell|login|sbom-scan>` — default `shell`.
@@ -85,7 +86,7 @@ Opens the `ops` sandboxed container for appsec investigation (code analysis, sec
 - `-ProjectFilter <regex>` / `-RepositoryFilter <regex>` — restrict the scan by project/repo name; override `AZDO_PROJECT_FILTER`/`AZDO_REPO_FILTER`.
 - `-OutputDir <path>` — host directory for scan output; overrides `SBOM_OUTPUT_DIR`.
 - `-SkipUpload` — leave generated reports on disk without uploading them as attachments.
-- `-Rebuild` — export host CA certs and rebuild the `ops` image first.
+- `-Rebuild` — force a clean `--no-cache` rebuild and re-export host CA certs first. Not required for routine use.
 
 ```powershell
 .\scripts\invoke-ops.ps1 -Mode login

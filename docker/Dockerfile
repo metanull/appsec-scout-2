@@ -162,6 +162,16 @@ RUN APP_KEY=${BUILD_APP_KEY} php artisan filament:assets --no-interaction \
     && test -f public/css/filament/filament/app.css \
     && test -f public/js/filament/filament/app.js
 
+# Compose mounts named volumes over public/build, public/css, and public/js so that
+# vendor/build output isn't shadowed by the app-laravel bind mount. Those volumes are
+# only ever seeded from the image the first time they're created — a later image rebuild
+# does not by itself refresh them. Keep a reference copy outside any volume-mounted path
+# so the entrypoint can resync it into the live paths on every container start.
+RUN mkdir -p /opt/baked-assets \
+    && cp -r public/build /opt/baked-assets/build \
+    && cp -r public/css /opt/baked-assets/css \
+    && cp -r public/js /opt/baked-assets/js
+
 RUN chown -R www-data:www-data storage bootstrap/cache
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
