@@ -67,7 +67,7 @@ Before running a full scan, validate the PAT with [scripts/test-AzureDevOpsToken
 
 Since every scan reuses the core stack's `trivy-server` container instead of downloading its own vulnerability database, `collect-sboms.sh` fails fast with a clear message if the shared token isn't present — i.e. if the core stack hasn't been started.
 
-Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{cdx,vuln.sarif,secrets.sarif}.json`, plus a `run.jsonl` (one line per repo) and a `summary.json` (aggregate counts). `invoke-ops.ps1` then uploads every generated report into appsec-scout via `assets:import-attachment`, which parses it server-side into `SoftwareComponent`/`LocalFinding` rows.
+Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{cdx,vuln.sarif,secrets.sarif}.json`, plus a `run.jsonl` (one line per repo, appended as each repo finishes) and a `summary.json` (aggregate counts, written once the whole scan completes). Reports are picked up into appsec-scout incrementally, not just at the end: a scheduled `sbom:import-pending-scans` tick in the `app` container reads new `run.jsonl` lines every minute and imports them via the same logic as `assets:import-attachment`, tracking a per-run cursor file so nothing is imported twice. `invoke-ops.ps1` also triggers that command once more right after the scan container exits, to flush anything the last scheduled tick missed — unless `-SkipUpload` was passed, in which case `collect-sboms.sh` marks the run directory so the scheduled tick skips it too.
 
 **Additional environment variables** (set via `docker/ops/.env` or forwarded by `invoke-ops.ps1`):
 

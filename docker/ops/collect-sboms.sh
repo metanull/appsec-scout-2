@@ -62,6 +62,14 @@ RESULTS_FILE="$RUN_DIR/run.jsonl"
 : > "$RESULTS_FILE"
 ERROR_FLAG="$RUN_DIR/.azdo_api_error"
 
+# invoke-ops.ps1 -SkipUpload sets this so a dry-run scan never reaches appsec-scout at
+# all — including via the scheduled sbom:import-pending-scans tick, which otherwise runs
+# every minute independently of this script and would import the run before it even
+# finishes. PendingSbomScanImporter skips any run directory containing this marker.
+if [ "${AZDO_SKIP_IMPORT:-0}" = "1" ]; then
+    touch "$RUN_DIR/.skip-import"
+fi
+
 sanitize() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
 }

@@ -81,13 +81,13 @@ Opens the `ops` sandboxed container for appsec investigation (code analysis, sec
 
 **Parameters**
 - `-Mode <shell|login|sbom-scan>` — default `shell`.
-  - `sbom-scan` clones and Trivy-scans every non-disabled repo in the target AzDO organization, then uploads each generated report into appsec-scout as an `Attachment` (unless `-SkipUpload`). Requires the core stack (`appsec-scout.ps1`) to already be running: every scan runs against the shared `trivy-server` container rather than downloading its own vulnerability database, and fails fast with a clear message if that shared token isn't present.
+  - `sbom-scan` clones and Trivy-scans every non-disabled repo in the target AzDO organization. Generated reports are imported into appsec-scout as `Attachment`s incrementally as each repo finishes (a scheduled `sbom:import-pending-scans` tick picks up new results every minute), not just once the whole scan completes — unless `-SkipUpload`. Requires the core stack (`appsec-scout.ps1`) to already be running: every scan runs against the shared `trivy-server` container rather than downloading its own vulnerability database, and fails fast with a clear message if that shared token isn't present.
 - `-Repo` / `-Branch` / `-Name` / `-Credential` — same meaning as in `invoke-claude.ps1`, for cloning a GitHub repo into the ops shell. `-Credential` follows the same vault-first fallback as `invoke-claude.ps1`.
 - `-Organization <string>` — AzDO organization to scan; overrides `AZDO_ORG`.
 - `-AzdoCredential <PSCredential>` — `Password` = AzDO PAT with "Code (Read)" scope; overrides `AZDO_PAT`. `UserName` is unused. If omitted (in `-Mode sbom-scan`), the PAT and organization already configured as appsec-scout's AzDO Advanced Security source credential are reused automatically (fetched from the running `app` container); `docker/ops/.env`'s `AZDO_PAT`/`AZDO_ORG` are only a last-resort fallback.
 - `-ProjectFilter <regex>` / `-RepositoryFilter <regex>` — restrict the scan by project/repo name; override `AZDO_PROJECT_FILTER`/`AZDO_REPO_FILTER`.
 - `-OutputDir <path>` — host directory for scan output; overrides `SBOM_OUTPUT_DIR`.
-- `-SkipUpload` — leave generated reports on disk without uploading them as attachments.
+- `-SkipUpload` — leave generated reports on disk without uploading them as attachments, including via the scheduled per-minute import (the scan run is marked so `sbom:import-pending-scans` skips it too).
 - `-Rebuild` — force a clean `--no-cache` rebuild and re-export host CA certs first. Not required for routine use.
 
 Proxy/TLS settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) are read from the repo root `.env`, layered under `docker/ops/.env` — set those once at the root, not per container.
