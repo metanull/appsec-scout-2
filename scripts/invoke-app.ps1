@@ -33,8 +33,10 @@ param(
 
     [Switch]$Tinker,
 
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$Artisan = @()
+    [Switch]$Artisan,
+
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+    [string[]]$ArtisanArgs = @()
 )
 
 $MyScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -52,19 +54,22 @@ function Invoke-Docker {
 Set-Location $ProjectRoot
 
 try {
-    $modesRequested = @($Restart.IsPresent, $Tinker.IsPresent, ($Artisan.Count -gt 0)) | Where-Object { $_ }
+    $modesRequested = @($RestartApp.IsPresent, $Tinker.IsPresent, $Artisan.IsPresent) | Where-Object { $_ }
     if ($modesRequested.Count -gt 1) {
-        throw "Specify only one of -Restart, -Tinker, or -Artisan at a time."
+        throw "Specify only one of -RestartApp, -Tinker, or -Artisan at a time."
+    }
+    if ($Artisan -and $ArtisanArgs.Count -eq 0) {
+        throw "-Artisan requires at least one artisan command argument, e.g. -Artisan migrate:status"
     }
 
-    if ($Restart) {
+    if ($RestartApp) {
         Write-Host "Restarting app container..."
         Invoke-Docker compose restart app
     } elseif ($Tinker) {
         Write-Host "Starting artisan tinker in the app container. Type 'exit' to quit."
         Invoke-Docker compose exec app php artisan tinker
-    } elseif ($Artisan.Count -gt 0) {
-        Invoke-Docker compose exec app php artisan @Artisan
+    } elseif ($Artisan) {
+        Invoke-Docker compose exec app php artisan @ArtisanArgs
     } else {
         Write-Host "Starting bash shell in the app container. Type 'exit' to quit."
         Invoke-Docker compose exec app bash
