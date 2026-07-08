@@ -9,6 +9,7 @@ use App\Assets\AzDoProjectLinker;
 use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
+use App\Assets\Sbom\PendingSbomScanImporter;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
@@ -453,6 +454,24 @@ Artisan::command(
     },
 )->purpose("Push each security container's latest stored SBOM attachment to OWASP Dependency-Track as a project BOM upload");
 
+Artisan::command(
+    'sbom:import-pending-scans',
+    function (PendingSbomScanImporter $importer): int {
+        $stats = $importer->importPending();
+
+        $this->info(sprintf(
+            'Imported %d report(s) across %d repositor%s (%d scan run(s) seen)%s.',
+            $stats['reportsImported'],
+            $stats['linesImported'],
+            $stats['linesImported'] === 1 ? 'y' : 'ies',
+            $stats['runsSeen'],
+            $stats['reportsFailed'] > 0 ? sprintf(', %d failed — see Error Log', $stats['reportsFailed']) : '',
+        ));
+
+        return self::SUCCESS;
+    },
+)->purpose('Import SBOM/vulnerability/secret reports from any in-progress or finished sbom-scan run as soon as they land in run.jsonl, using a per-run cursor so nothing is imported twice; scheduled every minute and also triggered once by invoke-ops.ps1 right after a scan finishes');
+
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
 
@@ -758,3 +777,4 @@ Artisan::command('vault:list', function (): int {
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
 Schedule::command('integrations:dispatch-due')->everyMinute()->withoutOverlapping()->name('integrations:dispatch-due');
+Schedule::command('sbom:import-pending-scans')->everyMinute()->withoutOverlapping()->name('sbom:import-pending-scans');

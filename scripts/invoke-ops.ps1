@@ -14,10 +14,15 @@
                 DevOps organization, restoring/building any *.sln first for precise .NET
                 results. Runs to completion in a single container invocation; each repo is
                 deleted immediately after it is scanned. Output lands on the host under
-                SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\). Every successful
-                SBOM is then uploaded into appsec-scout as an Attachment on the matching
-                SoftwareSystem/SecurityContainer (via `assets:import-attachment` in the
-                `app` container) unless -SkipUpload is passed.
+                SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\). Reports are
+                uploaded into appsec-scout as Attachments on the matching SoftwareSystem/
+                SecurityContainer incrementally, as soon as each repository finishes — a
+                scheduled `sbom:import-pending-scans` tick in the `app` container picks up
+                every new run.jsonl line every minute, so you don't have to wait for the
+                whole (possibly multi-hour) scan to see results land. This script also
+                triggers that same command once more right after the scan container exits,
+                to flush anything the last scheduled tick hasn't picked up yet. Pass
+                -SkipUpload to opt this run out of both entirely (see -SkipUpload).
 .PARAMETER Repo
     GitHub HTTPS URL to clone. Overrides OPS_REPO_URL from .env.
 .PARAMETER Branch
@@ -50,7 +55,10 @@
     Host directory to receive SBOM output (-Mode sbom-scan). Overrides SBOM_OUTPUT_DIR from .env.
 .PARAMETER SkipUpload
     Skip uploading generated SBOMs into appsec-scout as attachments (-Mode sbom-scan).
-    Files still land under OutputDir either way.
+    Files still land under OutputDir either way. This also prevents the per-minute
+    scheduled import (sbom:import-pending-scans) from picking up this run, since that
+    runs independently of this script — collect-sboms.sh drops a marker in the run's
+    output directory that the scheduled command checks for and skips.
 .PARAMETER Rebuild
     Forces a clean --no-cache rebuild of the ops image and re-exports host CA certificates.
     Not required to pick up ordinary code changes — every run already rebuilds the image
@@ -140,76 +148,20 @@ function Get-SystemVaultCredential {
 
 function Invoke-SbomUpload {
     param(
-        [Parameter(Mandatory)][string[]]$EnvFileArgs,
-        [Parameter(Mandatory)][System.IO.DirectoryInfo]$RunDirectory
+        [Parameter(Mandatory)][string[]]$EnvFileArgs
     )
-
-    $summaryPath = Join-Path $RunDirectory.FullName 'summary.json'
-    if (-not (Test-Path $summaryPath)) {
-        Write-Warning "No summary.json found under $($RunDirectory.FullName); skipping upload."
-        return
-    }
-
-    $summary = Get-Content $summaryPath -Raw | ConvertFrom-Json
-
-    # One report kind per Trivy scan type; each maps to its own attachment kind
-    # and gets parsed automatically server-side (assets:import-attachment ->
-    # AttachmentIngestionService) into SoftwareComponent/LocalFinding rows.
-    $reportKinds = @(
-        @{ Generated = 'sbomGenerated'; Path = 'sbomPath'; AttachmentKind = 'sbom'; Label = 'SBOM' }
-        @{ Generated = 'vulnerabilitiesGenerated'; Path = 'vulnerabilitiesPath'; AttachmentKind = 'vulnerabilities'; Label = 'vulnerability report' }
-        @{ Generated = 'secretsGenerated'; Path = 'secretsPath'; AttachmentKind = 'secrets'; Label = 'secret report' }
-    )
-
-    $uploads = @()
-    foreach ($reportKind in $reportKinds) {
-        foreach ($result in $summary.results) {
-            if ($result.($reportKind.Generated) -eq $true -and -not [string]::IsNullOrWhiteSpace($result.($reportKind.Path))) {
-                $uploads += [pscustomobject]@{
-                    Result = $result
-                    Path = $result.($reportKind.Path)
-                    AttachmentKind = $reportKind.AttachmentKind
-                    Label = $reportKind.Label
-                }
-            }
-        }
-    }
-
-    if ($uploads.Count -eq 0) {
-        Write-Host "No reports to upload."
-        return
-    }
-
-    Write-Host "Uploading $($uploads.Count) report(s) to appsec-scout..."
 
     # `exec` reads the container's mount as it was when the container was (re)created, so make
-    # sure `app` is up to date with the current SBOM_OUTPUT_DIR bind mount before uploading.
+    # sure `app` is up to date with the current SBOM_OUTPUT_DIR bind mount before importing.
     docker compose @EnvFileArgs up -d app | Out-Null
 
-    $uploaded = 0
-    $failed = 0
-
-    foreach ($upload in $uploads) {
-        $result = $upload.Result
-        $containerPath = "/var/www/html/sbom-import/$($RunDirectory.Name)/$($upload.Path)".Replace('\', '/')
-
-        docker compose @EnvFileArgs exec -T app php artisan assets:import-attachment `
-            azdo $result.projectId $upload.AttachmentKind $containerPath `
-            --container $result.repositoryId `
-            --system-name $result.project `
-            --container-name $result.repository `
-            --container-kind repository | Out-Null
-
-        if ($LASTEXITCODE -eq 0) {
-            $uploaded++
-        } else {
-            $failed++
-            Write-Warning "Failed to upload $($upload.Label) for $($result.project)/$($result.repository)."
-        }
+    # Delegates to the same idempotent, cursor-tracked command the scheduler already runs
+    # every minute (see `sbom:import-pending-scans` in routes/console.php) — this just
+    # flushes whatever the scheduler hasn't picked up yet, so nothing is ever imported twice.
+    docker compose @EnvFileArgs exec -T app php artisan sbom:import-pending-scans
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "sbom:import-pending-scans reported a failure; check appsec-scout's Error Log for details."
     }
-
-    $suffix = if ($failed -gt 0) { " ($failed failed — see warnings above; run 'docker compose up -d app' if uploads report a missing file)" } else { '' }
-    Write-Host "Uploaded $uploaded of $($uploads.Count) report(s) to appsec-scout.$suffix"
 }
 
 # ---------------------------------------------------------------------------
@@ -302,6 +254,12 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($Branch)) {
         $envOverrides += '-e'; $envOverrides += "REPO_BRANCH=$Branch"
     }
+    if ($Mode -eq 'sbom-scan' -and $SkipUpload) {
+        # Tells collect-sboms.sh to drop a .skip-import marker in this run's output
+        # directory, so the scheduled sbom:import-pending-scans tick (which runs every
+        # minute independently of this script) never imports a dry-run scan either.
+        $envOverrides += '-e'; $envOverrides += 'AZDO_SKIP_IMPORT=1'
+    }
 
     switch ($Mode) {
         'login' {
@@ -330,7 +288,7 @@ try {
                 if ($SkipUpload) {
                     Write-Host "Skipping upload to appsec-scout (-SkipUpload)."
                 } else {
-                    Invoke-SbomUpload -EnvFileArgs $EnvFileArgs -RunDirectory $latestRun
+                    Invoke-SbomUpload -EnvFileArgs $EnvFileArgs
                 }
             } else {
                 Write-Warning "SBOM scan finished but no output directory was found under $resolvedOutputRoot"
