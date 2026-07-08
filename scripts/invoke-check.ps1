@@ -51,42 +51,42 @@ try {
         }
 
     if ($Check -eq 'all' -or $Check -eq 'lint') {
-         docker compose run --rm -v "$workspaceMount" app vendor/bin/pint --test
+         docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" app vendor/bin/pint --test
          if ($LASTEXITCODE -ne 0) {
              throw "Pint check failed."
          }
     }
 
     if ($Check -eq 'all' -or $Check -eq 'static-analysis') {
-         docker compose run --rm -v "$workspaceMount" app vendor/bin/phpstan analyse --memory-limit=512M
+         docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" app vendor/bin/phpstan analyse --memory-limit=512M
          if ($LASTEXITCODE -ne 0) {
              throw "PHPStan check failed."
          }
     }
 
     if ($Check -eq 'all' -or $Check -eq 'test' -or $Check -eq 'test-sqlite') {
-        docker compose run --rm -v "$workspaceMount" @testEnvArgs app vendor/bin/pest --no-coverage --compact
+        docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs app vendor/bin/pest --no-coverage --compact
         if ($LASTEXITCODE -ne 0) {
             throw "Pest (SQLite) check failed."
         }
     }
 
     if ($Check -eq 'all' -or $Check -eq 'test' -or $Check -eq 'test-mysql') {
-        docker compose run --rm -v "$workspaceMount" @testEnvArgs app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml --compact
+        docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml --compact
         if ($LASTEXITCODE -ne 0) {
             throw "Pest (MySQL) check failed."
         }
     }
 
     if ($Check -eq 'all' -or $Check -eq 'smoke') {
-        docker compose run --rm -v "$workspaceMount" @testEnvArgs app /usr/local/bin/composer smoke
+        docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs app /usr/local/bin/composer smoke
         if ($LASTEXITCODE -ne 0) {
             throw "Composer smoke check failed."
         }
     }
 
     if ($Check -eq 'all' -or $Check -eq 'dependencies') {
-        docker compose run --rm -v "$workspaceMount" @testEnvArgs app /usr/local/bin/composer outdated --strict
+        docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs app /usr/local/bin/composer outdated --strict
         if ($LASTEXITCODE -ne 0) {
             throw "Composer dependencies check failed."
         }

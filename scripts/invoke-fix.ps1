@@ -32,7 +32,7 @@ try {
     Remove-Item -Path "app-laravel/bootstrap/cache/*.php" -Force -ErrorAction SilentlyContinue
 
     if ($Fix -eq 'all' -or $Fix -eq 'lint-fix') {
-        docker compose run --rm --no-deps -v "$workspaceMount" app vendor/bin/pint
+        docker compose run --rm --no-deps -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" app vendor/bin/pint
         if ($LASTEXITCODE -ne 0) {
             throw "Pint fix run failed."
         }
@@ -40,6 +40,7 @@ try {
 
     if ($Fix -eq 'all' -or $Fix -eq 'dependencies-fix') {
         docker compose run --rm --no-deps --user root `
+            -e SKIP_APP_BOOTSTRAP=1 `
             -e COMPOSER_ALLOW_SUPERUSER=1 `
             -e COMPOSER_HOME=/tmp/composer-home `
             -e COMPOSER_CACHE_DIR=/tmp/composer-cache `
