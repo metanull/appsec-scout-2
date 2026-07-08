@@ -22,7 +22,9 @@
     GitHub credential for pushing branches and creating PRs.
     UserName = git commit email — overrides GIT_USER_EMAIL from .env.
     Password = GitHub PAT      — overrides GITHUB_TOKEN from .env.
-    If omitted, the container falls back to those .env values.
+    If omitted, the GitHub PAT already configured as appsec-scout's GitHub tracker
+    credential is fetched from the running `app` container and reused; if that isn't
+    available either, the container falls back to GITHUB_TOKEN from docker/claude/.env.
     Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry
     from Windows Credential Manager with Get-StoredCredential (module CredentialManager).
 .PARAMETER Rebuild
@@ -67,71 +69,10 @@ $SavedErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
-# Helpers (cert export logic mirrors appsec-scout.ps1)
+# Helpers
 # ---------------------------------------------------------------------------
 
-function Convert-ToPem {
-    param([byte[]]$RawData)
-    $base64 = [Convert]::ToBase64String($RawData)
-    $lines = for ($offset = 0; $offset -lt $base64.Length; $offset += 64) {
-        $length = [Math]::Min(64, $base64.Length - $offset)
-        $base64.Substring($offset, $length)
-    }
-    return @('-----BEGIN CERTIFICATE-----'; $lines; '-----END CERTIFICATE-----') -join [Environment]::NewLine
-}
-
-function Get-SafeName {
-    param(
-        [System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate,
-        [int]$Index
-    )
-    $label = if ($Certificate.FriendlyName) { $Certificate.FriendlyName }
-             else { $Certificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) }
-    if ([string]::IsNullOrWhiteSpace($label)) { $label = 'certificate' }
-    $safeLabel = ($label -replace '[^A-Za-z0-9._-]+', '-').Trim('-')
-    if ([string]::IsNullOrWhiteSpace($safeLabel)) { $safeLabel = 'certificate' }
-    return '{0:D4}-{1}-{2}.crt' -f $Index, $safeLabel, $Certificate.Thumbprint.ToUpperInvariant()
-}
-
-function Export-HostCertificates {
-    param([string]$OutputDir)
-    $resolvedOutputDir = [System.IO.Path]::GetFullPath($OutputDir)
-    New-Item -ItemType Directory -Path $resolvedOutputDir -Force | Out-Null
-    Get-ChildItem -Path $resolvedOutputDir -File -Filter '*.crt' -ErrorAction SilentlyContinue | Remove-Item -Force
-
-    $storePaths = @('Cert:\LocalMachine\Root','Cert:\LocalMachine\CA','Cert:\CurrentUser\Root','Cert:\CurrentUser\CA')
-    $certificatesByThumbprint = @{}
-    foreach ($storePath in $storePaths) {
-        if (-not (Test-Path $storePath)) { continue }
-        foreach ($certificate in Get-ChildItem -Path $storePath) {
-            if (-not $certificate.RawData -or [string]::IsNullOrWhiteSpace($certificate.Thumbprint)) { continue }
-            $thumbprint = $certificate.Thumbprint.ToUpperInvariant()
-            if (-not $certificatesByThumbprint.ContainsKey($thumbprint)) {
-                $certificatesByThumbprint[$thumbprint] = $certificate
-            }
-        }
-    }
-
-    if ($certificatesByThumbprint.Count -eq 0) {
-        Write-Information "No trusted host CA certificates found; continuing without extra exports."
-        return
-    }
-
-    $bundlePath    = Join-Path $resolvedOutputDir 'host-ca-bundle.crt'
-    $bundleBuilder = [System.Text.StringBuilder]::new()
-    $index = 0
-    foreach ($thumbprint in ($certificatesByThumbprint.Keys | Sort-Object)) {
-        $index++
-        $certificate = $certificatesByThumbprint[$thumbprint]
-        $pem      = Convert-ToPem -RawData $certificate.RawData
-        $fileName = Get-SafeName -Certificate $certificate -Index $index
-        $filePath = Join-Path $resolvedOutputDir $fileName
-        [System.IO.File]::WriteAllText($filePath, $pem + [Environment]::NewLine)
-        [void]$bundleBuilder.AppendLine($pem)
-    }
-    [System.IO.File]::WriteAllText($bundlePath, $bundleBuilder.ToString())
-    Write-Information ("Exported {0} trusted certificates to {1}" -f $certificatesByThumbprint.Count, $resolvedOutputDir)
-}
+Import-Module (Join-Path $MyScriptRoot 'lib/Certificates.psm1') -Force
 
 function Invoke-Docker {
     docker @args
@@ -140,13 +81,41 @@ function Invoke-Docker {
     }
 }
 
+function Get-SystemVaultCredential {
+    <#
+    Fetches a single system credential already configured in appsec-scout (e.g. the GitHub
+    tracker's PAT) via the running `app` container, so the same token doesn't have to be
+    re-entered into this container's own .env file. Silently returns $null (never throws) if
+    `app` isn't running or the credential isn't configured — callers fall back to their own
+    env var in that case.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string[]]$EnvFileArgs
+    )
+    $value = docker compose @EnvFileArgs exec -T app php artisan credentials:system:get $Key 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($value)) {
+        return $null
+    }
+    return ($value -join "`n").Trim()
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 Set-Location $ProjectRoot
 
+$RootEnvFile = Join-Path $ProjectRoot '.env'
 $ComposeEnvFile = Join-Path $ProjectRoot 'docker\claude\.env'
+
+if (-not (Test-Path $RootEnvFile)) {
+    throw "Root .env file not found at $RootEnvFile. Copy .env.example to .env first (see README)."
+}
+
+# Root .env supplies shared settings (proxy/TLS); docker/claude/.env supplies
+# claude-specific settings and overrides the same keys if both define them.
+$EnvFileArgs = @('--env-file', $RootEnvFile, '--env-file', $ComposeEnvFile)
 
 try {
     # Validate -Task is provided for task mode
@@ -164,9 +133,9 @@ try {
     }
     Write-Host "Building claude image..."
     if ($Rebuild) {
-        Invoke-Docker compose --env-file $ComposeEnvFile build claude --no-cache
+        Invoke-Docker compose @EnvFileArgs build claude --no-cache
     } else {
-        Invoke-Docker compose --env-file $ComposeEnvFile build claude
+        Invoke-Docker compose @EnvFileArgs build claude
     }
 
     # Inject -Credential and -Name into the PS environment so Docker Compose
@@ -175,6 +144,14 @@ try {
     if ($Credential) {
         $env:GIT_USER_EMAIL = $Credential.UserName
         $env:GITHUB_TOKEN   = $Credential.GetNetworkCredential().Password
+    } else {
+        # Reuse the GitHub PAT already stored in appsec-scout's credential vault (the GitHub
+        # tracker's token) instead of requiring it to be re-entered in docker/claude/.env.
+        $vaultToken = Get-SystemVaultCredential -Key 'github.token' -EnvFileArgs $EnvFileArgs
+        if ($vaultToken) {
+            Write-Host "Using GitHub token from appsec-scout's credential vault (GitHub tracker)."
+            $env:GITHUB_TOKEN = $vaultToken
+        }
     }
     if (-not [string]::IsNullOrWhiteSpace($Name)) {
         $env:GIT_USER_NAME = $Name
@@ -192,19 +169,19 @@ try {
     switch ($Mode) {
         'login' {
             Write-Host "Starting OAuth login — your browser will open. Complete the flow, then type /exit."
-            Invoke-Docker compose --env-file $ComposeEnvFile run --rm -it --no-deps @envOverrides claude --login
+            Invoke-Docker compose @EnvFileArgs run --rm -it --no-deps @envOverrides claude --login
             Write-Host "Login complete. Credentials saved to the 'claude_credentials' Docker volume."
         }
         'shell' {
             Write-Host "Starting interactive Claude session. Type /exit to quit."
-            Invoke-Docker compose --env-file $ComposeEnvFile run --rm -it --no-deps @envOverrides claude --shell
+            Invoke-Docker compose @EnvFileArgs run --rm -it --no-deps @envOverrides claude --shell
         }
         'task' {
             # Pass the task via environment to avoid shell-quoting issues
             $env:CLAUDE_TASK = $Task
             try {
                 Write-Host "Running task: $Task"
-                Invoke-Docker compose --env-file $ComposeEnvFile run --rm --no-deps -e CLAUDE_TASK @envOverrides claude
+                Invoke-Docker compose @EnvFileArgs run --rm --no-deps -e CLAUDE_TASK @envOverrides claude
             } finally {
                 Remove-Item Env:\CLAUDE_TASK -ErrorAction SilentlyContinue
             }
@@ -214,8 +191,9 @@ try {
     Write-Error $_.Exception.Message
     exit 1
 } finally {
+    Remove-Item Env:\GITHUB_TOKEN -ErrorAction SilentlyContinue
     if ($Credential) {
-        Remove-Item Env:\GIT_USER_EMAIL, Env:\GITHUB_TOKEN -ErrorAction SilentlyContinue
+        Remove-Item Env:\GIT_USER_EMAIL -ErrorAction SilentlyContinue
     }
     if (-not [string]::IsNullOrWhiteSpace($Name)) {
         Remove-Item Env:\GIT_USER_NAME -ErrorAction SilentlyContinue
