@@ -174,7 +174,11 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 
 ## CI vs Local Verification
 
-**Local (developer machine)**: all checks run inside Docker via the PowerShell scripts. Never run Pint, PHPStan, or Pest on the host — the container provides all tools.
+**Local (operator's own workstation)**: all checks run inside Docker via the PowerShell scripts. Never run Pint, PHPStan, or Pest directly on the operator's machine — it doesn't have the pinned toolchain, only the container does.
+
+This rule is about that workstation, not about Claude Code's own execution environment. When Claude Code itself is running in a container or cloud session (e.g. Claude Code on the web) rather than on the operator's machine:
+- If Docker is available there, still prefer the PowerShell scripts / `docker compose` — same reasoning applies.
+- If Docker is not available, running Pint/PHPStan/Pest directly is acceptable as a substitute — mirror what CI does (bare PHP, `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:`) rather than improvising a different setup, and say plainly that verification ran outside Docker so it's clear CI is still the authoritative gate.
 
 **CI (GitHub Actions)**: `.github/workflows/laravel-ci.yml` runs on a bare PHP 8.4 runner without Docker. It installs Composer dependencies, copies `.env.example`, generates an app key, then runs Pint, PHPStan, and Pest with `DB_CONNECTION=sqlite` / `DB_DATABASE=:memory:`. Do not assume `.env.testing` is present in CI.
 
