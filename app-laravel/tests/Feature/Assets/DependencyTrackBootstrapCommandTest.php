@@ -74,7 +74,8 @@ it('provisions the automation team and stores the api key in the vault', functio
         ->assertSuccessful();
 
     expect(app(Vault::class)->get('dependencytrack.apiKey', null, true))->toBe('odt_fresh_key')
-        ->and(app(Vault::class)->get('dependencytrack.baseUrl', null, true))->toBe('http://dependencytrack-apiserver:8080');
+        ->and(app(Vault::class)->get('dependencytrack.baseUrl', null, true))->toBe('http://dependencytrack-apiserver:8080')
+        ->and(app(Vault::class)->get('dependencytrack.adminPassword', null, true))->toBe('admin');
 
     expect($history[2]['request']->getMethod())->toBe('POST')
         ->and((string) $history[2]['request']->getUri())->toContain('permission/PROJECT_CREATION_UPLOAD/team/team-uuid');
@@ -118,6 +119,70 @@ it('fails cleanly when the admin password is wrong and not a forced change', fun
     $this->artisan('dependencytrack:bootstrap', ['--admin-password' => 'wrong-password'])
         ->expectsOutputToContain('Could not log in to Dependency-Track as "admin": invalid credentials.')
         ->assertExitCode(1);
+});
+
+it('configures the trivy analyzer when a trivy token is provided', function () {
+    bindFakePingingDependencyTrackFactory(false);
+
+    $history = [];
+    $teamsPayload = json_encode([[
+        'uuid' => 'team-uuid',
+        'name' => 'Automation',
+        'permissions' => [['name' => 'BOM_UPLOAD'], ['name' => 'PROJECT_CREATION_UPLOAD']],
+        'apiKeys' => [],
+    ]], JSON_THROW_ON_ERROR);
+
+    bindFakeDependencyTrackAdminFactory($history, [
+        new Response(200, [], 'jwt-token'),                                                    // login
+        new Response(200, [], $teamsPayload),                                                   // findOrCreateTeam
+        new Response(200, [], json_encode(['key' => 'odt_fresh_key'], JSON_THROW_ON_ERROR)),    // createApiKey
+        new Response(200, [], ''),                                                              // trivy.enabled
+        new Response(200, [], ''),                                                              // trivy.base.url
+        new Response(200, [], ''),                                                              // trivy.api.token
+    ]);
+
+    $this->artisan('dependencytrack:bootstrap', ['--trivy-token' => 'shared-secret'])
+        ->expectsOutputToContain('Configured Dependency-Track Trivy analyzer (base URL http://trivy-server:4954).')
+        ->assertSuccessful();
+
+    $configRequests = array_slice($history, 3);
+
+    expect($configRequests)->toHaveCount(3);
+
+    $bodies = array_map(
+        fn (array $entry): array => json_decode((string) $entry['request']->getBody(), true, 512, JSON_THROW_ON_ERROR),
+        $configRequests,
+    );
+
+    expect($bodies)->toBe([
+        ['groupName' => 'scanner', 'propertyName' => 'trivy.enabled', 'propertyValue' => 'true', 'propertyType' => 'BOOLEAN'],
+        ['groupName' => 'scanner', 'propertyName' => 'trivy.base.url', 'propertyValue' => 'http://trivy-server:4954', 'propertyType' => 'URL'],
+        ['groupName' => 'scanner', 'propertyName' => 'trivy.api.token', 'propertyValue' => 'shared-secret', 'propertyType' => 'ENCRYPTEDSTRING'],
+    ]);
+});
+
+it('skips trivy configuration when no trivy token is provided', function () {
+    bindFakePingingDependencyTrackFactory(false);
+
+    $history = [];
+    $teamsPayload = json_encode([[
+        'uuid' => 'team-uuid',
+        'name' => 'Automation',
+        'permissions' => [['name' => 'BOM_UPLOAD'], ['name' => 'PROJECT_CREATION_UPLOAD']],
+        'apiKeys' => [],
+    ]], JSON_THROW_ON_ERROR);
+
+    bindFakeDependencyTrackAdminFactory($history, [
+        new Response(200, [], 'jwt-token'),
+        new Response(200, [], $teamsPayload),
+        new Response(200, [], json_encode(['key' => 'odt_fresh_key'], JSON_THROW_ON_ERROR)),
+    ]);
+
+    $this->artisan('dependencytrack:bootstrap')
+        ->expectsOutputToContain('Skipping Dependency-Track Trivy analyzer configuration: no --trivy-token was provided.')
+        ->assertSuccessful();
+
+    expect($history)->toHaveCount(3);
 });
 
 it('skips provisioning when the stored api key already works', function () {

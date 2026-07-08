@@ -2,7 +2,14 @@
 .SYNOPSIS
     This script manages the lifecycle of the AppSec Scout application using Docker Compose. It can start the application, rebuild it from scratch, and ensure that it's up and running before opening it in the browser.
 .DESCRIPTION
-    The script checks if Docker Compose is available, exports trusted host CA certificates into .docker/certs when present, builds the app image, starts the containers, runs database migrations and seeds the database, bootstraps an admin user with known credentials for testing purposes, imports system credentials when present, and finally opens the application in the browser.
+    The script ensures .env exists (created from .env.example) and has a TRIVY_SERVER_TOKEN
+    (generated if missing), checks if Docker Compose is available, exports trusted host CA
+    certificates into .docker/certs when present, builds the app image, starts the containers —
+    including the Dependency-Track + Trivy server stack — runs database migrations and seeds
+    the database, bootstraps an admin user with known credentials for testing purposes, imports
+    system credentials when present, waits for the Dependency-Track bootstrap (team/API
+    key/Trivy analyzer provisioning) to finish, and finally opens the application in the browser.
+    The only manual step left afterwards is entering source/tracker System Credentials in the UI.
 .PARAMETER Rebuild
     If specified, stops and removes existing containers, volumes, and orphans (wiping the
     database and all app state) and re-exports host CA certificates before rebuilding and
@@ -147,6 +154,48 @@ Function Invoke-Docker {
     }
 }
 
+Function New-RandomToken {
+    param([int]$Length = 32)
+    -join ((48..57) + (65..90) + (97..122) | Get-Random -Count $Length | ForEach-Object { [char]$_ })
+}
+
+Function Initialize-DotEnv {
+    param(
+        [string]$EnvPath,
+        [string]$ExamplePath
+    )
+
+    if (-not (Test-Path $EnvPath)) {
+        Copy-Item $ExamplePath $EnvPath
+        Write-Information "Created .env from .env.example."
+    }
+
+    $lines = Get-Content $EnvPath
+    $tokenLineIndex = -1
+    $hasValue = $false
+
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^TRIVY_SERVER_TOKEN=(.*)$') {
+            $tokenLineIndex = $i
+            $hasValue = -not [string]::IsNullOrWhiteSpace($Matches[1])
+            break
+        }
+    }
+
+    if ($hasValue) {
+        return
+    }
+
+    $token = New-RandomToken
+    if ($tokenLineIndex -ge 0) {
+        $lines[$tokenLineIndex] = "TRIVY_SERVER_TOKEN=$token"
+    } else {
+        $lines += "TRIVY_SERVER_TOKEN=$token"
+    }
+    Set-Content -Path $EnvPath -Value $lines
+    Write-Information "Generated a new TRIVY_SERVER_TOKEN in .env — a self-issued shared secret wiring Dependency-Track's Trivy analyzer to the bundled trivy-server container."
+}
+
 Function Test-Docker {
     try {
         Invoke-Docker version --format '{{.Server.Version}}' | Out-Null
@@ -184,26 +233,37 @@ Function Wait-AppReady {
     return $false
 }
 
+Function Wait-DependencyTrackBootstrap {
+    Write-Host "Waiting for Dependency-Track bootstrap (team/API key/Trivy analyzer provisioning) to finish..."
+    Invoke-Docker compose wait dependencytrack-bootstrap
+}
+
 Set-Location $ProjectRoot
+
+Initialize-DotEnv -EnvPath (Join-Path $ProjectRoot '.env') -ExamplePath (Join-Path $ProjectRoot '.env.example')
 
 if (-not (Test-Docker)) {
     throw "Docker does not seem to be available or running."
 }
 try {
     if ($Rebuild.IsPresent -and $Rebuild) {
-        Invoke-Docker compose down --volumes --remove-orphans
+        Invoke-Docker compose --profile dependencytrack down --volumes --remove-orphans
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
     }
 
     # Always rebuild the app image (Docker's layer cache makes this a fast no-op when
     # nothing changed) so a plain run never silently starts a stale image after a `git pull`.
+    # dependencytrack-bootstrap reuses this same image tag, so no separate build is needed for it.
     if ($Force.IsPresent -and $Force) {
         Invoke-Docker compose build app --no-cache
     } else {
         Invoke-Docker compose build app
     }
 
-    Invoke-Docker compose up -d
+    # The dependencytrack profile brings up Postgres, the DT API server/frontend, a bundled
+    # Trivy server, and the one-shot bootstrap container that wires them together — every run,
+    # not just first boot, so the stack is always fully configured without a manual step.
+    Invoke-Docker compose --profile dependencytrack up -d
 
     # A -Rebuild run wipes the database, so the entrypoint does a full composer install plus
     # migrate/seed/bootstrap-admin from scratch on this start — allow it considerably longer
@@ -217,6 +277,8 @@ try {
     if (-not $waitReady) {
         throw "Application did not become ready within the expected time. Check the container logs with: docker compose logs app"
     }
+
+    Wait-DependencyTrackBootstrap
 
     if ($Rebuild.IsPresent -and $Rebuild) {
         if (Test-Path ".credentials.json") {

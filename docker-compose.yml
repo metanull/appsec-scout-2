@@ -101,6 +101,27 @@ services:
         ports:
             - "${DTRACK_FRONTEND_PORT:-8090}:8080"
 
+    trivy-server:
+        image: aquasec/trivy:latest
+        profiles:
+            - dependencytrack
+        # Compose interpolates every service's config on every invocation regardless of
+        # which service is targeted or which profile is active, so a required (":?") variable
+        # here would break unrelated `docker compose` commands elsewhere (e.g. invoke-ops.ps1).
+        # The check is deferred to container start instead, where it only affects this service.
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+              if [ -z "$$TRIVY_SERVER_TOKEN" ]; then
+                echo "TRIVY_SERVER_TOKEN must be set in .env — pick any string, it is a self-issued shared secret between this server and Dependency-Track" >&2;
+                exit 1;
+              fi;
+              exec trivy server --listen 0.0.0.0:4954 --token "$$TRIVY_SERVER_TOKEN"
+        environment:
+            TRIVY_SERVER_TOKEN: "${TRIVY_SERVER_TOKEN:-}"
+        volumes:
+            - trivy_data:/root/.cache
+
     dependencytrack-bootstrap:
         image: appsec-scout:latest
         profiles:
@@ -110,6 +131,8 @@ services:
                 condition: service_healthy
             dependencytrack-apiserver:
                 condition: service_healthy
+            trivy-server:
+                condition: service_started
         environment:
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -131,6 +154,8 @@ services:
             - --admin-username=${DTRACK_ADMIN_USERNAME:-admin}
             - --admin-password=${DTRACK_ADMIN_PASSWORD:-admin}
             - --team=${DTRACK_TEAM:-Automation}
+            - --trivy-base-url=${DTRACK_TRIVY_BASE_URL:-http://trivy-server:4954}
+            - --trivy-token=${TRIVY_SERVER_TOKEN:-}
 
     node:
         image: node:22-alpine
@@ -212,3 +237,4 @@ volumes:
     claude_credentials:
     dependencytrack_postgres_data:
     dependencytrack_data:
+    trivy_data:

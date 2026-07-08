@@ -281,7 +281,7 @@ Artisan::command(
 )->purpose('Re-parse existing sbom/vulnerabilities/secrets attachments into SoftwareComponent/LocalFinding rows (e.g. after a parser fix, without re-scanning)');
 
 Artisan::command(
-    'dependencytrack:bootstrap {--base-url=} {--team=Automation} {--admin-username=admin} {--admin-password=admin} {--force}',
+    'dependencytrack:bootstrap {--base-url=} {--team=Automation} {--admin-username=admin} {--admin-password=admin} {--force} {--trivy-base-url=} {--trivy-token=}',
     function (DependencyTrackAdminClientFactory $adminClientFactory, DependencyTrackClientFactory $clientFactory, Vault $vault): int {
         $baseUrlOption = $this->option('base-url');
         $baseUrl = is_string($baseUrlOption) && $baseUrlOption !== ''
@@ -327,6 +327,11 @@ Artisan::command(
 
                 return self::FAILURE;
             }
+        } else {
+            // No forced rotation happened, so nothing else has persisted this password yet —
+            // store it so a future re-run (e.g. --force to pick up new Trivy config) never
+            // needs --admin-password supplied again.
+            $vault->set('dependencytrack.adminPassword', null, $adminPassword);
         }
 
         $teamRecord = $adminClient->findOrCreateTeam($token, $team);
@@ -351,6 +356,24 @@ Artisan::command(
 
         $vault->set('dependencytrack.apiKey', null, $newApiKey);
         $vault->set('dependencytrack.baseUrl', null, $baseUrl);
+
+        $trivyTokenOption = $this->option('trivy-token');
+        $trivyToken = is_string($trivyTokenOption) ? $trivyTokenOption : '';
+
+        if ($trivyToken !== '') {
+            $trivyBaseUrlOption = $this->option('trivy-base-url');
+            $trivyBaseUrl = is_string($trivyBaseUrlOption) && $trivyBaseUrlOption !== ''
+                ? $trivyBaseUrlOption
+                : 'http://trivy-server:4954';
+
+            $adminClient->setConfigProperty($token, 'scanner', 'trivy.enabled', 'true', 'BOOLEAN');
+            $adminClient->setConfigProperty($token, 'scanner', 'trivy.base.url', $trivyBaseUrl, 'URL');
+            $adminClient->setConfigProperty($token, 'scanner', 'trivy.api.token', $trivyToken, 'ENCRYPTEDSTRING');
+
+            $this->info(sprintf('Configured Dependency-Track Trivy analyzer (base URL %s).', $trivyBaseUrl));
+        } else {
+            $this->warn('Skipping Dependency-Track Trivy analyzer configuration: no --trivy-token was provided.');
+        }
 
         $this->info(sprintf('Dependency-Track bootstrap complete (team "%s", base URL %s).', $team, $baseUrl));
 

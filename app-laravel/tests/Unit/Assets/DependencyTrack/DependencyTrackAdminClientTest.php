@@ -152,3 +152,22 @@ it('regenerates an existing api key by public id and returns the new secret', fu
     expect($history[0]['request']->getMethod())->toBe('POST')
         ->and((string) $history[0]['request']->getUri())->toContain('api/v1/team/key/key-1');
 });
+
+it('sets a config property', function () {
+    $history = [];
+    $client = dtrackAdminClient([new Response(200, [], '')], $history);
+
+    $client->setConfigProperty('jwt-token', 'scanner', 'trivy.base.url', 'http://trivy-server:4954', 'URL');
+
+    $request = $history[0]['request'];
+    $body = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($request->getMethod())->toBe('POST')
+        ->and((string) $request->getUri())->toContain('api/v1/configProperty')
+        ->and($body)->toBe([
+            'groupName' => 'scanner',
+            'propertyName' => 'trivy.base.url',
+            'propertyValue' => 'http://trivy-server:4954',
+            'propertyType' => 'URL',
+        ]);
+});

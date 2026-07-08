@@ -15,9 +15,11 @@
                 results. Runs to completion in a single container invocation; each repo is
                 deleted immediately after it is scanned. Output lands on the host under
                 SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\). Every successful
-                SBOM is then uploaded into appsec-scout as an Attachment on the matching
+                report is then uploaded into appsec-scout as an Attachment on the matching
                 SoftwareSystem/SecurityContainer (via `assets:import-attachment` in the
-                `app` container) unless -SkipUpload is passed.
+                `app` container), and collected SBOMs are pushed on to Dependency-Track
+                (via `sbom:export-dependency-track`) — unless -SkipUpload is passed. Requires
+                the dependencytrack profile to already be up (see scripts/appsec-scout.ps1).
 .PARAMETER Repo
     GitHub HTTPS URL to clone. Overrides OPS_REPO_URL from .env.
 .PARAMETER Branch
@@ -43,8 +45,8 @@
 .PARAMETER OutputDir
     Host directory to receive SBOM output (-Mode sbom-scan). Overrides SBOM_OUTPUT_DIR from .env.
 .PARAMETER SkipUpload
-    Skip uploading generated SBOMs into appsec-scout as attachments (-Mode sbom-scan).
-    Files still land under OutputDir either way.
+    Skip uploading generated reports into appsec-scout and pushing SBOMs on to
+    Dependency-Track (-Mode sbom-scan). Files still land under OutputDir either way.
 .PARAMETER Rebuild
     Forces a clean --no-cache rebuild of the ops image and re-exports host CA certificates.
     Not required to pick up ordinary code changes — every run already rebuilds the image
@@ -246,6 +248,14 @@ function Invoke-SbomUpload {
 
     $suffix = if ($failed -gt 0) { " ($failed failed — see warnings above; run 'docker compose up -d app' if uploads report a missing file)" } else { '' }
     Write-Host "Uploaded $uploaded of $($uploads.Count) report(s) to appsec-scout.$suffix"
+
+    Write-Host "Pushing collected SBOM(s) to Dependency-Track..."
+    docker compose --env-file $ComposeEnvFile exec -T app php artisan sbom:export-dependency-track | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Pushed SBOM(s) to Dependency-Track."
+    } else {
+        Write-Warning "Failed to push SBOM(s) to Dependency-Track. Run 'docker compose exec app php artisan sbom:export-dependency-track' manually for details (make sure the dependencytrack profile is up: 'docker compose --profile dependencytrack up -d')."
+    }
 }
 
 # ---------------------------------------------------------------------------

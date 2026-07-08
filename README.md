@@ -137,20 +137,21 @@ Runs Claude Code in an isolated, ephemeral container with no host filesystem acc
 
 ### Dependency-Track — SBOM visualization
 
-[OWASP Dependency-Track](https://dependencytrack.org/) is bundled as an optional Docker Compose profile for visualizing and vulnerability-scanning the SBOMs AppSec Scout already collects. It runs as part of this suite (its own Postgres + apiserver + frontend), not as a standalone tool you configure by hand: a one-shot `dependencytrack-bootstrap` container logs in, performs the forced first-boot password change if needed, grants the automation team the permissions required for BOM uploads, and stores a fresh API key in AppSec Scout's credential vault automatically.
+[OWASP Dependency-Track](https://dependencytrack.org/) is bundled for visualizing and vulnerability-scanning the SBOMs AppSec Scout already collects, wired up entirely automatically. `.\scripts\appsec-scout.ps1` brings up the whole `dependencytrack` Compose profile every run — its own Postgres + apiserver + frontend, a bundled `trivy-server` (free, self-hosted vulnerability source for Dependency-Track's Trivy analyzer — no NVD mirror wait, no external account), and a one-shot `dependencytrack-bootstrap` container that logs in, performs the forced first-boot password change if needed, grants the automation team the permissions required for BOM uploads, stores a fresh API key in AppSec Scout's credential vault, and configures the Trivy analyzer (enabled, base URL, token) — all with no manual UI steps. `TRIVY_SERVER_TOKEN` in `.env` is a self-issued shared secret (not a credential from anywhere external); `appsec-scout.ps1` generates one automatically if `.env` is missing or the token is blank, so a fresh clone needs no manual setup at all beyond entering source/tracker System Credentials in the UI.
 
 ```powershell
-# Start Dependency-Track (Postgres + apiserver + frontend) and auto-provision it
-docker compose --profile dependencytrack up -d
+# Brings up appsec-scout, MySQL, Redis, Dependency-Track, and trivy-server together,
+# and waits for Dependency-Track bootstrap to finish before returning.
+.\scripts\appsec-scout.ps1
 
-# Collect SBOMs for every repo in an Azure DevOps org and store them as attachments
+# Collect SBOMs for every repo in an Azure DevOps org, store them as attachments in
+# appsec-scout, and push the SBOMs on to Dependency-Track — all in one step.
 .\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
-
-# Push every container's latest stored SBOM into Dependency-Track
-docker compose exec app php artisan sbom:export-dependency-track
 ```
 
-Frontend: `http://localhost:8090`. Re-running `sbom:export-dependency-track` at any time refreshes existing Dependency-Track projects with the latest scan. `DTRACK_*` variables in `.env` (base URL/port, admin username/password, team name) are all configurable — see `.env.example`.
+Frontend: `http://localhost:8090`. `sbom:export-dependency-track` (what the sbom-scan step calls automatically) can also be re-run manually at any time to refresh existing Dependency-Track projects with the latest scan. `DTRACK_*` variables in `.env` (base URL/port, admin username/password, team name) are all configurable — see `.env.example`.
+
+The NVD and OSS Index analyzers are also enabled by default and free; OSV (Administration → Analyzers → OSV) is free too and needs no API key at all, but stays a manual opt-in since it requires picking which ecosystems to mirror. None of Dependency-Track's vulnerability sources require a paid subscription except Snyk and VulnDB, which stay disabled here.
 
 ### tools/
 
