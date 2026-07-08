@@ -137,11 +137,12 @@ Runs Claude Code in an isolated, ephemeral container with no host filesystem acc
 
 ### Dependency-Track — SBOM visualization
 
-[OWASP Dependency-Track](https://dependencytrack.org/) is bundled as an optional Docker Compose profile for visualizing and vulnerability-scanning the SBOMs AppSec Scout already collects. It runs as part of this suite (its own Postgres + apiserver + frontend), not as a standalone tool you configure by hand: a one-shot `dependencytrack-bootstrap` container logs in, performs the forced first-boot password change if needed, grants the automation team the permissions required for BOM uploads, and stores a fresh API key in AppSec Scout's credential vault automatically.
+[OWASP Dependency-Track](https://dependencytrack.org/) is bundled for visualizing and vulnerability-scanning the SBOMs AppSec Scout already collects, and starts automatically with the rest of the stack — not an opt-in profile you have to remember to enable. `.\scripts\appsec-scout.ps1` brings up its own Postgres + apiserver + frontend, a bundled self-hosted `trivy-server` (a free, no-account-needed vulnerability source for Dependency-Track's Trivy analyzer), and a one-shot `dependencytrack-bootstrap` container that logs in, performs the forced first-boot password change if needed, grants the automation team the permissions required for BOM uploads, stores a fresh API key in AppSec Scout's credential vault, and configures the Trivy analyzer (enabled, base URL, token) automatically. The shared secret between `trivy-server` and Dependency-Track is generated once inside the stack itself (no env var to set, no manual UI step) — `appsec-scout.ps1` waits for this bootstrap to finish before opening the browser.
 
 ```powershell
-# Start Dependency-Track (Postgres + apiserver + frontend) and auto-provision it
-docker compose --profile dependencytrack up -d
+# Brings up appsec-scout, MySQL, Redis, Dependency-Track, and trivy-server together,
+# and waits for the Dependency-Track bootstrap to finish before opening the browser.
+.\scripts\appsec-scout.ps1
 
 # Collect SBOMs for every repo in an Azure DevOps org and store them as attachments
 .\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
@@ -150,7 +151,7 @@ docker compose --profile dependencytrack up -d
 docker compose exec app php artisan sbom:export-dependency-track
 ```
 
-Frontend: `http://localhost:8090`. Re-running `sbom:export-dependency-track` at any time refreshes existing Dependency-Track projects with the latest scan. `DTRACK_*` variables in `.env` (base URL/port, admin username/password, team name) are all configurable — see `.env.example`.
+Frontend: `http://localhost:8090`. Re-running `sbom:export-dependency-track` at any time refreshes existing Dependency-Track projects with the latest scan. `DTRACK_*` variables in `.env` (base URL/port, admin username/password, team name, Trivy base URL) are all configurable — see `.env.example`.
 
 ### tools/
 

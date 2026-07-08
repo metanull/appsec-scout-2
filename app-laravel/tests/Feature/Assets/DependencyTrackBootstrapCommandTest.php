@@ -10,6 +10,7 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Facades\File;
 
 function bindFakeDependencyTrackAdminFactory(array &$history, array $responses): void
 {
@@ -74,7 +75,8 @@ it('provisions the automation team and stores the api key in the vault', functio
         ->assertSuccessful();
 
     expect(app(Vault::class)->get('dependencytrack.apiKey', null, true))->toBe('odt_fresh_key')
-        ->and(app(Vault::class)->get('dependencytrack.baseUrl', null, true))->toBe('http://dependencytrack-apiserver:8080');
+        ->and(app(Vault::class)->get('dependencytrack.baseUrl', null, true))->toBe('http://dependencytrack-apiserver:8080')
+        ->and(app(Vault::class)->get('dependencytrack.adminPassword', null, true))->toBe('admin');
 
     expect($history[2]['request']->getMethod())->toBe('POST')
         ->and((string) $history[2]['request']->getUri())->toContain('permission/PROJECT_CREATION_UPLOAD/team/team-uuid');
@@ -132,4 +134,103 @@ it('skips provisioning when the stored api key already works', function () {
         ->assertSuccessful();
 
     expect($history)->toHaveCount(0);
+});
+
+it('configures the trivy analyzer when a token is provided', function () {
+    bindFakePingingDependencyTrackFactory(false);
+
+    $history = [];
+    $teamsPayload = json_encode([[
+        'uuid' => 'team-uuid',
+        'name' => 'Automation',
+        'permissions' => [['name' => 'BOM_UPLOAD'], ['name' => 'PROJECT_CREATION_UPLOAD']],
+        'apiKeys' => [],
+    ]], JSON_THROW_ON_ERROR);
+
+    bindFakeDependencyTrackAdminFactory($history, [
+        new Response(200, [], 'jwt-token'),                                              // login
+        new Response(200, [], $teamsPayload),                                             // findOrCreateTeam
+        new Response(200, [], json_encode(['key' => 'odt_fresh_key'], JSON_THROW_ON_ERROR)), // createApiKey
+        new Response(200, [], ''),                                                        // trivy.enabled
+        new Response(200, [], ''),                                                        // trivy.base.url
+        new Response(200, [], ''),                                                        // trivy.api.token
+    ]);
+
+    $this->artisan('dependencytrack:bootstrap', ['--trivy-token' => 'trivy-shared-secret'])
+        ->expectsOutputToContain('Configured Dependency-Track Trivy analyzer (base URL http://trivy-server:4954).')
+        ->assertSuccessful();
+
+    expect($history)->toHaveCount(6);
+
+    $enabledBody = json_decode((string) $history[3]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    expect((string) $history[3]['request']->getUri())->toContain('api/v1/configProperty')
+        ->and($enabledBody)->toBe([
+            'groupName' => 'scanner',
+            'propertyName' => 'trivy.enabled',
+            'propertyValue' => 'true',
+            'propertyType' => 'BOOLEAN',
+        ]);
+
+    $tokenBody = json_decode((string) $history[5]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    expect($tokenBody)->toBe([
+        'groupName' => 'scanner',
+        'propertyName' => 'trivy.api.token',
+        'propertyValue' => 'trivy-shared-secret',
+        'propertyType' => 'ENCRYPTEDSTRING',
+    ]);
+});
+
+it('reads the trivy token from a file when --trivy-token is not given', function () {
+    bindFakePingingDependencyTrackFactory(false);
+
+    $tokenFile = storage_path('app/testing/trivy-token');
+    File::ensureDirectoryExists(dirname($tokenFile));
+    File::put($tokenFile, "file-provided-secret\n");
+
+    $history = [];
+    $teamsPayload = json_encode([[
+        'uuid' => 'team-uuid',
+        'name' => 'Automation',
+        'permissions' => [['name' => 'BOM_UPLOAD'], ['name' => 'PROJECT_CREATION_UPLOAD']],
+        'apiKeys' => [],
+    ]], JSON_THROW_ON_ERROR);
+
+    bindFakeDependencyTrackAdminFactory($history, [
+        new Response(200, [], 'jwt-token'),
+        new Response(200, [], $teamsPayload),
+        new Response(200, [], json_encode(['key' => 'odt_fresh_key'], JSON_THROW_ON_ERROR)),
+        new Response(200, [], ''),
+        new Response(200, [], ''),
+        new Response(200, [], ''),
+    ]);
+
+    $this->artisan('dependencytrack:bootstrap', ['--trivy-token-file' => $tokenFile])
+        ->assertSuccessful();
+
+    $tokenBody = json_decode((string) $history[5]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    expect($tokenBody['propertyValue'])->toBe('file-provided-secret');
+});
+
+it('warns when no trivy token or token file is provided', function () {
+    bindFakePingingDependencyTrackFactory(false);
+
+    $history = [];
+    $teamsPayload = json_encode([[
+        'uuid' => 'team-uuid',
+        'name' => 'Automation',
+        'permissions' => [['name' => 'BOM_UPLOAD'], ['name' => 'PROJECT_CREATION_UPLOAD']],
+        'apiKeys' => [],
+    ]], JSON_THROW_ON_ERROR);
+
+    bindFakeDependencyTrackAdminFactory($history, [
+        new Response(200, [], 'jwt-token'),
+        new Response(200, [], $teamsPayload),
+        new Response(200, [], json_encode(['key' => 'odt_fresh_key'], JSON_THROW_ON_ERROR)),
+    ]);
+
+    $this->artisan('dependencytrack:bootstrap')
+        ->expectsOutputToContain('Skipping Dependency-Track Trivy analyzer configuration')
+        ->assertSuccessful();
+
+    expect($history)->toHaveCount(3);
 });
