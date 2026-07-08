@@ -3,6 +3,7 @@
 namespace App\Assets;
 
 use App\Audit\Recorder;
+use App\Events\AttachmentStored;
 use App\Models\Attachment;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
@@ -13,7 +14,6 @@ final class AttachmentService
 {
     public function __construct(
         private readonly Recorder $recorder,
-        private readonly AttachmentIngestionService $ingestion,
     ) {}
 
     public function attachTo(
@@ -25,7 +25,7 @@ final class AttachmentService
         ?int $createdByUserId = null,
         ?string $createdByCommand = null,
     ): Attachment {
-        return DB::transaction(function () use ($createdByCommand, $createdByUserId, $owner, $kind, $mime, $name, $payload): Attachment {
+        $attachment = DB::transaction(function () use ($createdByCommand, $createdByUserId, $owner, $kind, $mime, $name, $payload): Attachment {
             $attachment = $owner->attachments()->create([
                 'kind' => $kind,
                 'mime' => $mime,
@@ -45,10 +45,14 @@ final class AttachmentService
                 'created_by_command' => $createdByCommand,
             ]);
 
-            $this->ingestion->ingest($attachment);
-
             return $attachment;
         });
+
+        // Dispatched after the transaction commits, not from inside it, so a queued
+        // listener can never pick up a row that turns out to have been rolled back.
+        event(new AttachmentStored($attachment));
+
+        return $attachment;
     }
 
     public function delete(Attachment $attachment): void

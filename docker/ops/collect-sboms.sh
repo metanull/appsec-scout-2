@@ -8,15 +8,29 @@
 # back to the version ranges declared in *.csproj. Restore/build failures are
 # non-fatal — Trivy still runs and produces range-based results.
 #
-# Required environment: AZDO_ORG, AZDO_PAT
+# Required environment: AZDO_ORG, AZDO_PAT, TRIVY_SERVER_URL
 # Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
 #   AZDO_SCAN_TYPES (comma-separated subset of sbom,vuln,secret; default: all three),
 #   TRIVY_TIMEOUT (per-scan Trivy timeout; secret scanning in particular needs more
 #   than the 5m default on large trees — default here is 15m)
+#
+# Every scan runs against the shared trivy-server container (see docker-compose.yml)
+# rather than downloading its own vulnerability database — this script is meant to run
+# as part of the core stack (appsec-scout.ps1), not standalone, so trivy-server and the
+# shared token it authenticates with are always expected to be present.
 set -uo pipefail
 
 : "${AZDO_ORG:?AZDO_ORG must be set}"
 : "${AZDO_PAT:?AZDO_PAT must be set}"
+: "${TRIVY_SERVER_URL:?TRIVY_SERVER_URL must be set — run this via the core stack (appsec-scout.ps1), not standalone}"
+
+TRIVY_TOKEN_FILE="${TRIVY_TOKEN_FILE:-/var/lib/trivy-token/token}"
+if [ ! -s "$TRIVY_TOKEN_FILE" ]; then
+    echo "ERROR: Trivy shared token not found at $TRIVY_TOKEN_FILE." >&2
+    echo "       Start the core stack first (.\\scripts\\appsec-scout.ps1) so trivy-token-init has provisioned it." >&2
+    exit 1
+fi
+TRIVY_SERVER_ARGS=(--server "$TRIVY_SERVER_URL" --token "$(cat "$TRIVY_TOKEN_FILE")")
 
 API_VERSION="7.1"
 OUTPUT_DIR="${OUTPUT_DIR:-/output}"
@@ -135,19 +149,19 @@ process_repo() {
 
     local trivy_ok=false
     if [ "$clone_ok" = true ] && scan_enabled sbom \
-        && trivy fs --timeout "$TRIVY_TIMEOUT" --format cyclonedx --output "$sbom_path" "$workdir" >/dev/null 2>&1; then
+        && trivy fs "${TRIVY_SERVER_ARGS[@]}" --timeout "$TRIVY_TIMEOUT" --format cyclonedx --output "$sbom_path" "$workdir" >/dev/null 2>&1; then
         trivy_ok=true
     fi
 
     local vuln_ok=false
     if [ "$clone_ok" = true ] && scan_enabled vuln \
-        && trivy fs --timeout "$TRIVY_TIMEOUT" --scanners vuln --format sarif --output "$vuln_path" "$workdir" >/dev/null 2>&1; then
+        && trivy fs "${TRIVY_SERVER_ARGS[@]}" --timeout "$TRIVY_TIMEOUT" --scanners vuln --format sarif --output "$vuln_path" "$workdir" >/dev/null 2>&1; then
         vuln_ok=true
     fi
 
     local secret_ok=false
     if [ "$clone_ok" = true ] && scan_enabled secret \
-        && trivy fs --timeout "$TRIVY_TIMEOUT" --scanners secret --format sarif --output "$secret_path" "$workdir" >/dev/null 2>&1; then
+        && trivy fs "${TRIVY_SERVER_ARGS[@]}" --timeout "$TRIVY_TIMEOUT" --scanners secret --format sarif --output "$secret_path" "$workdir" >/dev/null 2>&1; then
         secret_ok=true
     fi
 

@@ -2,6 +2,8 @@
 
 A sandboxed, ephemeral container for hands-on appsec investigation against any repository — code analysis, secret scanning, dependency auditing, SBOM generation, and Git history cleaning. It has no access to the host filesystem beyond what is explicitly bind-mounted, and is driven exclusively via [scripts/invoke-ops.ps1](../../scripts/README.md#invoke-opsps1) — never `docker compose` directly.
 
+`-Mode sbom-scan` depends on the core stack (`appsec-scout.ps1`) already being up: it reuses the AzDO PAT already configured in appsec-scout's credential vault, and runs every Trivy scan against the shared `trivy-server` container rather than downloading its own vulnerability database. It is not meant to run standalone — start `appsec-scout.ps1` first.
+
 ## What's inside
 
 - **git**, **gh** (GitHub CLI), **jq**, **curl** — repo/API access
@@ -43,9 +45,9 @@ Copy `.env.example` to `.env` in this folder and fill in defaults, or pass every
 |----------|---------|
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `SSL_CERT_FILE` | Corporate proxy / custom TLS. `SSL_CERT_FILE` is populated automatically from the Windows cert store by `-Rebuild`. |
 | `REPO_URL` / `REPO_BRANCH` | Repository to clone into `/workspace` on shell start. |
-| `GIT_USER_NAME` / `GIT_USER_EMAIL` / `GITHUB_TOKEN` | Git commit identity and GitHub PAT for cloning/pushing. Prefer `-Credential`/`-Name` at runtime over storing these in `.env`. |
-| `AZDO_ORG` | Azure DevOps organization for `-Mode sbom-scan`. |
-| `AZDO_PAT` | Azure DevOps PAT with "Code (Read)" scope. Prefer `-AzdoCredential` at runtime — never commit a real PAT here. |
+| `GIT_USER_NAME` / `GIT_USER_EMAIL` / `GITHUB_TOKEN` | Git commit identity and GitHub PAT for cloning/pushing. `GITHUB_TOKEN` is only a last-resort fallback — `invoke-ops.ps1` first reuses the GitHub PAT already configured as appsec-scout's GitHub tracker credential. |
+| `AZDO_ORG` | Azure DevOps organization for `-Mode sbom-scan`. Fallback only — reused from appsec-scout's AzDO source credential by default. |
+| `AZDO_PAT` | Azure DevOps PAT with "Code (Read)" scope. Fallback only — `invoke-ops.ps1` first reuses the PAT already configured as appsec-scout's AzDO Advanced Security source credential; never commit a real PAT here. |
 | `AZDO_PROJECT_FILTER` / `AZDO_REPO_FILTER` | Optional regex filters on project/repository name. |
 | `SBOM_OUTPUT_DIR` | Host directory that receives scan output (default `./output/sbom-scan`). |
 
@@ -57,11 +59,13 @@ Before running a full scan, validate the PAT with [scripts/test-AzureDevOpsToken
 
 1. Shallow-clones it.
 2. If it contains any `*.sln`, attempts `dotnet restore` + `dotnet build` (non-fatal — Trivy still runs against unresolved package ranges if this fails).
-3. Runs up to three Trivy scans, controlled by `AZDO_SCAN_TYPES` (default `sbom,vuln,secret`):
+3. Runs up to three Trivy scans against the shared `trivy-server` container (`--server`/`--token`, read from the `trivy_token` volume — see docker-compose.yml), controlled by `AZDO_SCAN_TYPES` (default `sbom,vuln,secret`):
    - `sbom` — `trivy fs --format cyclonedx` → CycloneDX SBOM
    - `vuln` — `trivy fs --scanners vuln --format sarif` → vulnerability report
    - `secret` — `trivy fs --scanners secret --format sarif` → secret-scan report
 4. Deletes the clone immediately after scanning.
+
+Since every scan reuses the core stack's `trivy-server` container instead of downloading its own vulnerability database, `collect-sboms.sh` fails fast with a clear message if the shared token isn't present — i.e. if the core stack hasn't been started.
 
 Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{cdx,vuln.sarif,secrets.sarif}.json`, plus a `run.jsonl` (one line per repo) and a `summary.json` (aggregate counts). `invoke-ops.ps1` then uploads every generated report into appsec-scout via `assets:import-attachment`, which parses it server-side into `SoftwareComponent`/`LocalFinding` rows.
 
@@ -70,6 +74,7 @@ Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{cdx,vuln.sarif
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `AZDO_SCAN_TYPES` | `sbom,vuln,secret` | Comma-separated subset of scan types to run. |
+| `TRIVY_SERVER_URL` | `http://trivy-server:4954` | Base URL of the shared Trivy server every scan authenticates against. Internal wiring — not normally overridden. |
 | `TRIVY_TIMEOUT` | `15m` | Per-scan Trivy timeout (secret scanning large trees needs more than Trivy's 5m default). |
 | `AZDO_RESTORE_TIMEOUT` | `600` (seconds) | Timeout for `dotnet restore`. |
 | `AZDO_BUILD_TIMEOUT` | `900` (seconds) | Timeout for `dotnet build`. |

@@ -153,7 +153,7 @@ services:
             - --admin-username=${DTRACK_ADMIN_USERNAME:-admin}
             - --admin-password=${DTRACK_ADMIN_PASSWORD:-admin}
             - --team=${DTRACK_TEAM:-Automation}
-            - --trivy-base-url=${DTRACK_TRIVY_BASE_URL:-http://trivy-server:4954}
+            - --trivy-base-url=${TRIVY_SERVER_URL:-http://trivy-server:4954}
             - --trivy-token-file=/var/lib/trivy-token/token
 
     node:
@@ -207,6 +207,7 @@ services:
         volumes:
             - claude_credentials:/home/ops/.claude
             - ${SBOM_OUTPUT_DIR:-./output/sbom-scan}:/output
+            - trivy_token:/var/lib/trivy-token:ro
         environment:
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -221,6 +222,7 @@ services:
             AZDO_PAT: "${AZDO_PAT:-}"
             AZDO_PROJECT_FILTER: "${AZDO_PROJECT_FILTER:-}"
             AZDO_REPO_FILTER: "${AZDO_REPO_FILTER:-}"
+            TRIVY_SERVER_URL: "${TRIVY_SERVER_URL:-http://trivy-server:4954}"
         stdin_open: true
         tty: true
 
