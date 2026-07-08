@@ -482,6 +482,42 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
     return self::SUCCESS;
 })->purpose('Export system credentials to a JSON file');
 
+Artisan::command('credentials:system:get {key}', function (SourceRegistry $sources, TrackerRegistry $trackers, Vault $vault): int {
+    $key = (string) $this->argument('key');
+
+    $knownKeys = [];
+
+    foreach ($sources->all() as $source) {
+        foreach ($source->credentialFields() as $field) {
+            $knownKeys[] = $field->key;
+        }
+    }
+
+    foreach ($trackers->all() as $tracker) {
+        foreach ($tracker->credentialFields() as $field) {
+            $knownKeys[] = $field->key;
+        }
+    }
+
+    if (! in_array($key, $knownKeys, true)) {
+        $this->error(sprintf('Unknown system credential key: %s', $key));
+
+        return self::FAILURE;
+    }
+
+    $value = $vault->get($key, null, true);
+
+    if ($value === null) {
+        $this->error(sprintf('System credential "%s" is not configured.', $key));
+
+        return self::FAILURE;
+    }
+
+    $this->output->write($value);
+
+    return self::SUCCESS;
+})->purpose('Print a single system credential value from the vault to stdout, for the ops/claude containers to reuse the credential already configured in appsec-scout instead of duplicating it in their own env files');
+
 Artisan::command('credentials:system:import {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
 

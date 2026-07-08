@@ -63,8 +63,10 @@ Runs Claude Code in an isolated, ephemeral container with no access to the host 
 - `-Repo <url>` — repo to clone; overrides `CLAUDE_REPO_URL`.
 - `-Branch <name>` — branch to clone/PR against; overrides `CLAUDE_REPO_BRANCH`.
 - `-Name <string>` — git commit display name; overrides `GIT_USER_NAME`.
-- `-Credential <PSCredential>` — `UserName` = git commit email, `Password` = GitHub PAT; overrides `GIT_USER_EMAIL`/`GITHUB_TOKEN`.
+- `-Credential <PSCredential>` — `UserName` = git commit email, `Password` = GitHub PAT; overrides `GIT_USER_EMAIL`/`GITHUB_TOKEN`. If omitted, the GitHub PAT already configured as appsec-scout's GitHub tracker credential is reused automatically (fetched from the running `app` container); `docker/claude/.env`'s `GITHUB_TOKEN` is only a last-resort fallback.
 - `-Rebuild` — force a clean `--no-cache` rebuild and re-export host CA certs first. Not required for routine use.
+
+Proxy/TLS settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) are read from the repo root `.env`, layered under `docker/claude/.env` — set those once at the root, not per container.
 
 ```powershell
 .\scripts\invoke-claude.ps1 -Mode login
@@ -80,13 +82,15 @@ Opens the `ops` sandboxed container for appsec investigation (code analysis, sec
 **Parameters**
 - `-Mode <shell|login|sbom-scan>` — default `shell`.
   - `sbom-scan` clones and Trivy-scans every non-disabled repo in the target AzDO organization, then uploads each generated report into appsec-scout as an `Attachment` (unless `-SkipUpload`).
-- `-Repo` / `-Branch` / `-Name` / `-Credential` — same meaning as in `invoke-claude.ps1`, for cloning a GitHub repo into the ops shell.
+- `-Repo` / `-Branch` / `-Name` / `-Credential` — same meaning as in `invoke-claude.ps1`, for cloning a GitHub repo into the ops shell. `-Credential` follows the same vault-first fallback as `invoke-claude.ps1`.
 - `-Organization <string>` — AzDO organization to scan; overrides `AZDO_ORG`.
-- `-AzdoCredential <PSCredential>` — `Password` = AzDO PAT with "Code (Read)" scope; overrides `AZDO_PAT`. `UserName` is unused.
+- `-AzdoCredential <PSCredential>` — `Password` = AzDO PAT with "Code (Read)" scope; overrides `AZDO_PAT`. `UserName` is unused. If omitted (in `-Mode sbom-scan`), the PAT and organization already configured as appsec-scout's AzDO Advanced Security source credential are reused automatically (fetched from the running `app` container); `docker/ops/.env`'s `AZDO_PAT`/`AZDO_ORG` are only a last-resort fallback.
 - `-ProjectFilter <regex>` / `-RepositoryFilter <regex>` — restrict the scan by project/repo name; override `AZDO_PROJECT_FILTER`/`AZDO_REPO_FILTER`.
 - `-OutputDir <path>` — host directory for scan output; overrides `SBOM_OUTPUT_DIR`.
 - `-SkipUpload` — leave generated reports on disk without uploading them as attachments.
 - `-Rebuild` — force a clean `--no-cache` rebuild and re-export host CA certs first. Not required for routine use.
+
+Proxy/TLS settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) are read from the repo root `.env`, layered under `docker/ops/.env` — set those once at the root, not per container.
 
 ```powershell
 .\scripts\invoke-ops.ps1 -Mode login
