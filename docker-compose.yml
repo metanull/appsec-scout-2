@@ -58,8 +58,6 @@ services:
 
     dependencytrack-postgres:
         image: postgres:16-alpine
-        profiles:
-            - dependencytrack
         environment:
             POSTGRES_DB: "${DTRACK_DB_DATABASE:-dtrack}"
             POSTGRES_USER: "${DTRACK_DB_USERNAME:-dtrack}"
@@ -74,8 +72,6 @@ services:
 
     dependencytrack-apiserver:
         image: dependencytrack/apiserver:latest
-        profiles:
-            - dependencytrack
         depends_on:
             dependencytrack-postgres:
                 condition: service_healthy
@@ -92,8 +88,6 @@ services:
 
     dependencytrack-frontend:
         image: dependencytrack/frontend:latest
-        profiles:
-            - dependencytrack
         depends_on:
             - dependencytrack-apiserver
         environment:
@@ -101,15 +95,42 @@ services:
         ports:
             - "${DTRACK_FRONTEND_PORT:-8090}:8080"
 
+    # Generates /var/lib/trivy-token/token once (if absent) using the appsec-scout image's own
+    # PHP, then exits. trivy-server and dependencytrack-bootstrap both mount the resulting
+    # trivy_token volume read-only, so the shared secret between them is provisioned entirely
+    # inside the stack — no env var or manual step required on any entry point.
+    trivy-token-init:
+        image: appsec-scout:latest
+        entrypoint: ["php", "-r"]
+        command:
+            - "if (!is_file('/var/lib/trivy-token/token')) { file_put_contents('/var/lib/trivy-token/token', bin2hex(random_bytes(24))); }"
+        volumes:
+            - trivy_token:/var/lib/trivy-token
+
+    # Self-hosted Trivy vulnerability database server for Dependency-Track's Trivy analyzer —
+    # avoids external accounts and NVD mirror wait times. Not exposed on the host; only
+    # dependencytrack-apiserver talks to it, over the Compose network.
+    trivy-server:
+        image: aquasec/trivy:latest
+        depends_on:
+            trivy-token-init:
+                condition: service_completed_successfully
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - exec trivy server --listen 0.0.0.0:4954 --token "$$(cat /var/lib/trivy-token/token)"
+        volumes:
+            - trivy_token:/var/lib/trivy-token:ro
+            - trivy_data:/root/.cache
+
     dependencytrack-bootstrap:
         image: appsec-scout:latest
-        profiles:
-            - dependencytrack
         depends_on:
             app:
                 condition: service_healthy
             dependencytrack-apiserver:
                 condition: service_healthy
+            trivy-server:
+                condition: service_started
         environment:
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -123,6 +144,7 @@ services:
             - app_public_css:/var/www/html/public/css
             - app_public_js:/var/www/html/public/js
             - app_bootstrap_cache:/var/www/html/bootstrap/cache
+            - trivy_token:/var/lib/trivy-token:ro
         command:
             - php
             - artisan
@@ -131,6 +153,8 @@ services:
             - --admin-username=${DTRACK_ADMIN_USERNAME:-admin}
             - --admin-password=${DTRACK_ADMIN_PASSWORD:-admin}
             - --team=${DTRACK_TEAM:-Automation}
+            - --trivy-base-url=${DTRACK_TRIVY_BASE_URL:-http://trivy-server:4954}
+            - --trivy-token-file=/var/lib/trivy-token/token
 
     node:
         image: node:22-alpine
@@ -212,3 +236,5 @@ volumes:
     claude_credentials:
     dependencytrack_postgres_data:
     dependencytrack_data:
+    trivy_token:
+    trivy_data:

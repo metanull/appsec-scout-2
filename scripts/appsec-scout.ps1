@@ -2,7 +2,15 @@
 .SYNOPSIS
     This script manages the lifecycle of the AppSec Scout application using Docker Compose. It can start the application, rebuild it from scratch, and ensure that it's up and running before opening it in the browser.
 .DESCRIPTION
-    The script checks if Docker Compose is available, exports trusted host CA certificates into .docker/certs when present, builds the app image, starts the containers, runs database migrations and seeds the database, bootstraps an admin user with known credentials for testing purposes, imports system credentials when present, and finally opens the application in the browser.
+    The script checks if Docker Compose is available, exports trusted host CA certificates into
+    .docker/certs when present, builds the app image, starts the containers — including
+    Dependency-Track and its bundled Trivy analyzer server, which start with the app by default,
+    not as an opt-in profile — runs database migrations and seeds the database, bootstraps an
+    admin user with known credentials for testing purposes, imports system credentials when
+    present, waits for Dependency-Track's one-shot bootstrap (team/API key/Trivy analyzer
+    provisioning) to finish, and finally opens the application in the browser. Dependency-Track
+    and Trivy require no manual setup: the shared secret between them is generated inside the
+    stack on first start.
 .PARAMETER Rebuild
     If specified, stops and removes existing containers, volumes, and orphans (wiping the
     database and all app state) and re-exports host CA certificates before rebuilding and
@@ -82,6 +90,11 @@ Function Wait-AppReady {
     return $false
 }
 
+Function Wait-DependencyTrackBootstrap {
+    Write-Host "Waiting for Dependency-Track bootstrap (team/API key/Trivy analyzer provisioning) to finish..."
+    Invoke-Docker compose wait dependencytrack-bootstrap
+}
+
 Set-Location $ProjectRoot
 
 if (-not (Test-Docker)) {
@@ -115,6 +128,8 @@ try {
     if (-not $waitReady) {
         throw "Application did not become ready within the expected time. Check the container logs with: docker compose logs app"
     }
+
+    Wait-DependencyTrackBootstrap
 
     if ($Rebuild.IsPresent -and $Rebuild) {
         if (Test-Path ".credentials.json") {

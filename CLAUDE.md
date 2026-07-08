@@ -42,13 +42,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Environment
 
-Docker is the only environment for development and usage. `docker-compose.yml` defines three services:
+Docker is the only environment for development and usage. `docker-compose.yml` starts these services by default (no profile needed):
 
 | Service | Image | Role |
 |---------|-------|------|
 | `app` | `appsec-scout:latest` | Laravel app (nginx + php-fpm + scheduler + queue worker via Supervisor) |
 | `mysql` | `8.0` | Primary database; creates `appsec_scout_test` DB on init |
 | `redis` | `7-alpine` | Cache and queue backend |
+| `dependencytrack-postgres`/`-apiserver`/`-frontend` | `postgres:16-alpine` / `dependencytrack/apiserver` / `dependencytrack/frontend` | SBOM visualization; auto-provisioned by `dependencytrack-bootstrap` (team, API key, Trivy analyzer — stored in the credential vault) |
+| `trivy-token-init` / `trivy-server` | `appsec-scout:latest` / `aquasec/trivy:latest` | Self-hosted vulnerability source for Dependency-Track's Trivy analyzer; the shared token between them is generated once inside the stack, no manual setup |
+
+`node` (`profiles: tools`), `claude` (`profiles: claude`), and `ops` (`profiles: ops`) are opt-in profiles, not started by a plain `docker compose up`.
 
 Users interact with the environment through three PowerShell scripts:
 

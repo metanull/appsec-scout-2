@@ -95,6 +95,16 @@ final class DependencyTrackAdminClient
         return self::extractKey($this->request('POST', "api/v1/team/key/{$publicId}", $token));
     }
 
+    public function setConfigProperty(string $token, string $groupName, string $propertyName, string $propertyValue, string $propertyType): void
+    {
+        $this->request('POST', 'api/v1/configProperty', $token, ['json' => [
+            'groupName' => $groupName,
+            'propertyName' => $propertyName,
+            'propertyValue' => $propertyValue,
+            'propertyType' => $propertyType,
+        ]]);
+    }
+
     private static function extractKey(string $body): string
     {
         $payload = self::decodeObject($body);
