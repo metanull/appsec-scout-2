@@ -550,6 +550,31 @@ Artisan::command('credentials:system:get {key}', function (SourceRegistry $sourc
     return self::SUCCESS;
 })->purpose('Print a single system credential value from the vault to stdout, for the ops/claude containers to reuse the credential already configured in appsec-scout instead of duplicating it in their own env files');
 
+Artisan::command('credentials:system:list', function (SourceRegistry $sources, TrackerRegistry $trackers): int {
+    $knownKeys = [];
+
+    foreach ($sources->all() as $source) {
+        foreach ($source->credentialFields() as $field) {
+            $knownKeys[] = $field->key;
+        }
+    }
+
+    foreach ($trackers->all() as $tracker) {
+        foreach ($tracker->credentialFields() as $field) {
+            $knownKeys[] = $field->key;
+        }
+    }
+
+    $knownKeys = array_values(array_unique($knownKeys));
+    sort($knownKeys);
+
+    foreach ($knownKeys as $key) {
+        $this->line($key);
+    }
+
+    return self::SUCCESS;
+})->purpose('List the system credential keys accepted by credentials:system:get (Source and Tracker credential fields), keys only, not values');
+
 Artisan::command('credentials:system:import {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
 
@@ -701,6 +726,34 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
 
     return self::SUCCESS;
 })->purpose('Import system credentials from a JSON export file with strict structure validation');
+
+Artisan::command('vault:get {key}', function (Vault $vault): int {
+    $key = (string) $this->argument('key');
+    $value = $vault->get($key, null, true);
+
+    if ($value === null) {
+        $this->error(sprintf('Vault key "%s" is not configured.', $key));
+
+        return self::FAILURE;
+    }
+
+    $this->output->write($value);
+
+    return self::SUCCESS;
+})->purpose('Print any system-scoped vault value to stdout by its exact key, without the Source/Tracker allowlist that credentials:system:get enforces (e.g. dependencytrack.adminPassword, dependencytrack.apiKey, trivy tokens)');
+
+Artisan::command('vault:list', function (): int {
+    $keys = Credential::query()
+        ->whereNull('owner_user_id')
+        ->orderBy('integration_key')
+        ->pluck('integration_key');
+
+    foreach ($keys as $key) {
+        $this->line($key);
+    }
+
+    return self::SUCCESS;
+})->purpose('List every system-scoped key currently stored in the vault, keys only, not values');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();

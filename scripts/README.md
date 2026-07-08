@@ -115,10 +115,10 @@ Validates a GitHub PAT against `https://api.github.com/user` and prints the auth
 
 ## test-AzureDevOpsToken.ps1
 
-Validates an Azure DevOps PAT with a single lightweight call (`GET _apis/projects?$top=1`) and reports the HTTP status and project count. Use this to rule out credential problems before running a full `invoke-ops.ps1 -Mode sbom-scan`.
+Validates an Azure DevOps PAT with a single lightweight call (`GET _apis/projects?$top=1`) and reports the HTTP status and project count, then resolves and prints the real account (display name + email) the PAT belongs to via the profile API. Use this to rule out credential problems before running a full `invoke-ops.ps1 -Mode sbom-scan`.
 
 **Parameters**
-- `-Credential <PSCredential>` — `Password` = AzDO PAT. `UserName` is unused.
+- `-Credential <PSCredential>` — `Password` = AzDO PAT. `UserName` is not used for authentication — it's just a free-text label typed into `Get-Credential`, not the PAT's real owner, so the script looks up the actual identity from Azure DevOps instead.
 - `-Organization <string>` — AzDO organization name; default `EESC-CoR`.
 
 ```powershell
