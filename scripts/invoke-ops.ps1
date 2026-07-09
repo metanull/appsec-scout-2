@@ -160,7 +160,7 @@ function Invoke-SbomUpload {
     # flushes whatever the scheduler hasn't picked up yet, so nothing is ever imported twice.
     docker compose @EnvFileArgs exec -T app php artisan sbom:import-pending-scans
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "sbom:import-pending-scans reported a failure; check appsec-scout's Error Log for details."
+        Write-Warning "sbom:import-pending-scans could not complete — appsec-scout's database or queue is likely unreachable. Your scan data is untouched on disk under the SBOM output directory; nothing has been lost, and the scheduled import will retry automatically (every minute) once appsec-scout is healthy again."
     }
 }
 

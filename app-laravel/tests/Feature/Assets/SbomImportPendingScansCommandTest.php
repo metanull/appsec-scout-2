@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Attachment;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 
 it('imports pending scan reports and prints a summary', function () {
@@ -41,4 +42,16 @@ it('reports zero imports when nothing is pending', function () {
     $this->artisan('sbom:import-pending-scans')
         ->expectsOutputToContain('Imported 0 report(s)')
         ->assertSuccessful();
+});
+
+it('fails and reports an abort when the database is unreachable', function () {
+    config([
+        'sbom.import_path' => sys_get_temp_dir() . '/sbom-import-cmd-db-down-' . uniqid(),
+        'sbom.cursor_path' => sys_get_temp_dir() . '/sbom-cursor-cmd-db-down-' . uniqid(),
+    ]);
+    DB::shouldReceive('select')->once()->with('select 1')->andThrow(new RuntimeException('database unreachable'));
+
+    $this->artisan('sbom:import-pending-scans')
+        ->expectsOutputToContain('Aborted after importing 0 report(s)')
+        ->assertFailed();
 });
