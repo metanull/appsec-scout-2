@@ -70,21 +70,58 @@ services:
             timeout: 5s
             retries: 5
 
+    # Extends dependencytrack-apiserver's Java truststore with any corporate/TLS-inspecting
+    # proxy CA exported by Export-HostCertificates (scripts/lib/Certificates.psm1), per
+    # https://docs.dependencytrack.org/getting-started/internal-ca/ — the apiserver's JRE
+    # (java's own cacerts, not the OS trust store) otherwise fails outbound TLS with
+    # sun.security.provider.certpath.SunCertPathBuilderException / X509TrustManagerImpl errors.
+    # Builds a copy of the image's own cacerts plus any exported certs into a shared volume;
+    # dependencytrack-apiserver then points -Djavax.net.ssl.trustStore at it via
+    # EXTRA_JAVA_OPTIONS instead of replacing the JRE's cacerts file directly — Docker can
+    # only cleanly bind/volume-mount a directory onto a missing host/volume path, never a
+    # single file (confirmed: it silently creates a directory there instead), so the shared
+    # path has to be a directory containing the file, not the file itself. A no-op merge
+    # (just the base cacerts, unchanged) when there's no corporate CA present (e.g. home).
+    dependencytrack-cacerts-init:
+        image: dependencytrack/apiserver:latest
+        # The image's default USER 1000 can't write into a fresh named volume (root-owned
+        # until something chowns it). Safe here since this container only copies/imports
+        # certs and exits — dependencytrack-apiserver itself keeps running as UID 1000.
+        user: root
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - |
+              set -e
+              cp /opt/java/openjdk/lib/security/cacerts /output/cacerts
+              for cert in /host-certs/[0-9][0-9][0-9][0-9]-*.crt; do
+                  [ -f "$$cert" ] || continue
+                  alias=$$(basename "$$cert" .crt)
+                  keytool -keystore /output/cacerts -storepass changeit \
+                      -noprompt -trustcacerts -importcert -alias "$$alias" -file "$$cert"
+              done
+        volumes:
+            - ./.docker/certs:/host-certs:ro
+            - dependencytrack_cacerts:/output
+
     dependencytrack-apiserver:
         image: dependencytrack/apiserver:latest
         depends_on:
             dependencytrack-postgres:
                 condition: service_healthy
+            dependencytrack-cacerts-init:
+                condition: service_completed_successfully
         environment:
             ALPINE_DATABASE_MODE: external
             ALPINE_DATABASE_URL: "jdbc:postgresql://dependencytrack-postgres:5432/${DTRACK_DB_DATABASE:-dtrack}"
             ALPINE_DATABASE_DRIVER: org.postgresql.Driver
             ALPINE_DATABASE_USERNAME: "${DTRACK_DB_USERNAME:-dtrack}"
             ALPINE_DATABASE_PASSWORD: "${DTRACK_DB_PASSWORD:-dtrack}"
+            EXTRA_JAVA_OPTIONS: "-Djavax.net.ssl.trustStore=/opt/appsec-scout-certs/cacerts -Djavax.net.ssl.trustStorePassword=changeit"
         ports:
             - "${DTRACK_API_PORT:-8091}:8080"
         volumes:
             - dependencytrack_data:/data
+            - dependencytrack_cacerts:/opt/appsec-scout-certs:ro
 
     dependencytrack-frontend:
         image: dependencytrack/frontend:latest
@@ -115,12 +152,28 @@ services:
         depends_on:
             trivy-token-init:
                 condition: service_completed_successfully
+        environment:
+            HTTP_PROXY: "${HTTP_PROXY:-}"
+            HTTPS_PROXY: "${HTTPS_PROXY:-}"
+            NO_PROXY: "${NO_PROXY:-}"
         entrypoint: ["/bin/sh", "-c"]
         command:
-            - exec trivy server --listen 0.0.0.0:4954 --token "$$(cat /var/lib/trivy-token/token)"
+            # trivy-server is an unmodified upstream image, so it never gets the corporate/
+            # TLS-inspecting proxy CA that docker/Dockerfile bakes into appsec-scout:latest via
+            # update-ca-certificates — without this it fails to fetch the vulnerability DB with
+            # "X509 certificate signed by unknown authority". Trust any certs
+            # Export-HostCertificates exported (scripts/lib/Certificates.psm1) the same way,
+            # just at runtime instead of build time; a no-op merge on a machine with no
+            # corporate CA (e.g. a home machine).
+            - |
+              if [ -n "$$(ls -A /usr/local/share/ca-certificates/appsec-scout 2>/dev/null)" ]; then
+                  update-ca-certificates
+              fi
+              exec trivy server --listen 0.0.0.0:4954 --token "$$(cat /var/lib/trivy-token/token)"
         volumes:
             - trivy_token:/var/lib/trivy-token:ro
             - trivy_data:/root/.cache
+            - ./.docker/certs:/usr/local/share/ca-certificates/appsec-scout:ro
 
     dependencytrack-bootstrap:
         image: appsec-scout:latest
@@ -238,5 +291,6 @@ volumes:
     claude_credentials:
     dependencytrack_postgres_data:
     dependencytrack_data:
+    dependencytrack_cacerts:
     trivy_token:
     trivy_data:
