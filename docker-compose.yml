@@ -165,15 +165,29 @@ services:
             # Export-HostCertificates exported (scripts/lib/Certificates.psm1) the same way,
             # just at runtime instead of build time; a no-op merge on a machine with no
             # corporate CA (e.g. a home machine).
+            #
+            # The certs must be copied flat into /usr/local/share/ca-certificates itself, not
+            # mounted as a subdirectory: Alpine's update-ca-certificates (unlike Debian's, which
+            # docker/Dockerfile relies on) collapses an entire subdirectory into one combined
+            # "ca-cert-<subdir-name>.pem" entry and requires that to hold exactly one
+            # certificate — with more than one cert in the mounted dir (guaranteed here, since
+            # Export-HostCertificates always also writes a combined host-ca-bundle.crt alongside
+            # the per-cert files) it fails that check and silently discards every cert in the
+            # directory (confirmed empirically: "Cannot copy to bundle" / "does not contain
+            # exactly one certificate or CRL" warnings, and zero of the certs end up trusted).
+            # Excluding host-ca-bundle.crt and copying the rest to the top level, mirroring
+            # docker/Dockerfile's own working approach, avoids that path entirely.
             - |
-              if [ -n "$$(ls -A /usr/local/share/ca-certificates/appsec-scout 2>/dev/null)" ]; then
+              if [ -n "$$(ls -A /host-certs 2>/dev/null)" ]; then
+                  find /host-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
+                      -exec cp {} /usr/local/share/ca-certificates/ \;
                   update-ca-certificates
               fi
               exec trivy server --listen 0.0.0.0:4954 --token "$$(cat /var/lib/trivy-token/token)"
         volumes:
             - trivy_token:/var/lib/trivy-token:ro
             - trivy_data:/root/.cache
-            - ./.docker/certs:/usr/local/share/ca-certificates/appsec-scout:ro
+            - ./.docker/certs:/host-certs:ro
 
     dependencytrack-bootstrap:
         image: appsec-scout:latest
