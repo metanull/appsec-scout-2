@@ -5,7 +5,10 @@ use App\Models\Attachment;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
 
 function setUpSbomTestDirectories(): array
 {
@@ -52,7 +55,7 @@ it('imports newly landed reports and advances the per-run cursor', function () {
 
     $stats = app(PendingSbomScanImporter::class)->importPending();
 
-    expect($stats)->toBe(['runsSeen' => 1, 'linesImported' => 1, 'reportsImported' => 1, 'reportsFailed' => 0]);
+    expect($stats)->toBe(['runsSeen' => 1, 'linesImported' => 1, 'reportsImported' => 1, 'reportsFailed' => 0, 'aborted' => false]);
 
     $system = SoftwareSystem::query()->where('source_id', 'azdo')->where('source_system_id', 'project-guid-1')->first();
     expect($system)->not()->toBeNull()
@@ -80,7 +83,7 @@ it('does not reimport lines already covered by the cursor', function () {
     $importer->importPending();
     $second = $importer->importPending();
 
-    expect($second)->toBe(['runsSeen' => 1, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0])
+    expect($second)->toBe(['runsSeen' => 1, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0, 'aborted' => false])
         ->and(Attachment::query()->where('kind', 'sbom')->count())->toBe(1);
 
     tearDownSbomTestDirectories($importPath, $cursorPath);
@@ -108,7 +111,7 @@ it('imports only newly appended lines on a subsequent run', function () {
 
     $second = $importer->importPending();
 
-    expect($second)->toBe(['runsSeen' => 1, 'linesImported' => 1, 'reportsImported' => 1, 'reportsFailed' => 0])
+    expect($second)->toBe(['runsSeen' => 1, 'linesImported' => 1, 'reportsImported' => 1, 'reportsFailed' => 0, 'aborted' => false])
         ->and(Attachment::query()->where('kind', 'sbom')->count())->toBe(2)
         ->and(trim(File::get($cursorPath . '/20260101T000000Z.processed')))->toBe('2');
 
@@ -123,7 +126,7 @@ it('logs a failure and still advances the cursor when a report file is missing',
 
     $stats = app(PendingSbomScanImporter::class)->importPending();
 
-    expect($stats)->toBe(['runsSeen' => 1, 'linesImported' => 1, 'reportsImported' => 0, 'reportsFailed' => 1])
+    expect($stats)->toBe(['runsSeen' => 1, 'linesImported' => 1, 'reportsImported' => 0, 'reportsFailed' => 1, 'aborted' => false])
         ->and(Attachment::query()->where('kind', 'sbom')->count())->toBe(0)
         ->and(ErrorLog::query()->where('channel', 'sbom-import')->count())->toBe(1);
 
@@ -142,7 +145,7 @@ it('skips a run directory marked with .skip-import', function () {
 
     $stats = app(PendingSbomScanImporter::class)->importPending();
 
-    expect($stats)->toBe(['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0])
+    expect($stats)->toBe(['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0, 'aborted' => false])
         ->and(Attachment::query()->where('kind', 'sbom')->count())->toBe(0)
         ->and(File::exists($cursorPath . '/20260101T000000Z.processed'))->toBeFalse();
 
@@ -156,5 +159,91 @@ it('returns zeroed stats when the import directory does not exist', function () 
 
     $stats = app(PendingSbomScanImporter::class)->importPending();
 
-    expect($stats)->toBe(['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0]);
+    expect($stats)->toBe(['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0, 'aborted' => false]);
+});
+
+it('aborts without importing or touching the cursor when the database is unreachable', function () {
+    [$importPath, $cursorPath] = setUpSbomTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
+
+    DB::shouldReceive('select')->once()->with('select 1')->andThrow(new RuntimeException('database unreachable'));
+
+    $stats = app(PendingSbomScanImporter::class)->importPending();
+
+    expect($stats)->toBe(['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0, 'aborted' => true])
+        ->and(File::exists($cursorPath . '/20260101T000000Z.processed'))->toBeFalse()
+        ->and(Attachment::query()->count())->toBe(0);
+
+    tearDownSbomTestDirectories($importPath, $cursorPath);
+});
+
+it('aborts without importing or touching the cursor when the queue backend is unreachable', function () {
+    [$importPath, $cursorPath] = setUpSbomTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
+
+    $fakeConnection = Mockery::mock();
+    $fakeConnection->shouldReceive('size')->once()->andThrow(new RuntimeException('queue unreachable'));
+    Queue::shouldReceive('connection')->once()->andReturn($fakeConnection);
+
+    $stats = app(PendingSbomScanImporter::class)->importPending();
+
+    expect($stats)->toBe(['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0, 'aborted' => true])
+        ->and(File::exists($cursorPath . '/20260101T000000Z.processed'))->toBeFalse()
+        ->and(Attachment::query()->count())->toBe(0);
+
+    tearDownSbomTestDirectories($importPath, $cursorPath);
+});
+
+it('aborts mid-run without advancing the cursor when an unexpected error occurs importing a report', function () {
+    [$importPath, $cursorPath] = setUpSbomTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::ensureDirectoryExists($runDir . '/Billing');
+    File::put($runDir . '/Billing/billing-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/run.jsonl',
+        writeSbomResultLine() . "\n" .
+        writeSbomResultLine([
+            'project' => 'Billing',
+            'repository' => 'billing-api',
+            'projectId' => 'project-guid-2',
+            'repositoryId' => 'repo-guid-2',
+            'sbomPath' => 'Billing/billing-api.cdx.json',
+        ]) . "\n",
+    );
+
+    // The file genuinely exists (passes the isFile check), but reading it fails —
+    // simulating an infrastructure-level failure distinct from a missing report.
+    $failingPath = $runDir . '/Payments/payments-api.cdx.json';
+    app()->bind(Filesystem::class, function () use ($failingPath) {
+        return new class($failingPath) extends Filesystem
+        {
+            public function __construct(private readonly string $failingPath) {}
+
+            public function get($path, $lock = false)
+            {
+                if ($path === $this->failingPath) {
+                    throw new RuntimeException('disk read failure');
+                }
+
+                return parent::get($path, $lock);
+            }
+        };
+    });
+
+    $stats = app(PendingSbomScanImporter::class)->importPending();
+
+    expect($stats['aborted'])->toBeTrue()
+        ->and($stats['reportsImported'])->toBe(0)
+        ->and($stats['linesImported'])->toBe(0)
+        ->and(File::exists($cursorPath . '/20260101T000000Z.processed'))->toBeFalse()
+        ->and(Attachment::query()->count())->toBe(0);
+
+    tearDownSbomTestDirectories($importPath, $cursorPath);
 });

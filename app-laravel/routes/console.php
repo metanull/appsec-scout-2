@@ -459,6 +459,17 @@ Artisan::command(
     function (PendingSbomScanImporter $importer): int {
         $stats = $importer->importPending();
 
+        if ($stats['aborted']) {
+            $this->error(sprintf(
+                'Aborted after importing %d report(s) across %d repositor%s — the database or queue backend was unreachable; see storage/logs/laravel.log. Scan data is untouched on disk and will be retried automatically on the next scheduled run.',
+                $stats['reportsImported'],
+                $stats['linesImported'],
+                $stats['linesImported'] === 1 ? 'y' : 'ies',
+            ));
+
+            return self::FAILURE;
+        }
+
         $this->info(sprintf(
             'Imported %d report(s) across %d repositor%s (%d scan run(s) seen)%s.',
             $stats['reportsImported'],
@@ -470,7 +481,7 @@ Artisan::command(
 
         return self::SUCCESS;
     },
-)->purpose('Import SBOM/vulnerability/secret reports from any in-progress or finished sbom-scan run as soon as they land in run.jsonl, using a per-run cursor so nothing is imported twice; scheduled every minute and also triggered once by invoke-ops.ps1 right after a scan finishes');
+)->purpose('Import SBOM/vulnerability/secret reports from any in-progress or finished sbom-scan run as soon as they land in run.jsonl, using a per-run cursor so nothing is imported twice; aborts cleanly without advancing the cursor if the database or queue is unreachable; scheduled every minute and also triggered once by invoke-ops.ps1 right after a scan finishes');
 
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');

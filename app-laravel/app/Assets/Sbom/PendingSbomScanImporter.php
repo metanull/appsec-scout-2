@@ -9,6 +9,9 @@ use App\Assets\AttachmentTargetResolver;
 use App\Models\ErrorLog;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
 use Throwable;
 
@@ -21,10 +24,13 @@ use Throwable;
  * exits, to flush anything the last scheduled tick hasn't picked up yet.
  *
  * A per-run ".processed" cursor file (line count already imported) makes repeated
- * runs safe: only lines appended since the last read get imported. A report import
- * failure is logged to ErrorLog and does not block the rest of the line/run — it is
- * not retried automatically, so it must be re-imported manually via
- * assets:import-attachment if needed.
+ * runs safe: only lines appended since the last read get imported. The cursor for a
+ * line only advances once every report on that line has been durably handed off. A
+ * missing report file is a permanent, content-level failure — logged and skipped,
+ * since retrying can never make a file that isn't there appear. Anything else
+ * (database or queue unreachable) aborts the whole run immediately without touching
+ * the cursor, so the next scheduled tick retries cleanly instead of silently skipping
+ * data that was never actually queued for processing.
  */
 final class PendingSbomScanImporter
 {
@@ -41,13 +47,19 @@ final class PendingSbomScanImporter
         private readonly Filesystem $files,
     ) {}
 
-    /** @return array{runsSeen: int, linesImported: int, reportsImported: int, reportsFailed: int} */
+    /** @return array{runsSeen: int, linesImported: int, reportsImported: int, reportsFailed: int, aborted: bool} */
     public function importPending(): array
     {
+        $stats = ['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0, 'aborted' => false];
+
+        if (! $this->infrastructureIsHealthy()) {
+            $stats['aborted'] = true;
+
+            return $stats;
+        }
+
         $importBase = (string) config('sbom.import_path');
         $cursorDir = (string) config('sbom.cursor_path');
-
-        $stats = ['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0];
 
         if (! $this->files->isDirectory($importBase)) {
             return $stats;
@@ -71,14 +83,48 @@ final class PendingSbomScanImporter
             }
 
             $stats['runsSeen']++;
-            $this->importRun($runName, $resultsFile, $cursorDir, $stats);
+
+            if (! $this->importRun($runName, $resultsFile, $cursorDir, $stats)) {
+                $stats['aborted'] = true;
+
+                return $stats;
+            }
         }
 
         return $stats;
     }
 
-    /** @param array{runsSeen: int, linesImported: int, reportsImported: int, reportsFailed: int} $stats */
-    private function importRun(string $runName, string $resultsFile, string $cursorDir, array &$stats): void
+    /**
+     * Checked once, up front, rather than inferred from whichever call happens to hit
+     * the dead dependency first — a sustained outage aborts cleanly with zero side
+     * effects instead of silently skipping every line it touches along the way.
+     */
+    private function infrastructureIsHealthy(): bool
+    {
+        try {
+            DB::select('select 1');
+        } catch (Throwable $exception) {
+            $this->logToFile('Aborting sbom:import-pending-scans: database is unreachable.', $exception);
+
+            return false;
+        }
+
+        try {
+            Queue::connection()->size();
+        } catch (Throwable $exception) {
+            $this->logToFile('Aborting sbom:import-pending-scans: queue backend is unreachable.', $exception);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array{runsSeen: int, linesImported: int, reportsImported: int, reportsFailed: int, aborted: bool}  $stats
+     * @return bool false if the run should be aborted (infrastructure failure) rather than continuing
+     */
+    private function importRun(string $runName, string $resultsFile, string $cursorDir, array &$stats): bool
     {
         $cursorFile = $cursorDir . '/' . $runName . '.processed';
         $alreadyProcessed = $this->readCursor($cursorFile);
@@ -101,29 +147,40 @@ final class PendingSbomScanImporter
                     continue;
                 }
 
+                $path = (string) config('sbom.import_path') . '/' . $runName . '/' . $relativePath;
+
+                if (! $this->files->isFile($path)) {
+                    // Permanent, content-level failure — the file will never appear on
+                    // its own, so log it and keep going rather than blocking the run.
+                    $stats['reportsFailed']++;
+                    $this->logFailure($runName, $result, $reportKind['kind'], new InvalidArgumentException("Report file not found: {$path}"));
+
+                    continue;
+                }
+
                 try {
-                    $this->importReport($runName, $result, $reportKind['kind'], $relativePath);
+                    $this->importReport($result, $reportKind['kind'], $path, $relativePath);
                     $stats['reportsImported']++;
                 } catch (Throwable $exception) {
-                    $stats['reportsFailed']++;
-                    $this->logFailure($runName, $result, $reportKind['kind'], $exception);
+                    // Anything else (database/queue failure mid-run, etc.) is treated as
+                    // infrastructure trouble, not a content problem: abort without
+                    // advancing the cursor so this exact line is retried next tick.
+                    $this->logToFile("Aborting sbom:import-pending-scans while importing {$runName} line " . ($i + 1) . '.', $exception);
+
+                    return false;
                 }
             }
 
             $stats['linesImported']++;
             $this->writeCursor($cursorFile, $i + 1);
         }
+
+        return true;
     }
 
     /** @param array<string, mixed> $result */
-    private function importReport(string $runName, array $result, string $kind, string $relativePath): void
+    private function importReport(array $result, string $kind, string $path, string $relativePath): void
     {
-        $path = (string) config('sbom.import_path') . '/' . $runName . '/' . $relativePath;
-
-        if (! $this->files->isFile($path)) {
-            throw new InvalidArgumentException("Report file not found: {$path}");
-        }
-
         $projectId = (string) ($result['projectId'] ?? '');
         $repositoryId = (string) ($result['repositoryId'] ?? '');
         $project = (string) ($result['project'] ?? '');
@@ -145,19 +202,34 @@ final class PendingSbomScanImporter
     /** @param array<string, mixed> $result */
     private function logFailure(string $runName, array $result, string $kind, Throwable $exception): void
     {
-        ErrorLog::query()->create([
-            'level' => 'error',
-            'channel' => 'sbom-import',
-            'message' => $exception->getMessage(),
-            'context_json' => [
-                'run' => $runName,
-                'project' => $result['project'] ?? null,
-                'repository' => $result['repository'] ?? null,
-                'kind' => $kind,
-            ],
-            'trace' => $exception->getTraceAsString(),
-            'occurred_at' => now(),
-        ]);
+        try {
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'sbom-import',
+                'message' => $exception->getMessage(),
+                'context_json' => [
+                    'run' => $runName,
+                    'project' => $result['project'] ?? null,
+                    'repository' => $result['repository'] ?? null,
+                    'kind' => $kind,
+                ],
+                'trace' => $exception->getTraceAsString(),
+                'occurred_at' => now(),
+            ]);
+        } catch (Throwable $secondaryException) {
+            // The database is presumed reachable at this point (infrastructureIsHealthy
+            // already checked it), but don't let a failure to *log* a content-level
+            // failure crash the whole run — fall back to the file-based log instead.
+            $this->logToFile(
+                "Could not record sbom-import failure to ErrorLog for {$runName} ({$kind}): {$exception->getMessage()}",
+                $secondaryException,
+            );
+        }
+    }
+
+    private function logToFile(string $message, Throwable $exception): void
+    {
+        Log::channel('single')->error($message, ['exception' => $exception]);
     }
 
     private function readCursor(string $cursorFile): int
