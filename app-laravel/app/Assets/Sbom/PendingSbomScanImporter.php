@@ -31,6 +31,13 @@ use Throwable;
  * (database or queue unreachable) aborts the whole run immediately without touching
  * the cursor, so the next scheduled tick retries cleanly instead of silently skipping
  * data that was never actually queued for processing.
+ *
+ * Cursor files are never deleted just because a run finished importing — they stay
+ * small and double as the "last updated" timestamp SbomScanStatusReporter shows. The
+ * one thing that is pruned, every tick, is a cursor whose run directory has since
+ * been deleted from the SBOM output mount entirely (e.g. an operator reclaiming
+ * disk) — that cursor no longer refers to anything and would otherwise accumulate
+ * forever.
  */
 final class PendingSbomScanImporter
 {
@@ -51,6 +58,8 @@ final class PendingSbomScanImporter
     public function importPending(): array
     {
         $stats = ['runsSeen' => 0, 'linesImported' => 0, 'reportsImported' => 0, 'reportsFailed' => 0, 'aborted' => false];
+
+        $this->pruneOrphanedCursors();
 
         if (! $this->infrastructureIsHealthy()) {
             $stats['aborted'] = true;
@@ -92,6 +101,35 @@ final class PendingSbomScanImporter
         }
 
         return $stats;
+    }
+
+    /**
+     * Pure filesystem cleanup, independent of database/queue health, so it still runs
+     * even during an aborted tick — deletes a ".processed" cursor once its run
+     * directory no longer exists under the SBOM output mount.
+     */
+    private function pruneOrphanedCursors(): void
+    {
+        $importBase = (string) config('sbom.import_path');
+        $cursorDir = (string) config('sbom.cursor_path');
+
+        if (! $this->files->isDirectory($cursorDir)) {
+            return;
+        }
+
+        foreach ($this->files->files($cursorDir) as $cursorFile) {
+            $path = (string) $cursorFile;
+
+            if (! str_ends_with($path, '.processed')) {
+                continue;
+            }
+
+            $runName = basename($path, '.processed');
+
+            if (! $this->files->isDirectory($importBase . '/' . $runName)) {
+                $this->files->delete($path);
+            }
+        }
     }
 
     /**

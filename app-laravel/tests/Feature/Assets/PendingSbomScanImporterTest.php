@@ -200,6 +200,36 @@ it('aborts without importing or touching the cursor when the queue backend is un
     tearDownSbomTestDirectories($importPath, $cursorPath);
 });
 
+it('prunes a cursor whose run directory no longer exists on disk', function () {
+    [$importPath, $cursorPath] = setUpSbomTestDirectories();
+    File::put($cursorPath . '/20250101T000000Z.processed', '5');
+
+    $stats = app(PendingSbomScanImporter::class)->importPending();
+
+    expect($stats['aborted'])->toBeFalse()
+        ->and(File::exists($cursorPath . '/20250101T000000Z.processed'))->toBeFalse();
+
+    tearDownSbomTestDirectories($importPath, $cursorPath);
+});
+
+it('keeps a cursor whose run directory still exists on disk', function () {
+    [$importPath, $cursorPath] = setUpSbomTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
+
+    app(PendingSbomScanImporter::class)->importPending();
+
+    expect(File::exists($cursorPath . '/20260101T000000Z.processed'))->toBeTrue();
+
+    app(PendingSbomScanImporter::class)->importPending();
+
+    expect(File::exists($cursorPath . '/20260101T000000Z.processed'))->toBeTrue();
+
+    tearDownSbomTestDirectories($importPath, $cursorPath);
+});
+
 it('aborts mid-run without advancing the cursor when an unexpected error occurs importing a report', function () {
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';

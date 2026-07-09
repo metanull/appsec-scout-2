@@ -10,6 +10,7 @@ use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
 use App\Assets\Sbom\PendingSbomScanImporter;
+use App\Assets\Sbom\SbomScanStatusReporter;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
@@ -482,6 +483,40 @@ Artisan::command(
         return self::SUCCESS;
     },
 )->purpose('Import SBOM/vulnerability/secret reports from any in-progress or finished sbom-scan run as soon as they land in run.jsonl, using a per-run cursor so nothing is imported twice; aborts cleanly without advancing the cursor if the database or queue is unreachable; scheduled every minute and also triggered once by invoke-ops.ps1 right after a scan finishes');
+
+Artisan::command(
+    'sbom:scan-status',
+    function (SbomScanStatusReporter $reporter): int {
+        $rows = $reporter->statusForAllRuns();
+
+        if ($rows === []) {
+            $this->info('No sbom-scan runs found.');
+
+            return self::SUCCESS;
+        }
+
+        $this->table(
+            ['Run', 'Status', 'Imported', 'Failed', 'Last updated'],
+            array_map(fn (array $row): array => [
+                $row['run'],
+                match (true) {
+                    $row['dryRun'] => 'dry-run',
+                    $row['finished'] => 'finished',
+                    default => 'in-progress',
+                },
+                $row['dryRun'] ? '-' : sprintf(
+                    '%d of %s',
+                    $row['imported'],
+                    $row['total'] === null ? 'unknown total' : ($row['totalIsApprox'] ? "approx {$row['total']}" : (string) $row['total']),
+                ),
+                $row['dryRun'] ? '-' : (string) $row['failed'],
+                $row['dryRun'] ? '-' : ($row['lastUpdated']?->diffForHumans() ?? 'never'),
+            ], $rows),
+        );
+
+        return self::SUCCESS;
+    },
+)->purpose('Show per-run sbom-scan import status: lines imported vs approx/total known repositories, failure counts, and time since the cursor last advanced');
 
 Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
     $path = (string) $this->argument('path');
