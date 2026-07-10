@@ -12,7 +12,11 @@
 # Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
 #   AZDO_SCAN_TYPES (comma-separated subset of sbom,vuln,secret; default: all three),
 #   TRIVY_TIMEOUT (per-scan Trivy timeout; secret scanning in particular needs more
-#   than the 5m default on large trees — default here is 15m)
+#   than the 5m default on large trees — default here is 15m), RESUME_FROM (output root
+#   directory containing previous runs — every repositoryId recorded in any of their
+#   run.jsonl files is skipped, so a run interrupted partway through — e.g. by a
+#   container/engine crash — can pick up where it left off instead of rescanning
+#   everything, even across repeated interrupt/resume cycles; set via invoke-ops.ps1 -Resume)
 #
 # Every scan runs against the shared trivy-server container (see docker-compose.yml)
 # rather than downloading its own vulnerability database — this script is meant to run
@@ -73,6 +77,31 @@ fi
 sanitize() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
 }
+
+# RESUME_FROM points at the output root (same directory OUTPUT_DIR/RUN_DIR live under),
+# not a single run. Every repositoryId recorded in ANY previous run's run.jsonl — success
+# or failure, it was attempted and its outcome logged — is skipped this run; only repos
+# that never got a line written anywhere (including whichever one was still being scanned
+# when the most recent previous run was interrupted) are (re)processed. Reading every prior
+# run rather than just the latest means repeated interrupt/resume cycles keep accumulating
+# instead of losing earlier progress each time.
+declare -A RESUMED_REPO_IDS=()
+RESUME_SKIPPED=0
+if [ -n "${RESUME_FROM:-}" ]; then
+    if [ ! -d "$RESUME_FROM" ]; then
+        echo "ERROR: RESUME_FROM=$RESUME_FROM is not a directory." >&2
+        exit 1
+    fi
+    resume_files=("$RESUME_FROM"/*/run.jsonl)
+    if [ ! -e "${resume_files[0]}" ]; then
+        echo "ERROR: RESUME_FROM=$RESUME_FROM contains no previous run.jsonl to resume from." >&2
+        exit 1
+    fi
+    while IFS= read -r resumed_id; do
+        [ -n "$resumed_id" ] && RESUMED_REPO_IDS["$resumed_id"]=1
+    done < <(jq -rs '.[].repositoryId' "${resume_files[@]}")
+    echo "Resuming from $RESUME_FROM — ${#RESUMED_REPO_IDS[@]} already-scanned repositories (across ${#resume_files[@]} previous run(s)) will be skipped."
+fi
 
 # Emits one JSON object per line (the "value" entries) across every page of
 # an Azure DevOps REST collection endpoint. On any transport/auth/format
@@ -220,6 +249,11 @@ while IFS= read -r project; do
         if [ -n "$REPO_FILTER" ] && ! grep -Eq "$REPO_FILTER" <<<"$repo_name"; then
             continue
         fi
+        if [ -n "${RESUMED_REPO_IDS[$repo_id]:-}" ]; then
+            echo "  Skipping repository (already scanned, resuming): $repo_name"
+            RESUME_SKIPPED=$((RESUME_SKIPPED + 1))
+            continue
+        fi
         repo_count=$((repo_count + 1))
         echo "  Repository: $repo_name"
         process_repo "$project_name" "$repo_name" "$remote_url" "$project_id" "$repo_id"
@@ -231,9 +265,13 @@ jq -s \
     --arg runTs "$RUN_TS" \
     --argjson projects "$project_count" \
     --argjson repos "$repo_count" \
+    --arg resumedFrom "${RESUME_FROM:-}" \
+    --argjson resumeSkipped "$RESUME_SKIPPED" \
     '{
         organization: $org,
         runTimestamp: $runTs,
+        resumedFrom: (if $resumedFrom == "" then null else $resumedFrom end),
+        repositoriesSkippedAlreadyScanned: $resumeSkipped,
         projectsScanned: $projects,
         repositoriesConsidered: $repos,
         repositoriesCloned: (map(select(.cloned == true)) | length),
@@ -250,6 +288,9 @@ echo ""
 echo "Scan complete (types: ${SCAN_TYPES})."
 echo "  Projects scanned:        $project_count"
 echo "  Repositories considered: $repo_count"
+if [ -n "${RESUME_FROM:-}" ]; then
+    echo "  Repositories skipped (resumed): $RESUME_SKIPPED"
+fi
 echo "  Output directory:        $RUN_DIR"
 
 if [ -f "$ERROR_FLAG" ]; then

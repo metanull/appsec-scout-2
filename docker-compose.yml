@@ -42,6 +42,8 @@ services:
             MYSQL_DATABASE: "${DB_DATABASE:-appsec_scout}"
             MYSQL_USER: "${DB_USERNAME:-appsec_scout}"
             MYSQL_PASSWORD: "${DB_PASSWORD:-password}"
+        cpus: ${MYSQL_CPUS:-1}
+        mem_limit: ${MYSQL_MEM_LIMIT:-1g}
         volumes:
             - mysql_data:/var/lib/mysql
             - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/01-test-db.sql:ro
@@ -62,6 +64,8 @@ services:
             POSTGRES_DB: "${DTRACK_DB_DATABASE:-dtrack}"
             POSTGRES_USER: "${DTRACK_DB_USERNAME:-dtrack}"
             POSTGRES_PASSWORD: "${DTRACK_DB_PASSWORD:-dtrack}"
+        cpus: ${DTRACK_DB_CPUS:-1}
+        mem_limit: ${DTRACK_DB_MEM_LIMIT:-1g}
         volumes:
             - dependencytrack_postgres_data:/var/lib/postgresql/data
         healthcheck:
@@ -116,7 +120,19 @@ services:
             ALPINE_DATABASE_DRIVER: org.postgresql.Driver
             ALPINE_DATABASE_USERNAME: "${DTRACK_DB_USERNAME:-dtrack}"
             ALPINE_DATABASE_PASSWORD: "${DTRACK_DB_PASSWORD:-dtrack}"
-            EXTRA_JAVA_OPTIONS: "-Djavax.net.ssl.trustStore=/opt/appsec-scout-certs/cacerts -Djavax.net.ssl.trustStorePassword=changeit"
+            # Without an explicit -Xmx, the JVM sizes its heap off however much memory Docker
+            # itself was granted on the host, not what's actually free once every other
+            # container is also running. On hosts with a smaller Docker memory allocation
+            # (e.g. a locked-down corporate Docker Desktop/WSL2 config) that overcommit gets
+            # the process SIGKILLed by the OOM killer — silently, with no shutdown log, since
+            # SIGKILL can't be caught. mem_limit below caps the container itself so an OOM
+            # shows up as a visible `docker inspect` OOMKilled/exit-137 instead of the host
+            # picking an arbitrary victim, and restart lets the stack self-heal instead of
+            # staying half-up.
+            EXTRA_JAVA_OPTIONS: "-Djavax.net.ssl.trustStore=/opt/appsec-scout-certs/cacerts -Djavax.net.ssl.trustStorePassword=changeit -Xmx${DTRACK_JAVA_MAX_HEAP:-4g} -Xms512m"
+        cpus: ${DTRACK_CPUS:-2}
+        mem_limit: ${DTRACK_MEM_LIMIT:-5g}
+        restart: unless-stopped
         ports:
             - "${DTRACK_API_PORT:-8091}:8080"
         volumes:
@@ -184,6 +200,9 @@ services:
                   update-ca-certificates
               fi
               exec trivy server --listen 0.0.0.0:4954 --token "$$(cat /var/lib/trivy-token/token)"
+        cpus: ${TRIVY_CPUS:-2}
+        mem_limit: ${TRIVY_MEM_LIMIT:-3g}
+        restart: unless-stopped
         volumes:
             - trivy_token:/var/lib/trivy-token:ro
             - trivy_data:/root/.cache
@@ -290,6 +309,8 @@ services:
             AZDO_PROJECT_FILTER: "${AZDO_PROJECT_FILTER:-}"
             AZDO_REPO_FILTER: "${AZDO_REPO_FILTER:-}"
             TRIVY_SERVER_URL: "${TRIVY_SERVER_URL:-http://trivy-server:4954}"
+        cpus: ${OPS_CPUS:-2}
+        mem_limit: ${OPS_MEM_LIMIT:-2g}
         stdin_open: true
         tty: true
 

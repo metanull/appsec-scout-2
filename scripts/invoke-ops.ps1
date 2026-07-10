@@ -59,6 +59,15 @@
     scheduled import (sbom:import-pending-scans) from picking up this run, since that
     runs independently of this script — collect-sboms.sh drops a marker in the run's
     output directory that the scheduled command checks for and skips.
+.PARAMETER Resume
+    Resume a previous sbom-scan (-Mode sbom-scan) instead of starting from scratch.
+    Skips every repository already recorded in ANY previous run's run.jsonl under
+    OutputDir — including partial/failed attempts — which only leaves out whichever
+    repository was still being scanned when the most recent run stopped (e.g. a
+    container/engine crash) plus anything not yet reached, so repeated interrupt/resume
+    cycles keep accumulating instead of losing earlier progress each time. Results land
+    in a new run directory as usual; nothing is overwritten. Fails with a clear error if
+    no prior run.jsonl is found anywhere under OutputDir.
 .PARAMETER Rebuild
     Forces a clean --no-cache rebuild of the ops image and re-exports host CA certificates.
     Not required to pick up ordinary code changes — every run already rebuilds the image
@@ -76,6 +85,8 @@
     .\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
 .EXAMPLE
     .\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential) -ProjectFilter '^Portal$'
+.EXAMPLE
+    .\invoke-ops.ps1 -Mode sbom-scan -Resume -AzdoCredential (Get-Credential)
 #>
 [CmdletBinding()]
 param(
@@ -105,6 +116,8 @@ param(
     [string]$OutputDir = '',
 
     [Switch]$SkipUpload,
+
+    [Switch]$Resume,
 
     [Switch]$Rebuild
 )
@@ -272,14 +285,28 @@ try {
             Invoke-Docker compose @EnvFileArgs run --rm -it --no-deps @envOverrides ops
         }
         'sbom-scan' {
-            Write-Host "Starting SBOM scan. This runs to completion in one container session..."
-            Invoke-Docker compose @EnvFileArgs run --rm --no-deps @envOverrides ops --sbom-scan
-
             $resolvedOutputRoot = if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
                 $OutputDir
             } else {
                 Join-Path $ProjectRoot 'output\sbom-scan'
             }
+
+            if ($Resume) {
+                $resumeRunDirs = @(Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { Test-Path (Join-Path $_.FullName 'run.jsonl') })
+                if ($resumeRunDirs.Count -eq 0) {
+                    throw "-Resume specified but no previous run.jsonl was found under $resolvedOutputRoot"
+                }
+                Write-Host "Resuming: $($resumeRunDirs.Count) previous run(s) found under $resolvedOutputRoot — already-scanned repositories from any of them will be skipped."
+                # SBOM_OUTPUT_DIR is bind-mounted to /output in the ops container (docker-compose.yml).
+                # collect-sboms.sh unions repositoryIds across every run.jsonl found under it, so
+                # progress keeps accumulating across any number of interrupt/resume cycles.
+                $envOverrides += '-e'; $envOverrides += 'RESUME_FROM=/output'
+            }
+
+            Write-Host "Starting SBOM scan. This runs to completion in one container session..."
+            Invoke-Docker compose @EnvFileArgs run --rm --no-deps @envOverrides ops --sbom-scan
+
             $latestRun = Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if ($latestRun) {
