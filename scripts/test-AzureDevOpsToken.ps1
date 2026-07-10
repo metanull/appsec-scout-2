@@ -6,7 +6,7 @@
     lightweight request to the Azure DevOps REST API (listing one project), then looks
     up the real identity (display name + email) the PAT belongs to via the profile API.
     Use this to isolate a credential/organization/network problem before running a full
-    invoke-ops.ps1 -Mode sbom-scan, which can take a long time before surfacing the
+    invoke-ops.ps1 -SbomScan, which can take a long time before surfacing the
     same failure.
 .PARAMETER Credential
     Azure DevOps credential. Password = Personal Access Token with "Code (Read)" scope

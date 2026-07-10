@@ -252,33 +252,6 @@ services:
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
             NO_PROXY: "${NO_PROXY:-}"
 
-    claude:
-        build:
-            context: .
-            dockerfile: docker/claude/Dockerfile
-            args:
-                HTTP_PROXY: "${HTTP_PROXY:-}"
-                HTTPS_PROXY: "${HTTPS_PROXY:-}"
-                NO_PROXY: "${NO_PROXY:-}"
-        image: appsec-scout-claude:latest
-        profiles:
-            - claude
-        volumes:
-            - claude_credentials:/home/claude/.claude
-        environment:
-            HTTP_PROXY: "${HTTP_PROXY:-}"
-            HTTPS_PROXY: "${HTTPS_PROXY:-}"
-            NO_PROXY: "${NO_PROXY:-}"
-            SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
-            REPO_URL: "${REPO_URL:-}"
-            REPO_BRANCH: "${REPO_BRANCH:-main}"
-            GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
-            GIT_USER_NAME: "${GIT_USER_NAME:-}"
-            GIT_USER_EMAIL: "${GIT_USER_EMAIL:-}"
-            CLAUDE_TASK: "${CLAUDE_TASK:-}"
-        stdin_open: true
-        tty: true
-
     ops:
         build:
             context: .
@@ -304,6 +277,7 @@ services:
             GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
             GIT_USER_NAME: "${GIT_USER_NAME:-}"
             GIT_USER_EMAIL: "${GIT_USER_EMAIL:-}"
+            CLAUDE_TASK: "${CLAUDE_TASK:-}"
             AZDO_ORG: "${AZDO_ORG:-}"
             AZDO_PAT: "${AZDO_PAT:-}"
             AZDO_PROJECT_FILTER: "${AZDO_PROJECT_FILTER:-}"

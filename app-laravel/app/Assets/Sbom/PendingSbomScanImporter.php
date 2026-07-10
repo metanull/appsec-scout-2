@@ -17,7 +17,7 @@ use Throwable;
 
 /**
  * Imports SBOM/vulnerability/secret reports from an in-progress or finished
- * `invoke-ops.ps1 -Mode sbom-scan` run as soon as each repository's line lands in
+ * `invoke-ops.ps1 -SbomScan` run as soon as each repository's line lands in
  * run.jsonl, instead of waiting for the whole (multi-hour) scan to finish. Scheduled
  * every minute alongside integrations:dispatch-due; invoke-ops.ps1 also calls the
  * `sbom:import-pending-scans` command once directly right after the scan container

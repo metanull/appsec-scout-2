@@ -117,23 +117,19 @@ All development, CI, and operations tasks go through these entry points; see [sc
 |--------|---------|
 | `appsec-scout.ps1` | Start/rebuild the application stack |
 | `invoke-check.ps1` / `invoke-fix.ps1` | Run CI checks / mutating auto-fixes (lint, tests, static analysis, dependencies) |
-| `invoke-claude.ps1` | Run Claude Code in a sandboxed container against this repo |
-| `invoke-ops.ps1` | Open an `ops` sandboxed shell, or run an org-wide SBOM/vulnerability/secret scan |
+| `invoke-ops.ps1` | Open an `ops` sandboxed shell, run Claude Code sandboxed, or run an org-wide SBOM/vulnerability/secret scan |
 | `test-GitHubToken.ps1` / `test-AzureDevOpsToken.ps1` | Validate a PAT before using it elsewhere |
 | `validate-workflows.cjs` | Lint GitHub Actions workflow YAML |
 
 ### docker/ops — sandboxed appsec investigation shell
 
-A hands-on container for code analysis, secret scanning, dependency auditing, SBOM generation (Trivy), and Git history cleaning (BFG) against any repository. It has no access to the host filesystem beyond explicit bind-mounts. See [docker/ops/README.md](docker/ops/README.md).
+A hands-on container for code analysis, secret scanning, dependency auditing, SBOM generation (Trivy), Git history cleaning (BFG), and running Claude Code itself (interactively or as an autonomous task that clones a repo, does the work, and opens a PR) against any repository. It has no access to the host filesystem beyond explicit bind-mounts. See [docker/ops/README.md](docker/ops/README.md).
 
 ```powershell
 .\scripts\invoke-ops.ps1                                              # interactive shell
-.\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)  # org-wide SBOM/vuln/secret scan
+.\scripts\invoke-ops.ps1 -Claude -Task "..."                          # autonomous Claude task, opens a PR
+.\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)       # org-wide SBOM/vuln/secret scan
 ```
-
-### docker/claude — sandboxed Claude Code container
-
-Runs Claude Code in an isolated, ephemeral container with no host filesystem access — interactively, for one-time OAuth login, or as an autonomous task that clones a repo, does the work, and opens a PR. Driven by `invoke-claude.ps1`; see [scripts/README.md#invoke-claudeps1](scripts/README.md#invoke-claudeps1).
 
 ### Dependency-Track — SBOM visualization
 
@@ -145,7 +141,7 @@ Runs Claude Code in an isolated, ephemeral container with no host filesystem acc
 .\scripts\appsec-scout.ps1
 
 # Collect SBOMs for every repo in an Azure DevOps org and store them as attachments
-.\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
+.\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)
 
 # Push every container's latest stored SBOM into Dependency-Track
 docker compose exec app php artisan sbom:export-dependency-track

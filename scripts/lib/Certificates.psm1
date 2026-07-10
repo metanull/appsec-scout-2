@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
     Shared helpers for exporting trusted host CA certificates into .docker/certs,
-    used by appsec-scout.ps1, invoke-claude.ps1, and invoke-ops.ps1 so corporate
-    proxy/TLS-intercepting setups work identically across every container.
+    used by appsec-scout.ps1 and invoke-ops.ps1 so corporate proxy/TLS-intercepting
+    setups work identically across every container.
 #>
 
 function Convert-ToPem {

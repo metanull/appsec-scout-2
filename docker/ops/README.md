@@ -1,8 +1,8 @@
 # docker/ops/
 
-A sandboxed, ephemeral container for hands-on appsec investigation against any repository — code analysis, secret scanning, dependency auditing, SBOM generation, and Git history cleaning. It has no access to the host filesystem beyond what is explicitly bind-mounted, and is driven exclusively via [scripts/invoke-ops.ps1](../../scripts/README.md#invoke-opsps1) — never `docker compose` directly.
+A sandboxed, ephemeral container for hands-on appsec investigation against any repository — code analysis, secret scanning, dependency auditing, SBOM generation, Git history cleaning, and running Claude Code itself, interactively or as an autonomous task. It has no access to the host filesystem beyond what is explicitly bind-mounted, and is driven exclusively via [scripts/invoke-ops.ps1](../../scripts/README.md#invoke-opsps1) — never `docker compose` directly.
 
-`-Mode sbom-scan` depends on the core stack (`appsec-scout.ps1`) already being up: it reuses the AzDO PAT already configured in appsec-scout's credential vault, and runs every Trivy scan against the shared `trivy-server` container rather than downloading its own vulnerability database. It is not meant to run standalone — start `appsec-scout.ps1` first.
+`-SbomScan` depends on the core stack (`appsec-scout.ps1`) already being up: it reuses the AzDO PAT already configured in appsec-scout's credential vault, and runs every Trivy scan against the shared `trivy-server` container rather than downloading its own vulnerability database. It is not meant to run standalone — start `appsec-scout.ps1` first.
 
 ## What's inside
 
@@ -11,9 +11,9 @@ A sandboxed, ephemeral container for hands-on appsec investigation against any r
 - **.NET 10 SDK** + Roslynator CLI — restore/build/analyze .NET solutions
 - **Trivy** — SBOM (CycloneDX), vulnerability, and secret scanning
 - **BFG Repo-Cleaner** (checksum- and signature-verified at build time) — strip secrets/large blobs from Git history
-- **Claude Code** — available once authenticated via `-Mode login`; the shell never launches it automatically
+- **Claude Code** — run via `-Claude`, once authenticated via `-Claude -Login`; the plain shell never launches it automatically
 
-The image runs as a non-root `ops` user (falls back to root only for system package installs during build).
+One image throughout — every mode (`-Shell`, `-Claude`, `-SbomScan`) runs in the same container with the full toolset above available, since Claude is mostly used to work on code and may need any of it. The image runs as a non-root `ops` user (falls back to root only for system package installs during build).
 
 ## Usage
 
@@ -24,11 +24,17 @@ All usage goes through `invoke-ops.ps1`; see [scripts/README.md](../../scripts/R
 .\scripts\invoke-ops.ps1
 
 # One-time Claude OAuth login (persisted to the claude_credentials volume)
-.\scripts\invoke-ops.ps1 -Mode login
+.\scripts\invoke-ops.ps1 -Claude -Login
+
+# Interactive Claude Code session in the sandboxed container
+.\scripts\invoke-ops.ps1 -Claude
+
+# Autonomous Claude task: clone a repo, do the work, push a branch, open a PR
+.\scripts\invoke-ops.ps1 -Claude -Task "Add input validation to the SecurityEvent edit form"
 
 # Org-wide SBOM + vulnerability + secret scan across every Azure DevOps repo,
 # with results uploaded into appsec-scout as Attachments
-.\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
+.\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)
 ```
 
 Every `invoke-ops.ps1` run already rebuilds the image (respecting Docker's layer cache, so it's fast when nothing changed) — a plain `.\scripts\invoke-ops.ps1` picks up changes to this Dockerfile, `entrypoint.sh`, or `collect-sboms.sh` automatically. Use `-Rebuild` only when you want a clean `--no-cache` build or a fresh CA cert export:
@@ -46,7 +52,7 @@ Copy `.env.example` to `.env` in this folder and fill in defaults, or pass every
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `SSL_CERT_FILE` | Corporate proxy / custom TLS. `SSL_CERT_FILE` is populated automatically from the Windows cert store by `-Rebuild`. |
 | `REPO_URL` / `REPO_BRANCH` | Repository to clone into `/workspace` on shell start. |
 | `GIT_USER_NAME` / `GIT_USER_EMAIL` / `GITHUB_TOKEN` | Git commit identity and GitHub PAT for cloning/pushing. `GITHUB_TOKEN` is only a last-resort fallback — `invoke-ops.ps1` first reuses the GitHub PAT already configured as appsec-scout's GitHub tracker credential. |
-| `AZDO_ORG` | Azure DevOps organization for `-Mode sbom-scan`. Fallback only — reused from appsec-scout's AzDO source credential by default. |
+| `AZDO_ORG` | Azure DevOps organization for `-SbomScan`. Fallback only — reused from appsec-scout's AzDO source credential by default. |
 | `AZDO_PAT` | Azure DevOps PAT with "Code (Read)" scope. Fallback only — `invoke-ops.ps1` first reuses the PAT already configured as appsec-scout's AzDO Advanced Security source credential; never commit a real PAT here. |
 | `AZDO_PROJECT_FILTER` / `AZDO_REPO_FILTER` | Optional regex filters on project/repository name. |
 | `SBOM_OUTPUT_DIR` | Host directory that receives scan output (default `./output/sbom-scan`). |
@@ -55,7 +61,7 @@ Before running a full scan, validate the PAT with [scripts/test-AzureDevOpsToken
 
 ## SBOM/vulnerability/secret scan (`--sbom-scan`)
 
-`collect-sboms.sh` (invoked via `entrypoint.sh --sbom-scan`, i.e. `-Mode sbom-scan`) enumerates every project and non-disabled repository in the target Azure DevOps organization and, for each repo:
+`collect-sboms.sh` (invoked via `entrypoint.sh --sbom-scan`, i.e. `-SbomScan`) enumerates every project and non-disabled repository in the target Azure DevOps organization and, for each repo:
 
 1. Shallow-clones it.
 2. If it contains any `*.sln`, attempts `dotnet restore` + `dotnet build` (non-fatal — Trivy still runs against unresolved package ranges if this fails).
