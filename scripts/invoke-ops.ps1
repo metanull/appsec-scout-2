@@ -1,71 +1,91 @@
 <#
 .SYNOPSIS
-    Opens an appsec-ops shell in a sandboxed Docker container.
+    Opens an appsec-ops shell in a sandboxed Docker container, or runs Claude Code inside it.
 .DESCRIPTION
-    Launches the ops container for hands-on appsec investigation: code analysis,
-    repository archaeology, secret scanning, dependency auditing, and history
-    cleaning. The container opens an interactive bash shell and never auto-launches
-    Claude, though 'claude' is available inside if authenticated.
-    Use -Mode login once to authenticate Claude via your Pro/Max subscription.
-.PARAMETER Mode
-    shell     — Interactive bash shell (default). Clones repo first if OPS_REPO_URL is set.
-    login     — One-time OAuth login; saves credentials to the 'claude_credentials' volume.
-    sbom-scan — Collects SBOMs (CycloneDX, via Trivy) from every repository in an Azure
-                DevOps organization, restoring/building any *.sln first for precise .NET
-                results. Runs to completion in a single container invocation; each repo is
-                deleted immediately after it is scanned. Output lands on the host under
-                SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\). Reports are
-                uploaded into appsec-scout as Attachments on the matching SoftwareSystem/
-                SecurityContainer incrementally, as soon as each repository finishes — a
-                scheduled `sbom:import-pending-scans` tick in the `app` container picks up
-                every new run.jsonl line every minute, so you don't have to wait for the
-                whole (possibly multi-hour) scan to see results land. This script also
-                triggers that same command once more right after the scan container exits,
-                to flush anything the last scheduled tick hasn't picked up yet. Pass
-                -SkipUpload to opt this run out of both entirely (see -SkipUpload).
+    Launches the `ops` container for hands-on appsec investigation: code analysis, repository
+    archaeology, secret scanning, dependency auditing, history cleaning, org-wide SBOM scanning,
+    and running Claude Code itself — interactively or as an autonomous task. Same sandboxed,
+    ephemeral, no-host-filesystem-access container throughout; -Claude just changes what the
+    entrypoint execs once inside it.
+.PARAMETER Shell
+    Interactive bash shell (default — this switch does not need to be typed). Clones -Repo first
+    if set. 'claude' is available inside if already authenticated, but is never auto-launched.
+.PARAMETER Claude
+    Runs Claude Code inside the same sandboxed container. Bare -Claude opens an interactive
+    session (clones -Repo first if set). Combine with -Login and/or -Task — see those parameters.
+.PARAMETER Login
+    One-time Claude OAuth login (with -Claude); saves credentials to the 'claude_credentials'
+    volume, shared by every mode in this script. Runs first if combined with -Task: login happens,
+    then (only if it succeeds) the task runs. A failed login aborts the whole invocation. Combined
+    with nothing else, it stops once the login flow completes — same as before.
+.PARAMETER Task
+    Autonomous run (with -Claude): clone -Repo, execute this prompt non-interactively, push a
+    branch, open a PR. Runs after -Login when both are given.
+.PARAMETER SbomScan
+    Collects SBOMs (CycloneDX, via Trivy) from every repository in an Azure DevOps organization,
+    restoring/building any *.sln first for precise .NET results. Runs to completion in a single
+    container invocation; each repo is deleted immediately after it is scanned. Output lands on
+    the host under SBOM_OUTPUT_DIR (default .\output\sbom-scan\<timestamp>\). Reports are
+    uploaded into appsec-scout as Attachments on the matching SoftwareSystem/SecurityContainer
+    incrementally, as soon as each repository finishes — a scheduled `sbom:import-pending-scans`
+    tick in the `app` container picks up every new run.jsonl line every minute, so you don't have
+    to wait for the whole (possibly multi-hour) scan to see results land. This script also
+    triggers that same command once more right after the scan container exits, to flush anything
+    the last scheduled tick hasn't picked up yet. Pass -SkipUpload to opt this run out of both
+    entirely (see -SkipUpload).
 .PARAMETER Repo
-    GitHub HTTPS URL to clone. Overrides OPS_REPO_URL from .env.
+    GitHub HTTPS URL to clone (-Shell / -Claude). Overrides REPO_URL from .env.
 .PARAMETER Branch
-    Branch to clone. Overrides OPS_REPO_BRANCH from .env.
+    Branch to clone (-Shell / -Claude). Overrides REPO_BRANCH from .env. With -Claude -Task, also
+    the PR base branch.
 .PARAMETER Name
-    Git display name used in commits (e.g. "Pascal HAVELANGE"). Overrides GIT_USER_NAME from .env.
+    Git display name used in commits (-Shell / -Claude), e.g. "Pascal HAVELANGE". Overrides
+    GIT_USER_NAME from .env.
 .PARAMETER Credential
-    GitHub credential for cloning private repositories.
-    UserName = git commit email — overrides GIT_USER_EMAIL from .env.
-    Password = GitHub PAT      — overrides GITHUB_TOKEN from .env.
-    If omitted, the GitHub PAT already configured as appsec-scout's GitHub tracker
-    credential is fetched from the running `app` container and reused; if that isn't
-    available either, the container falls back to GITHUB_TOKEN from docker/ops/.env.
-    Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry
-    from Windows Credential Manager with Get-StoredCredential (module CredentialManager).
+    GitHub credential for cloning/pushing (-Shell / -Claude), or Azure DevOps credential
+    (-SbomScan) — which one depends on which of those switches is passed; there's no ambiguity
+    since only one is ever active per invocation.
+    -Shell / -Claude: UserName = git commit email — overrides GIT_USER_EMAIL from .env.
+                      Password = GitHub PAT      — overrides GITHUB_TOKEN from .env.
+    -SbomScan:        Password = AzDO PAT with "Code (Read)" scope across the organization —
+                      overrides AZDO_PAT from .env. UserName is not used.
+    If omitted, the matching PAT already configured as appsec-scout's GitHub tracker or AzDO
+    Advanced Security source credential is fetched from the running `app` container and reused;
+    if that isn't available either, the container falls back to GITHUB_TOKEN/AZDO_PAT from
+    docker/ops/.env.
+    Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry from Windows
+    Credential Manager with Get-StoredCredential (module CredentialManager).
 .PARAMETER Organization
-    Azure DevOps organization to scan (-Mode sbom-scan). Overrides AZDO_ORG from .env.
-.PARAMETER AzdoCredential
-    Azure DevOps credential (-Mode sbom-scan). Password = PAT with "Code (Read)" scope
-    across the organization — overrides AZDO_PAT from .env. UserName is not used.
-    If omitted, the PAT (and organization) already configured as appsec-scout's AzDO
-    Advanced Security source credential is fetched from the running `app` container and
-    reused; if that isn't available either, the container falls back to AZDO_PAT/AZDO_ORG
-    from docker/ops/.env.
+    Azure DevOps organization to scan (-SbomScan). Overrides AZDO_ORG from .env.
 .PARAMETER ProjectFilter
-    Regex applied to project names (-Mode sbom-scan). Overrides AZDO_PROJECT_FILTER from .env.
+    Regex applied to project names (-SbomScan). Overrides AZDO_PROJECT_FILTER from .env.
 .PARAMETER RepositoryFilter
-    Regex applied to repository names (-Mode sbom-scan). Overrides AZDO_REPO_FILTER from .env.
+    Regex applied to repository names (-SbomScan). Overrides AZDO_REPO_FILTER from .env.
 .PARAMETER OutputDir
-    Host directory to receive SBOM output (-Mode sbom-scan). Overrides SBOM_OUTPUT_DIR from .env.
+    Host directory to receive SBOM output (-SbomScan). Overrides SBOM_OUTPUT_DIR from .env.
 .PARAMETER SkipUpload
-    Skip uploading generated SBOMs into appsec-scout as attachments (-Mode sbom-scan).
-    Files still land under OutputDir either way. This also prevents the per-minute
-    scheduled import (sbom:import-pending-scans) from picking up this run, since that
-    runs independently of this script — collect-sboms.sh drops a marker in the run's
-    output directory that the scheduled command checks for and skips.
+    Skip uploading generated SBOMs into appsec-scout as attachments (-SbomScan). Files still land
+    under OutputDir either way. This also prevents the per-minute scheduled import
+    (sbom:import-pending-scans) from picking up this run, since that runs independently of this
+    script — collect-sboms.sh drops a marker in the run's output directory that the scheduled
+    command checks for and skips.
+.PARAMETER Resume
+    Resume a previous sbom-scan (-SbomScan) instead of starting from scratch. Walks backward
+    from the most recent run under OutputDir, collecting the unbroken chain of interrupted or
+    zero-progress attempts, and skips every repository already recorded in any of them —
+    which only leaves out whichever repository was still being scanned when the chain was last
+    interrupted (e.g. a container/engine crash) plus anything not yet reached, so repeated
+    interrupt/resume cycles keep accumulating instead of losing earlier progress each time. The
+    walk stops at — and never touches — the first run that genuinely completed with real
+    progress, so an old, unrelated, already-finished scan sitting in the same output directory
+    is never silently treated as "already scanned." Results land in a new run directory as
+    usual; nothing is overwritten. Fails with a clear error if no prior run.jsonl is found, or
+    if the most recent run already completed and there is nothing left to resume.
 .PARAMETER Rebuild
     Forces a clean --no-cache rebuild of the ops image and re-exports host CA certificates.
     Not required to pick up ordinary code changes — every run already rebuilds the image
     (respecting Docker's layer cache), so a stale image is never used just because -Rebuild
-    was omitted.
-.EXAMPLE
-    .\invoke-ops.ps1 -Mode login
+    was omitted. Combinable with -Shell, -Claude, or -SbomScan.
 .EXAMPLE
     .\invoke-ops.ps1
 .EXAMPLE
@@ -73,38 +93,73 @@
 .EXAMPLE
     .\invoke-ops.ps1 -Repo https://github.com/org/repo.git -Credential (Get-Credential) -Name "Pascal HAVELANGE"
 .EXAMPLE
-    .\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
+    .\invoke-ops.ps1 -Claude -Login
 .EXAMPLE
-    .\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential) -ProjectFilter '^Portal$'
+    .\invoke-ops.ps1 -Claude
+.EXAMPLE
+    .\invoke-ops.ps1 -Claude -Task "Add input validation to the SecurityEvent edit form"
+.EXAMPLE
+    .\invoke-ops.ps1 -Claude -Login -Task "..." -Repo https://github.com/org/repo.git -Branch feature/x
+.EXAMPLE
+    .\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)
+.EXAMPLE
+    .\invoke-ops.ps1 -SbomScan -Credential (Get-Credential) -ProjectFilter '^Portal$'
+.EXAMPLE
+    .\invoke-ops.ps1 -SbomScan -Resume -Credential (Get-Credential)
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Shell')]
 param(
-    [ValidateSet('shell', 'login', 'sbom-scan')]
-    [string]$Mode = 'shell',
+    [Parameter(ParameterSetName = 'Shell')]
+    [Switch]$Shell,
 
+    [Parameter(ParameterSetName = 'Claude')]
+    [Switch]$Claude,
+
+    [Parameter(ParameterSetName = 'Claude')]
+    [Switch]$Login,
+
+    [Parameter(ParameterSetName = 'Claude')]
+    [string]$Task = '',
+
+    [Parameter(ParameterSetName = 'SbomScan')]
+    [Switch]$SbomScan,
+
+    [Parameter(ParameterSetName = 'Shell')]
+    [Parameter(ParameterSetName = 'Claude')]
     [string]$Repo = '',
 
+    [Parameter(ParameterSetName = 'Shell')]
+    [Parameter(ParameterSetName = 'Claude')]
     [string]$Branch = '',
 
+    [Parameter(ParameterSetName = 'Shell')]
+    [Parameter(ParameterSetName = 'Claude')]
     [string]$Name = '',
 
+    [Parameter(ParameterSetName = 'Shell')]
+    [Parameter(ParameterSetName = 'Claude')]
+    [Parameter(ParameterSetName = 'SbomScan')]
     [System.Management.Automation.Credential()]
     [System.Management.Automation.PSCredential]
     $Credential,
 
+    [Parameter(ParameterSetName = 'SbomScan')]
     [string]$Organization = '',
 
-    [System.Management.Automation.Credential()]
-    [System.Management.Automation.PSCredential]
-    $AzdoCredential,
-
+    [Parameter(ParameterSetName = 'SbomScan')]
     [string]$ProjectFilter = '',
 
+    [Parameter(ParameterSetName = 'SbomScan')]
     [string]$RepositoryFilter = '',
 
+    [Parameter(ParameterSetName = 'SbomScan')]
     [string]$OutputDir = '',
 
+    [Parameter(ParameterSetName = 'SbomScan')]
     [Switch]$SkipUpload,
+
+    [Parameter(ParameterSetName = 'SbomScan')]
+    [Switch]$Resume,
 
     [Switch]$Rebuild
 )
@@ -197,53 +252,59 @@ try {
         Invoke-Docker compose @EnvFileArgs build ops
     }
 
-    # Inject -Credential/-Name/-AzdoCredential/etc. into the PS environment so Docker
-    # Compose picks them up via ${GITHUB_TOKEN:-}, ${GIT_USER_EMAIL:-}, ${AZDO_PAT:-}, ...
+    $isGitHubCredentialSet = $PSCmdlet.ParameterSetName -in @('Shell', 'Claude')
+    $isAzdoCredentialSet = $PSCmdlet.ParameterSetName -eq 'SbomScan'
+
+    # Inject -Credential/-Name/-Organization/etc. into the PS environment so Docker Compose
+    # picks them up via ${GITHUB_TOKEN:-}, ${GIT_USER_EMAIL:-}, ${AZDO_PAT:-}, ...
     # Wiped in the outer finally block regardless of how the script exits.
-    if ($Credential) {
-        $env:GIT_USER_EMAIL = $Credential.UserName
-        $env:GITHUB_TOKEN   = $Credential.GetNetworkCredential().Password
-    } else {
-        # Reuse the GitHub PAT already stored in appsec-scout's credential vault (the GitHub
-        # tracker's token) instead of requiring it to be re-entered in docker/ops/.env.
-        $vaultGitHubToken = Get-SystemVaultCredential -Key 'github.token' -EnvFileArgs $EnvFileArgs
-        if ($vaultGitHubToken) {
-            Write-Host "Using GitHub token from appsec-scout's credential vault (GitHub tracker)."
-            $env:GITHUB_TOKEN = $vaultGitHubToken
-        }
-    }
-    if (-not [string]::IsNullOrWhiteSpace($Name)) {
-        $env:GIT_USER_NAME = $Name
-    }
-    if ($AzdoCredential) {
-        $env:AZDO_PAT = $AzdoCredential.GetNetworkCredential().Password
-    } elseif ($Mode -eq 'sbom-scan') {
-        # Reuse the PAT already stored in appsec-scout's credential vault (the AzDO source's
-        # PAT) instead of requiring it to be re-entered in docker/ops/.env for every scan.
-        $vaultAzdoPat = Get-SystemVaultCredential -Key 'azdo.pat' -EnvFileArgs $EnvFileArgs
-        if ($vaultAzdoPat) {
-            Write-Host "Using AzDO PAT from appsec-scout's credential vault (AzDO Advanced Security source)."
-            $env:AZDO_PAT = $vaultAzdoPat
-        }
-        if ([string]::IsNullOrWhiteSpace($Organization)) {
-            $vaultAzdoOrg = Get-SystemVaultCredential -Key 'azdo.organization' -EnvFileArgs $EnvFileArgs
-            if ($vaultAzdoOrg) {
-                Write-Host "Using AzDO organization from appsec-scout's credential vault: $vaultAzdoOrg"
-                $env:AZDO_ORG = $vaultAzdoOrg
+    if ($isGitHubCredentialSet) {
+        if ($Credential) {
+            $env:GIT_USER_EMAIL = $Credential.UserName
+            $env:GITHUB_TOKEN   = $Credential.GetNetworkCredential().Password
+        } else {
+            # Reuse the GitHub PAT already stored in appsec-scout's credential vault (the GitHub
+            # tracker's token) instead of requiring it to be re-entered in docker/ops/.env.
+            $vaultGitHubToken = Get-SystemVaultCredential -Key 'github.token' -EnvFileArgs $EnvFileArgs
+            if ($vaultGitHubToken) {
+                Write-Host "Using GitHub token from appsec-scout's credential vault (GitHub tracker)."
+                $env:GITHUB_TOKEN = $vaultGitHubToken
             }
         }
-    }
-    if (-not [string]::IsNullOrWhiteSpace($Organization)) {
-        $env:AZDO_ORG = $Organization
-    }
-    if (-not [string]::IsNullOrWhiteSpace($ProjectFilter)) {
-        $env:AZDO_PROJECT_FILTER = $ProjectFilter
-    }
-    if (-not [string]::IsNullOrWhiteSpace($RepositoryFilter)) {
-        $env:AZDO_REPO_FILTER = $RepositoryFilter
-    }
-    if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
-        $env:SBOM_OUTPUT_DIR = $OutputDir
+        if (-not [string]::IsNullOrWhiteSpace($Name)) {
+            $env:GIT_USER_NAME = $Name
+        }
+    } elseif ($isAzdoCredentialSet) {
+        if ($Credential) {
+            $env:AZDO_PAT = $Credential.GetNetworkCredential().Password
+        } else {
+            # Reuse the PAT already stored in appsec-scout's credential vault (the AzDO source's
+            # PAT) instead of requiring it to be re-entered in docker/ops/.env for every scan.
+            $vaultAzdoPat = Get-SystemVaultCredential -Key 'azdo.pat' -EnvFileArgs $EnvFileArgs
+            if ($vaultAzdoPat) {
+                Write-Host "Using AzDO PAT from appsec-scout's credential vault (AzDO Advanced Security source)."
+                $env:AZDO_PAT = $vaultAzdoPat
+            }
+            if ([string]::IsNullOrWhiteSpace($Organization)) {
+                $vaultAzdoOrg = Get-SystemVaultCredential -Key 'azdo.organization' -EnvFileArgs $EnvFileArgs
+                if ($vaultAzdoOrg) {
+                    Write-Host "Using AzDO organization from appsec-scout's credential vault: $vaultAzdoOrg"
+                    $env:AZDO_ORG = $vaultAzdoOrg
+                }
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Organization)) {
+            $env:AZDO_ORG = $Organization
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ProjectFilter)) {
+            $env:AZDO_PROJECT_FILTER = $ProjectFilter
+        }
+        if (-not [string]::IsNullOrWhiteSpace($RepositoryFilter)) {
+            $env:AZDO_REPO_FILTER = $RepositoryFilter
+        }
+        if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
+            $env:SBOM_OUTPUT_DIR = $OutputDir
+        }
     }
 
     # Build env-override args for Repo/Branch flags
@@ -254,32 +315,93 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($Branch)) {
         $envOverrides += '-e'; $envOverrides += "REPO_BRANCH=$Branch"
     }
-    if ($Mode -eq 'sbom-scan' -and $SkipUpload) {
+    if ($PSCmdlet.ParameterSetName -eq 'SbomScan' -and $SkipUpload) {
         # Tells collect-sboms.sh to drop a .skip-import marker in this run's output
         # directory, so the scheduled sbom:import-pending-scans tick (which runs every
         # minute independently of this script) never imports a dry-run scan either.
         $envOverrides += '-e'; $envOverrides += 'AZDO_SKIP_IMPORT=1'
     }
 
-    switch ($Mode) {
-        'login' {
-            Write-Host "Starting OAuth login — your browser will open. Complete the flow, then type /exit."
-            Invoke-Docker compose @EnvFileArgs run --rm -it --no-deps @envOverrides ops --login
-            Write-Host "Login complete. Credentials saved to the 'claude_credentials' Docker volume."
-        }
-        'shell' {
+    switch ($PSCmdlet.ParameterSetName) {
+        'Shell' {
             Write-Host "Starting ops shell. Type 'exit' to quit."
             Invoke-Docker compose @EnvFileArgs run --rm -it --no-deps @envOverrides ops
         }
-        'sbom-scan' {
-            Write-Host "Starting SBOM scan. This runs to completion in one container session..."
-            Invoke-Docker compose @EnvFileArgs run --rm --no-deps @envOverrides ops --sbom-scan
-
+        'Claude' {
+            if ($Login) {
+                Write-Host "Starting OAuth login — your browser will open. Complete the flow, then type /exit."
+                Invoke-Docker compose @EnvFileArgs run --rm -it --no-deps @envOverrides ops --login
+                Write-Host "Login complete. Credentials saved to the 'claude_credentials' Docker volume."
+                # A failed login throws above (Invoke-Docker) and is caught by the outer
+                # try/catch, which exits non-zero before ever reaching -Task below.
+            }
+            if ($Task) {
+                $env:CLAUDE_TASK = $Task
+                try {
+                    Write-Host "Running task: $Task"
+                    Invoke-Docker compose @EnvFileArgs run --rm --no-deps -e CLAUDE_TASK @envOverrides ops --claude-task
+                } finally {
+                    Remove-Item Env:\CLAUDE_TASK -ErrorAction SilentlyContinue
+                }
+            } elseif (-not $Login) {
+                Write-Host "Starting interactive Claude session. Type /exit to quit."
+                Invoke-Docker compose @EnvFileArgs run --rm -it --no-deps @envOverrides ops --claude-shell
+            }
+        }
+        'SbomScan' {
             $resolvedOutputRoot = if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
                 $OutputDir
             } else {
                 Join-Path $ProjectRoot 'output\sbom-scan'
             }
+
+            if ($Resume) {
+                $allRunDirs = @(Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { Test-Path (Join-Path $_.FullName 'run.jsonl') } |
+                    Sort-Object Name -Descending)
+                if ($allRunDirs.Count -eq 0) {
+                    throw "-Resume specified but no previous run.jsonl was found under $resolvedOutputRoot"
+                }
+
+                # Walk backward from the most recent run, collecting the unbroken chain of
+                # attempts that belong to THIS scan: interrupted runs (no summary.json) and
+                # completed-but-zero-progress runs (e.g. an earlier resume that itself skipped
+                # everything). Stop at — and exclude — the first run that genuinely completed
+                # with real progress, so an old, unrelated, fully-finished scan from a previous
+                # session is never silently treated as "already scanned" by today's resume.
+                $resumeRunDirs = New-Object System.Collections.Generic.List[object]
+                $reachedRealBoundary = $false
+                foreach ($dir in $allRunDirs) {
+                    $consideredCount = 0
+                    $summaryPath = Join-Path $dir.FullName 'summary.json'
+                    if (Test-Path $summaryPath) {
+                        $consideredCount = (Get-Content $summaryPath -Raw | ConvertFrom-Json).repositoriesConsidered
+                    }
+                    if ($consideredCount -gt 0) {
+                        $reachedRealBoundary = $true
+                        break
+                    }
+                    $resumeRunDirs.Add($dir)
+                }
+                if ($resumeRunDirs.Count -eq 0) {
+                    if ($reachedRealBoundary) {
+                        throw "-Resume specified but the most recent run ($($allRunDirs[0].Name)) already completed — nothing to resume. Omit -Resume to start a fresh scan."
+                    }
+                    throw "-Resume specified but no previous run.jsonl was found under $resolvedOutputRoot"
+                }
+
+                Write-Host "Resuming: $($resumeRunDirs.Count) run(s) in this attempt's chain — already-scanned repositories from any of them will be skipped."
+                # SBOM_OUTPUT_DIR is bind-mounted to /output in the ops container (docker-compose.yml).
+                # Pass the exact run directory names, not the whole output root — collect-sboms.sh
+                # unions repositoryIds across only these, so an old fully-completed scan sitting in
+                # the same output directory never gets pulled into an unrelated later resume.
+                $resumeRunNames = ($resumeRunDirs | ForEach-Object { $_.Name }) -join ','
+                $envOverrides += '-e'; $envOverrides += "RESUME_FROM=$resumeRunNames"
+            }
+
+            Write-Host "Starting SBOM scan. This runs to completion in one container session..."
+            Invoke-Docker compose @EnvFileArgs run --rm --no-deps @envOverrides ops --sbom-scan
+
             $latestRun = Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if ($latestRun) {
@@ -303,7 +425,7 @@ try {
     # parameter set them, or the vault lookup did — either way they must not linger in the
     # host PowerShell session's environment once this script exits.
     Remove-Item Env:\GITHUB_TOKEN, Env:\AZDO_PAT -ErrorAction SilentlyContinue
-    if ($Credential) {
+    if ($Credential -and $PSCmdlet.ParameterSetName -in @('Shell', 'Claude')) {
         Remove-Item Env:\GIT_USER_EMAIL -ErrorAction SilentlyContinue
     }
     if (-not [string]::IsNullOrWhiteSpace($Name)) {

@@ -7,8 +7,7 @@ PowerShell entry points for developing, running, and operating AppSec Scout. All
 | [appsec-scout.ps1](#appsec-scoutps1) | Start/rebuild the application stack |
 | [invoke-check.ps1](#invoke-checkps1) | Run CI checks (lint, tests, static analysis, dependencies) |
 | [invoke-fix.ps1](#invoke-fixps1) | Run mutating auto-fixes (lint, dependency updates) |
-| [invoke-claude.ps1](#invoke-claudeps1) | Run Claude Code in a sandboxed container against this repo |
-| [invoke-ops.ps1](#invoke-opsps1) | Open an appsec-ops shell, or run an org-wide SBOM/vuln/secret scan |
+| [invoke-ops.ps1](#invoke-opsps1) | Open an appsec-ops shell, run Claude Code sandboxed, or run an org-wide SBOM/vuln/secret scan |
 | [test-GitHubToken.ps1](#test-githubtokenps1) | Validate a GitHub PAT |
 | [test-AzureDevOpsToken.ps1](#test-azuredevopstokenps1) | Validate an Azure DevOps PAT |
 | [validate-workflows.cjs](#validate-workflowscjs) | Lint GitHub Actions workflow YAML |
@@ -53,50 +52,43 @@ Runs mutating fix operations (formatting, dependency updates) — kept separate 
 .\scripts\invoke-fix.ps1 -Fix lint-fix
 ```
 
-## invoke-claude.ps1
-
-Runs Claude Code in an isolated, ephemeral container with no access to the host filesystem — either interactively, for one-time login, or as an autonomous task that clones a repo, does the work, and opens a PR. Every run rebuilds the `claude` image first (respecting Docker's layer cache, so this is fast when nothing changed) — you never need `-Rebuild` just to pick up a Dockerfile/entrypoint change.
-
-**Parameters**
-- `-Mode <shell|login|task>` — default `shell`.
-- `-Task <string>` — task prompt; required with `-Mode task`.
-- `-Repo <url>` — repo to clone; overrides `CLAUDE_REPO_URL`.
-- `-Branch <name>` — branch to clone/PR against; overrides `CLAUDE_REPO_BRANCH`.
-- `-Name <string>` — git commit display name; overrides `GIT_USER_NAME`.
-- `-Credential <PSCredential>` — `UserName` = git commit email, `Password` = GitHub PAT; overrides `GIT_USER_EMAIL`/`GITHUB_TOKEN`. If omitted, the GitHub PAT already configured as appsec-scout's GitHub tracker credential is reused automatically (fetched from the running `app` container); `docker/claude/.env`'s `GITHUB_TOKEN` is only a last-resort fallback.
-- `-Rebuild` — force a clean `--no-cache` rebuild and re-export host CA certs first. Not required for routine use.
-
-Proxy/TLS settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) are read from the repo root `.env`, layered under `docker/claude/.env` — set those once at the root, not per container.
-
-```powershell
-.\scripts\invoke-claude.ps1 -Mode login
-.\scripts\invoke-claude.ps1
-.\scripts\invoke-claude.ps1 -Mode task -Task "Add input validation to the SecurityEvent edit form"
-.\scripts\invoke-claude.ps1 -Mode task -Task "..." -Credential (Get-Credential) -Name "Your Name"
-```
-
 ## invoke-ops.ps1
 
-Opens the `ops` sandboxed container for appsec investigation (code analysis, secret scanning, dependency auditing, history cleaning), or runs an org-wide SBOM/vulnerability/secret scan across every Azure DevOps repository. Every run rebuilds the `ops` image first (respecting Docker's layer cache, so this is fast when nothing changed) — you never need `-Rebuild` just to pick up a Dockerfile/entrypoint/collect-sboms.sh change.
+Opens the `ops` sandboxed container — appsec investigation (code analysis, secret scanning, dependency auditing, history cleaning), Claude Code (interactive or an autonomous task that clones a repo, does the work, and opens a PR), or an org-wide SBOM/vulnerability/secret scan across every Azure DevOps repository. One container image throughout — Claude Code, PHP/Composer, .NET SDK, Trivy, BFG, and the AzDO/GitHub CLIs are all present regardless of which mode you run. Every invocation rebuilds the `ops` image first (respecting Docker's layer cache, so this is fast when nothing changed) — you never need `-Rebuild` just to pick up a Dockerfile/entrypoint/collect-sboms.sh change.
 
-**Parameters**
-- `-Mode <shell|login|sbom-scan>` — default `shell`.
-  - `sbom-scan` clones and Trivy-scans every non-disabled repo in the target AzDO organization. Generated reports are imported into appsec-scout as `Attachment`s incrementally as each repo finishes (a scheduled `sbom:import-pending-scans` tick picks up new results every minute), not just once the whole scan completes — unless `-SkipUpload`. Requires the core stack (`appsec-scout.ps1`) to already be running: every scan runs against the shared `trivy-server` container rather than downloading its own vulnerability database, and fails fast with a clear message if that shared token isn't present.
-- `-Repo` / `-Branch` / `-Name` / `-Credential` — same meaning as in `invoke-claude.ps1`, for cloning a GitHub repo into the ops shell. `-Credential` follows the same vault-first fallback as `invoke-claude.ps1`.
+Exactly one of `-Shell` (default — doesn't need to be typed), `-Claude`, or `-SbomScan` is active per invocation; PowerShell rejects any parameter combination that crosses between them.
+
+**`-Shell`** (default) — interactive bash shell.
+- `-Repo <url>` / `-Branch <name>` — repo to clone into the shell; override `REPO_URL`/`REPO_BRANCH`.
+- `-Name <string>` — git commit display name; overrides `GIT_USER_NAME`.
+- `-Credential <PSCredential>` — `UserName` = git commit email, `Password` = GitHub PAT; overrides `GIT_USER_EMAIL`/`GITHUB_TOKEN`. If omitted, the GitHub PAT already configured as appsec-scout's GitHub tracker credential is reused automatically (fetched from the running `app` container); `docker/ops/.env`'s `GITHUB_TOKEN` is only a last-resort fallback.
+
+**`-Claude`** — runs Claude Code inside the same sandboxed container.
+- Bare `-Claude` opens an interactive session (clones `-Repo` first if set).
+- `-Login` — one-time OAuth login, saved to the `claude_credentials` volume shared by every mode. Combined with `-Task`, login runs first and the task only runs if it succeeds (a failed login aborts the whole invocation); combined with nothing else, it stops once the login flow completes.
+- `-Task <string>` — autonomous run: clone `-Repo`, execute this prompt non-interactively, push a branch, open a PR.
+- `-Repo` / `-Branch` / `-Name` / `-Credential` — same meaning as under `-Shell`.
+
+**`-SbomScan`** — clones and Trivy-scans every non-disabled repo in the target AzDO organization. Generated reports are imported into appsec-scout as `Attachment`s incrementally as each repo finishes (a scheduled `sbom:import-pending-scans` tick picks up new results every minute), not just once the whole scan completes — unless `-SkipUpload`. Requires the core stack (`appsec-scout.ps1`) to already be running: every scan runs against the shared `trivy-server` container rather than downloading its own vulnerability database, and fails fast with a clear message if that shared token isn't present.
 - `-Organization <string>` — AzDO organization to scan; overrides `AZDO_ORG`.
-- `-AzdoCredential <PSCredential>` — `Password` = AzDO PAT with "Code (Read)" scope; overrides `AZDO_PAT`. `UserName` is unused. If omitted (in `-Mode sbom-scan`), the PAT and organization already configured as appsec-scout's AzDO Advanced Security source credential are reused automatically (fetched from the running `app` container); `docker/ops/.env`'s `AZDO_PAT`/`AZDO_ORG` are only a last-resort fallback.
+- `-Credential <PSCredential>` — `Password` = AzDO PAT with "Code (Read)" scope; overrides `AZDO_PAT`. `UserName` is unused. If omitted, the PAT and organization already configured as appsec-scout's AzDO Advanced Security source credential are reused automatically (fetched from the running `app` container); `docker/ops/.env`'s `AZDO_PAT`/`AZDO_ORG` are only a last-resort fallback.
 - `-ProjectFilter <regex>` / `-RepositoryFilter <regex>` — restrict the scan by project/repo name; override `AZDO_PROJECT_FILTER`/`AZDO_REPO_FILTER`.
 - `-OutputDir <path>` — host directory for scan output; overrides `SBOM_OUTPUT_DIR`.
 - `-SkipUpload` — leave generated reports on disk without uploading them as attachments, including via the scheduled per-minute import (the scan run is marked so `sbom:import-pending-scans` skips it too).
-- `-Rebuild` — force a clean `--no-cache` rebuild and re-export host CA certs first. Not required for routine use.
+- `-Resume` — skip every repository already recorded in any previous run's `run.jsonl` under the output directory and continue from there, instead of rescanning everything; repeated interrupt/resume cycles keep accumulating. Fails clearly if no prior run is found.
+
+**`-Rebuild`** — combinable with any of the above; forces a clean `--no-cache` rebuild and re-exports host CA certs first. Not required for routine use.
 
 Proxy/TLS settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) are read from the repo root `.env`, layered under `docker/ops/.env` — set those once at the root, not per container.
 
 ```powershell
-.\scripts\invoke-ops.ps1 -Mode login
 .\scripts\invoke-ops.ps1
-.\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Credential)
-.\scripts\invoke-ops.ps1 -Mode sbom-scan -AzdoCredential (Get-Secret AzureDevOps) -ProjectFilter '^Portal$'
+.\scripts\invoke-ops.ps1 -Claude -Login
+.\scripts\invoke-ops.ps1 -Claude -Task "Add input validation to the SecurityEvent edit form"
+.\scripts\invoke-ops.ps1 -Claude -Login -Task "..." -Credential (Get-Credential) -Name "Your Name"
+.\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)
+.\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Secret AzureDevOps) -ProjectFilter '^Portal$'
+.\scripts\invoke-ops.ps1 -SbomScan -Resume -Credential (Get-Credential)
 ```
 
 Before running a full scan, validate the PAT with `test-AzureDevOpsToken.ps1` below — it fails in seconds instead of after cloning every repo in the organization.
@@ -115,7 +107,7 @@ Validates a GitHub PAT against `https://api.github.com/user` and prints the auth
 
 ## test-AzureDevOpsToken.ps1
 
-Validates an Azure DevOps PAT with a single lightweight call (`GET _apis/projects?$top=1`) and reports the HTTP status and project count, then resolves and prints the real account (display name + email) the PAT belongs to via the profile API. Use this to rule out credential problems before running a full `invoke-ops.ps1 -Mode sbom-scan`.
+Validates an Azure DevOps PAT with a single lightweight call (`GET _apis/projects?$top=1`) and reports the HTTP status and project count, then resolves and prints the real account (display name + email) the PAT belongs to via the profile API. Use this to rule out credential problems before running a full `invoke-ops.ps1 -SbomScan`.
 
 **Parameters**
 - `-Credential <PSCredential>` — `Password` = AzDO PAT. `UserName` is not used for authentication — it's just a free-text label typed into `Get-Credential`, not the PAT's real owner, so the script looks up the actual identity from Azure DevOps instead.
