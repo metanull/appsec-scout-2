@@ -12,11 +12,13 @@
 # Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
 #   AZDO_SCAN_TYPES (comma-separated subset of sbom,vuln,secret; default: all three),
 #   TRIVY_TIMEOUT (per-scan Trivy timeout; secret scanning in particular needs more
-#   than the 5m default on large trees — default here is 15m), RESUME_FROM (output root
-#   directory containing previous runs — every repositoryId recorded in any of their
-#   run.jsonl files is skipped, so a run interrupted partway through — e.g. by a
-#   container/engine crash — can pick up where it left off instead of rescanning
-#   everything, even across repeated interrupt/resume cycles; set via invoke-ops.ps1 -Resume)
+#   than the 5m default on large trees — default here is 15m), RESUME_FROM (comma-separated
+#   list of previous run directory names, relative to OUTPUT_DIR — every repositoryId
+#   recorded in any of their run.jsonl files is skipped, so a run interrupted partway
+#   through — e.g. by a container/engine crash — can pick up where it left off instead of
+#   rescanning everything, even across repeated interrupt/resume cycles; set via
+#   invoke-ops.ps1 -Resume, which computes exactly which prior runs belong to the same
+#   interrupted attempt so an old, unrelated, already-completed scan is never pulled in)
 #
 # Every scan runs against the shared trivy-server container (see docker-compose.yml)
 # rather than downloading its own vulnerability database — this script is meant to run
@@ -78,29 +80,29 @@ sanitize() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
 }
 
-# RESUME_FROM points at the output root (same directory OUTPUT_DIR/RUN_DIR live under),
-# not a single run. Every repositoryId recorded in ANY previous run's run.jsonl — success
-# or failure, it was attempted and its outcome logged — is skipped this run; only repos
-# that never got a line written anywhere (including whichever one was still being scanned
-# when the most recent previous run was interrupted) are (re)processed. Reading every prior
-# run rather than just the latest means repeated interrupt/resume cycles keep accumulating
-# instead of losing earlier progress each time.
+# RESUME_FROM is a comma-separated list of previous run directory names (relative to
+# OUTPUT_DIR) — the exact chain invoke-ops.ps1 determined belongs to this interrupted scan,
+# NOT every run.jsonl ever written under OUTPUT_DIR. Every repositoryId recorded in any of
+# those runs — success or failure, it was attempted and its outcome logged — is skipped this
+# run; only repos that never got a line written anywhere in the chain (including whichever
+# one was still being scanned when the most recent run was interrupted) are (re)processed.
 declare -A RESUMED_REPO_IDS=()
 RESUME_SKIPPED=0
 if [ -n "${RESUME_FROM:-}" ]; then
-    if [ ! -d "$RESUME_FROM" ]; then
-        echo "ERROR: RESUME_FROM=$RESUME_FROM is not a directory." >&2
-        exit 1
-    fi
-    resume_files=("$RESUME_FROM"/*/run.jsonl)
-    if [ ! -e "${resume_files[0]}" ]; then
-        echo "ERROR: RESUME_FROM=$RESUME_FROM contains no previous run.jsonl to resume from." >&2
-        exit 1
-    fi
+    resume_files=()
+    IFS=',' read -ra resume_run_names <<< "$RESUME_FROM"
+    for resume_run_name in "${resume_run_names[@]}"; do
+        resume_file="$OUTPUT_DIR/$resume_run_name/run.jsonl"
+        if [ ! -e "$resume_file" ]; then
+            echo "ERROR: RESUME_FROM run '$resume_run_name' has no run.jsonl at $resume_file." >&2
+            exit 1
+        fi
+        resume_files+=("$resume_file")
+    done
     while IFS= read -r resumed_id; do
         [ -n "$resumed_id" ] && RESUMED_REPO_IDS["$resumed_id"]=1
     done < <(jq -rs '.[].repositoryId' "${resume_files[@]}")
-    echo "Resuming from $RESUME_FROM — ${#RESUMED_REPO_IDS[@]} already-scanned repositories (across ${#resume_files[@]} previous run(s)) will be skipped."
+    echo "Resuming from ${#resume_files[@]} previous run(s) ($RESUME_FROM) — ${#RESUMED_REPO_IDS[@]} already-scanned repositories will be skipped."
 fi
 
 # Emits one JSON object per line (the "value" entries) across every page of

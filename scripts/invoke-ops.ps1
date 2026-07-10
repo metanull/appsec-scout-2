@@ -70,13 +70,17 @@
     script — collect-sboms.sh drops a marker in the run's output directory that the scheduled
     command checks for and skips.
 .PARAMETER Resume
-    Resume a previous sbom-scan (-SbomScan) instead of starting from scratch. Skips every
-    repository already recorded in ANY previous run's run.jsonl under OutputDir — including
-    partial/failed attempts — which only leaves out whichever repository was still being scanned
-    when the most recent run stopped (e.g. a container/engine crash) plus anything not yet
-    reached, so repeated interrupt/resume cycles keep accumulating instead of losing earlier
-    progress each time. Results land in a new run directory as usual; nothing is overwritten.
-    Fails with a clear error if no prior run.jsonl is found anywhere under OutputDir.
+    Resume a previous sbom-scan (-SbomScan) instead of starting from scratch. Walks backward
+    from the most recent run under OutputDir, collecting the unbroken chain of interrupted or
+    zero-progress attempts, and skips every repository already recorded in any of them —
+    which only leaves out whichever repository was still being scanned when the chain was last
+    interrupted (e.g. a container/engine crash) plus anything not yet reached, so repeated
+    interrupt/resume cycles keep accumulating instead of losing earlier progress each time. The
+    walk stops at — and never touches — the first run that genuinely completed with real
+    progress, so an old, unrelated, already-finished scan sitting in the same output directory
+    is never silently treated as "already scanned." Results land in a new run directory as
+    usual; nothing is overwritten. Fails with a clear error if no prior run.jsonl is found, or
+    if the most recent run already completed and there is nothing left to resume.
 .PARAMETER Rebuild
     Forces a clean --no-cache rebuild of the ops image and re-exports host CA certificates.
     Not required to pick up ordinary code changes — every run already rebuilds the image
@@ -352,16 +356,47 @@ try {
             }
 
             if ($Resume) {
-                $resumeRunDirs = @(Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
-                    Where-Object { Test-Path (Join-Path $_.FullName 'run.jsonl') })
-                if ($resumeRunDirs.Count -eq 0) {
+                $allRunDirs = @(Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { Test-Path (Join-Path $_.FullName 'run.jsonl') } |
+                    Sort-Object Name -Descending)
+                if ($allRunDirs.Count -eq 0) {
                     throw "-Resume specified but no previous run.jsonl was found under $resolvedOutputRoot"
                 }
-                Write-Host "Resuming: $($resumeRunDirs.Count) previous run(s) found under $resolvedOutputRoot — already-scanned repositories from any of them will be skipped."
+
+                # Walk backward from the most recent run, collecting the unbroken chain of
+                # attempts that belong to THIS scan: interrupted runs (no summary.json) and
+                # completed-but-zero-progress runs (e.g. an earlier resume that itself skipped
+                # everything). Stop at — and exclude — the first run that genuinely completed
+                # with real progress, so an old, unrelated, fully-finished scan from a previous
+                # session is never silently treated as "already scanned" by today's resume.
+                $resumeRunDirs = New-Object System.Collections.Generic.List[object]
+                $reachedRealBoundary = $false
+                foreach ($dir in $allRunDirs) {
+                    $consideredCount = 0
+                    $summaryPath = Join-Path $dir.FullName 'summary.json'
+                    if (Test-Path $summaryPath) {
+                        $consideredCount = (Get-Content $summaryPath -Raw | ConvertFrom-Json).repositoriesConsidered
+                    }
+                    if ($consideredCount -gt 0) {
+                        $reachedRealBoundary = $true
+                        break
+                    }
+                    $resumeRunDirs.Add($dir)
+                }
+                if ($resumeRunDirs.Count -eq 0) {
+                    if ($reachedRealBoundary) {
+                        throw "-Resume specified but the most recent run ($($allRunDirs[0].Name)) already completed — nothing to resume. Omit -Resume to start a fresh scan."
+                    }
+                    throw "-Resume specified but no previous run.jsonl was found under $resolvedOutputRoot"
+                }
+
+                Write-Host "Resuming: $($resumeRunDirs.Count) run(s) in this attempt's chain — already-scanned repositories from any of them will be skipped."
                 # SBOM_OUTPUT_DIR is bind-mounted to /output in the ops container (docker-compose.yml).
-                # collect-sboms.sh unions repositoryIds across every run.jsonl found under it, so
-                # progress keeps accumulating across any number of interrupt/resume cycles.
-                $envOverrides += '-e'; $envOverrides += 'RESUME_FROM=/output'
+                # Pass the exact run directory names, not the whole output root — collect-sboms.sh
+                # unions repositoryIds across only these, so an old fully-completed scan sitting in
+                # the same output directory never gets pulled into an unrelated later resume.
+                $resumeRunNames = ($resumeRunDirs | ForEach-Object { $_.Name }) -join ','
+                $envOverrides += '-e'; $envOverrides += "RESUME_FROM=$resumeRunNames"
             }
 
             Write-Host "Starting SBOM scan. This runs to completion in one container session..."
