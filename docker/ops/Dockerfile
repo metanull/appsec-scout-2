@@ -9,6 +9,8 @@ ARG NO_PROXY=""
 # Tool versions — update these ARGs to pin to newer releases
 ARG BFG_VERSION=1.14.0
 ARG ROSLYNATOR_VERSION=0.12.0
+ARG SPOTBUGS_VERSION=4.10.2
+ARG FINDSECBUGS_VERSION=1.14.0
 
 ENV HTTP_PROXY=${HTTP_PROXY} \
     HTTPS_PROXY=${HTTPS_PROXY} \
@@ -123,11 +125,16 @@ RUN wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key \
     && apt-get install -y --no-install-recommends trivy \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Layer 11: BFG Repo Cleaner + Java (checksum-verified) ---
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        default-jre-headless \
-    && rm -rf /var/lib/apt/lists/* \
-    && gpg --keyserver hkps://keys.openpgp.org \
+# --- Layer 11: Java (Eclipse Temurin JDK, current LTS — signed Adoptium apt repo) ---
+RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
+        | gpg --dearmor -o /usr/share/keyrings/adoptium.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb $(lsb_release -sc) main" \
+        > /etc/apt/sources.list.d/adoptium.list \
+    && apt-get update && apt-get install -y --no-install-recommends temurin-25-jdk \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Layer 12: BFG Repo Cleaner (checksum- and signature-verified) ---
+RUN gpg --keyserver hkps://keys.openpgp.org \
         --recv-keys 7305AE1B6772AA1C2D3B4E5DB21602FA2D5CC13C \
     && wget -q \
         "https://repo1.maven.org/maven2/com/madgag/bfg/${BFG_VERSION}/bfg-${BFG_VERSION}.jar" \
@@ -139,12 +146,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         "https://repo1.maven.org/maven2/com/madgag/bfg/${BFG_VERSION}/bfg-${BFG_VERSION}.jar.asc" \
         -O /tmp/bfg.jar.asc \
     && gpg --verify /tmp/bfg.jar.asc /usr/local/lib/bfg.jar \
-    && rm /tmp/bfg.jar.asc \      
+    && rm /tmp/bfg.jar.asc \
     && printf '#!/bin/sh\nexec java -jar /usr/local/lib/bfg.jar "$@"\n' \
         > /usr/local/bin/bfg \
     && chmod +x /usr/local/bin/bfg
 
-# --- Layer 12: Git config, entrypoint, final user switch ---
+# --- Layer 13: SpotBugs + Find Security Bugs plugin (checksum- and signature-verified) ---
+# SHA256 published at https://github.com/spotbugs/spotbugs/releases/tag/4.10.2
+ARG SPOTBUGS_SHA256=63d7687c35fba12cbc8e55ec2a889a2bbf1b9be299dea91f2b0d351dc285308a
+RUN wget -q \
+        "https://github.com/spotbugs/spotbugs/releases/download/${SPOTBUGS_VERSION}/spotbugs-${SPOTBUGS_VERSION}.tgz" \
+        -O /tmp/spotbugs.tgz \
+    && echo "${SPOTBUGS_SHA256}  /tmp/spotbugs.tgz" | sha256sum -c - \
+    && mkdir -p /opt/spotbugs \
+    && tar -xzf /tmp/spotbugs.tgz -C /opt/spotbugs --strip-components=1 \
+    && rm /tmp/spotbugs.tgz \
+    && ln -s /opt/spotbugs/bin/spotbugs /usr/local/bin/spotbugs \
+    && mkdir -p /opt/spotbugs-plugins \
+    && wget -q \
+        "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/${FINDSECBUGS_VERSION}/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar" \
+        -O "/opt/spotbugs-plugins/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar" \
+    && FINDSECBUGS_SHA1=$(curl -fsSL \
+        "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/${FINDSECBUGS_VERSION}/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar.sha1") \
+    && echo "${FINDSECBUGS_SHA1}  /opt/spotbugs-plugins/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar" | sha1sum -c - \
+    && wget -q \
+        "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/${FINDSECBUGS_VERSION}/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar.asc" \
+        -O /tmp/findsecbugs.jar.asc \
+    && gpg --keyserver hkps://keyserver.ubuntu.com \
+        --recv-keys CFC10B69382CBCF5387E51484ECE492B63E38ACF \
+    && gpg --verify /tmp/findsecbugs.jar.asc "/opt/spotbugs-plugins/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar" \
+    && rm /tmp/findsecbugs.jar.asc
+
+# --- Layer 14: Git config, entrypoint, final user switch ---
 RUN git config --global --add safe.directory /workspace \
     && su ops -c "git config --global --add safe.directory /workspace"
 
