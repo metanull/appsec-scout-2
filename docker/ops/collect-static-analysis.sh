@@ -9,7 +9,10 @@
 # wrapper if present (mvnw/gradlew), else the system Maven/Gradle install; every directory
 # that ends up containing compiled .class files is then analyzed together in one SpotBugs
 # run. Build failures are non-fatal — the corresponding report is simply not generated for
-# that repo, same as collect-sboms.sh already treats dotnet restore/build failures.
+# that repo, same as collect-sboms.sh already treats dotnet restore/build failures. The
+# stdout/stderr of every restore/build/analyze invocation is still captured to a log file
+# under <project>/<repo>.logs/ in the run directory (paths recorded in run.jsonl) so a
+# failure can be diagnosed after the fact without re-running anything.
 #
 # Required environment: AZDO_ORG, AZDO_PAT
 # Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
@@ -145,15 +148,15 @@ find_java_project_dirs() {
 }
 
 build_java_project() {
-    local dir="$1"
+    local dir="$1" log_file="$2"
     if [ -x "$dir/mvnw" ]; then
-        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" ./mvnw --batch-mode --quiet -DskipTests compile) >/dev/null 2>&1
+        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" ./mvnw --batch-mode --quiet -DskipTests compile) >"$log_file" 2>&1
     elif [ -f "$dir/pom.xml" ]; then
-        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" mvn --batch-mode --quiet -DskipTests compile) >/dev/null 2>&1
+        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" mvn --batch-mode --quiet -DskipTests compile) >"$log_file" 2>&1
     elif [ -x "$dir/gradlew" ]; then
-        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" ./gradlew --quiet compileJava) >/dev/null 2>&1
+        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" ./gradlew --quiet compileJava) >"$log_file" 2>&1
     elif [ -f "$dir/build.gradle" ] || [ -f "$dir/build.gradle.kts" ]; then
-        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" gradle --quiet compileJava) >/dev/null 2>&1
+        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" gradle --quiet compileJava) >"$log_file" 2>&1
     else
         return 1
     fi
@@ -183,25 +186,35 @@ process_repo() {
     if [ "$clone_ok" = true ] && scan_enabled dotnet; then
         local sln_results=()
         local sln_reports=()
+        local logs_dir="$out_dir/${safe_repo}.logs"
         while IFS= read -r -d '' sln; do
             local restore_ok=false build_ok=false analyzed_ok=false
-            if timeout "$DOTNET_RESTORE_TIMEOUT" dotnet restore "$sln" >/dev/null 2>&1; then
+            local rel_sln="${sln#"$workdir"/}"
+            local sln_id restore_log build_log analyze_log
+            sln_id=$(sanitize "$rel_sln")
+            mkdir -p "$logs_dir"
+            restore_log="$logs_dir/${sln_id}.restore.log"
+            build_log="$logs_dir/${sln_id}.build.log"
+            analyze_log="$logs_dir/${sln_id}.analyze.log"
+            if timeout "$DOTNET_RESTORE_TIMEOUT" dotnet restore "$sln" >"$restore_log" 2>&1; then
                 restore_ok=true
-                if timeout "$DOTNET_BUILD_TIMEOUT" dotnet build --no-restore "$sln" >/dev/null 2>&1; then
+                if timeout "$DOTNET_BUILD_TIMEOUT" dotnet build --no-restore "$sln" >"$build_log" 2>&1; then
                     build_ok=true
                 fi
 
                 local sln_report
                 sln_report="$(mktemp -u "${workdir}/roslynator-XXXXXX.sarif")"
-                if timeout "$ANALYSIS_TIMEOUT" roslynator analyze "$sln" --output "$sln_report" --severity-level info >/dev/null 2>&1 \
+                if timeout "$ANALYSIS_TIMEOUT" roslynator analyze "$sln" --output "$sln_report" --severity-level info >"$analyze_log" 2>&1 \
                     && [ -s "$sln_report" ]; then
                     analyzed_ok=true
                     sln_reports+=("$sln_report")
                 fi
             fi
-            local rel_sln="${sln#"$workdir"/}"
             sln_results+=("$(jq -nc --arg path "$rel_sln" --argjson restore "$restore_ok" --argjson build "$build_ok" --argjson analyzed "$analyzed_ok" \
-                '{path: $path, restore: $restore, build: $build, analyzed: $analyzed}')")
+                --arg restoreLog "$safe_project/${safe_repo}.logs/${sln_id}.restore.log" \
+                --arg buildLog "$([ "$restore_ok" = true ] && echo "$safe_project/${safe_repo}.logs/${sln_id}.build.log" || echo "")" \
+                --arg analyzeLog "$([ "$restore_ok" = true ] && echo "$safe_project/${safe_repo}.logs/${sln_id}.analyze.log" || echo "")" \
+                '{path: $path, restore: $restore, build: $build, analyzed: $analyzed, restoreLog: $restoreLog, buildLog: $buildLog, analyzeLog: $analyzeLog}')")
         done < <(find "$workdir" -iname '*.sln' -type f -print0)
         if [ "${#sln_results[@]}" -gt 0 ]; then
             solutions_json=$(printf '%s\n' "${sln_results[@]}" | jq -sc '.')
@@ -215,15 +228,30 @@ process_repo() {
     fi
 
     local java_ok=false
+    local java_build_logs_json="[]"
+    local java_analyze_log=""
     if [ "$clone_ok" = true ] && scan_enabled java; then
         local project_dirs=()
         while IFS= read -r project_dir; do
             [ -n "$project_dir" ] && project_dirs+=("$project_dir")
         done < <(find_java_project_dirs "$workdir")
 
+        local logs_dir="$out_dir/${safe_repo}.logs"
+        mkdir -p "$logs_dir"
+        local build_log_entries=()
         for project_dir in "${project_dirs[@]}"; do
-            build_java_project "$project_dir"
+            local rel_dir dir_id
+            rel_dir="${project_dir#"$workdir"/}"
+            [ "$rel_dir" = "$project_dir" ] && rel_dir="."
+            dir_id="root"
+            [ "$rel_dir" != "." ] && dir_id=$(sanitize "$rel_dir")
+            build_java_project "$project_dir" "$logs_dir/java-${dir_id}.build.log"
+            build_log_entries+=("$(jq -nc --arg path "$rel_dir" --arg log "$safe_project/${safe_repo}.logs/java-${dir_id}.build.log" \
+                '{path: $path, buildLog: $log}')")
         done
+        if [ "${#build_log_entries[@]}" -gt 0 ]; then
+            java_build_logs_json=$(printf '%s\n' "${build_log_entries[@]}" | jq -sc '.')
+        fi
 
         local class_dirs=()
         while IFS= read -r class_dir; do
@@ -233,7 +261,8 @@ process_repo() {
         if [ "${#class_dirs[@]}" -gt 0 ]; then
             local spotbugs_args=(-textui -sarif -output "$java_path")
             [ -n "$FINDSECBUGS_JAR" ] && spotbugs_args+=(-pluginList "$FINDSECBUGS_JAR")
-            if timeout "$ANALYSIS_TIMEOUT" spotbugs "${spotbugs_args[@]}" "${class_dirs[@]}" >/dev/null 2>&1 \
+            java_analyze_log="$safe_project/${safe_repo}.logs/spotbugs.analyze.log"
+            if timeout "$ANALYSIS_TIMEOUT" spotbugs "${spotbugs_args[@]}" "${class_dirs[@]}" >"$logs_dir/spotbugs.analyze.log" 2>&1 \
                 && [ -s "$java_path" ]; then
                 java_ok=true
             fi
@@ -252,10 +281,13 @@ process_repo() {
         --arg dotnetAnalysisPath "$([ "$dotnet_ok" = true ] && echo "$safe_project/${safe_repo}.dotnet.sarif" || echo "")" \
         --argjson javaAnalysisGenerated "$java_ok" \
         --arg javaAnalysisPath "$([ "$java_ok" = true ] && echo "$safe_project/${safe_repo}.java.sarif" || echo "")" \
+        --argjson javaBuildLogs "$java_build_logs_json" \
+        --arg javaAnalysisLog "$java_analyze_log" \
         '{project: $project, repository: $repository, projectId: $projectId, repositoryId: $repositoryId,
           webUrl: $webUrl, cloned: $cloned, solutions: $solutions,
           dotnetAnalysisGenerated: $dotnetAnalysisGenerated, dotnetAnalysisPath: $dotnetAnalysisPath,
-          javaAnalysisGenerated: $javaAnalysisGenerated, javaAnalysisPath: $javaAnalysisPath}' \
+          javaAnalysisGenerated: $javaAnalysisGenerated, javaAnalysisPath: $javaAnalysisPath,
+          javaBuildLogs: $javaBuildLogs, javaAnalysisLog: $javaAnalysisLog}' \
         >> "$RESULTS_FILE"
 }
 
