@@ -46,14 +46,20 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Layer 3: Claude Code (mirrors claude Dockerfile) ---
-RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
-        export NODE_EXTRA_CA_CERTS=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
-        export NPM_CONFIG_CAFILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
-    fi; \
-    npm install -g @anthropic-ai/claude-code
+# --- Layer 3: Create ops user (must exist before Claude Code/Composer run as non-root) ---
+RUN useradd -m -s /bin/bash ops \
+    && mkdir -p /home/ops/.claude /workspace \
+    && chown ops:ops /home/ops/.claude /workspace
 
-# --- Layer 4: PHP 8.4 + extensions (Sury signed repo, no fpm/nginx) ---
+# --- Layer 4: Claude Code (native installer, installed as ops) ---
+USER ops
+WORKDIR /home/ops
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/home/ops/.local/bin:${PATH}"
+USER root
+WORKDIR /
+
+# --- Layer 5: PHP 8.4 + extensions (Sury signed repo, no fpm/nginx) ---
 RUN curl -fsSL https://packages.sury.org/php/apt.gpg \
         | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" \
@@ -71,11 +77,6 @@ RUN curl -fsSL https://packages.sury.org/php/apt.gpg \
         php8.4-redis \
         php8.4-pcov \
     && rm -rf /var/lib/apt/lists/*
-
-# --- Layer 5: Create ops user (must exist before Composer runs as non-root) ---
-RUN useradd -m -s /bin/bash ops \
-    && mkdir -p /home/ops/.claude /workspace \
-    && chown ops:ops /home/ops/.claude /workspace
 
 # --- Layer 6: Composer binary (installed as root to /usr/local/bin) ---
 RUN curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php \
