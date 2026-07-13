@@ -9,6 +9,7 @@ A sandboxed, ephemeral container for hands-on appsec investigation against any r
 - **git**, **gh** (GitHub CLI), **jq**, **curl** — repo/API access
 - **PHP 8.4 CLI** + Composer, with Pint, PHPStan, and Pest installed globally — audit any PHP repo without a project-specific vendor/ install
 - **.NET 10 SDK** + Roslynator CLI — restore/build/analyze .NET solutions
+- **Eclipse Temurin JDK (current LTS)** + **SpotBugs** with the **Find Security Bugs** plugin (checksum-verified at build time) — compile and statically analyze any Java repo; also the JVM `bfg` runs on
 - **Trivy** — SBOM (CycloneDX), vulnerability, and secret scanning
 - **BFG Repo-Cleaner** (checksum- and signature-verified at build time) — strip secrets/large blobs from Git history
 - **Claude Code** — run via `-Claude`, once authenticated via `-Claude -Login`; the plain shell never launches it automatically
