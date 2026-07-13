@@ -1,0 +1,36 @@
+{
+    "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "Roslynator",
+                    "rules": [
+                        {
+                            "id": "CA2100",
+                            "shortDescription": { "text": "Review SQL queries for security vulnerabilities" },
+                            "fullDescription": { "text": "SQL queries that directly use input without validation may be vulnerable to SQL injection attacks." },
+                            "helpUri": "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2100"
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "CA2100",
+                    "level": "warning",
+                    "message": { "text": "Review if the query string passed to 'SqlCommand.CommandText' in 'UserRepository.FindByName(string)' accepts input from the user." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/UserRepository.cs" },
+                                "region": { "startLine": 42, "endLine": 42 }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

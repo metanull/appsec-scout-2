@@ -5,10 +5,13 @@ namespace App\Assets\Parsers;
 use JsonException;
 
 /**
- * Parses a Trivy SARIF report (`trivy fs --format sarif`, vulnerability or
- * secret scanners) into ParsedFinding entries. SARIF has no first-class
- * concept of a package, so Trivy encodes it as "Key: Value" lines in the
- * result message text — parsed here by splitting lines, not by regex.
+ * Parses a SARIF report into ParsedFinding entries — Trivy's (`trivy fs --format
+ * sarif`, vulnerability or secret scanners) as well as Roslynator's and SpotBugs'
+ * (static analysis). SARIF has no first-class concept of a package, so Trivy
+ * encodes it as "Key: Value" lines in the result message text — parsed here by
+ * splitting lines, not by regex. Trivy severity comes from that same "Severity:"
+ * line; Roslynator/SpotBugs instead use the standard SARIF `level` field
+ * (error/warning/note), used as a fallback when no "Severity:" line is present.
  */
 final class SarifFindingParser
 {
@@ -24,12 +27,29 @@ final class SarifFindingParser
             return [];
         }
 
-        $run = $data['runs'][0] ?? null;
+        $runs = $data['runs'] ?? null;
 
-        if (! is_array($run)) {
+        if (! is_array($runs)) {
             return [];
         }
 
+        $parsed = [];
+
+        foreach ($runs as $run) {
+            if (is_array($run)) {
+                array_push($parsed, ...$this->parseRun($run));
+            }
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $run
+     * @return list<ParsedFinding>
+     */
+    private function parseRun(array $run): array
+    {
         $rules = $this->indexRules($run);
         $results = $run['results'] ?? null;
 
@@ -142,7 +162,7 @@ final class SarifFindingParser
             ruleId: $ruleId,
             title: $title,
             description: is_string($fullDescription) ? $fullDescription : null,
-            severity: $messageFields['Severity'] ?? null,
+            severity: $messageFields['Severity'] ?? $this->severityFromLevel($result['level'] ?? null),
             filePath: $filePath,
             startLine: $startLine,
             endLine: $endLine,
@@ -154,5 +174,19 @@ final class SarifFindingParser
                 'result' => $result,
             ],
         );
+    }
+
+    private function severityFromLevel(mixed $level): ?string
+    {
+        if (! is_string($level)) {
+            return null;
+        }
+
+        return match ($level) {
+            'error' => 'HIGH',
+            'warning' => 'MEDIUM',
+            'note' => 'LOW',
+            default => null,
+        };
     }
 }

@@ -1,0 +1,62 @@
+{
+    "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "Roslynator",
+                    "rules": [
+                        {
+                            "id": "CA2100",
+                            "shortDescription": { "text": "Review SQL queries for security vulnerabilities" }
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "CA2100",
+                    "level": "warning",
+                    "message": { "text": "Review the SQL query in UserRepository." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/Api/UserRepository.cs" },
+                                "region": { "startLine": 42, "endLine": 42 }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "tool": {
+                "driver": {
+                    "name": "Roslynator",
+                    "rules": [
+                        {
+                            "id": "CA5350",
+                            "shortDescription": { "text": "Do not use weak cryptographic algorithms" }
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "CA5350",
+                    "level": "error",
+                    "message": { "text": "MD5 is a weak hashing algorithm." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/Worker/HashHelper.cs" },
+                                "region": { "startLine": 10, "endLine": 10 }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

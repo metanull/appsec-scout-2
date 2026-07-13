@@ -39,7 +39,11 @@ class LocalFindingsRelationManager extends RelationManager
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['owner', 'softwareAsset', 'softwareSystem', 'correlatedSecurityEvent']))
             ->columns([
-                TextColumn::make('kind')->badge()->color(fn (string $state): string => $state === LocalFinding::KIND_SECRET ? 'danger' : 'warning'),
+                TextColumn::make('kind')->badge()->color(fn (string $state): string => match ($state) {
+                    LocalFinding::KIND_SECRET => 'danger',
+                    LocalFinding::KIND_CODE_QUALITY => 'info',
+                    default => 'warning',
+                }),
                 TextColumn::make('severity')->badge()->color(fn (?string $state): string => LocalFinding::severityColor($state))->placeholder('-'),
                 TextColumn::make('title')->searchable()->wrap()->grow(),
                 TextColumn::make('file_path')->label('Location')

@@ -11,6 +11,8 @@ ARG BFG_VERSION=1.14.0
 ARG ROSLYNATOR_VERSION=0.12.0
 ARG SPOTBUGS_VERSION=4.10.2
 ARG FINDSECBUGS_VERSION=1.14.0
+ARG MAVEN_VERSION=3.9.9
+ARG GRADLE_VERSION=8.11
 
 ENV HTTP_PROXY=${HTTP_PROXY} \
     HTTPS_PROXY=${HTTPS_PROXY} \
@@ -134,7 +136,42 @@ RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
     && apt-get update && apt-get install -y --no-install-recommends temurin-25-jdk \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Layer 12: BFG Repo Cleaner (checksum- and signature-verified) ---
+# Fixed, architecture-independent path to the JDK just installed — the real Adoptium apt
+# package path is architecture-specific (e.g. .../temurin-25-jdk-amd64 vs -arm64), so this
+# symlink lets JAVA_HOME below stay a single value regardless of build host architecture.
+RUN ln -s "$(dirname "$(dirname "$(readlink -f "$(which javac)")")")" /opt/java-home
+ENV JAVA_HOME=/opt/java-home
+
+# --- Layer 11b: Maven + Gradle (build Java repos ahead of SpotBugs, which needs compiled
+# .class files, not source) — installed from the official Apache/Gradle release archives
+# with a verified checksum, the same pattern Layer 6 uses for Composer. Repos that ship
+# their own wrapper (mvnw/gradlew) use that instead; these are the fallback for repos that
+# don't, and are also usable directly from an interactive ops shell. Most of our own Java
+# repos use Maven, hence it's listed first, but both are installed since either can appear.
+RUN wget -q "https://downloads.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+        -O /tmp/maven.tar.gz \
+    && MAVEN_SHA512=$(curl -fsSL \
+        "https://downloads.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz.sha512" \
+        | awk '{print $1}') \
+    && echo "${MAVEN_SHA512}  /tmp/maven.tar.gz" | sha512sum -c - \
+    && mkdir -p /opt/maven \
+    && tar -xzf /tmp/maven.tar.gz -C /opt/maven --strip-components=1 \
+    && rm /tmp/maven.tar.gz \
+    && ln -s /opt/maven/bin/mvn /usr/local/bin/mvn
+
+RUN wget -q "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
+        -O /tmp/gradle.zip \
+    && GRADLE_SHA256=$(curl -fsSL \
+        "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip.sha256" \
+        | awk '{print $1}') \
+    && echo "${GRADLE_SHA256}  /tmp/gradle.zip" | sha256sum -c - \
+    && mkdir -p /opt/gradle-extract \
+    && unzip -q /tmp/gradle.zip -d /opt/gradle-extract \
+    && mv "/opt/gradle-extract/gradle-${GRADLE_VERSION}" /opt/gradle \
+    && rm -rf /tmp/gradle.zip /opt/gradle-extract \
+    && ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
+
+# --- Layer 13: BFG Repo Cleaner (checksum- and signature-verified) ---
 RUN gpg --keyserver hkps://keys.openpgp.org \
         --recv-keys 7305AE1B6772AA1C2D3B4E5DB21602FA2D5CC13C \
     && wget -q \
@@ -152,7 +189,7 @@ RUN gpg --keyserver hkps://keys.openpgp.org \
         > /usr/local/bin/bfg \
     && chmod +x /usr/local/bin/bfg
 
-# --- Layer 13: SpotBugs + Find Security Bugs plugin (checksum- and signature-verified) ---
+# --- Layer 14: SpotBugs + Find Security Bugs plugin (checksum- and signature-verified) ---
 # SHA256 published at https://github.com/spotbugs/spotbugs/releases/tag/4.10.2
 ARG SPOTBUGS_SHA256=63d7687c35fba12cbc8e55ec2a889a2bbf1b9be299dea91f2b0d351dc285308a
 RUN wget -q \
@@ -178,7 +215,7 @@ RUN wget -q \
     && gpg --verify /tmp/findsecbugs.jar.asc "/opt/spotbugs-plugins/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar" \
     && rm /tmp/findsecbugs.jar.asc
 
-# --- Layer 14: Git config, entrypoint, final user switch ---
+# --- Layer 15: Git config, entrypoint, final user switch ---
 RUN git config --global --add safe.directory /workspace \
     && su ops -c "git config --global --add safe.directory /workspace"
 
@@ -187,7 +224,8 @@ ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /workspace
 COPY docker/ops/entrypoint.sh /entrypoint.sh
 COPY docker/ops/collect-sboms.sh /usr/local/bin/collect-sboms.sh
-RUN chmod +x /entrypoint.sh /usr/local/bin/collect-sboms.sh
+COPY docker/ops/collect-static-analysis.sh /usr/local/bin/collect-static-analysis.sh
+RUN chmod +x /entrypoint.sh /usr/local/bin/collect-sboms.sh /usr/local/bin/collect-static-analysis.sh
 
 USER ops
 ENTRYPOINT ["/entrypoint.sh"]

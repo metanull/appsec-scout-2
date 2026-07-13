@@ -22,6 +22,8 @@ class LocalFinding extends Model
 
     public const KIND_SECRET = 'secret';
 
+    public const KIND_CODE_QUALITY = 'code_quality';
+
     /** @return array<string, mixed> */
     protected function casts(): array
     {

@@ -7,7 +7,7 @@ PowerShell entry points for developing, running, and operating AppSec Scout. All
 | [appsec-scout.ps1](#appsec-scoutps1) | Start/rebuild the application stack |
 | [invoke-check.ps1](#invoke-checkps1) | Run CI checks (lint, tests, static analysis, dependencies) |
 | [invoke-fix.ps1](#invoke-fixps1) | Run mutating auto-fixes (lint, dependency updates) |
-| [invoke-ops.ps1](#invoke-opsps1) | Open an appsec-ops shell, run Claude Code sandboxed, or run an org-wide SBOM/vuln/secret scan |
+| [invoke-ops.ps1](#invoke-opsps1) | Open an appsec-ops shell, run Claude Code sandboxed, or run an org-wide SBOM/vuln/secret scan or static analysis scan |
 | [test-GitHubToken.ps1](#test-githubtokenps1) | Validate a GitHub PAT |
 | [test-AzureDevOpsToken.ps1](#test-azuredevopstokenps1) | Validate an Azure DevOps PAT |
 | [validate-workflows.cjs](#validate-workflowscjs) | Lint GitHub Actions workflow YAML |
@@ -54,9 +54,9 @@ Runs mutating fix operations (formatting, dependency updates) — kept separate 
 
 ## invoke-ops.ps1
 
-Opens the `ops` sandboxed container — appsec investigation (code analysis, secret scanning, dependency auditing, history cleaning), Claude Code (interactive or an autonomous task that clones a repo, does the work, and opens a PR), or an org-wide SBOM/vulnerability/secret scan across every Azure DevOps repository. One container image throughout — Claude Code, PHP/Composer, .NET SDK, Trivy, BFG, and the AzDO/GitHub CLIs are all present regardless of which mode you run. Every invocation rebuilds the `ops` image first (respecting Docker's layer cache, so this is fast when nothing changed) — you never need `-Rebuild` just to pick up a Dockerfile/entrypoint/collect-sboms.sh change.
+Opens the `ops` sandboxed container — appsec investigation (code analysis, secret scanning, dependency auditing, history cleaning), Claude Code (interactive or an autonomous task that clones a repo, does the work, and opens a PR), an org-wide SBOM/vulnerability/secret scan, or an org-wide static analysis scan across every Azure DevOps repository. One container image throughout — Claude Code, PHP/Composer, .NET SDK, Java/Maven/Gradle, Trivy, BFG, and the AzDO/GitHub CLIs are all present regardless of which mode you run. Every invocation rebuilds the `ops` image first (respecting Docker's layer cache, so this is fast when nothing changed) — you never need `-Rebuild` just to pick up a Dockerfile/entrypoint/collect-sboms.sh/collect-static-analysis.sh change.
 
-Exactly one of `-Shell` (default — doesn't need to be typed), `-Claude`, or `-SbomScan` is active per invocation; PowerShell rejects any parameter combination that crosses between them.
+Exactly one of `-Shell` (default — doesn't need to be typed), `-Claude`, `-SbomScan`, or `-StaticAnalysis` is active per invocation; PowerShell rejects any parameter combination that crosses between them.
 
 **`-Shell`** (default) — interactive bash shell.
 - `-Repo <url>` / `-Branch <name>` — repo to clone into the shell; override `REPO_URL`/`REPO_BRANCH`.
@@ -77,6 +77,8 @@ Exactly one of `-Shell` (default — doesn't need to be typed), `-Claude`, or `-
 - `-SkipUpload` — leave generated reports on disk without uploading them as attachments, including via the scheduled per-minute import (the scan run is marked so `sbom:import-pending-scans` skips it too).
 - `-Resume` — skip every repository already recorded in any previous run's `run.jsonl` under the output directory and continue from there, instead of rescanning everything; repeated interrupt/resume cycles keep accumulating. Fails clearly if no prior run is found.
 
+**`-StaticAnalysis`** — clones and statically analyzes every non-disabled repo in the target AzDO organization: Roslynator for .NET (`*.sln`, restored/built first), SpotBugs + Find Security Bugs for Java (built with the repo's own `mvnw`/`gradlew` if present, else the image's Maven/Gradle). Generated SARIF reports are imported into appsec-scout as `Attachment`s incrementally as each repo finishes (a scheduled `staticanalysis:import-pending-scans` tick picks up new results every minute), not just once the whole scan completes — unless `-SkipUpload`. Requires the core stack (`appsec-scout.ps1`) to already be running. Shares `-Organization`/`-ProjectFilter`/`-RepositoryFilter`/`-OutputDir`/`-SkipUpload`/`-Resume`/`-Credential` with `-SbomScan` (same meaning as above; `-OutputDir` overrides `STATIC_ANALYSIS_OUTPUT_DIR` instead of `SBOM_OUTPUT_DIR`).
+
 **`-Rebuild`** — combinable with any of the above; forces a clean `--no-cache` rebuild and re-exports host CA certs first. Not required for routine use.
 
 Proxy/TLS settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) are read from the repo root `.env`, layered under `docker/ops/.env` — set those once at the root, not per container.
@@ -89,6 +91,8 @@ Proxy/TLS settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) ar
 .\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)
 .\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Secret AzureDevOps) -ProjectFilter '^Portal$'
 .\scripts\invoke-ops.ps1 -SbomScan -Resume -Credential (Get-Credential)
+.\scripts\invoke-ops.ps1 -StaticAnalysis -Credential (Get-Credential)
+.\scripts\invoke-ops.ps1 -StaticAnalysis -Resume -Credential (Get-Credential)
 ```
 
 Before running a full scan, validate the PAT with `test-AzureDevOpsToken.ps1` below — it fails in seconds instead of after cloning every repo in the organization.

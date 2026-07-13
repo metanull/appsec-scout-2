@@ -4,9 +4,9 @@
 .DESCRIPTION
     Launches the `ops` container for hands-on appsec investigation: code analysis, repository
     archaeology, secret scanning, dependency auditing, history cleaning, org-wide SBOM scanning,
-    and running Claude Code itself — interactively or as an autonomous task. Same sandboxed,
-    ephemeral, no-host-filesystem-access container throughout; -Claude just changes what the
-    entrypoint execs once inside it.
+    org-wide static analysis, and running Claude Code itself — interactively or as an autonomous
+    task. Same sandboxed, ephemeral, no-host-filesystem-access container throughout; -Claude just
+    changes what the entrypoint execs once inside it.
 .PARAMETER Shell
     Interactive bash shell (default — this switch does not need to be typed). Clones -Repo first
     if set. 'claude' is available inside if already authenticated, but is never auto-launched.
@@ -33,6 +33,18 @@
     triggers that same command once more right after the scan container exits, to flush anything
     the last scheduled tick hasn't picked up yet. Pass -SkipUpload to opt this run out of both
     entirely (see -SkipUpload).
+.PARAMETER StaticAnalysis
+    Runs static analysis (Roslynator for .NET, SpotBugs + Find Security Bugs for Java) against
+    every repository in an Azure DevOps organization, restoring/building each repo first (its own
+    mvnw/gradlew wrapper if present, else the image's Maven/Gradle) so the analyzers see resolved
+    references instead of just source text. Runs to completion in a single container invocation;
+    each repo is deleted immediately after it is analyzed. Output lands on the host under
+    STATIC_ANALYSIS_OUTPUT_DIR (default .\output\static-analysis-scan\<timestamp>\). Reports are
+    uploaded into appsec-scout as Attachments incrementally, the same way -SbomScan's are — a
+    scheduled `staticanalysis:import-pending-scans` tick picks up every new run.jsonl line every
+    minute, and this script triggers that command once more right after the scan container exits.
+    Pass -SkipUpload to opt this run out of both entirely (see -SkipUpload). Shares -Organization/
+    -ProjectFilter/-RepositoryFilter/-OutputDir/-Resume/-SkipUpload/-Credential with -SbomScan.
 .PARAMETER Repo
     GitHub HTTPS URL to clone (-Shell / -Claude). Overrides REPO_URL from .env.
 .PARAMETER Branch
@@ -43,12 +55,13 @@
     GIT_USER_NAME from .env.
 .PARAMETER Credential
     GitHub credential for cloning/pushing (-Shell / -Claude), or Azure DevOps credential
-    (-SbomScan) — which one depends on which of those switches is passed; there's no ambiguity
-    since only one is ever active per invocation.
-    -Shell / -Claude: UserName = git commit email — overrides GIT_USER_EMAIL from .env.
-                      Password = GitHub PAT      — overrides GITHUB_TOKEN from .env.
-    -SbomScan:        Password = AzDO PAT with "Code (Read)" scope across the organization —
-                      overrides AZDO_PAT from .env. UserName is not used.
+    (-SbomScan / -StaticAnalysis) — which one depends on which of those switches is passed;
+    there's no ambiguity since only one is ever active per invocation.
+    -Shell / -Claude:               UserName = git commit email — overrides GIT_USER_EMAIL.
+                                     Password = GitHub PAT      — overrides GITHUB_TOKEN.
+    -SbomScan / -StaticAnalysis:    Password = AzDO PAT with "Code (Read)" scope across the
+                                     organization — overrides AZDO_PAT from .env. UserName
+                                     is not used.
     If omitted, the matching PAT already configured as appsec-scout's GitHub tracker or AzDO
     Advanced Security source credential is fetched from the running `app` container and reused;
     if that isn't available either, the container falls back to GITHUB_TOKEN/AZDO_PAT from
@@ -56,21 +69,24 @@
     Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry from Windows
     Credential Manager with Get-StoredCredential (module CredentialManager).
 .PARAMETER Organization
-    Azure DevOps organization to scan (-SbomScan). Overrides AZDO_ORG from .env.
+    Azure DevOps organization to scan (-SbomScan / -StaticAnalysis). Overrides AZDO_ORG from .env.
 .PARAMETER ProjectFilter
-    Regex applied to project names (-SbomScan). Overrides AZDO_PROJECT_FILTER from .env.
+    Regex applied to project names (-SbomScan / -StaticAnalysis). Overrides AZDO_PROJECT_FILTER
+    from .env.
 .PARAMETER RepositoryFilter
-    Regex applied to repository names (-SbomScan). Overrides AZDO_REPO_FILTER from .env.
+    Regex applied to repository names (-SbomScan / -StaticAnalysis). Overrides AZDO_REPO_FILTER
+    from .env.
 .PARAMETER OutputDir
-    Host directory to receive SBOM output (-SbomScan). Overrides SBOM_OUTPUT_DIR from .env.
+    Host directory to receive scan output (-SbomScan / -StaticAnalysis). Overrides
+    SBOM_OUTPUT_DIR (-SbomScan) or STATIC_ANALYSIS_OUTPUT_DIR (-StaticAnalysis) from .env.
 .PARAMETER SkipUpload
-    Skip uploading generated SBOMs into appsec-scout as attachments (-SbomScan). Files still land
-    under OutputDir either way. This also prevents the per-minute scheduled import
-    (sbom:import-pending-scans) from picking up this run, since that runs independently of this
-    script — collect-sboms.sh drops a marker in the run's output directory that the scheduled
-    command checks for and skips.
+    Skip uploading generated reports into appsec-scout as attachments (-SbomScan /
+    -StaticAnalysis). Files still land under OutputDir either way. This also prevents the
+    per-minute scheduled import (sbom:import-pending-scans or staticanalysis:import-pending-scans)
+    from picking up this run, since that runs independently of this script — the scan script
+    drops a marker in the run's output directory that the scheduled command checks for and skips.
 .PARAMETER Resume
-    Resume a previous sbom-scan (-SbomScan) instead of starting from scratch. Walks backward
+    Resume a previous scan (-SbomScan / -StaticAnalysis) instead of starting from scratch. Walks backward
     from the most recent run under OutputDir, collecting the unbroken chain of interrupted or
     zero-progress attempts, and skips every repository already recorded in any of them —
     which only leaves out whichever repository was still being scanned when the chain was last
@@ -85,7 +101,7 @@
     Forces a clean --no-cache rebuild of the ops image and re-exports host CA certificates.
     Not required to pick up ordinary code changes — every run already rebuilds the image
     (respecting Docker's layer cache), so a stale image is never used just because -Rebuild
-    was omitted. Combinable with -Shell, -Claude, or -SbomScan.
+    was omitted. Combinable with -Shell, -Claude, -SbomScan, or -StaticAnalysis.
 .EXAMPLE
     .\invoke-ops.ps1
 .EXAMPLE
@@ -106,6 +122,10 @@
     .\invoke-ops.ps1 -SbomScan -Credential (Get-Credential) -ProjectFilter '^Portal$'
 .EXAMPLE
     .\invoke-ops.ps1 -SbomScan -Resume -Credential (Get-Credential)
+.EXAMPLE
+    .\invoke-ops.ps1 -StaticAnalysis -Credential (Get-Credential)
+.EXAMPLE
+    .\invoke-ops.ps1 -StaticAnalysis -Resume -Credential (Get-Credential)
 #>
 [CmdletBinding(DefaultParameterSetName = 'Shell')]
 param(
@@ -124,6 +144,9 @@ param(
     [Parameter(ParameterSetName = 'SbomScan')]
     [Switch]$SbomScan,
 
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
+    [Switch]$StaticAnalysis,
+
     [Parameter(ParameterSetName = 'Shell')]
     [Parameter(ParameterSetName = 'Claude')]
     [string]$Repo = '',
@@ -139,26 +162,33 @@ param(
     [Parameter(ParameterSetName = 'Shell')]
     [Parameter(ParameterSetName = 'Claude')]
     [Parameter(ParameterSetName = 'SbomScan')]
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
     [System.Management.Automation.Credential()]
     [System.Management.Automation.PSCredential]
     $Credential,
 
     [Parameter(ParameterSetName = 'SbomScan')]
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
     [string]$Organization = '',
 
     [Parameter(ParameterSetName = 'SbomScan')]
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
     [string]$ProjectFilter = '',
 
     [Parameter(ParameterSetName = 'SbomScan')]
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
     [string]$RepositoryFilter = '',
 
     [Parameter(ParameterSetName = 'SbomScan')]
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
     [string]$OutputDir = '',
 
     [Parameter(ParameterSetName = 'SbomScan')]
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
     [Switch]$SkipUpload,
 
     [Parameter(ParameterSetName = 'SbomScan')]
+    [Parameter(ParameterSetName = 'StaticAnalysis')]
     [Switch]$Resume,
 
     [Switch]$Rebuild
@@ -219,6 +249,74 @@ function Invoke-SbomUpload {
     }
 }
 
+function Invoke-StaticAnalysisUpload {
+    param(
+        [Parameter(Mandatory)][string[]]$EnvFileArgs
+    )
+
+    # `exec` reads the container's mount as it was when the container was (re)created, so make
+    # sure `app` is up to date with the current STATIC_ANALYSIS_OUTPUT_DIR bind mount first.
+    docker compose @EnvFileArgs up -d app | Out-Null
+
+    # Delegates to the same idempotent, cursor-tracked command the scheduler already runs
+    # every minute (see `staticanalysis:import-pending-scans` in routes/console.php) — this
+    # just flushes whatever the scheduler hasn't picked up yet, so nothing is imported twice.
+    docker compose @EnvFileArgs exec -T app php artisan staticanalysis:import-pending-scans
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "staticanalysis:import-pending-scans could not complete — appsec-scout's database or queue is likely unreachable. Your scan data is untouched on disk under the static analysis output directory; nothing has been lost, and the scheduled import will retry automatically (every minute) once appsec-scout is healthy again."
+    }
+}
+
+function Resolve-ResumeRunNames {
+    <#
+    Walks backward from the most recent run under $OutputRoot, collecting the unbroken chain
+    of attempts that belong to the same interrupted scan: runs with no summary.json (never
+    finished) and completed-but-zero-progress runs (e.g. an earlier resume that itself
+    skipped everything). Stops at — and excludes — the first run that genuinely completed
+    with real progress, so an old, unrelated, already-finished scan sitting in the same
+    output directory is never silently treated as "already scanned" by today's resume.
+    Shared by -SbomScan -Resume and -StaticAnalysis -Resume — both scripts write a
+    `repositoriesConsidered` field to summary.json using the same meaning.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$OutputRoot
+    )
+
+    $allRunDirs = @(Get-ChildItem -Path $OutputRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName 'run.jsonl') } |
+        Sort-Object Name -Descending)
+    if ($allRunDirs.Count -eq 0) {
+        throw "-Resume specified but no previous run.jsonl was found under $OutputRoot"
+    }
+
+    $resumeRunDirs = New-Object System.Collections.Generic.List[object]
+    $reachedRealBoundary = $false
+    foreach ($dir in $allRunDirs) {
+        $consideredCount = 0
+        $summaryPath = Join-Path $dir.FullName 'summary.json'
+        if (Test-Path $summaryPath) {
+            $consideredCount = (Get-Content $summaryPath -Raw | ConvertFrom-Json).repositoriesConsidered
+        }
+        if ($consideredCount -gt 0) {
+            $reachedRealBoundary = $true
+            break
+        }
+        $resumeRunDirs.Add($dir)
+    }
+    if ($resumeRunDirs.Count -eq 0) {
+        if ($reachedRealBoundary) {
+            throw "-Resume specified but the most recent run ($($allRunDirs[0].Name)) already completed — nothing to resume. Omit -Resume to start a fresh scan."
+        }
+        throw "-Resume specified but no previous run.jsonl was found under $OutputRoot"
+    }
+
+    Write-Host "Resuming: $($resumeRunDirs.Count) run(s) in this attempt's chain — already-scanned repositories from any of them will be skipped."
+    # Pass the exact run directory names, not the whole output root — the scan script unions
+    # repositoryIds across only these, so an old fully-completed scan sitting in the same
+    # output directory never gets pulled into an unrelated later resume.
+    return ($resumeRunDirs | ForEach-Object { $_.Name }) -join ','
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -240,7 +338,7 @@ try {
     # Always rebuild (Docker's layer cache makes this a fast no-op when nothing changed)
     # so a plain run never silently uses a stale image after a `git pull`. -Rebuild forces
     # a clean --no-cache build and re-exports host CA certs; neither is required just to
-    # pick up ordinary Dockerfile/entrypoint/collect-sboms.sh changes.
+    # pick up ordinary Dockerfile/entrypoint/collect-sboms.sh/collect-static-analysis.sh changes.
     if ($Rebuild) {
         Write-Host "Exporting host CA certificates..."
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
@@ -253,7 +351,7 @@ try {
     }
 
     $isGitHubCredentialSet = $PSCmdlet.ParameterSetName -in @('Shell', 'Claude')
-    $isAzdoCredentialSet = $PSCmdlet.ParameterSetName -eq 'SbomScan'
+    $isAzdoCredentialSet = $PSCmdlet.ParameterSetName -in @('SbomScan', 'StaticAnalysis')
 
     # Inject -Credential/-Name/-Organization/etc. into the PS environment so Docker Compose
     # picks them up via ${GITHUB_TOKEN:-}, ${GIT_USER_EMAIL:-}, ${AZDO_PAT:-}, ...
@@ -303,7 +401,11 @@ try {
             $env:AZDO_REPO_FILTER = $RepositoryFilter
         }
         if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
-            $env:SBOM_OUTPUT_DIR = $OutputDir
+            if ($PSCmdlet.ParameterSetName -eq 'StaticAnalysis') {
+                $env:STATIC_ANALYSIS_OUTPUT_DIR = $OutputDir
+            } else {
+                $env:SBOM_OUTPUT_DIR = $OutputDir
+            }
         }
     }
 
@@ -315,10 +417,11 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($Branch)) {
         $envOverrides += '-e'; $envOverrides += "REPO_BRANCH=$Branch"
     }
-    if ($PSCmdlet.ParameterSetName -eq 'SbomScan' -and $SkipUpload) {
-        # Tells collect-sboms.sh to drop a .skip-import marker in this run's output
-        # directory, so the scheduled sbom:import-pending-scans tick (which runs every
-        # minute independently of this script) never imports a dry-run scan either.
+    if ($PSCmdlet.ParameterSetName -in @('SbomScan', 'StaticAnalysis') -and $SkipUpload) {
+        # Tells collect-sboms.sh/collect-static-analysis.sh to drop a .skip-import marker
+        # in this run's output directory, so the matching scheduled *:import-pending-scans
+        # tick (which runs every minute independently of this script) never imports a
+        # dry-run scan either. Both scripts read the same AZDO_SKIP_IMPORT env var.
         $envOverrides += '-e'; $envOverrides += 'AZDO_SKIP_IMPORT=1'
     }
 
@@ -356,46 +459,8 @@ try {
             }
 
             if ($Resume) {
-                $allRunDirs = @(Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
-                    Where-Object { Test-Path (Join-Path $_.FullName 'run.jsonl') } |
-                    Sort-Object Name -Descending)
-                if ($allRunDirs.Count -eq 0) {
-                    throw "-Resume specified but no previous run.jsonl was found under $resolvedOutputRoot"
-                }
-
-                # Walk backward from the most recent run, collecting the unbroken chain of
-                # attempts that belong to THIS scan: interrupted runs (no summary.json) and
-                # completed-but-zero-progress runs (e.g. an earlier resume that itself skipped
-                # everything). Stop at — and exclude — the first run that genuinely completed
-                # with real progress, so an old, unrelated, fully-finished scan from a previous
-                # session is never silently treated as "already scanned" by today's resume.
-                $resumeRunDirs = New-Object System.Collections.Generic.List[object]
-                $reachedRealBoundary = $false
-                foreach ($dir in $allRunDirs) {
-                    $consideredCount = 0
-                    $summaryPath = Join-Path $dir.FullName 'summary.json'
-                    if (Test-Path $summaryPath) {
-                        $consideredCount = (Get-Content $summaryPath -Raw | ConvertFrom-Json).repositoriesConsidered
-                    }
-                    if ($consideredCount -gt 0) {
-                        $reachedRealBoundary = $true
-                        break
-                    }
-                    $resumeRunDirs.Add($dir)
-                }
-                if ($resumeRunDirs.Count -eq 0) {
-                    if ($reachedRealBoundary) {
-                        throw "-Resume specified but the most recent run ($($allRunDirs[0].Name)) already completed — nothing to resume. Omit -Resume to start a fresh scan."
-                    }
-                    throw "-Resume specified but no previous run.jsonl was found under $resolvedOutputRoot"
-                }
-
-                Write-Host "Resuming: $($resumeRunDirs.Count) run(s) in this attempt's chain — already-scanned repositories from any of them will be skipped."
                 # SBOM_OUTPUT_DIR is bind-mounted to /output in the ops container (docker-compose.yml).
-                # Pass the exact run directory names, not the whole output root — collect-sboms.sh
-                # unions repositoryIds across only these, so an old fully-completed scan sitting in
-                # the same output directory never gets pulled into an unrelated later resume.
-                $resumeRunNames = ($resumeRunDirs | ForEach-Object { $_.Name }) -join ','
+                $resumeRunNames = Resolve-ResumeRunNames -OutputRoot $resolvedOutputRoot
                 $envOverrides += '-e'; $envOverrides += "RESUME_FROM=$resumeRunNames"
             }
 
@@ -414,6 +479,37 @@ try {
                 }
             } else {
                 Write-Warning "SBOM scan finished but no output directory was found under $resolvedOutputRoot"
+            }
+        }
+        'StaticAnalysis' {
+            $resolvedOutputRoot = if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
+                $OutputDir
+            } else {
+                Join-Path $ProjectRoot 'output\static-analysis-scan'
+            }
+
+            if ($Resume) {
+                # STATIC_ANALYSIS_OUTPUT_DIR is bind-mounted to /output-static-analysis in the
+                # ops container (docker-compose.yml).
+                $resumeRunNames = Resolve-ResumeRunNames -OutputRoot $resolvedOutputRoot
+                $envOverrides += '-e'; $envOverrides += "RESUME_FROM=$resumeRunNames"
+            }
+
+            Write-Host "Starting static analysis scan. This runs to completion in one container session..."
+            Invoke-Docker compose @EnvFileArgs run --rm --no-deps @envOverrides ops --static-analysis
+
+            $latestRun = Get-ChildItem -Path $resolvedOutputRoot -Directory -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($latestRun) {
+                Write-Host "Static analysis output: $($latestRun.FullName)"
+
+                if ($SkipUpload) {
+                    Write-Host "Skipping upload to appsec-scout (-SkipUpload)."
+                } else {
+                    Invoke-StaticAnalysisUpload -EnvFileArgs $EnvFileArgs
+                }
+            } else {
+                Write-Warning "Static analysis scan finished but no output directory was found under $resolvedOutputRoot"
             }
         }
     }
@@ -439,7 +535,7 @@ try {
         Remove-Item Env:\AZDO_REPO_FILTER -ErrorAction SilentlyContinue
     }
     if (-not [string]::IsNullOrWhiteSpace($OutputDir)) {
-        Remove-Item Env:\SBOM_OUTPUT_DIR -ErrorAction SilentlyContinue
+        Remove-Item Env:\SBOM_OUTPUT_DIR, Env:\STATIC_ANALYSIS_OUTPUT_DIR -ErrorAction SilentlyContinue
     }
     $ErrorActionPreference = $SavedErrorActionPreference
 }
