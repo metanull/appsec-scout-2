@@ -31,20 +31,15 @@ elif [ "$AUTHENTICATED" = false ]; then
     echo ""
 fi
 
-# --- Suppress all onboarding prompts so 'claude' runs cleanly when invoked manually ---
-# These are internal state flags; writing them prevents the setup wizard, theme picker,
-# trust dialog, and effort picker from blocking non-interactive runs.
+# --- Suppress onboarding/trust prompts so 'claude' runs non-interactively ---
+# These are internal ~/.claude.json state flags, not documented settings.json keys.
 if [ "$AUTHENTICATED" = true ]; then
     CLAUDE_CONFIG='{
-  "numStartups": 10,
-  "installMethod": "npm",
-  "autoUpdates": false,
   "hasCompletedOnboarding": true,
   "hasTrustDialogAccepted": true,
   "hasTrustDialogHooksAccepted": true,
   "hasCompletedProjectOnboarding": true,
   "hasAcknowledgedCostThreshold": true,
-  "effortCalloutV2Dismissed": true,
   "theme": "dark",
   "projects": {
     "/workspace": {
