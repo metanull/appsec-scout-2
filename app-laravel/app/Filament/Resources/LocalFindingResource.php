@@ -59,7 +59,11 @@ class LocalFindingResource extends Resource
             Section::make('Finding')
                 ->schema([
                     Grid::make(3)->schema([
-                        TextEntry::make('kind')->label('Kind')->badge()->color(fn (string $state): string => $state === LocalFinding::KIND_SECRET ? 'danger' : 'warning'),
+                        TextEntry::make('kind')->label('Kind')->badge()->color(fn (string $state): string => match ($state) {
+                            LocalFinding::KIND_SECRET => 'danger',
+                            LocalFinding::KIND_CODE_QUALITY => 'info',
+                            default => 'warning',
+                        }),
                         TextEntry::make('severity')->label('Severity')->badge()->color(fn (?string $state): string => LocalFinding::severityColor($state))->placeholder('-'),
                         TextEntry::make('rule_id')->label('Rule ID')->placeholder('-'),
                         TextEntry::make('title')->label('Title')->wrap()->columnSpanFull(),
@@ -113,7 +117,11 @@ class LocalFindingResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('kind')->badge()->sortable()->color(fn (string $state): string => $state === LocalFinding::KIND_SECRET ? 'danger' : 'warning'),
+                TextColumn::make('kind')->badge()->sortable()->color(fn (string $state): string => match ($state) {
+                    LocalFinding::KIND_SECRET => 'danger',
+                    LocalFinding::KIND_CODE_QUALITY => 'info',
+                    default => 'warning',
+                }),
                 TextColumn::make('severity')->badge()->sortable()->color(fn (?string $state): string => LocalFinding::severityColor($state))->placeholder('-'),
                 TextColumn::make('title')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('file_path')->label('Location')
@@ -141,6 +149,7 @@ class LocalFindingResource extends Resource
                     ->options([
                         LocalFinding::KIND_VULNERABILITY => 'Vulnerability',
                         LocalFinding::KIND_SECRET => 'Secret',
+                        LocalFinding::KIND_CODE_QUALITY => 'Code Quality',
                     ]),
                 SelectFilter::make('severity')
                     ->options(fn (): array => LocalFinding::query()

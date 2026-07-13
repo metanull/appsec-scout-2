@@ -29,6 +29,7 @@ services:
             - app_public_js:/var/www/html/public/js
             - app_bootstrap_cache:/var/www/html/bootstrap/cache
             - ${SBOM_OUTPUT_DIR:-./output/sbom-scan}:/var/www/html/sbom-import:ro
+            - ${STATIC_ANALYSIS_OUTPUT_DIR:-./output/static-analysis-scan}:/var/www/html/static-analysis-import:ro
         healthcheck:
             test: ["CMD-SHELL", "curl -fsS http://localhost:8080/up || exit 1"]
             interval: 30s
@@ -266,6 +267,7 @@ services:
         volumes:
             - claude_credentials:/home/ops/.claude
             - ${SBOM_OUTPUT_DIR:-./output/sbom-scan}:/output
+            - ${STATIC_ANALYSIS_OUTPUT_DIR:-./output/static-analysis-scan}:/output-static-analysis
             - trivy_token:/var/lib/trivy-token:ro
         environment:
             HTTP_PROXY: "${HTTP_PROXY:-}"

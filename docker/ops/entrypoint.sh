@@ -11,6 +11,11 @@ if [ "$1" = "--sbom-scan" ]; then
     exec /usr/local/bin/collect-sboms.sh
 fi
 
+# --- Static analysis mode: Roslynator/SpotBugs across every repo in an AzDO organization ---
+if [ "$1" = "--static-analysis" ]; then
+    exec /usr/local/bin/collect-static-analysis.sh
+fi
+
 AUTHENTICATED=false
 if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || [ -f "$HOME/.claude/.credentials.json" ]; then
     AUTHENTICATED=true

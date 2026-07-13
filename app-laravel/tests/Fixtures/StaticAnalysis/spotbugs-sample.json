@@ -1,0 +1,34 @@
+{
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "SpotBugs",
+                    "rules": [
+                        {
+                            "id": "SQL_INJECTION_JDBC",
+                            "shortDescription": { "text": "Statement built from user-controlled input" },
+                            "fullDescription": { "text": "A prepared statement is built using a dynamically built string, which may allow SQL injection." }
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "SQL_INJECTION_JDBC",
+                    "level": "error",
+                    "message": { "text": "This code builds a SQL/JDBC or JDO/JPQL query using a variable derived from user input." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/main/java/com/example/UserDao.java" },
+                                "region": { "startLine": 57, "endLine": 57 }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

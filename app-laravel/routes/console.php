@@ -11,6 +11,7 @@ use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
 use App\Assets\Sbom\PendingSbomScanImporter;
 use App\Assets\Sbom\SbomScanStatusReporter;
+use App\Assets\StaticAnalysis\PendingStaticAnalysisScanImporter;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
@@ -485,6 +486,35 @@ Artisan::command(
 )->purpose('Import SBOM/vulnerability/secret reports from any in-progress or finished sbom-scan run as soon as they land in run.jsonl, using a per-run cursor so nothing is imported twice; aborts cleanly without advancing the cursor if the database or queue is unreachable; scheduled every minute and also triggered once by invoke-ops.ps1 right after a scan finishes');
 
 Artisan::command(
+    'staticanalysis:import-pending-scans',
+    function (PendingStaticAnalysisScanImporter $importer): int {
+        $stats = $importer->importPending();
+
+        if ($stats['aborted']) {
+            $this->error(sprintf(
+                'Aborted after importing %d report(s) across %d repositor%s — the database or queue backend was unreachable; see storage/logs/laravel.log. Scan data is untouched on disk and will be retried automatically on the next scheduled run.',
+                $stats['reportsImported'],
+                $stats['linesImported'],
+                $stats['linesImported'] === 1 ? 'y' : 'ies',
+            ));
+
+            return self::FAILURE;
+        }
+
+        $this->info(sprintf(
+            'Imported %d report(s) across %d repositor%s (%d scan run(s) seen)%s.',
+            $stats['reportsImported'],
+            $stats['linesImported'],
+            $stats['linesImported'] === 1 ? 'y' : 'ies',
+            $stats['runsSeen'],
+            $stats['reportsFailed'] > 0 ? sprintf(', %d failed — see Error Log', $stats['reportsFailed']) : '',
+        ));
+
+        return self::SUCCESS;
+    },
+)->purpose('Import Roslynator/SpotBugs static analysis reports from any in-progress or finished static-analysis-scan run as soon as they land in run.jsonl, using a per-run cursor so nothing is imported twice; aborts cleanly without advancing the cursor if the database or queue is unreachable; scheduled every minute and also triggered once by invoke-ops.ps1 right after a scan finishes');
+
+Artisan::command(
     'sbom:scan-status',
     function (SbomScanStatusReporter $reporter): int {
         $rows = $reporter->statusForAllRuns();
@@ -824,3 +854,4 @@ Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
 Schedule::command('integrations:dispatch-due')->everyMinute()->withoutOverlapping()->name('integrations:dispatch-due');
 Schedule::command('sbom:import-pending-scans')->everyMinute()->withoutOverlapping()->name('sbom:import-pending-scans');
+Schedule::command('staticanalysis:import-pending-scans')->everyMinute()->withoutOverlapping()->name('staticanalysis:import-pending-scans');

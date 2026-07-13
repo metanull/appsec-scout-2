@@ -12,6 +12,11 @@ function trivyFixture(string $name): string
     return (string) file_get_contents(base_path("tests/Fixtures/Trivy/{$name}"));
 }
 
+function staticAnalysisFixture(string $name): string
+{
+    return (string) file_get_contents(base_path("tests/Fixtures/StaticAnalysis/{$name}"));
+}
+
 it('parses an sbom attachment into software components on the owning container', function () {
     $system = SoftwareSystem::factory()->create();
     $container = SecurityContainer::factory()->forSystem($system)->create();
@@ -78,6 +83,44 @@ it('parses a secrets attachment into local findings', function () {
     expect($finding->kind)->toBe(LocalFinding::KIND_SECRET)
         ->and($finding->rule_id)->toBe('github-pat')
         ->and($finding->file_path)->toBe('config.php');
+});
+
+it('parses a code-quality-dotnet attachment into local findings', function () {
+    $container = SecurityContainer::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'code-quality-dotnet',
+        'application/json',
+        'dotnet.sarif',
+        staticAnalysisFixture('roslynator-sample.json'),
+    );
+
+    $finding = LocalFinding::query()->where('owner_id', $container->id)->firstOrFail();
+
+    expect($finding->kind)->toBe(LocalFinding::KIND_CODE_QUALITY)
+        ->and($finding->rule_id)->toBe('CA2100')
+        ->and($finding->severity)->toBe('MEDIUM')
+        ->and($finding->file_path)->toBe('src/UserRepository.cs');
+});
+
+it('parses a code-quality-java attachment into local findings', function () {
+    $container = SecurityContainer::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'code-quality-java',
+        'application/json',
+        'java.sarif',
+        staticAnalysisFixture('spotbugs-sample.json'),
+    );
+
+    $finding = LocalFinding::query()->where('owner_id', $container->id)->firstOrFail();
+
+    expect($finding->kind)->toBe(LocalFinding::KIND_CODE_QUALITY)
+        ->and($finding->rule_id)->toBe('SQL_INJECTION_JDBC')
+        ->and($finding->severity)->toBe('HIGH')
+        ->and($finding->file_path)->toBe('src/main/java/com/example/UserDao.java');
 });
 
 it('does not parse attachments of other kinds', function () {

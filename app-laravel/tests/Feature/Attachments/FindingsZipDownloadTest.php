@@ -33,6 +33,29 @@ it('zips both vulnerability and secret attachments for a single container', func
     @unlink($path);
 });
 
+it('zips code-quality attachments for both dotnet and java kinds alongside vulnerabilities and secrets', function () {
+    $container = SecurityContainer::factory()->create(['name' => 'payments-api']);
+
+    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"vuln":true}');
+    app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"secret":true}');
+    app(AttachmentService::class)->attachTo($container, 'code-quality-dotnet', 'application/json', 'dotnet.json', '{"runs":[]}');
+    app(AttachmentService::class)->attachTo($container, 'code-quality-java', 'application/json', 'java.json', '{"runs":[]}');
+
+    $path = app(FindingsZipBuilder::class)->build($container);
+
+    expect($path)->not()->toBeNull();
+
+    $zip = new ZipArchive;
+    $zip->open($path);
+
+    expect($zip->numFiles)->toBe(4)
+        ->and($zip->locateName('payments-api-code-quality-dotnet.sarif'))->not()->toBeFalse()
+        ->and($zip->locateName('payments-api-code-quality-java.sarif'))->not()->toBeFalse();
+
+    $zip->close();
+    @unlink($path);
+});
+
 it('zips findings from every descendant container for a software system', function () {
     $system = SoftwareSystem::factory()->create();
     $containerA = SecurityContainer::factory()->forSystem($system)->create(['name' => 'service-a']);
