@@ -54,7 +54,7 @@
     Git display name used in commits (-Shell / -Claude), e.g. "Pascal HAVELANGE". Overrides
     GIT_USER_NAME from .env.
 .PARAMETER Credential
-    GitHub credential for cloning/pushing (-Shell / -Claude), or Azure DevOps credential
+    Source Control credential for cloning/pushing — GitHub (-Shell / -Claude) or Azure DevOps
     (-SbomScan / -StaticAnalysis) — which one depends on which of those switches is passed;
     there's no ambiguity since only one is ever active per invocation.
     -Shell / -Claude:               UserName = git commit email — overrides GIT_USER_EMAIL.
@@ -62,10 +62,11 @@
     -SbomScan / -StaticAnalysis:    Password = AzDO PAT with "Code (Read)" scope across the
                                      organization — overrides AZDO_PAT from .env. UserName
                                      is not used.
-    If omitted, the matching PAT already configured as appsec-scout's GitHub tracker or AzDO
-    Advanced Security source credential is fetched from the running `app` container and reused;
-    if that isn't available either, the container falls back to GITHUB_TOKEN/AZDO_PAT from
-    docker/ops/.env.
+    If omitted, the matching PAT already configured as appsec-scout's "GitHub Repos" or
+    "Azure DevOps Repos" Source Control credential is fetched from the running `app` container
+    and reused; if that isn't available either, the container falls back to GITHUB_TOKEN/AZDO_PAT
+    from docker/ops/.env. These are distinct, separately-scoped credentials from the GitHub
+    Issues tracker token and the AzDO Advanced Security source PAT used elsewhere in appsec-scout.
     Tip: pass (Get-Credential) for an interactive prompt, or retrieve a stored entry from Windows
     Credential Manager with Get-StoredCredential (module CredentialManager).
 .PARAMETER Organization
@@ -361,11 +362,12 @@ try {
             $env:GIT_USER_EMAIL = $Credential.UserName
             $env:GITHUB_TOKEN   = $Credential.GetNetworkCredential().Password
         } else {
-            # Reuse the GitHub PAT already stored in appsec-scout's credential vault (the GitHub
-            # tracker's token) instead of requiring it to be re-entered in docker/ops/.env.
-            $vaultGitHubToken = Get-SystemVaultCredential -Key 'github.token' -EnvFileArgs $EnvFileArgs
+            # Reuse the GitHub PAT already stored in appsec-scout's credential vault (the
+            # GitHub Repos Source Control credential) instead of requiring it to be re-entered
+            # in docker/ops/.env.
+            $vaultGitHubToken = Get-SystemVaultCredential -Key 'github-repos.token' -EnvFileArgs $EnvFileArgs
             if ($vaultGitHubToken) {
-                Write-Host "Using GitHub token from appsec-scout's credential vault (GitHub tracker)."
+                Write-Host "Using GitHub token from appsec-scout's credential vault (GitHub Repos source control)."
                 $env:GITHUB_TOKEN = $vaultGitHubToken
             }
         }
@@ -376,15 +378,16 @@ try {
         if ($Credential) {
             $env:AZDO_PAT = $Credential.GetNetworkCredential().Password
         } else {
-            # Reuse the PAT already stored in appsec-scout's credential vault (the AzDO source's
-            # PAT) instead of requiring it to be re-entered in docker/ops/.env for every scan.
-            $vaultAzdoPat = Get-SystemVaultCredential -Key 'azdo.pat' -EnvFileArgs $EnvFileArgs
+            # Reuse the PAT already stored in appsec-scout's credential vault (the AzDO Repos
+            # Source Control credential) instead of requiring it to be re-entered in
+            # docker/ops/.env for every scan.
+            $vaultAzdoPat = Get-SystemVaultCredential -Key 'azdo-repos.pat' -EnvFileArgs $EnvFileArgs
             if ($vaultAzdoPat) {
-                Write-Host "Using AzDO PAT from appsec-scout's credential vault (AzDO Advanced Security source)."
+                Write-Host "Using AzDO PAT from appsec-scout's credential vault (AzDO Repos source control)."
                 $env:AZDO_PAT = $vaultAzdoPat
             }
             if ([string]::IsNullOrWhiteSpace($Organization)) {
-                $vaultAzdoOrg = Get-SystemVaultCredential -Key 'azdo.organization' -EnvFileArgs $EnvFileArgs
+                $vaultAzdoOrg = Get-SystemVaultCredential -Key 'azdo-repos.organization' -EnvFileArgs $EnvFileArgs
                 if ($vaultAzdoOrg) {
                     Write-Host "Using AzDO organization from appsec-scout's credential vault: $vaultAzdoOrg"
                     $env:AZDO_ORG = $vaultAzdoOrg

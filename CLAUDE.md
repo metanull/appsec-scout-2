@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - PHP 8.4 with Laravel 13 and Filament 5 (single panel, root path, amber theme); MySQL 8 and Redis 7
 - UI is Filament-native — it is the main and only UI, not reserved to admins
 - Spatie permissions for RBAC; Laravel Fortify for auth with mandatory app-based TOTP 2FA
-- Sources (AzDo, Asoc, Detectify) and Trackers (GitHub, Jira) follow a tagged-singleton registry pattern, bound at boot in AppServiceProvider
+- Sources (AzDo, Asoc, Detectify), Trackers (GitHub, Jira), and Source Control providers (AzDO Repos, GitHub Repos) each follow the same tagged-singleton registry pattern, bound at boot in AppServiceProvider. These are three distinct concepts with their own credentials, even when the same upstream product plays more than one role (e.g. AzDO is both a Source and a Source Control provider; GitHub is both a Tracker and a Source Control provider)
 - Local DB is the system of record; upstream sources are read-only except when Sync explicitly pushes state
 - All write actions record an AuditLog entry (actor, action, old/new values)
 
@@ -29,9 +29,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Jira Cloud | Create + update issues (single and grouped), labels, priority, assignee, parent, ADF description |
 | GitHub Issues | Create + update issues (single and grouped), labels, milestone, assignee, Markdown description |
 
+### Supported source control providers
+
+Source Control credentials grant repo/code access (clone, code search) and are always distinct
+from the Source/Tracker credential for the same product, since the required PAT scope differs
+(e.g. AzDO's "Code (Read)" for repo access vs the Advanced Security scope its Source uses).
+
+| Source control | Credential key(s) | Used by |
+|-----------------|--------------------|---------|
+| Azure DevOps Repos | `azdo-repos.pat`, `azdo-repos.organization` | `triage:codesearch` (web UI path), `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` |
+| GitHub Repos | `github-repos.token` | `invoke-ops.ps1 -Shell`/`-Claude` (clone/push) |
+
 ### Triage commands (Artisan namespace `triage:*`)
 
-- `triage:codesearch {PAT} {search} [{project|repo_url}]` — AzDO code search, attaches findings with hyperlinks. From the web UI the user's PAT is resolved automatically.
+- `triage:codesearch {PAT} {search} [{project|repo_url}]` — AzDO code search, attaches findings with hyperlinks. From the web UI the user's PAT is resolved automatically from the AzDO Repos system credential (`azdo-repos.pat`/`azdo-repos.organization`), distinct from the AzDO source's alert-ingestion PAT.
 
 ### Credential resolution order
 
@@ -116,6 +127,7 @@ app/
   Models/            # Eloquent models with Enums/, Casts/, Factories/
   Sources/           # Source integrations (AzDo, Asoc, Detectify) — Contracts + DTO factories
   Trackers/          # Tracker integrations (GitHub, Jira) — Contracts, Reconciliation, VOs
+  SourceControl/     # Source Control providers (AzDO Repos, GitHub Repos) — Contracts, Registry
   Integrations/      # Integration scheduling and dispatch
   Sync/              # Synchronization logic
   Triage/            # Triage services (CodesearchService, TrivyService, BfgService)
@@ -123,7 +135,7 @@ app/
   Audit/             # AuditLog recorder
   SecurityEvents/    # Event linking and triage context
   Context/           # Application domain context
-  Providers/         # AppServiceProvider (registers Source/Tracker singletons), FortifyServiceProvider, PanelProvider
+  Providers/         # AppServiceProvider (registers Source/Tracker/Source Control singletons), FortifyServiceProvider, PanelProvider
 routes/
   console.php        # Artisan commands + scheduler (integrations:dispatch-due runs every minute)
   web.php            # Authenticated routes for alert attachment downloads

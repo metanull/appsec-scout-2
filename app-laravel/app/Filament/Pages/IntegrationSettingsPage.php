@@ -9,6 +9,8 @@ use App\Models\IntegrationSetting;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
+use App\SourceControl\Contracts\SourceControlProvider;
+use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\Registry as SourceRegistry;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry as TrackerRegistry;
@@ -85,9 +87,11 @@ class IntegrationSettingsPage extends Page implements HasTable
         $repository = app(IntegrationSettingsRepository::class);
         $sources = app(SourceRegistry::class)->all();
         $trackers = app(TrackerRegistry::class)->all();
+        $sourceControls = app(SourceControlRegistry::class)->all();
 
         $repository->syncKnown(IntegrationSetting::KIND_SOURCE, array_map(fn ($s): string => $s->id(), $sources));
         $repository->syncKnown(IntegrationSetting::KIND_TRACKER, array_map(fn (Tracker $t): string => $t->id(), $trackers));
+        $repository->syncKnown(IntegrationSetting::KIND_SOURCE_CONTROL, array_map(fn (SourceControlProvider $p): string => $p->id(), $sourceControls));
 
         $this->settings = IntegrationSetting::query()
             ->get()
@@ -113,7 +117,11 @@ class IntegrationSettingsPage extends Page implements HasTable
                 TextColumn::make('integration_kind')
                     ->label('Kind')
                     ->badge()
-                    ->color(fn (IntegrationSetting $record): string => $record->integration_kind === IntegrationSetting::KIND_SOURCE ? 'info' : 'warning')
+                    ->color(fn (IntegrationSetting $record): string => match ($record->integration_kind) {
+                        IntegrationSetting::KIND_SOURCE => 'info',
+                        IntegrationSetting::KIND_SOURCE_CONTROL => 'success',
+                        default => 'warning',
+                    })
                     ->sortable(),
                 TextColumn::make('integration_id')
                     ->label('Integration')
@@ -198,21 +206,14 @@ class IntegrationSettingsPage extends Page implements HasTable
 
     private function displayName(IntegrationSetting $record): string
     {
-        if ($record->integration_kind === IntegrationSetting::KIND_SOURCE) {
-            foreach (app(SourceRegistry::class)->all() as $source) {
-                if ($source->id() === $record->integration_id) {
-                    return $source->displayName();
-                }
-            }
-        } else {
-            foreach (app(TrackerRegistry::class)->all() as $tracker) {
-                if ($tracker->id() === $record->integration_id) {
-                    return $tracker->displayName();
-                }
-            }
-        }
+        $instance = match ($record->integration_kind) {
+            IntegrationSetting::KIND_SOURCE => app(SourceRegistry::class)->find($record->integration_id),
+            IntegrationSetting::KIND_TRACKER => app(TrackerRegistry::class)->find($record->integration_id),
+            IntegrationSetting::KIND_SOURCE_CONTROL => app(SourceControlRegistry::class)->find($record->integration_id),
+            default => null,
+        };
 
-        return $record->integration_id;
+        return $instance?->displayName() ?? $record->integration_id;
     }
 
     private function resolveLastSyncStatus(IntegrationSetting $record): string
@@ -352,23 +353,12 @@ class IntegrationSettingsPage extends Page implements HasTable
 
     private function testIntegration(IntegrationSetting $record): void
     {
-        $instance = null;
-
-        if ($record->integration_kind === IntegrationSetting::KIND_SOURCE) {
-            foreach (app(SourceRegistry::class)->all() as $source) {
-                if ($source->id() === $record->integration_id) {
-                    $instance = $source;
-                    break;
-                }
-            }
-        } else {
-            foreach (app(TrackerRegistry::class)->all() as $tracker) {
-                if ($tracker->id() === $record->integration_id) {
-                    $instance = $tracker;
-                    break;
-                }
-            }
-        }
+        $instance = match ($record->integration_kind) {
+            IntegrationSetting::KIND_SOURCE => app(SourceRegistry::class)->find($record->integration_id),
+            IntegrationSetting::KIND_TRACKER => app(TrackerRegistry::class)->find($record->integration_id),
+            IntegrationSetting::KIND_SOURCE_CONTROL => app(SourceControlRegistry::class)->find($record->integration_id),
+            default => null,
+        };
 
         if ($instance === null) {
             Notification::make()->title('Integration not found')->danger()->send();

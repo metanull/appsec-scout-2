@@ -5,6 +5,8 @@ namespace App\Filament\Pages\Concerns;
 use App\Credentials\Credential;
 use App\Credentials\CredentialField;
 use App\Credentials\Vault;
+use App\SourceControl\Contracts\SourceControlProvider;
+use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
 use App\Trackers\Contracts\Tracker;
@@ -85,6 +87,10 @@ trait ManagesIntegrationCredentials
 
         foreach (app(TrackerRegistry::class)->all() as $tracker) {
             $integrations[] = $this->integrationDescriptor('tracker', $tracker->id(), $tracker->displayName(), $tracker->credentialFields());
+        }
+
+        foreach (app(SourceControlRegistry::class)->all() as $sourceControl) {
+            $integrations[] = $this->integrationDescriptor('source_control', $sourceControl->id(), $sourceControl->displayName(), $sourceControl->credentialFields());
         }
 
         return $integrations;
@@ -484,7 +490,7 @@ trait ManagesIntegrationCredentials
         }
     }
 
-    /** @return array{id: string, type: string, display_name: string, instance: Source|Tracker, credential_fields: list<CredentialField>} */
+    /** @return array{id: string, type: string, display_name: string, instance: Source|Tracker|SourceControlProvider, credential_fields: list<CredentialField>} */
     private function integrationById(string $integrationId): array
     {
         foreach ($this->integrationEntries() as $integration) {
@@ -496,7 +502,7 @@ trait ManagesIntegrationCredentials
         throw new \RuntimeException("Unknown integration [{$integrationId}].");
     }
 
-    /** @return list<array{id: string, type: string, display_name: string, instance: Source|Tracker, credential_fields: list<CredentialField>}> */
+    /** @return list<array{id: string, type: string, display_name: string, instance: Source|Tracker|SourceControlProvider, credential_fields: list<CredentialField>}> */
     private function integrationEntries(): array
     {
         $integrations = [];
@@ -512,6 +518,13 @@ trait ManagesIntegrationCredentials
             $integrations[] = array_merge(
                 $this->integrationDescriptor('tracker', $tracker->id(), $tracker->displayName(), $tracker->credentialFields()),
                 ['instance' => $tracker],
+            );
+        }
+
+        foreach (app(SourceControlRegistry::class)->all() as $sourceControl) {
+            $integrations[] = array_merge(
+                $this->integrationDescriptor('source_control', $sourceControl->id(), $sourceControl->displayName(), $sourceControl->credentialFields()),
+                ['instance' => $sourceControl],
             );
         }
 

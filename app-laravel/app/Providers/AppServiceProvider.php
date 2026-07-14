@@ -6,6 +6,8 @@ use App\Credentials\Vault;
 use App\Events\SyncRunFinished;
 use App\Listeners\BustDashboardCache;
 use App\Models\User;
+use App\SourceControl\AzDo\AzDoRepos;
+use App\SourceControl\GitHub\GitHubRepos;
 use App\Sources\Asoc\AsocSource;
 use App\Sources\AzDo\AzDoSource;
 use App\Sources\Detectify\DetectifySource;
@@ -28,12 +30,16 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(DetectifySource::class);
         $this->app->singleton(GitHubTracker::class);
         $this->app->singleton(JiraTracker::class);
+        $this->app->singleton(AzDoRepos::class);
+        $this->app->singleton(GitHubRepos::class);
 
         $this->app->alias(AzDoSource::class, 'appsec-scout.source.azdo');
         $this->app->alias(AsocSource::class, 'appsec-scout.source.asoc');
         $this->app->alias(DetectifySource::class, 'appsec-scout.source.detectify');
         $this->app->alias(GitHubTracker::class, 'appsec-scout.tracker.github');
         $this->app->alias(JiraTracker::class, 'appsec-scout.tracker.jira');
+        $this->app->alias(AzDoRepos::class, 'appsec-scout.source-control.azdo-repos');
+        $this->app->alias(GitHubRepos::class, 'appsec-scout.source-control.github-repos');
 
         $this->app->tag([
             AzDoSource::class,
@@ -45,6 +51,11 @@ class AppServiceProvider extends ServiceProvider
             GitHubTracker::class,
             JiraTracker::class,
         ], 'appsec-scout.tracker');
+
+        $this->app->tag([
+            AzDoRepos::class,
+            GitHubRepos::class,
+        ], 'appsec-scout.source-control');
     }
 
     /**

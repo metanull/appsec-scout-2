@@ -8,12 +8,12 @@ use App\Triage\CodesearchRunResult;
 use App\Triage\CodesearchService;
 use App\Triage\RunCodesearchJob;
 
-it('run codesearch job uses system azdo pat and invokes the shared service', function () {
+it('run codesearch job uses system azdo-repos pat and invokes the shared service', function () {
     $event = SecurityEvent::factory()->create();
     $user = User::factory()->create();
 
-    app(Vault::class)->set('azdo.pat', null, 'system-pat');
-    app(Vault::class)->set('azdo.organization', null, 'testorg');
+    app(Vault::class)->set('azdo-repos.pat', null, 'system-pat');
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
     app()->bind(CodesearchService::class, fn () => new class extends CodesearchService
     {

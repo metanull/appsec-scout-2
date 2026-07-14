@@ -20,6 +20,7 @@ use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\Attachment;
 use App\Models\SecurityContainer;
+use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
@@ -548,7 +549,7 @@ Artisan::command(
     },
 )->purpose('Show per-run sbom-scan import status: lines imported vs approx/total known repositories, failure counts, and time since the cursor last advanced');
 
-Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
+Artisan::command('credentials:system:export {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, SourceControlRegistry $sourceControls, Filesystem $files): int {
     $path = (string) $this->argument('path');
 
     if ($path === '') {
@@ -587,6 +588,20 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
         ];
     }
 
+    foreach ($sourceControls->all() as $sourceControl) {
+        $fields = [];
+
+        foreach ($sourceControl->credentialFields() as $field) {
+            $fields[$field->key] = app(Vault::class)->get($field->key, null, true);
+        }
+
+        $integrations[$sourceControl->id()] = [
+            'type' => 'source_control',
+            'display_name' => $sourceControl->displayName(),
+            'fields' => $fields,
+        ];
+    }
+
     $payload = [
         'version' => 1,
         'owner' => 'system',
@@ -609,7 +624,7 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
     return self::SUCCESS;
 })->purpose('Export system credentials to a JSON file');
 
-Artisan::command('credentials:system:get {key}', function (SourceRegistry $sources, TrackerRegistry $trackers, Vault $vault): int {
+Artisan::command('credentials:system:get {key}', function (SourceRegistry $sources, TrackerRegistry $trackers, SourceControlRegistry $sourceControls, Vault $vault): int {
     $key = (string) $this->argument('key');
 
     $knownKeys = [];
@@ -622,6 +637,12 @@ Artisan::command('credentials:system:get {key}', function (SourceRegistry $sourc
 
     foreach ($trackers->all() as $tracker) {
         foreach ($tracker->credentialFields() as $field) {
+            $knownKeys[] = $field->key;
+        }
+    }
+
+    foreach ($sourceControls->all() as $sourceControl) {
+        foreach ($sourceControl->credentialFields() as $field) {
             $knownKeys[] = $field->key;
         }
     }
@@ -645,7 +666,7 @@ Artisan::command('credentials:system:get {key}', function (SourceRegistry $sourc
     return self::SUCCESS;
 })->purpose('Print a single system credential value from the vault to stdout, for the ops/claude containers to reuse the credential already configured in appsec-scout instead of duplicating it in their own env files');
 
-Artisan::command('credentials:system:list', function (SourceRegistry $sources, TrackerRegistry $trackers): int {
+Artisan::command('credentials:system:list', function (SourceRegistry $sources, TrackerRegistry $trackers, SourceControlRegistry $sourceControls): int {
     $knownKeys = [];
 
     foreach ($sources->all() as $source) {
@@ -660,6 +681,12 @@ Artisan::command('credentials:system:list', function (SourceRegistry $sources, T
         }
     }
 
+    foreach ($sourceControls->all() as $sourceControl) {
+        foreach ($sourceControl->credentialFields() as $field) {
+            $knownKeys[] = $field->key;
+        }
+    }
+
     $knownKeys = array_values(array_unique($knownKeys));
     sort($knownKeys);
 
@@ -668,9 +695,9 @@ Artisan::command('credentials:system:list', function (SourceRegistry $sources, T
     }
 
     return self::SUCCESS;
-})->purpose('List the system credential keys accepted by credentials:system:get (Source and Tracker credential fields), keys only, not values');
+})->purpose('List the system credential keys accepted by credentials:system:get (Source, Tracker, and Source Control credential fields), keys only, not values');
 
-Artisan::command('credentials:system:import {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, Filesystem $files): int {
+Artisan::command('credentials:system:import {path}', function (SourceRegistry $sources, TrackerRegistry $trackers, SourceControlRegistry $sourceControls, Filesystem $files): int {
     $path = (string) $this->argument('path');
 
     if (! $files->exists($path) || ! $files->isFile($path)) {
@@ -725,6 +752,13 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
         $known[$tracker->id()] = [
             'type' => 'tracker',
             'fields' => array_map(fn ($field): string => $field->key, $tracker->credentialFields()),
+        ];
+    }
+
+    foreach ($sourceControls->all() as $sourceControl) {
+        $known[$sourceControl->id()] = [
+            'type' => 'source_control',
+            'fields' => array_map(fn ($field): string => $field->key, $sourceControl->credentialFields()),
         ];
     }
 

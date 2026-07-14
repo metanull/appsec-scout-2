@@ -22,6 +22,8 @@ class IntegrationSetting extends Model
 
     public const KIND_TRACKER = 'tracker';
 
+    public const KIND_SOURCE_CONTROL = 'source_control';
+
     protected function casts(): array
     {
         return [

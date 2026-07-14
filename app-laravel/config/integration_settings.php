@@ -29,4 +29,12 @@ return [
         'enabled' => (bool) env('TRACKER_GITHUB_ENABLED', false),
         'interval_minutes' => (int) env('TRACKER_GITHUB_INTERVAL_MINUTES', 30),
     ],
+    'azdo-repos' => [
+        'enabled' => (bool) env('SOURCE_CONTROL_AZDO_ENABLED', false),
+        'interval_minutes' => (int) env('SOURCE_CONTROL_AZDO_INTERVAL_MINUTES', 30),
+    ],
+    'github-repos' => [
+        'enabled' => (bool) env('SOURCE_CONTROL_GITHUB_ENABLED', false),
+        'interval_minutes' => (int) env('SOURCE_CONTROL_GITHUB_INTERVAL_MINUTES', 30),
+    ],
 ];
