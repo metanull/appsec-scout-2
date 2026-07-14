@@ -135,11 +135,12 @@ JSON result to an alert as an Attachment (visible on that alert's Attachments ta
 shown as `triage:codesearch` since there's no interactive user attached to a CLI run). The PAT is
 resolved the same way `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` resolve theirs: `--pat` is used
 if given, otherwise the command falls back to the `azdo-repos.pat` system credential; if neither is
-available the command fails fast with a clear error instead of attempting the search. The
-`triage.run-codesearch` permission is seeded on the Triage role and above, but is not currently
-checked anywhere in the code — running the command is gated only by having a shell on the `app`
-container, not by an in-app permission. `App\Triage\RunCodesearchJob` (a queued wrapper for the
-same logic) exists but is only exercised in tests today; nothing in production dispatches it.
+available the command fails fast with a clear error instead of attempting the search. Running the
+command is gated only by having a shell on the `app` container — there is no in-app permission for
+it (an unenforced `triage.run-codesearch` permission used to be seeded for this; it was removed
+since Artisan commands aren't checked against Spatie permissions anywhere in the app, so it never
+did anything). `App\Triage\RunCodesearchJob` (a queued wrapper for the same logic) exists but is
+only exercised in tests today; nothing in production dispatches it.
 
 ## Permission Matrix
 
@@ -150,7 +151,6 @@ Roles are cumulative: `Reader ⊂ Triage ⊂ Plan ⊂ Sync ⊂ Admin`.
 | `alerts.view` (see alerts, list/detail pages) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `alerts.edit` (change state/severity, comment) | | ✓ | ✓ | ✓ | ✓ |
 | `alerts.bulk-edit` (bulk state change) | | ✓ | ✓ | ✓ | ✓ |
-| `triage.run-codesearch` (seeded, not enforced) | | ✓ | ✓ | ✓ | ✓ |
 | `work-items.create` (create tickets, single/grouped) | | | ✓ | ✓ | ✓ |
 | `work-items.link` (link existing tickets, reconcile) | | | ✓ | ✓ | ✓ |
 | `work-items.sync` (push staged changes; also gates reconcile-all) | | | | ✓ | ✓ |
