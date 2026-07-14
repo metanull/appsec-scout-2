@@ -51,6 +51,7 @@ final class WorkItemFormOptions
     public function createSchema(array $events = []): array
     {
         $formDefault = $this->resolveTrackerDefault($events);
+        $ambiguityWarnings = $this->resolveTrackerAmbiguityWarnings($events);
 
         return [
             Placeholder::make('enabled_tracker_notice')
@@ -78,6 +79,11 @@ final class WorkItemFormOptions
                 ->label('Default project')
                 ->content($this->trackerDefaultNotice($formDefault))
                 ->visible($formDefault instanceof TrackerProjectDefaultResolution)
+                ->columnSpanFull(),
+            Placeholder::make('tracker_ambiguity_notice')
+                ->label('Tracker project mapping')
+                ->content($this->trackerAmbiguityNotice($ambiguityWarnings))
+                ->visible($ambiguityWarnings !== [])
                 ->columnSpanFull(),
             Placeholder::make('tracker_credential_notice')
                 ->label('Credential setup')
@@ -156,6 +162,7 @@ final class WorkItemFormOptions
     public function linkSchema(array $events = []): array
     {
         $formDefault = $this->resolveTrackerDefault($events);
+        $ambiguityWarnings = $this->resolveTrackerAmbiguityWarnings($events);
 
         return [
             Placeholder::make('enabled_tracker_notice')
@@ -181,6 +188,11 @@ final class WorkItemFormOptions
                 ->label('Default project')
                 ->content($this->trackerDefaultNotice($formDefault))
                 ->visible($formDefault instanceof TrackerProjectDefaultResolution)
+                ->columnSpanFull(),
+            Placeholder::make('tracker_ambiguity_notice')
+                ->label('Tracker project mapping')
+                ->content($this->trackerAmbiguityNotice($ambiguityWarnings))
+                ->visible($ambiguityWarnings !== [])
                 ->columnSpanFull(),
             Placeholder::make('tracker_credential_notice')
                 ->label('Credential setup')
@@ -542,6 +554,40 @@ final class WorkItemFormOptions
         }
 
         return $candidates[0];
+    }
+
+    /**
+     * Surfaces ambiguous tracker project link configuration (multiple links at one level with
+     * no single one marked default) even when a later level still resolved a usable default —
+     * an operator relying on that lower-level default should still know a higher level needs
+     * attention.
+     *
+     * @param  list<SecurityEvent>  $events
+     * @return list<string>
+     */
+    private function resolveTrackerAmbiguityWarnings(array $events): array
+    {
+        if ($events === []) {
+            return [];
+        }
+
+        $warnings = [];
+
+        foreach (array_keys($this->trackerOptions()) as $trackerId) {
+            $resolution = $this->trackerProjectDefaultResolver->resolveForEvents($events, $trackerId);
+
+            if ($resolution->ambiguityWarning !== null && ! in_array($resolution->ambiguityWarning, $warnings, true)) {
+                $warnings[] = $resolution->ambiguityWarning;
+            }
+        }
+
+        return $warnings;
+    }
+
+    /** @param list<string> $warnings */
+    private function trackerAmbiguityNotice(array $warnings): ?string
+    {
+        return $warnings === [] ? null : implode(' ', $warnings);
     }
 
     private function trackerDefaultNotice(?TrackerProjectDefaultResolution $resolution): ?string

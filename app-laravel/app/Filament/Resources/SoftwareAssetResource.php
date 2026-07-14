@@ -7,7 +7,6 @@ use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\LocalFindingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationManager;
-use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Resources\SoftwareAssetResource\Pages\CreateSoftwareAsset;
 use App\Filament\Resources\SoftwareAssetResource\Pages\EditSoftwareAsset;
 use App\Filament\Resources\SoftwareAssetResource\Pages\ListSoftwareAssets;
@@ -167,7 +166,6 @@ class SoftwareAssetResource extends Resource
         return [
             SoftwareSystemsRelationManager::class,
             CuratedLinksRelationManager::class,
-            TrackerProjectLinksRelationManager::class,
             RepositoryMappingsRelationManager::class,
             AttachmentsRelationManager::class,
             SoftwareComponentsRelationManager::class,

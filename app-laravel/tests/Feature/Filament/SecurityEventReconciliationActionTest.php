@@ -3,6 +3,7 @@
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use App\Trackers\Dto\ReconciliationCandidateDto;
@@ -102,6 +103,50 @@ it('keeps links unchanged when per-event reconciliation finds no new matches', f
         ->callAction('reconcileWorkItems');
 
     expect(WorkItemLink::query()->where('event_id', $event->id)->count())->toBe(0);
+});
+
+it('warns and still searches every tracker project when the alert has no scoped mapping', function () {
+    $plan = reconciliationFilamentUser(['Plan']);
+
+    $tracker = (new FakeTracker)->withReconciliationCandidates('OTHER', new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: 'OTHER#1',
+        workItemUrl: 'https://tracker.test/OTHER%231',
+        title: 'Matched via unscoped fallback',
+        state: 'Open',
+        labels: ['security'],
+        extractedUrls: ['https://tracker.test/OTHER%231'],
+        searchStrategy: 'project=OTHER',
+    ));
+    bindFakeWorkItemTracker($tracker);
+
+    // A tracker project link exists somewhere in the system (an unrelated System), but NOT on
+    // this alert's own System/Container — this is exactly the condition that previously made
+    // the UI block the action entirely with an info toast, even though the reconciliation
+    // service itself would search every linked project as a fallback.
+    $unrelatedSystem = SoftwareSystem::factory()->create();
+    $unrelatedSystem->trackerProjectLinks()->create([
+        'tracker_id' => 'fake-tracker',
+        'project_key' => 'OTHER',
+        'project_name' => 'OTHER',
+        'is_default' => false,
+        'created_by_user_id' => $plan->id,
+    ]);
+
+    $event = SecurityEvent::factory()->create([
+        'url' => 'https://tracker.test/OTHER%231',
+    ]);
+
+    Livewire::actingAs($plan)
+        ->test(ViewSecurityEvent::class, ['record' => $event->getRouteKey()])
+        ->callAction('reconcileWorkItems')
+        ->assertNotified('No tracker project mapping for this system or container');
+
+    expect(WorkItemLink::query()
+        ->where('event_id', $event->id)
+        ->where('tracker_id', 'fake-tracker')
+        ->where('work_item_id', 'OTHER#1')
+        ->exists())->toBeTrue();
 });
 
 function reconciliationFilamentUser(array $roles): User

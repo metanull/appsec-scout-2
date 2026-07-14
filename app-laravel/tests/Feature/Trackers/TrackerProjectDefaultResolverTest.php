@@ -105,6 +105,51 @@ it('returns grouped default only when all selected alerts resolve to the same pr
         ->and($result->reasonText)->toContain('All selected alerts resolved');
 });
 
+it('warns instead of silently resolving nothing when a level has multiple links with no unique default', function () {
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+
+    $event = SecurityEvent::factory()->create([
+        'software_system_id' => $system->id,
+        'container_id' => $container->id,
+    ]);
+
+    // Two container-level links for the same tracker, neither marked default.
+    $container->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'ONE', 'is_default' => false]);
+    $container->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'TWO', 'is_default' => false]);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'SYS', 'project_name' => 'System Project', 'is_default' => true]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForEvent($event, 'jira');
+
+    // The system-level link still resolves a usable default...
+    expect($result->hasDefault())->toBeTrue()
+        ->and($result->projectKey)->toBe('SYS')
+        // ...but the container-level ambiguity is still surfaced, not silently dropped.
+        ->and($result->ambiguityWarning)->not->toBeNull()
+        ->and($result->ambiguityWarning)->toContain('container level')
+        ->and($result->ambiguityWarning)->toContain('none of them is marked as the default');
+});
+
+it('warns when multiple defaults are flagged at the same level and no lower level resolves either', function () {
+    $system = SoftwareSystem::factory()->create();
+
+    $event = SecurityEvent::factory()->create([
+        'software_system_id' => $system->id,
+        'container_id' => null,
+    ]);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'ONE', 'is_default' => true]);
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'TWO', 'is_default' => true]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForEvent($event, 'jira');
+
+    expect($result->hasDefault())->toBeFalse()
+        ->and($result->ambiguityWarning)->not->toBeNull()
+        ->and($result->ambiguityWarning)->toContain('system level')
+        ->and($result->ambiguityWarning)->toContain('more than one of them is marked as the default');
+});
+
 it('returns no grouped default for conflicting alert defaults', function () {
     $systemA = SoftwareSystem::factory()->create();
     $systemB = SoftwareSystem::factory()->create();

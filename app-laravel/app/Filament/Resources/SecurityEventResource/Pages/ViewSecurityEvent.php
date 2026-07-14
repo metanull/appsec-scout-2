@@ -287,11 +287,10 @@ class ViewSecurityEvent extends ViewRecord
 
         if (! $this->hasApplicableTrackerMappings($this->eventRecord())) {
             Notification::make()
-                ->title('No tracker project mappings configured for this system or container.')
-                ->info()
+                ->title('No tracker project mapping for this system or container')
+                ->body('Searching every configured tracker project instead of a scoped one — results may be less precise. Add a Tracker Project Link to this alert\'s system or container to narrow this search next time.')
+                ->warning()
                 ->send();
-
-            return true;
         }
 
         $results = app(ReconciliationService::class)->reconcileEvent($this->eventRecord(), $user->id);
