@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Enums\EventSeverity;
+use App\Models\Enums\EventState;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 #[Fillable([
@@ -14,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'file_path', 'start_line', 'end_line',
     'package_name', 'package_version', 'metadata',
     'correlated_security_event_id', 'correlation_method',
+    'status', 'overridden_severity',
     'first_seen_at', 'last_seen_at',
 ])]
 class LocalFinding extends Model
@@ -31,6 +35,8 @@ class LocalFinding extends Model
             'metadata' => 'array',
             'start_line' => 'integer',
             'end_line' => 'integer',
+            'status' => EventState::class,
+            'overridden_severity' => EventSeverity::class,
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',
         ];
@@ -64,6 +70,27 @@ class LocalFinding extends Model
     public function correlatedSecurityEvent(): BelongsTo
     {
         return $this->belongsTo(SecurityEvent::class, 'correlated_security_event_id');
+    }
+
+    /** @return HasMany<LocalFindingComment, $this> */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(LocalFindingComment::class)->orderBy('created_at');
+    }
+
+    /** @return HasMany<LocalFindingWorkItemLink, $this> */
+    public function workItemLinks(): HasMany
+    {
+        return $this->hasMany(LocalFindingWorkItemLink::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * The severity an operator has manually set, or the scanner-reported severity if none was
+     * set. Re-scanning never touches `overridden_severity`, so an operator's call survives it.
+     */
+    public function effectiveSeverityLabel(): string
+    {
+        return $this->overridden_severity?->name ?? strtoupper((string) $this->severity);
     }
 
     public static function severityColor(?string $severity): string

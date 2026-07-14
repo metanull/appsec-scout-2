@@ -121,10 +121,13 @@ uploaded, instead of an operator uploading them one at a time.
 scanner found"), but with no external Source behind them, only a file this pipeline uploaded.
 That has two consequences worth knowing when relying on repeated SbomScan/StaticAnalysis runs:
 
-- They're **read-only** in appsec-scout — no state/severity change, no comment, no dismiss action,
-  and no way to push anything anywhere, unlike Alerts. See
-  [docs/concepts/asset-system-container-alert.md](asset-system-container-alert.md#local-finding-and-dependency-are-alerts-local-only-counterpart)
-  for the full comparison.
+- Dependencies (`SoftwareComponent`) are still **read-only** in appsec-scout — no state/severity
+  change, no comment, no dismiss action. Local Findings now support a local-only status/severity/
+  comment/tracker-linking lifecycle (see [Local Finding and Dependency are Alerts' local-only
+  counterpart](asset-system-container-alert.md#local-finding-and-dependency-are-alerts-local-only-counterpart)),
+  but re-scanning still never touches the scanner-reported fields themselves, and there is still no
+  way to push anything upstream, unlike Alerts — Local Findings and Dependencies have no upstream
+  Source to push to.
 - **Re-running a scan updates existing rows but never removes ones that disappeared.** A
   vulnerability or secret that's since been fixed and no longer shows up in a later Trivy run
   simply stops being touched by that repository's next `run.jsonl` line — its row stays visible
