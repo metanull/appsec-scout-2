@@ -148,7 +148,7 @@ tests/
 
 Panel id: `appsec-scout`, path: `/` (root). Auto-discovers resources, pages, and widgets from the standard directories.
 
-**Resources** (11): SecurityEvent, SecurityContainer, SecurityContainerLink, SoftwareSystem, SoftwareSystemLink, User, AuditLog, ErrorLog, InferenceSuggestion, RepositoryProvider, and shared RelationManagers for CuratedLinks, RepositoryMappings, TrackerProjectLinks.
+**Resources** (10): SecurityEvent, SecurityContainer, SoftwareSystem, SoftwareAsset, SoftwareComponent, LocalFinding, User, AuditLog, ErrorLog, RepositoryProvider, and shared RelationManagers for CuratedLinks, RepositoryMappings, TrackerProjectLinks.
 
 **Custom Pages**: IntegrationSettingsPage, OperationsPage, PendingSyncPage, ProfileIntegrationsPage, SystemCredentialsPage.
 
@@ -178,7 +178,7 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 ## Key Models and Enums
 
 - `SecurityEvent` — central entity; `EventState` (Open, Acknowledged, InProgress, Resolved, Dismissed), `EventSeverity` (Critical → Informational), `EventType` (Vulnerability, Secret, Dependency, License, Misconfiguration, CodeQuality, IaC, Posture)
-- `SecurityContainer`, `SecurityContainerLink`, `SoftwareSystem`, `SoftwareSystemLink` — hierarchy that alerts are scoped to
+- `SoftwareAsset`, `SoftwareSystem`, `SecurityContainer` — hierarchy that alerts, local findings, and dependencies are scoped to
 - `Credential` — credential vault with explicit resolution hierarchy: preferred user → current user → integration service user → system credential
 
 ## Testing

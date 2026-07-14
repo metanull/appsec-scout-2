@@ -28,6 +28,13 @@ Operator documentation:
 - [docs/admin.md](docs/admin.md)
 - [docs/security.md](docs/security.md)
 - [docs/architecture.md](docs/architecture.md)
+- [docs/concepts/integration.md](docs/concepts/integration.md)
+- [docs/concepts/sources-trackers-source-control.md](docs/concepts/sources-trackers-source-control.md)
+- [docs/concepts/triage.md](docs/concepts/triage.md)
+- [docs/concepts/sbom-and-static-analysis.md](docs/concepts/sbom-and-static-analysis.md)
+- [docs/concepts/asset-system-container-alert.md](docs/concepts/asset-system-container-alert.md)
+- [docs/concepts/links-and-defaults.md](docs/concepts/links-and-defaults.md)
+- [docs/concepts/automated-discovery.md](docs/concepts/automated-discovery.md)
 
 ## Stack
 
