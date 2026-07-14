@@ -34,7 +34,7 @@ final class PushEventStatesJob implements ShouldQueue
         return [new WithoutOverlapping('push-event-states:' . $sourceId)];
     }
 
-    public function handle(OperatorIntegrationRuntime $runtime, Recorder $recorder): void
+    public function handle(OperatorIntegrationRuntime $runtime, Recorder $recorder, PendingSyncResolver $resolver): void
     {
         $events = SecurityEvent::query()
             ->with('softwareSystem')
@@ -63,16 +63,32 @@ final class PushEventStatesJob implements ShouldQueue
             'events_succeeded' => 0,
             'events_failed' => 0,
             'events_skipped' => 0,
+            'events_resolved_local_only' => 0,
         ];
         $lastError = null;
 
         try {
-            $runtime->runSource($sourceId, $this->operatorUserId, function (Source $source) use ($events, $sourceId, $recorder, &$counts, &$lastError): void {
+            $runtime->runSource($sourceId, $this->operatorUserId, function (Source $source) use ($events, $sourceId, $recorder, $resolver, &$counts, &$lastError): void {
+                $capabilities = $source->capabilities();
+
                 foreach ($events as $event) {
                     $metadata = self::metadataArray($event);
                     $retryCount = min((int) ($metadata['pushRetryCount'] ?? 0), 3);
 
-                    if ($retryCount >= 3 || $event->pending_state === null) {
+                    if (! $resolver->hasPushableChange($event, $capabilities)) {
+                        if ($resolver->resolveUnpushableChange($event, $source, $capabilities, $this->operatorUserId)) {
+                            $counts['events_resolved_local_only']++;
+                        } else {
+                            // Declared a capability with no mechanism to act on it — leave the
+                            // event dirty and surfaced as an error rather than silently
+                            // pretending it was resolved.
+                            $counts['events_skipped']++;
+                        }
+
+                        continue;
+                    }
+
+                    if ($retryCount >= 3) {
                         $counts['events_skipped']++;
 
                         continue;
@@ -83,11 +99,13 @@ final class PushEventStatesJob implements ShouldQueue
                     if ($result->ok) {
                         unset($metadata['pushRetryCount'], $metadata['lastPushError']);
 
+                        $stillHasUnsupportedSeverity = $event->pending_severity !== null && ! $capabilities->canUpdateSeverity;
+
                         $event->forceFill([
                             'state' => $event->pending_state,
                             'pending_state' => null,
                             'pending_comment' => null,
-                            'is_dirty' => $event->pending_severity !== null,
+                            'is_dirty' => $event->pending_severity !== null && $capabilities->canUpdateSeverity,
                             'metadata' => $metadata,
                             'synced_at' => now(),
                             'updated_at' => now(),
@@ -100,6 +118,16 @@ final class PushEventStatesJob implements ShouldQueue
                         ]);
 
                         $counts['events_succeeded']++;
+
+                        if ($stillHasUnsupportedSeverity) {
+                            $resolver->recordLocalOnlyResolution(
+                                $event,
+                                $sourceId,
+                                $resolver->unsupportedSeverityNote($event, $source),
+                                $this->operatorUserId,
+                            );
+                            $counts['events_resolved_local_only']++;
+                        }
 
                         continue;
                     }

@@ -107,6 +107,15 @@ Detectify's status-change endpoints (`setfixedstatus`, `setacceptedriskstatus`,
 `setfalsepositivestatus`, `unsetfixedstatus`) take no comment/note field — there is no way to
 attach a comment to a Detectify status change, so `canAddComments` is `false`.
 
+`canAddComments` means "this Source accepts a comment riding along with a state/severity push" —
+it says nothing about pushing a comment added on its own (independent of any state/severity
+change). That's a separate, always-`false`-today capability, `canPushStandaloneComment`: no
+Source exposes an API for it at all. See
+[docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md) for the full
+per-source, per-operation breakdown, and [docs/concepts/triage.md](triage.md#staging-vs-pushing-a-change)
+for how a staged change with no pushable capability gets resolved as a local-only annotation
+instead of staying flagged "pending sync" forever.
+
 ### `App\Trackers\ValueObjects\TrackerCapabilities`
 
 | Tracker | Labels | Priority | Assignee | Parent link | Item types | Max description size |

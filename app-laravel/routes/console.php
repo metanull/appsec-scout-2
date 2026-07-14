@@ -20,15 +20,18 @@ use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\Attachment;
 use App\Models\SecurityContainer;
+use App\Models\SecurityEvent;
 use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
+use App\Sync\PendingSyncResolver;
 use App\Sync\SystemContainerUpserter;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Triage\CodesearchService;
 use App\Users\UserAdminService;
 use GuzzleHttp\Exception\ClientException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -902,6 +905,48 @@ Artisan::command('vault:list', function (): int {
 
     return self::SUCCESS;
 })->purpose('List every system-scoped key currently stored in the vault, keys only, not values');
+
+Artisan::command('events:recompute-pending-sync', function (SourceRegistry $sources, PendingSyncResolver $resolver): int {
+    $resolved = 0;
+    $skippedNoSource = 0;
+    $skippedMisconfigured = 0;
+
+    SecurityEvent::query()
+        ->where('is_dirty', true)
+        ->orderBy('id')
+        ->chunkById(200, function (Collection $events) use ($sources, $resolver, &$resolved, &$skippedNoSource, &$skippedMisconfigured): void {
+            foreach ($events as $event) {
+                $source = $sources->find((string) $event->source_id);
+
+                if (! $source instanceof Source) {
+                    $skippedNoSource++;
+
+                    continue;
+                }
+
+                $capabilities = $source->capabilities();
+
+                if ($resolver->hasPushableChange($event, $capabilities)) {
+                    continue;
+                }
+
+                if ($resolver->resolveUnpushableChange($event, $source, $capabilities, null)) {
+                    $resolved++;
+                } else {
+                    $skippedMisconfigured++;
+                }
+            }
+        });
+
+    $this->info(sprintf(
+        'Resolved %d event(s) previously stuck pending sync as local-only. Skipped %d (source not registered), %d (misconfigured capability, left dirty for review).',
+        $resolved,
+        $skippedNoSource,
+        $skippedMisconfigured,
+    ));
+
+    return self::SUCCESS;
+})->purpose('One-off backfill for events dirtied under the pre-fix logic, where a severity-only or comment-only change could never be pushed and stayed flagged pending sync forever. Leaves a system note + ErrorLog warning on each event it resolves, matching what PushEventStatesJob now does for new changes going forward. Safe to re-run — already-resolved events are no longer dirty and are skipped by the query.');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();

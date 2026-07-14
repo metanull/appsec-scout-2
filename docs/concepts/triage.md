@@ -55,21 +55,37 @@ permissions reviews and pushes them. The page groups dirty events by Source and 
 `Source::pushEventState($event)`. On success it clears `pending_state`/`pending_comment` and
 sets `state = pending_state`.
 
-Behavior worth knowing when reading this flow:
+Behavior worth knowing when reading this flow — `App\Sync\PendingSyncResolver` (shared by
+`PushEventStatesJob` and the one-off `events:recompute-pending-sync` backfill command) decides,
+for every dirty event handed to a sync run, whether it actually has something pushable for its
+Source:
 
-- A pending **comment**, staged by itself (not alongside a state change), rides along as part of
-  the *next* state-change push — there is no independent "push a comment" call. If a user only
-  ever adds standalone comments without changing state, `pending_state` stays null and
-  `PushEventStatesJob` always skips that event; it will show as pending on `Admin -> Pending Sync`
-  indefinitely.
-- A pending **severity** change is not cleared by `PushEventStatesJob` at all — no shipped
-  Source declares `canUpdateSeverity: true` (see the capability matrix in
-  [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md#capability-matrices)),
-  so a severity change is effectively a local annotation today, regardless of how it's staged.
-- `SourceCapabilities` (`canUpdateState`/`canUpdateSeverity`/`canAddComments`) exists as a
-  declared-per-Source flag set, but the Triage UI does not currently consult it to decide what
-  to show — visibility is driven purely by the `alerts.edit`/`alerts.bulk-edit` permissions, the
-  same way regardless of which Source an alert came from.
+- A staged **state** change (`pending_state`) is always pushable — every shipped Source declares
+  `canUpdateState: true` — and is handled exactly as before: `PushEventStatesJob` calls
+  `Source::pushEventState($event)`, and on success clears `pending_state`/`pending_comment` and
+  sets `state = pending_state`.
+- A pending **severity** change is not pushable on any shipped Source today (no Source declares
+  `canUpdateSeverity: true` — see the capability matrix in
+  [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md#capability-matrices)
+  and the full per-source detail in
+  [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)). Rather than
+  leaving the event flagged "pending sync" forever, the sync run resolves it as **local-only**:
+  it leaves a system-authored note on the alert's own Comments tab explaining why (visible right
+  where an operator would look, not as a warning at edit time), logs an `ErrorLog` warning, and
+  clears `is_dirty` — but `pending_severity` itself is left untouched, so the staged value stays
+  visible as a durable local annotation. If a future Source ever adds `canUpdateSeverity: true`,
+  this resolves the normal way instead (attempt the push, clear on success). Because of this, the
+  alert page's "Pending Sync" section stays visible whenever `pending_severity` is set, even after
+  `is_dirty` clears — not just while genuinely awaiting a push.
+- A standalone **comment** (staged by itself, not alongside a state/severity change) gets the
+  identical local-only treatment — no Source can push a comment independent of a state/severity
+  change (a hard upstream API constraint on all three sources, not an appsec-scout gap; see
+  [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)), so it's
+  resolved the same way: a system note, an `ErrorLog` warning, `is_dirty` cleared.
+- `SourceCapabilities` isn't consulted by the Triage UI at edit time — "Change severity" and "Add
+  comment" are available identically regardless of Source, gated purely by `alerts.edit`, by
+  design: the local-first model always allows a local edit; the "this can't push anywhere" fact
+  is only surfaced later, when a sync run actually resolves it, not as a warning while editing.
 
 ## Commenting
 
