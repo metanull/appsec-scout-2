@@ -3,6 +3,7 @@
 namespace App\Sync;
 
 use App\Audit\Recorder;
+use App\Models\Enums\EventSeverity;
 use App\Models\ErrorLog;
 use App\Models\EventComment;
 use App\Models\SecurityEvent;
@@ -82,9 +83,11 @@ final class PendingSyncResolver
 
     public function unsupportedSeverityNote(SecurityEvent $event, Source $source): string
     {
+        $pendingSeverity = $event->getAttribute('pending_severity');
+
         return sprintf(
             'Severity change to "%s" could not be pushed: %s does not support updating alert severity. This stays a local-only annotation.',
-            $event->pending_severity?->value,
+            $pendingSeverity instanceof EventSeverity ? $pendingSeverity->value : $pendingSeverity,
             $source->displayName(),
         );
     }
