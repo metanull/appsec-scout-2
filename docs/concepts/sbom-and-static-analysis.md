@@ -149,6 +149,13 @@ There is also no permission gate on running it: Artisan commands aren't checked 
 permissions, so the security boundary is simply "who can exec into the `app` container" — the
 same trust model as any other console command.
 
+The AzDO PAT it uses to browse projects/repositories follows the same explicit-or-system-credential
+resolution as `triage:codesearch` and `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis`: pass `--pat=` to
+use a specific token for one run, or omit it to use the `azdo.pat` system credential (the AzDO
+Source's own ingestion credential, not the AzDO Repos `azdo-repos.pat` used for code search/clone
+access). The underlying `AzDoSource` already fails fast with a clear error if neither is available
+or the token is rejected.
+
 It reuses the exact same upsert machinery the normal AzDO Source fetch cycle uses
 (`SystemContainerUpserter`, keyed on `source_id`+`source_system_id` for systems and
 `software_system_id`+`source_container_id` for containers), so the `SoftwareSystem` rows it

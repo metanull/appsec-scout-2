@@ -68,6 +68,18 @@ it('applies project and repository filters', function () {
         ->and(SoftwareSystem::query()->where('source_system_id', 'proj-1')->exists())->toBeTrue();
 });
 
+it('accepts an explicit --pat override instead of the stored system credential', function () {
+    $source = azdoFakeSource()->withSystems(new SystemDto('proj-1', 'TelCodes'));
+
+    config(['integration_settings.azdo.enabled' => true]);
+    $this->app->bind(AzDoSource::class, fn () => $source);
+
+    $this->artisan('assets:sync-azdo-projects', ['--pat' => 'explicit-pat'])
+        ->assertSuccessful();
+
+    expect(SoftwareSystem::query()->where('source_id', 'azdo')->count())->toBe(1);
+});
+
 it('leaves an already-linked software system alone and reports zero new assets', function () {
     $asset = SoftwareAsset::factory()->create(['name' => 'Pre-existing']);
     SoftwareSystem::factory()->create([

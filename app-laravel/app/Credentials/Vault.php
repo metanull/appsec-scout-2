@@ -15,6 +15,9 @@ class Vault
 
     private bool $scopedOwnerIsStrict = false;
 
+    /** @var array<string, string> */
+    private array $valueOverrides = [];
+
     public function __construct(
         private readonly Recorder $recorder,
         private readonly CredentialResolver $resolver,
@@ -22,6 +25,10 @@ class Vault
 
     public function get(string $key, ?int $userId, bool $strict = false): ?string
     {
+        if (array_key_exists($key, $this->valueOverrides)) {
+            return $this->valueOverrides[$key];
+        }
+
         $credential = $this->resolveCredential($key, $userId, $strict);
 
         return $this->credentialValue($credential);
@@ -103,6 +110,29 @@ class Vault
             $this->hasScopedOwner = $previousHasScopedOwner;
             $this->scopedOwnerId = $previousScopedOwnerId;
             $this->scopedOwnerIsStrict = $previousScopedOwnerIsStrict;
+        }
+    }
+
+    /**
+     * Run a callback where `get()` returns the given values for the given keys instead of
+     * resolving them from stored credentials, e.g. for an operator-supplied credential that
+     * overrides the system vault for a single command invocation without persisting it.
+     *
+     * @template TReturn
+     *
+     * @param  array<string, string>  $overrides
+     * @param  callable(): TReturn  $callback
+     * @return TReturn
+     */
+    public function runWithOverrides(array $overrides, callable $callback): mixed
+    {
+        $previousOverrides = $this->valueOverrides;
+        $this->valueOverrides = array_merge($this->valueOverrides, $overrides);
+
+        try {
+            return $callback();
+        } finally {
+            $this->valueOverrides = $previousOverrides;
         }
     }
 

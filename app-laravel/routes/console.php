@@ -78,11 +78,21 @@ Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin}
     return self::SUCCESS;
 })->purpose('Create the first AppSec Scout admin account when no users exist');
 
-Artisan::command('triage:codesearch {pat} {search} {--scope=} {--attach-to=}', function (): int {
-    $pat = (string) $this->argument('pat');
+Artisan::command('triage:codesearch {search} {--pat=} {--scope=} {--attach-to=}', function (Vault $vault): int {
     $search = (string) $this->argument('search');
     $scope = $this->option('scope');
     $attachTo = $this->option('attach-to');
+
+    $patOption = $this->option('pat');
+    $pat = is_string($patOption) && $patOption !== ''
+        ? $patOption
+        : $vault->get('azdo-repos.pat', null, true);
+
+    if (! is_string($pat) || $pat === '') {
+        $this->error('AzDO PAT not provided via --pat, and no system credential "azdo-repos.pat" is configured.');
+
+        return 1;
+    }
 
     try {
         $result = app(CodesearchService::class)->run(
@@ -183,10 +193,11 @@ Artisan::command(
 )->purpose('Import a file (SBOM, dependency report, HTTP headers, pipeline run, ...) as an attachment on a software system or container');
 
 Artisan::command(
-    'assets:sync-azdo-projects {--project-filter=} {--repo-filter=}',
-    function (SystemIntegrationRuntime $runtime, SystemContainerUpserter $upserter, AzDoProjectLinker $linker): int {
+    'assets:sync-azdo-projects {--pat=} {--project-filter=} {--repo-filter=}',
+    function (SystemIntegrationRuntime $runtime, SystemContainerUpserter $upserter, AzDoProjectLinker $linker, Vault $vault): int {
         $projectFilter = $this->option('project-filter');
         $repoFilter = $this->option('repo-filter');
+        $patOption = $this->option('pat');
 
         $matches = static function (?string $pattern, string $value): bool {
             if (! is_string($pattern) || $pattern === '') {
@@ -207,7 +218,7 @@ Artisan::command(
             'repository_mappings_created' => 0,
         ];
 
-        try {
+        $runSync = function () use ($runtime, $matches, $projectFilter, $repoFilter, $upserter, $linker, &$counts): void {
             $runtime->runSource(AzDoNormalizer::SOURCE_ID, function (Source $source) use ($matches, $projectFilter, $repoFilter, $upserter, $linker, &$counts): void {
                 foreach ($source->fetchSystems() as $systemDto) {
                     if (! $matches($projectFilter, $systemDto->name)) {
@@ -243,6 +254,14 @@ Artisan::command(
                     }
                 }
             });
+        };
+
+        try {
+            if (is_string($patOption) && $patOption !== '') {
+                $vault->runWithOverrides(['azdo.pat' => $patOption], $runSync);
+            } else {
+                $runSync();
+            }
         } catch (RuntimeException $exception) {
             $this->error($exception->getMessage());
 

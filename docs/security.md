@@ -83,7 +83,8 @@ Security posture:
 
 - no shell-string execution; outbound HTTP uses the configured Laravel HTTP client
 - work item data is attached to the alert record and never executed
-- the operator's PAT is resolved from the credential vault and never logged
+- the PAT is either passed explicitly via `--pat` for a single run or resolved from the system
+  credential vault; it is never logged
 
 ## Audit Guarantees
 

@@ -128,9 +128,12 @@ three (Asset auto-creation, Tracker Project Link auto-learning, Local Finding co
 
 `triage:codesearch` is a manual **Artisan command**, not a Filament button — there is no
 "search code" action anywhere in the Triage UI today. An operator runs it directly
-(`php artisan triage:codesearch {pat} {search} --scope= --attach-to=`), optionally attaching the
+(`php artisan triage:codesearch {search} --pat= --scope= --attach-to=`), optionally attaching the
 JSON result to an alert as an Attachment (visible on that alert's Attachments tab, "Created by"
-shown as `triage:codesearch` since there's no interactive user attached to a CLI run). The
+shown as `triage:codesearch` since there's no interactive user attached to a CLI run). The PAT is
+resolved the same way `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` resolve theirs: `--pat` is used
+if given, otherwise the command falls back to the `azdo-repos.pat` system credential; if neither is
+available the command fails fast with a clear error instead of attempting the search. The
 `triage.run-codesearch` permission is seeded on the Triage role and above, but is not currently
 checked anywhere in the code — running the command is gated only by having a shell on the `app`
 container, not by an in-app permission. `App\Triage\RunCodesearchJob` (a queued wrapper for the
