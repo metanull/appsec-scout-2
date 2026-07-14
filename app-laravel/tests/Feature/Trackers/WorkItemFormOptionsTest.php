@@ -9,6 +9,7 @@ use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\WorkItemFormOptions;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Illuminate\Support\Facades\Auth;
 use Tests\Fakes\FakeTracker;
@@ -113,6 +114,33 @@ it('prefills link form tracker and project from github container mapping default
         ->and($project)->toBeInstanceOf(Select::class)
         ->and($tracker->getDefaultState())->toBe('github')
         ->and($project->getDefaultState())->toBe('octo-org/appsec-scout');
+});
+
+it('surfaces an ambiguity warning in the create and link forms instead of silently no-opping', function () {
+    $user = User::factory()->create();
+    Auth::login($user);
+
+    $system = SoftwareSystem::factory()->create();
+    $event = SecurityEvent::factory()->create([
+        'software_system_id' => $system->id,
+        'container_id' => null,
+    ]);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'ONE', 'is_default' => false]);
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'TWO', 'is_default' => false]);
+
+    $createSchema = app(WorkItemFormOptions::class)->createSchema([$event]);
+    $linkSchema = app(WorkItemFormOptions::class)->linkSchema([$event]);
+
+    foreach (['create' => $createSchema, 'link' => $linkSchema] as $schema) {
+        $notice = collect($schema)->first(fn (mixed $component): bool => $component instanceof Placeholder && $component->getName() === 'tracker_ambiguity_notice');
+
+        assert($notice instanceof Placeholder);
+
+        expect($notice->isVisible())->toBeTrue()
+            ->and($notice->getContent())->toContain('system level')
+            ->and($notice->getContent())->toContain('none of them is marked as the default');
+    }
 });
 
 it('returns no grouped default when selected alerts resolve to conflicting projects', function () {

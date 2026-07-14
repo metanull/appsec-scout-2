@@ -14,10 +14,8 @@ Every one of these four mechanisms follows the same conservative rules, even tho
 was written by referencing the others:
 
 - **Confidence-gated, never guesses.** Each one either finds a confident match/decision or does
-  nothing — there is no fuzzy, scored, "probably" match anywhere. (There is also no confidence
-  *score* stored anywhere, and no suggestion queue an operator reviews and accepts/rejects — see
-  [Known Documentation Drift](asset-system-container-alert.md#known-documentation-drift) for why
-  that's worth stating explicitly.)
+  nothing — there is no fuzzy, scored, "probably" match anywhere. There is also no confidence
+  *score* stored anywhere, and no suggestion queue an operator reviews and accepts/rejects.
 - **Additive-only — never overwrites a manual decision.** All four check first whether a
   relationship already exists and back off if it does. Automation only ever fills a gap; it never
   second-guesses something a human (or an earlier automated pass) already decided.

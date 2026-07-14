@@ -1,5 +1,6 @@
 <?php
 
+use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Resources\SoftwareAssetResource;
 use App\Filament\Resources\SoftwareAssetResource\Pages\ViewSoftwareAsset;
 use App\Filament\Resources\SoftwareAssetResource\RelationManagers\SoftwareSystemsRelationManager;
@@ -56,6 +57,10 @@ it('lets plan users create software assets and link software systems', function 
         ->callTableAction('unlink', $system->fresh());
 
     expect($system->fresh()->software_asset_id)->toBeNull();
+});
+
+it('does not register tracker project links at the asset level, since they are never resolved for an alert', function () {
+    expect(SoftwareAssetResource::getRelations())->not->toContain(TrackerProjectLinksRelationManager::class);
 });
 
 function twoFactorUser(): User
