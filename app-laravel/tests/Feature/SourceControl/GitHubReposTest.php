@@ -5,6 +5,7 @@ use App\SourceControl\GitHub\GitHubRepos;
 use App\Trackers\GitHub\GitHubClient;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 
 function injectGitHubReposClient(GitHubRepos $provider, GitHubClient $client): void
@@ -41,13 +42,18 @@ it('tests github-repos connectivity successfully', function () {
 });
 
 it('reports github-repos connection failure', function () {
+    // Guzzle only attaches its default http_errors middleware when it builds its own
+    // handler; a bare MockHandler must be wrapped in HandlerStack::create() to get the
+    // same behavior, otherwise a 401 response is returned instead of thrown.
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(401, [], '{"message":"Bad credentials"}'),
+    ]));
+
     $provider = new GitHubRepos(app(Vault::class));
     injectGitHubReposClient($provider, new GitHubClient(
         'token',
         'https://api.github.com',
-        new Client(['handler' => new MockHandler([
-            new Response(401, [], '{"message":"Bad credentials"}'),
-        ])]),
+        new Client(['handler' => $stack]),
     ));
 
     $result = $provider->testConnection();
