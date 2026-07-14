@@ -130,7 +130,7 @@ app/
   SourceControl/     # Source Control providers (AzDO Repos, GitHub Repos) — Contracts, Registry
   Integrations/      # Integration scheduling and dispatch
   Sync/              # Synchronization logic
-  Triage/            # Triage services (CodesearchService, TrivyService, BfgService)
+  Triage/            # Triage services (CodesearchService, StateChanger, SeverityChanger, CommentManager)
   Credentials/       # Credential vault and cipher implementations
   Audit/             # AuditLog recorder
   SecurityEvents/    # Event linking and triage context

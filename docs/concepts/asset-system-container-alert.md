@@ -10,15 +10,10 @@ Systems/Containers/Events come from), [docs/concepts/sbom-and-static-analysis.md
 Repository Mappings, and Curated Links attach to this hierarchy and drive default/gating
 behavior elsewhere in the app).
 
-## Known Documentation Drift
-
-Before the model itself: `CLAUDE.md` previously listed `SoftwareSystemLink`, `SecurityContainerLink`,
-and `InferenceSuggestion` as implemented Filament resources. **None of the three exist in this
-codebase** — no model, no migration, no Filament resource, nothing. That documentation has been
-corrected. Cross-source grouping today works entirely through the plain mechanism described
-below (a nullable foreign key plus manual attach/detach, and one deterministic AzDO-specific
-auto-linker) — there is no link-table, no confidence-scored suggestion queue, and no
-accept/reject workflow anywhere in the code.
+Cross-source grouping works entirely through the plain mechanism described below (a nullable
+foreign key plus manual attach/detach, and one deterministic AzDO-specific auto-linker) — there
+is no link-table, no confidence-scored suggestion queue, and no accept/reject workflow anywhere
+in the code.
 
 ## The Hierarchy and Its Cardinalities
 
