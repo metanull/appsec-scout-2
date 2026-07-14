@@ -160,7 +160,7 @@ class LocalFindingResource extends Resource
                     ->label('Severity')
                     ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())
                     ->badge()
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('severity', $direction))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('severity', $direction === 'desc' ? 'desc' : 'asc'))
                     ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
                 TextColumn::make('title')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('file_path')->label('Location')

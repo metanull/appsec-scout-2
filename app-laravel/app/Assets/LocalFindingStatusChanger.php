@@ -23,7 +23,7 @@ final class LocalFindingStatusChanger
         DB::transaction(function () use ($author, $comment, $finding, $newStatus): void {
             $this->commentManager->add($finding, $author, sprintf('[Status change: %s] %s', $newStatus->value, $comment));
 
-            $previousStatus = $finding->status;
+            $previousStatus = $finding->getAttribute('status');
 
             $finding->forceFill([
                 'status' => $newStatus,

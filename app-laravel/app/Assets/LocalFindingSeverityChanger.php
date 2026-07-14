@@ -23,7 +23,7 @@ final class LocalFindingSeverityChanger
         DB::transaction(function () use ($author, $comment, $finding, $newSeverity): void {
             $this->commentManager->add($finding, $author, sprintf('[Severity change: %s] %s', $newSeverity->value, $comment));
 
-            $previousSeverity = $finding->overridden_severity;
+            $previousSeverity = $finding->getAttribute('overridden_severity');
 
             $finding->forceFill([
                 'overridden_severity' => $newSeverity,

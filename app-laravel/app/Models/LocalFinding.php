@@ -90,7 +90,9 @@ class LocalFinding extends Model
      */
     public function effectiveSeverityLabel(): string
     {
-        return $this->overridden_severity?->name ?? strtoupper((string) $this->severity);
+        $severity = $this->getAttribute('overridden_severity');
+
+        return $severity instanceof EventSeverity ? $severity->name : strtoupper((string) $this->severity);
     }
 
     public static function severityColor(?string $severity): string
