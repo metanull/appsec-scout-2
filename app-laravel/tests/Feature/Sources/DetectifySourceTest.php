@@ -45,6 +45,12 @@ it('fetches systems and findings from fixtures', function () {
         ->and($history[0]['request']->getHeaderLine('X-Detectify-Key'))->toBe('api-key');
 });
 
+it('does not claim to support adding comments', function () {
+    $source = new DetectifySource(app(Vault::class));
+
+    expect($source->capabilities()->canAddComments)->toBeFalse();
+});
+
 it('pushes event state with expected patch body', function () {
     $history = [];
     $stack = HandlerStack::create(new MockHandler([

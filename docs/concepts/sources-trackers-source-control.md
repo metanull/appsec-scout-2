@@ -97,11 +97,15 @@ implementation can do. Source Control has no equivalent (see below).
 | --- | :---: | :---: | :---: | :---: | --- |
 | AzDO Advanced Security | Yes | Yes | No | Yes | Vulnerability, Code Quality, Dependency, Secret, License |
 | AppScan on Cloud (ASoC) | Yes | Yes | No | Yes | Vulnerability, Dependency, Secret, Misconfiguration |
-| Detectify | No | Yes | No | Yes | Vulnerability, Misconfiguration |
+| Detectify | No | Yes | No | No | Vulnerability, Misconfiguration |
 
 No implemented Source sets `canUpdateSeverity: true` today — severity is not currently pushable
 to any connected Source, regardless of how a change is staged in Triage (see
 [docs/concepts/triage.md](triage.md)).
+
+Detectify's status-change endpoints (`setfixedstatus`, `setacceptedriskstatus`,
+`setfalsepositivestatus`, `unsetfixedstatus`) take no comment/note field — there is no way to
+attach a comment to a Detectify status change, so `canAddComments` is `false`.
 
 ### `App\Trackers\ValueObjects\TrackerCapabilities`
 

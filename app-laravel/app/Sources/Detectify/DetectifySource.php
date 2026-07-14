@@ -40,7 +40,7 @@ final class DetectifySource implements Source
             hasContainers: false,
             canUpdateState: true,
             canUpdateSeverity: false,
-            canAddComments: true,
+            canAddComments: false,
             supportedEventTypes: [
                 EventType::Vulnerability,
                 EventType::Misconfiguration,
@@ -122,7 +122,6 @@ final class DetectifySource implements Source
                 $domainToken,
                 $event->source_event_id,
                 DetectifyNormalizer::mapStateToSource($targetState),
-                $event->pending_comment,
             );
 
             return PushResult::success();
