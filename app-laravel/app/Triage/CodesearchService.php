@@ -22,8 +22,8 @@ class CodesearchService
         ?int $attachToEventId = null,
         ?int $createdByUserId = null,
     ): CodesearchRunResult {
-        $organization = $this->vault->get('azdo.organization', null)
-            ?? throw new \RuntimeException('AzDO organization not configured');
+        $organization = $this->vault->get('azdo-repos.organization', null)
+            ?? throw new \RuntimeException('AzDO Repos organization not configured');
 
         $client = $this->clientFactory->make($organization, $pat);
         $result = new CodesearchRunResult($client->search($searchText, $this->parseScope($scope)));

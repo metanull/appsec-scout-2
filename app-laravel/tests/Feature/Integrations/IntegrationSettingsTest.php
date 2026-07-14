@@ -8,6 +8,7 @@ use App\Integrations\IntegrationSettingsRepository;
 use App\Models\IntegrationSetting;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
+use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\CredentialResolver;
 use App\Sync\FetchSourceJob;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
+use Tests\Fakes\FakeSourceControlProvider;
 use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
@@ -42,6 +44,20 @@ it('exposes all integrations while enabled filters use database-backed settings'
         ->and(collect($sources->enabled())->map->id()->all())->not->toContain('fake')
         ->and(collect($trackers->all())->map->id()->all())->toContain('fake-tracker')
         ->and(collect($trackers->enabled())->map->id()->all())->toContain('fake-tracker');
+});
+
+it('exposes source control providers alongside sources and trackers', function () {
+    IntegrationSetting::query()->updateOrCreate(
+        ['integration_kind' => 'source_control', 'integration_id' => 'fake-repos'],
+        ['enabled' => true, 'fetch_interval_minutes' => 30],
+    );
+
+    $sourceControls = app(SourceControlRegistry::class);
+
+    expect(collect($sourceControls->all())->map->id()->all())->toContain('fake-repos')
+        ->and(collect($sourceControls->all())->map->id()->all())->toContain('azdo-repos')
+        ->and(collect($sourceControls->all())->map->id()->all())->toContain('github-repos')
+        ->and(collect($sourceControls->enabled())->map->id()->all())->toContain('fake-repos');
 });
 
 it('dispatches only due integrations from database-backed settings', function () {
@@ -105,6 +121,53 @@ it('saves integration settings and records an audit row', function () {
         ->service_user_id->toBe($serviceUser->id);
 
     expect(AuditLog::query()->where('action', 'integration.settings_updated')->exists())->toBeTrue();
+});
+
+it('saves source control integration settings and records an audit row', function () {
+    $admin = enrolledAdmin();
+    $serviceUser = User::factory()->create(['name' => 'Service User']);
+    IntegrationSetting::query()->updateOrCreate(
+        ['integration_kind' => 'source_control', 'integration_id' => 'fake-repos'],
+        ['enabled' => false, 'fetch_interval_minutes' => 30, 'service_user_id' => null],
+    );
+
+    Livewire::actingAs($admin)
+        ->test(IntegrationSettingsPage::class)
+        ->set('settings.source_control:fake-repos.enabled', true)
+        ->set('settings.source_control:fake-repos.fetch_interval_minutes', 12)
+        ->set('settings.source_control:fake-repos.service_user_id', (string) $serviceUser->id)
+        ->call('saveIntegration', 'source_control:fake-repos');
+
+    expect(IntegrationSetting::query()->where('integration_kind', 'source_control')->where('integration_id', 'fake-repos')->first())
+        ->not->toBeNull()
+        ->enabled->toBeTrue()
+        ->fetch_interval_minutes->toBe(12)
+        ->service_user_id->toBe($serviceUser->id);
+
+    expect(AuditLog::query()->where('action', 'integration.settings_updated')->exists())->toBeTrue();
+});
+
+it('tests a source control connection with system credentials and records an audit row', function () {
+    $admin = enrolledAdmin();
+
+    IntegrationSetting::query()->updateOrCreate(
+        ['integration_kind' => 'source_control', 'integration_id' => 'fake-repos'],
+        ['enabled' => true, 'fetch_interval_minutes' => 30],
+    );
+
+    $record = IntegrationSetting::query()
+        ->where('integration_kind', 'source_control')
+        ->where('integration_id', 'fake-repos')
+        ->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(IntegrationSettingsPage::class)
+        ->callTableAction('testConnection', $record);
+
+    $log = AuditLog::query()->where('action', 'integration.connection_tested')->latest('id')->first();
+
+    expect($log)->not->toBeNull()
+        ->and($log?->payload_json['integration_kind'] ?? null)->toBe('source_control');
 });
 
 it('tests a connection with system credentials and records an audit row', function () {
@@ -209,6 +272,7 @@ function bindFakeIntegrationsForSettings(): void
     config([
         'integration_settings.fake.enabled' => false,
         'integration_settings.fake-tracker.enabled' => false,
+        'integration_settings.fake-repos.enabled' => false,
     ]);
 
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);
@@ -217,8 +281,12 @@ function bindFakeIntegrationsForSettings(): void
     app()->bind('appsec-scout.tracker.fake', fn () => new FakeTracker);
     app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
 
+    app()->bind('appsec-scout.source-control.fake', fn () => new FakeSourceControlProvider);
+    app()->tag(['appsec-scout.source-control.fake'], 'appsec-scout.source-control');
+
     app()->forgetInstance(SourceRegistry::class);
     app()->forgetInstance(TrackerRegistry::class);
+    app()->forgetInstance(SourceControlRegistry::class);
     app()->forgetInstance(IntegrationSettingsRepository::class);
 }
 

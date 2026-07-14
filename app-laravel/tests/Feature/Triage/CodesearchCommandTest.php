@@ -17,7 +17,7 @@ it('fails when required arguments are missing', function () {
 });
 
 it('runs code search and attaches the json payload to an alert', function () {
-    app(Vault::class)->set('azdo.organization', null, 'testorg');
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
     app()->bind(CodesearchClientFactory::class, function () {
         $payload = [
@@ -71,7 +71,7 @@ it('runs code search and attaches the json payload to an alert', function () {
 });
 
 it('rejects invalid scope values', function () {
-    app(Vault::class)->set('azdo.organization', null, 'testorg');
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
     $this->artisan('triage:codesearch', [
         'pat' => 'top-secret-pat',
