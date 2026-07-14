@@ -96,8 +96,8 @@ Both flows check that the acting user has a usable personal tracker credential f
 [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md)); if not,
 they're redirected to `Profile -> Integrations` instead of proceeding.
 
-Both forms also try to pre-select a tracker and project. That default — and, separately, whether
-"Find existing work items" (below) does anything at all — comes from a `TrackerProjectLink`
+Both forms also try to pre-select a tracker and project. That default — and, separately, how
+narrowly scoped "Find existing work items" (below) searches — comes from a `TrackerProjectLink`
 attached to the alert's System or Container, with its own precise Container-then-System fallback
 chain and an auto-learning mechanism that records one after every create/link action. See
 [docs/concepts/links-and-defaults.md](links-and-defaults.md) for the full resolution logic.
@@ -110,11 +110,13 @@ operator manually searching:
 
 - **Per-alert, on demand** — the alert detail page's "Find existing work items" action runs
   `ReconciliationService::reconcileEvent()` synchronously, scoped to the tracker projects linked
-  to that alert's system/container. Gated by `work-items.link` or `work-items.sync`. This is a
-  Triage action — and it's also one of the clearest examples of a feature that's silently
-  disabled without the right data present: with no `TrackerProjectLink` on the alert's System or
-  Container, the button shows an info notification and does nothing (see
-  [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping--and-a-uiservice-mismatch-worth-knowing-about)).
+  to that alert's system/container when one exists. Gated by `work-items.link` or
+  `work-items.sync`. This is a Triage action. With no `TrackerProjectLink` on the alert's System or
+  Container, the button still runs — it shows a warning notification ("Searching every configured
+  tracker project instead of a scoped one — results may be less precise.") and falls back to
+  searching every configured tracker project, exactly matching what the service itself does when
+  invoked without a scope (see
+  [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping)).
 - **Whole-database, in the background** — `Admin -> Operations`'s "Reconcile all tracker links"
   action queues `ReconcileAllJob` across every alert. Gated by `admin.queue`/`work-items.sync`.
   This is an Ops-page action, not a Triage one, even though it uses the identical underlying

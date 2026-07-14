@@ -37,8 +37,9 @@ was written by referencing the others:
 - **Asset auto-linking** (AzDO only) — [docs/concepts/asset-system-container-alert.md](asset-system-container-alert.md#software-asset)
 - **Tracker project auto-learning** — [docs/concepts/links-and-defaults.md](links-and-defaults.md#how-links-get-created-manual-or-auto-learned)
 - **Work item reconciliation** — [docs/concepts/triage.md](triage.md#reconciliation-the-same-linking-mechanism-two-triggers)
-  and [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping--and-a-uiservice-mismatch-worth-knowing-about)
-  (the scoping/fallback nuance between the UI button and the underlying service)
+  and [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping)
+  (how the UI button and the underlying service both fall back to searching every configured
+  tracker project when the alert's System/Container has no scoped link)
 - **Local Finding correlation** — [docs/concepts/asset-system-container-alert.md](asset-system-container-alert.md#correlation-linking-a-local-finding-back-to-an-alert)
 
 ## What appsec-scout Does Not Do
