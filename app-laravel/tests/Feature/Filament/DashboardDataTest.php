@@ -145,32 +145,49 @@ it('returns null duration when timestamps are missing', function () {
     expect(DashboardData::durationSeconds($run))->toBeNull();
 });
 
-it('formats counts with known keys compactly', function () {
-    expect(DashboardData::formatCounts([
-        'systems_created' => 1,
-        'systems_updated' => 0,
-        'containers_created' => 0,
-        'containers_updated' => 2,
-        'events_created' => 15,
-        'events_updated' => 4,
-        'events_pushed' => 15,
-        'events_failed' => 1,
-    ]))->toBe('sys +1/~0, ctr +0/~2, evt +15/~4, pushed 15, failed 1');
+it('formats a successful fetch run as alerts retrieved with no warnings or errors', function () {
+    $run = new SyncRun([
+        'status' => 'success',
+        'counts_json' => [
+            'systems_created' => 1,
+            'systems_updated' => 0,
+            'containers_created' => 0,
+            'containers_updated' => 2,
+            'events_created' => 15,
+            'events_updated' => 4,
+        ],
+    ]);
+
+    expect(DashboardData::formatCounts($run))->toBe('19 alerts retrieved, 0 warning(s), 0 error(s)');
 });
 
-it('formats empty counts array as zero changes', function () {
-    expect(DashboardData::formatCounts([]))->toBe('0 changes');
+it('formats a failed fetch run with one error', function () {
+    $run = new SyncRun([
+        'status' => 'failure',
+        'counts_json' => ['events_created' => 2, 'events_updated' => 0],
+    ]);
+
+    expect(DashboardData::formatCounts($run))->toBe('2 alerts retrieved, 0 warning(s), 1 error(s)');
 });
 
-it('formats null counts as no counts recorded', function () {
-    expect(DashboardData::formatCounts(null))->toBe('No counts recorded');
+it('formats a run with no counts recorded yet as all zero', function () {
+    $run = new SyncRun(['status' => 'running', 'counts_json' => []]);
+
+    expect(DashboardData::formatCounts($run))->toBe('0 alerts retrieved, 0 warning(s), 0 error(s)');
 });
 
-it('formats counts with only events changed', function () {
-    expect(DashboardData::formatCounts([
-        'events_created' => 3,
-        'events_updated' => 0,
-    ]))->toBe('evt +3/~0');
+it('formats a push run using its succeeded/local-only/failed counts', function () {
+    $run = new SyncRun([
+        'status' => 'success',
+        'counts_json' => [
+            'events_succeeded' => 5,
+            'events_failed' => 1,
+            'events_skipped' => 0,
+            'events_resolved_local_only' => 2,
+        ],
+    ]);
+
+    expect(DashboardData::formatCounts($run))->toBe('5 alerts retrieved, 2 warning(s), 1 error(s)');
 });
 
 it('groups open alerts by source and work item linkage', function () {

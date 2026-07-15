@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Widgets\Support\DashboardData;
+use App\Models\SyncRun;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
@@ -47,7 +48,7 @@ class RecentSyncRunsTableWidget extends TableWidget
                     }),
                 TextColumn::make('counts_json')
                     ->label('Counts')
-                    ->formatStateUsing(fn (mixed $state): string => DashboardData::formatCounts($state)),
+                    ->state(fn (SyncRun $record): string => DashboardData::formatCounts($record)),
             ])
             ->defaultSort('started_at', 'desc')
             ->paginated(false);
