@@ -152,7 +152,7 @@ Panel id: `appsec-scout`, path: `/` (root). Auto-discovers resources, pages, and
 
 **Custom Pages**: IntegrationSettingsPage, OperationsPage, PendingSyncPage, ProfileIntegrationsPage, SystemCredentialsPage.
 
-**Widgets**: SecurityOverviewStats, SeverityDistributionChart, OpenAlertsBySource, RecentSyncRuns, RecentErrors, OperationsHealthStats, ReconciliationSummary.
+**Widgets**: SecurityOverviewStats, SeverityDistributionChart, OpenAlertsBySource, RecentSyncRuns, RecentErrors, OperationsHealthStats.
 
 ## Filament UI Conventions
 

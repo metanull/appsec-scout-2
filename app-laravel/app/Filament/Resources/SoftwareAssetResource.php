@@ -39,9 +39,9 @@ class SoftwareAssetResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Reader';
 
-    protected static ?int $navigationSort = 9;
+    protected static ?int $navigationSort = 12;
 
-    protected static ?string $navigationLabel = 'Software assets';
+    protected static ?string $navigationLabel = 'Software Assets';
 
     public static function canViewAny(): bool
     {

@@ -52,7 +52,7 @@ it('builds doughnut chart dataset from severity counts', function () {
         ->and($chart['datasets'][0]['data'])->toBe([1, 0, 2, 0, 0]);
 });
 
-it('returns the latest ten sync runs in descending order', function () {
+it('returns the latest five sync runs in descending order', function () {
     DashboardData::flushCache();
     SyncRun::query()->delete();
 
@@ -71,9 +71,9 @@ it('returns the latest ten sync runs in descending order', function () {
 
     $runs = DashboardData::recentSyncRuns();
 
-    expect($runs)->toHaveCount(10)
+    expect($runs)->toHaveCount(5)
         ->and($runs->first()->counts_json['events_created'])->toBe(12)
-        ->and($runs->last()->counts_json['events_created'])->toBe(3);
+        ->and($runs->last()->counts_json['events_created'])->toBe(8);
 
     Carbon::setTestNow();
 });

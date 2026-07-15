@@ -11,7 +11,10 @@ use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
 use App\Models\WorkItemLink;
 use App\Trackers\Contracts\Tracker;
+use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
+use App\Trackers\Registry as TrackerRegistry;
+use App\Trackers\TrackerProjectLinker;
 use Illuminate\Database\DatabaseManager;
 
 final class ReconciliationService
@@ -19,6 +22,8 @@ final class ReconciliationService
     public function __construct(
         private readonly OperatorIntegrationRuntime $operatorRuntime,
         private readonly SystemIntegrationRuntime $systemRuntime,
+        private readonly TrackerRegistry $trackers,
+        private readonly TrackerProjectLinker $trackerProjectLinker,
         private readonly DatabaseManager $db,
         private readonly Recorder $recorder,
     ) {}
@@ -42,6 +47,7 @@ final class ReconciliationService
         foreach ($pairs as $pair) {
             $trackerId = $pair['tracker_id'];
             $projectKey = $pair['project_key'];
+            $projectName = $pair['project_name'];
 
             try {
                 $tracker = $this->operatorRuntime->tracker($trackerId);
@@ -84,6 +90,8 @@ final class ReconciliationService
                         'operator_user_id' => $operatorUserId,
                     ]);
 
+                    $this->learnTrackerProjectLinkIfNew($event, $trackerId, $projectKey, $projectName, $operatorUserId);
+
                     $results[] = ReconciliationResult::linked($trackerId, $candidate->workItemId, [$eventId]);
                 }
             }
@@ -111,6 +119,7 @@ final class ReconciliationService
         foreach ($pairs as $pair) {
             $trackerId = $pair['tracker_id'];
             $projectKey = $pair['project_key'];
+            $projectName = $pair['project_name'];
 
             try {
                 $tracker = $this->systemRuntime->tracker($trackerId);
@@ -152,6 +161,12 @@ final class ReconciliationService
                         'scope' => 'system',
                     ]);
 
+                    $matchedEvent = SecurityEvent::query()->find($eventId);
+
+                    if ($matchedEvent instanceof SecurityEvent) {
+                        $this->learnTrackerProjectLinkIfNew($matchedEvent, $trackerId, $projectKey, $projectName, null);
+                    }
+
                     $results[] = ReconciliationResult::linked($trackerId, $candidate->workItemId, [$eventId]);
                 }
             }
@@ -160,14 +175,14 @@ final class ReconciliationService
         return $results;
     }
 
-    /** @return list<array{tracker_id: string, project_key: string}> */
+    /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
     private function scopedTrackerPairsForEvent(SecurityEvent $event): array
     {
         $softwareSystemId = $event->getAttribute('software_system_id');
         $containerId = $event->getAttribute('container_id');
 
         $query = TrackerProjectLink::query()
-            ->select(['tracker_id', 'project_key'])
+            ->select(['tracker_id', 'project_key', 'project_name'])
             ->distinct()
             ->where(function ($scope) use ($softwareSystemId, $containerId): void {
                 if (is_int($softwareSystemId)) {
@@ -190,24 +205,106 @@ final class ReconciliationService
             ->map(fn (TrackerProjectLink $link): array => [
                 'tracker_id' => (string) $link->tracker_id,
                 'project_key' => (string) $link->project_key,
+                'project_name' => $link->project_name,
             ])
             ->values()
             ->all());
     }
 
-    /** @return list<array{tracker_id: string, project_key: string}> */
+    /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
     private function allTrackerPairs(): array
     {
-        return array_values(TrackerProjectLink::query()
-            ->select(['tracker_id', 'project_key'])
+        $linkedPairs = TrackerProjectLink::query()
+            ->select(['tracker_id', 'project_key', 'project_name'])
             ->distinct()
             ->get()
             ->map(fn (TrackerProjectLink $link): array => [
                 'tracker_id' => (string) $link->tracker_id,
                 'project_key' => (string) $link->project_key,
+                'project_name' => $link->project_name,
             ])
-            ->values()
-            ->all());
+            ->all();
+
+        $seen = [];
+        $merged = [];
+
+        foreach ([...$linkedPairs, ...$this->allEnabledTrackerProjectPairs()] as $pair) {
+            $key = "{$pair['tracker_id']}\0{$pair['project_key']}";
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $merged[] = $pair;
+        }
+
+        return $merged;
+    }
+
+    /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
+    private function allEnabledTrackerProjectPairs(): array
+    {
+        $pairs = [];
+
+        foreach ($this->trackers->enabled() as $tracker) {
+            try {
+                /** @var list<ProjectDto> $projects */
+                $projects = $this->systemRuntime->runTracker(
+                    $tracker->id(),
+                    fn (Tracker $tracker): array => iterator_to_array($tracker->fetchProjects(), false),
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                continue;
+            }
+
+            foreach ($projects as $project) {
+                $pairs[] = ['tracker_id' => $tracker->id(), 'project_key' => $project->key, 'project_name' => $project->name];
+            }
+        }
+
+        return $pairs;
+    }
+
+    private function learnTrackerProjectLinkIfNew(SecurityEvent $event, string $trackerId, string $projectKey, ?string $projectName, ?int $userId): void
+    {
+        if ($this->trackerProjectLinkExists($event, $trackerId, $projectKey)) {
+            return;
+        }
+
+        $this->trackerProjectLinker->learnFromEvents([$event], $trackerId, $projectKey, $projectName, $userId);
+    }
+
+    private function trackerProjectLinkExists(SecurityEvent $event, string $trackerId, string $projectKey): bool
+    {
+        $softwareSystemId = $event->getAttribute('software_system_id');
+        $containerId = $event->getAttribute('container_id');
+
+        if (! is_int($softwareSystemId) && ! is_int($containerId)) {
+            return true;
+        }
+
+        return TrackerProjectLink::query()
+            ->where('tracker_id', $trackerId)
+            ->where('project_key', $projectKey)
+            ->where(function ($scope) use ($softwareSystemId, $containerId): void {
+                if (is_int($softwareSystemId)) {
+                    $scope->orWhere(function ($inner) use ($softwareSystemId): void {
+                        $inner->where('owner_type', SoftwareSystem::class)
+                            ->where('owner_id', $softwareSystemId);
+                    });
+                }
+
+                if (is_int($containerId)) {
+                    $scope->orWhere(function ($inner) use ($containerId): void {
+                        $inner->where('owner_type', SecurityContainer::class)
+                            ->where('owner_id', $containerId);
+                    });
+                }
+            })
+            ->exists();
     }
 
     /** @return list<int> */

@@ -28,9 +28,9 @@ class RepositoryProviderResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 27;
+    protected static ?int $navigationSort = 23;
 
-    protected static ?string $navigationLabel = 'Repository providers';
+    protected static ?string $navigationLabel = 'Repository Providers';
 
     public static function canViewAny(): bool
     {

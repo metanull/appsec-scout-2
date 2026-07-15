@@ -3,15 +3,20 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
+use App\Filament\Resources\ErrorLogResource\Pages\ViewErrorLog;
 use App\Models\ErrorLog;
 use Filament\Forms\Components\DatePicker;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 class ErrorLogResource extends Resource
@@ -22,7 +27,7 @@ class ErrorLogResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 25;
+    protected static ?int $navigationSort = 24;
 
     protected static ?string $navigationLabel = 'Errors';
 
@@ -36,9 +41,50 @@ class ErrorLogResource extends Resource
         return auth()->user()?->can('admin.errors') ?? false;
     }
 
+    public static function canView(Model $record): bool
+    {
+        return static::canViewAny();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Error')
+                ->schema([
+                    Grid::make(3)->schema([
+                        TextEntry::make('occurred_at')
+                            ->label('Occurred')
+                            ->dateTime('d M Y H:i:s'),
+                        TextEntry::make('level')
+                            ->badge()
+                            ->color(fn (string $state) => match (strtolower($state)) {
+                                'error', 'critical', 'alert', 'emergency' => 'danger',
+                                'warning' => 'warning',
+                                default => 'secondary',
+                            }),
+                        TextEntry::make('channel'),
+                        TextEntry::make('message')
+                            ->wrap()
+                            ->columnSpan(3),
+                    ]),
+                ]),
+
+            Section::make('Trace')
+                ->collapsible()
+                ->schema([
+                    TextEntry::make('trace')
+                        ->label('')
+                        ->placeholder('-')
+                        ->fontFamily('mono')
+                        ->copyable()
+                        ->columnSpanFull(),
+                ]),
+        ]);
     }
 
     public static function table(Table $table): Table
@@ -69,13 +115,15 @@ class ErrorLogResource extends Resource
                     )),
             ])
             ->defaultSort('occurred_at', 'desc')
-            ->paginated([25, 50, 100]);
+            ->paginated([25, 50, 100])
+            ->recordUrl(fn (ErrorLog $record): string => ErrorLogResource::getUrl('view', ['record' => $record]));
     }
 
     public static function getPages(): array
     {
         return [
             'index' => ListErrorLogs::route('/'),
+            'view' => ViewErrorLog::route('/{record}'),
         ];
     }
 }

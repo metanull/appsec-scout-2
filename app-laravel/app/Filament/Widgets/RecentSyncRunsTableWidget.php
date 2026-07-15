@@ -2,8 +2,10 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\SyncRunResource;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\SyncRun;
+use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
@@ -50,6 +52,13 @@ class RecentSyncRunsTableWidget extends TableWidget
                     ->label('Counts')
                     ->state(fn (SyncRun $record): string => DashboardData::formatCounts($record)),
             ])
+            ->headerActions([
+                Action::make('viewAll')
+                    ->label('View all')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->url(fn (): string => SyncRunResource::getUrl('index')),
+            ])
+            ->recordUrl(fn (SyncRun $record): string => SyncRunResource::getUrl('view', ['record' => $record]))
             ->defaultSort('started_at', 'desc')
             ->paginated(false);
     }

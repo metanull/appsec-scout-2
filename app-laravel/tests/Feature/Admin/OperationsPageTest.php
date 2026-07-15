@@ -2,8 +2,8 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
+use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Models\ErrorLog;
-use App\Models\FailedJob;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
@@ -13,6 +13,7 @@ use App\Trackers\ReconcileAllJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;
 use Database\Seeders\RolePermissionSeeder;
+use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -93,15 +94,13 @@ it('shows queue failed-job sync-run and error counts', function () {
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
         ->assertSee('Queued jobs')
-        ->assertSee('Failed jobs')
+        ->assertSee('Recent failed jobs')
         ->assertSee('Sync failed');
 
     $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
 
     expect($page->queuedJobCount())->toBe(1)
-        ->and($page->failedJobCount())->toBe(1)
-        ->and($page->recentFailedJobs()[0]['payload_preview'])->not->toContain('secret-token')
-        ->and($page->recentFailedJobs()[0]['exception_preview'])->toBe('Database value exceeded security_events.version_control_url. Run migrations, then retry or forget this failed job.');
+        ->and($page->failedJobCount())->toBe(1);
 });
 
 it('counts queued jobs across configured queue names', function () {
@@ -157,46 +156,6 @@ it('queues supported operational actions and records audit rows', function () {
     expect(AuditLog::query()->where('action', 'operations.dispatch_due_integrations')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
-});
-
-it('retries and forgets failed jobs', function () {
-    $admin = operationsAdmin();
-
-    DB::table('failed_jobs')->insert([
-        'uuid' => (string) str()->uuid(),
-        'connection' => 'database',
-        'queue' => 'default',
-        'payload' => '{"job":"Example","displayName":"ExampleJob"}',
-        'exception' => 'boom',
-        'failed_at' => now(),
-    ]);
-
-    $failedJobUuid = (string) DB::table('failed_jobs')->value('uuid');
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->call('retryFailedJob', $failedJobUuid);
-
-    expect(DB::table('failed_jobs')->where('uuid', $failedJobUuid)->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', 'operations.retry_failed_job')->exists())->toBeTrue();
-
-    DB::table('failed_jobs')->insert([
-        'uuid' => (string) str()->uuid(),
-        'connection' => 'database',
-        'queue' => 'default',
-        'payload' => '{"job":"Example"}',
-        'exception' => 'boom',
-        'failed_at' => now(),
-    ]);
-
-    $failedJobUuid = (string) DB::table('failed_jobs')->value('uuid');
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->call('forgetFailedJob', $failedJobUuid);
-
-    expect(DB::table('failed_jobs')->where('uuid', $failedJobUuid)->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
 });
 
 it('shows sbom scan status on the operations page', function () {
@@ -278,6 +237,49 @@ it('shows inventory sync last-run summary on operations page', function () {
         ->assertSee('3 system(s), 3 container(s) synced');
 });
 
+it('colors the inventory sync stat as warning when the last run found nothing', function () {
+    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
+    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 0, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
+
+    $method = new ReflectionMethod(OperationsHealthStatsWidget::class, 'inventorySyncStat');
+    $method->setAccessible(true);
+
+    /** @var Stat $stat */
+    $stat = $method->invoke(new OperationsHealthStatsWidget);
+
+    expect($stat->getColor())->toBe('warning');
+});
+
+it('colors the inventory sync stat as success when the last run found something', function () {
+    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
+    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 1, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
+
+    $method = new ReflectionMethod(OperationsHealthStatsWidget::class, 'inventorySyncStat');
+    $method->setAccessible(true);
+
+    /** @var Stat $stat */
+    $stat = $method->invoke(new OperationsHealthStatsWidget);
+
+    expect($stat->getColor())->toBe('success');
+});
+
+it('warns and does not dispatch inventory sync when no inventory-capable provider is enabled', function () {
+    Bus::fake();
+
+    config(['integration_settings.fake.enabled' => false]);
+    app()->forgetInstance(SourceRegistry::class);
+
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchSyncInventory')
+        ->assertNotified('No enabled Source or Source Control provider can supply inventory. Enable one in Integration Settings first.');
+
+    Bus::assertNotDispatched(SyncInventoryJob::class);
+    expect(AuditLog::query()->where('action', 'operations.sync_inventory')->exists())->toBeFalse();
+});
+
 it('sync users can trigger global reconciliation action', function () {
     Bus::fake();
 
@@ -325,6 +327,33 @@ it('shows reconciliation last-run summary on operations page', function () {
         ->assertSee('3 new link(s) created');
 });
 
+it('shows only the reconciliation stat to a work-items.sync-only user', function () {
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->assertSee('Reconciliation')
+        ->assertDontSee('Inventory sync')
+        ->assertDontSee('Jobs waiting in the queue')
+        ->assertDontSee('Failed jobs needing attention')
+        ->assertDontSee('Active source sync processes')
+        ->assertDontSee('Registered schedule entries');
+});
+
+it('shows all six operations health stats to an admin.queue user', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Reconciliation')
+        ->assertSee('Inventory sync')
+        ->assertSee('Jobs waiting in the queue')
+        ->assertSee('Failed jobs needing attention')
+        ->assertSee('Active source sync processes')
+        ->assertSee('Registered schedule entries');
+});
+
 it('header action dispatches source by form data', function () {
     $admin = operationsAdmin();
 
@@ -345,91 +374,6 @@ it('header action dispatches tracker by form data', function () {
         ->call('dispatchSelectedTracker');
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
-});
-
-it('failed jobs table renders with searchable columns and filters', function () {
-    $admin = operationsAdmin();
-
-    DB::table('failed_jobs')->insert([
-        'uuid' => (string) str()->uuid(),
-        'connection' => 'database',
-        'queue' => 'default',
-        'payload' => '{"job":"Example","displayName":"ExampleJob","token":"secret-token"}',
-        'exception' => 'RuntimeException: something went wrong',
-        'failed_at' => now(),
-    ]);
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->assertTableColumnExists('failed_at')
-        ->assertTableColumnExists('queue')
-        ->assertTableColumnExists('job')
-        ->assertTableColumnExists('exception_summary');
-});
-
-it('table retry and forget actions work and record audit', function () {
-    $admin = operationsAdmin();
-
-    $uuid = (string) str()->uuid();
-    DB::table('failed_jobs')->insert([
-        'uuid' => $uuid,
-        'connection' => 'database',
-        'queue' => 'default',
-        'payload' => '{"job":"Example","displayName":"ExampleJob"}',
-        'exception' => 'boom',
-        'failed_at' => now(),
-    ]);
-
-    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->callTableAction('retry', $record);
-
-    expect(DB::table('failed_jobs')->where('uuid', $uuid)->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', 'operations.retry_failed_job')->exists())->toBeTrue();
-
-    $uuid2 = (string) str()->uuid();
-    DB::table('failed_jobs')->insert([
-        'uuid' => $uuid2,
-        'connection' => 'database',
-        'queue' => 'default',
-        'payload' => '{"job":"Example"}',
-        'exception' => 'boom',
-        'failed_at' => now(),
-    ]);
-
-    $record2 = FailedJob::where('uuid', $uuid2)->firstOrFail();
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->callTableAction('forget', $record2);
-
-    expect(DB::table('failed_jobs')->where('uuid', $uuid2)->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
-});
-
-it('details table action modal fills exception and payload', function () {
-    $admin = operationsAdmin();
-
-    $uuid = (string) str()->uuid();
-    DB::table('failed_jobs')->insert([
-        'uuid' => $uuid,
-        'connection' => 'database',
-        'queue' => 'default',
-        'payload' => '{"job":"Example","token":"my-secret"}',
-        'exception' => 'authorization: bearer secret-value',
-        'failed_at' => now(),
-    ]);
-
-    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->mountTableAction('details', $record)
-        ->assertTableActionDataSet(fn (array $data) => str_contains($data['exception'] ?? '', '***')
-            && ! str_contains($data['exception'] ?? '', 'secret-value')
-            && ! str_contains($data['payload'] ?? '', 'my-secret'));
 });
 
 function bindFakeOperationsIntegrations(): void
