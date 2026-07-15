@@ -11,7 +11,9 @@ use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
 use App\Models\WorkItemLink;
 use App\Trackers\Contracts\Tracker;
+use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
+use App\Trackers\Registry as TrackerRegistry;
 use Illuminate\Database\DatabaseManager;
 
 final class ReconciliationService
@@ -19,6 +21,7 @@ final class ReconciliationService
     public function __construct(
         private readonly OperatorIntegrationRuntime $operatorRuntime,
         private readonly SystemIntegrationRuntime $systemRuntime,
+        private readonly TrackerRegistry $trackers,
         private readonly DatabaseManager $db,
         private readonly Recorder $recorder,
     ) {}
@@ -198,7 +201,7 @@ final class ReconciliationService
     /** @return list<array{tracker_id: string, project_key: string}> */
     private function allTrackerPairs(): array
     {
-        return array_values(TrackerProjectLink::query()
+        $linkedPairs = TrackerProjectLink::query()
             ->select(['tracker_id', 'project_key'])
             ->distinct()
             ->get()
@@ -206,8 +209,49 @@ final class ReconciliationService
                 'tracker_id' => (string) $link->tracker_id,
                 'project_key' => (string) $link->project_key,
             ])
-            ->values()
-            ->all());
+            ->all();
+
+        $seen = [];
+        $merged = [];
+
+        foreach ([...$linkedPairs, ...$this->allEnabledTrackerProjectPairs()] as $pair) {
+            $key = "{$pair['tracker_id']}\0{$pair['project_key']}";
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $merged[] = $pair;
+        }
+
+        return $merged;
+    }
+
+    /** @return list<array{tracker_id: string, project_key: string}> */
+    private function allEnabledTrackerProjectPairs(): array
+    {
+        $pairs = [];
+
+        foreach ($this->trackers->enabled() as $tracker) {
+            try {
+                /** @var list<ProjectDto> $projects */
+                $projects = $this->systemRuntime->runTracker(
+                    $tracker->id(),
+                    fn (Tracker $tracker): array => iterator_to_array($tracker->fetchProjects(), false),
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                continue;
+            }
+
+            foreach ($projects as $project) {
+                $pairs[] = ['tracker_id' => $tracker->id(), 'project_key' => $project->key];
+            }
+        }
+
+        return $pairs;
     }
 
     /** @return list<int> */

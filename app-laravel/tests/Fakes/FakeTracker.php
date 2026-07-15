@@ -25,6 +25,8 @@ final class FakeTracker implements Tracker
 
     public int $reconciliationCalls = 0;
 
+    public int $fetchProjectsCalls = 0;
+
     /** @var list<ProjectDto> */
     private array $projects = [];
 
@@ -44,6 +46,8 @@ final class FakeTracker implements Tracker
     private array $reconciliationFailuresByProject = [];
 
     private bool $connectionOk = true;
+
+    private bool $fetchProjectsFails = false;
 
     public function id(): string
     {
@@ -83,6 +87,12 @@ final class FakeTracker implements Tracker
     /** @return iterable<ProjectDto> */
     public function fetchProjects(): iterable
     {
+        $this->fetchProjectsCalls++;
+
+        if ($this->fetchProjectsFails) {
+            throw new \RuntimeException('Failed to list projects');
+        }
+
         return $this->projects;
     }
 
@@ -229,6 +239,13 @@ final class FakeTracker implements Tracker
     public function withReconciliationFailure(string $projectKey): self
     {
         $this->reconciliationFailuresByProject[$projectKey] = true;
+
+        return $this;
+    }
+
+    public function withFetchProjectsFailure(): self
+    {
+        $this->fetchProjectsFails = true;
 
         return $this;
     }
