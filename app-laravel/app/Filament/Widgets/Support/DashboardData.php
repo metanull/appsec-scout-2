@@ -156,7 +156,7 @@ final class DashboardData
      */
     public static function formatCounts(SyncRun $run): string
     {
-        $counts = $run->counts_json;
+        $counts = $run->getAttribute('counts_json');
         $counts = is_array($counts) ? $counts : [];
 
         if (array_key_exists('events_succeeded', $counts)) {
