@@ -21,6 +21,7 @@ use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\AzDo\AzDoNormalizer;
+use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\InventorySyncService;
 use App\Sync\PendingSyncResolver;
