@@ -14,6 +14,7 @@ use App\Models\SoftwareSystem;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -44,6 +45,12 @@ class SoftwareComponentsRelationManager extends RelationManager
                 TextColumn::make('license')->placeholder('-'),
                 ...SoftwareComponentOwnerColumns::columns(),
                 TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
+                IconColumn::make('removed_at')
+                    ->label('Removed')
+                    ->boolean()
+                    ->getStateUsing(fn (SoftwareComponent $record): bool => $record->removed_at !== null)
+                    ->trueColor('danger')
+                    ->falseColor('success'),
             ])
             ->recordUrl(fn (SoftwareComponent $record): string => SoftwareComponentResource::getUrl('view', ['record' => $record]))
             ->headerActions([

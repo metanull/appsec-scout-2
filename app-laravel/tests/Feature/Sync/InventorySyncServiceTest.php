@@ -62,6 +62,47 @@ it('scopes sync to a single id, ignoring other enabled sources and providers', f
         ->and(SoftwareSystem::query()->where('source_id', 'fake-inventory-repos')->exists())->toBeFalse();
 });
 
+it('sweeps a system no longer returned by a full, unfiltered sync', function () {
+    $source = (new FakeSource)->withSystems(
+        new SystemDto('sys-1', 'Payments API'),
+        new SystemDto('sys-2', 'Billing API'),
+    );
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    config(['integration_settings.fake.enabled' => true]);
+
+    app(InventorySyncService::class)->sync();
+
+    $sys2 = SoftwareSystem::query()->where('source_id', 'fake')->where('source_system_id', 'sys-2')->firstOrFail();
+
+    $source->withSystems(new SystemDto('sys-1', 'Payments API'));
+
+    app(InventorySyncService::class)->sync();
+
+    expect($sys2->fresh()->removed_at)->not->toBeNull();
+});
+
+it('does not sweep when a project filter narrows the sync to less than everything', function () {
+    $source = (new FakeSource)->withSystems(
+        new SystemDto('sys-1', 'Payments API'),
+        new SystemDto('sys-2', 'Billing API'),
+    );
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    config(['integration_settings.fake.enabled' => true]);
+
+    app(InventorySyncService::class)->sync();
+
+    $sys2 = SoftwareSystem::query()->where('source_id', 'fake')->where('source_system_id', 'sys-2')->firstOrFail();
+
+    // Only "Payments API" matches this filter — sys-2 is legitimately out of scope, not gone.
+    app(InventorySyncService::class)->sync(null, '^Payments API$');
+
+    expect($sys2->fresh()->removed_at)->toBeNull();
+});
+
 it('ignores a Source Control provider that does not implement EnumeratesInventory', function () {
     // GitHubRepos implements only SourceControlProvider, not EnumeratesInventory (Story A left it
     // unimplemented) — enabling it must not attempt to call a repo-listing method it doesn't have.

@@ -128,18 +128,33 @@ That has two consequences worth knowing when relying on repeated SbomScan/Static
   but re-scanning still never touches the scanner-reported fields themselves, and there is still no
   way to push anything upstream, unlike Alerts — Local Findings and Dependencies have no upstream
   Source to push to.
-- **Re-running a scan updates existing rows but never removes ones that disappeared.** A
-  vulnerability or secret that's since been fixed and no longer shows up in a later Trivy run
-  simply stops being touched by that repository's next `run.jsonl` line — its row stays visible
-  indefinitely, with a `last_seen_at` that quietly stops advancing. There is no staleness marker
-  and no cleanup job today; a stale finding is not distinguishable in the UI from a current one
-  except by comparing `last_seen_at` against how recently the repo was last scanned.
+- **Re-running a scan updates existing rows and marks the ones that disappeared.** A vulnerability
+  or secret that's since been fixed and no longer shows up in a later Trivy run is auto-resolved
+  (`LocalFinding.status` → `Resolved`, unless an operator already moved it to a different status —
+  automation never overrides a manual decision) once that same `(owner, kind)` scan completes in
+  full; a dependency dropped from a later SBOM gets `SoftwareComponent.removed_at` set the same
+  way, and clears again if it reappears in a later scan. `App\Assets\StaleRecordSweeper` is the
+  shared mark-and-sweep implementation `AttachmentIngestionService` calls after each complete
+  ingestion pass — it deliberately never runs on a partial/failed one, so an interrupted scan can't
+  be misread as "everything else disappeared."
 
-## Related: Inventory-Only AzDO Sync (`assets:sync-azdo-projects`)
+## Related: Inventory Sync (`assets:sync-azdo-projects`, `App\Sync\InventorySyncService`)
 
 A second, much simpler tool also browses an AzDO organization and populates the
 [Software Asset / System / Container hierarchy](asset-system-container-alert.md) — but it isn't
-a host-side script like SbomScan/StaticAnalysis, and it doesn't touch alerts at all.
+a host-side script like SbomScan/StaticAnalysis, and it doesn't touch alerts at all. The command
+is a thin wrapper around `App\Sync\InventorySyncService`, a shared service that also backs a
+"Sync inventory" button on `Admin -> Operations` (gated by `admin.queue`): that service walks
+every enabled Source (`fetchSystems()`/`fetchContainers()`) *and* every enabled Source Control
+provider that implements the optional `App\SourceControl\Contracts\EnumeratesInventory` mixin
+(`fetchProjects()`/`fetchRepositories()`, reusing the identical `SystemDto`/`ContainerDto` shapes)
+— today only `AzDoRepos` implements it, but any future Source-Control-only provider (e.g. a
+GitHub or Bitbucket repository lister with no matching Source) can plug into the same path without
+new upsert logic. A full, unfiltered run of either the command or the Ops button also sweeps
+`SoftwareSystem`/`SecurityContainer` rows the same way SBOM/SARIF ingestion sweeps Dependencies/
+Local Findings above — a `--project-filter`/`--repo-filter`-scoped run deliberately skips the
+sweep, since a filtered pass is not "everything," and marking filtered-out projects as removed
+would be wrong.
 
 ```bash
 docker compose exec app php artisan assets:sync-azdo-projects --project-filter='^Portal' --repo-filter='.*'

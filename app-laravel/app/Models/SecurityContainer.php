@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'software_system_id', 'source_container_id', 'name', 'kind',
-    'url', 'metadata', 'first_seen_at', 'last_seen_at', 'synced_at',
+    'url', 'metadata', 'first_seen_at', 'last_seen_at', 'synced_at', 'removed_at',
 ])]
 class SecurityContainer extends Model
 {
@@ -39,6 +39,7 @@ class SecurityContainer extends Model
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'synced_at' => 'datetime',
+            'removed_at' => 'datetime',
         ];
     }
 

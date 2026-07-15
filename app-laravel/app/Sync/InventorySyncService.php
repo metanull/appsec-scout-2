@@ -3,6 +3,7 @@
 namespace App\Sync;
 
 use App\Assets\AzDoProjectLinker;
+use App\Assets\StaleRecordSweeper;
 use App\Integrations\SystemIntegrationRuntime;
 use App\SourceControl\Contracts\EnumeratesInventory;
 use App\SourceControl\Contracts\SourceControlProvider;
@@ -27,6 +28,7 @@ final class InventorySyncService
         private readonly SystemIntegrationRuntime $runtime,
         private readonly SystemContainerUpserter $upserter,
         private readonly AzDoProjectLinker $linker,
+        private readonly StaleRecordSweeper $sweeper,
     ) {}
 
     /**
@@ -48,13 +50,18 @@ final class InventorySyncService
             'repository_mappings_created' => 0,
         ];
 
+        // A filtered pass is deliberately partial (an operator narrowing scope), not "this is
+        // everything" — sweeping against a filtered touched-set would wrongly mark every
+        // filtered-out project/repo as removed, so only sweep on a genuinely full pass.
+        $shouldSweep = $projectFilter === null && $repoFilter === null;
+
         foreach ($this->sources->enabled() as $source) {
             if ($onlyId !== null && $source->id() !== $onlyId) {
                 continue;
             }
 
-            $this->runtime->runSource($source->id(), function (Source $resolvedSource) use ($projectFilter, $repoFilter, &$counts): void {
-                $this->syncOne(
+            $this->runtime->runSource($source->id(), function (Source $resolvedSource) use ($projectFilter, $repoFilter, $shouldSweep, &$counts): void {
+                $touched = $this->syncOne(
                     $resolvedSource->id(),
                     $resolvedSource->fetchSystems(),
                     fn (SystemDto $system): iterable => $resolvedSource->fetchContainers($system),
@@ -62,6 +69,11 @@ final class InventorySyncService
                     $repoFilter,
                     $counts,
                 );
+
+                if ($shouldSweep) {
+                    $this->sweeper->sweepSystems($resolvedSource->id(), $touched['systemIds']);
+                    $this->sweeper->sweepContainers($resolvedSource->id(), $touched['containerIds']);
+                }
             });
         }
 
@@ -74,12 +86,12 @@ final class InventorySyncService
                 continue;
             }
 
-            $this->runtime->runSourceControl($provider->id(), function (SourceControlProvider $resolvedProvider) use ($projectFilter, $repoFilter, &$counts): void {
+            $this->runtime->runSourceControl($provider->id(), function (SourceControlProvider $resolvedProvider) use ($projectFilter, $repoFilter, $shouldSweep, &$counts): void {
                 if (! $resolvedProvider instanceof EnumeratesInventory) {
                     return;
                 }
 
-                $this->syncOne(
+                $touched = $this->syncOne(
                     $resolvedProvider->id(),
                     $resolvedProvider->fetchProjects(),
                     fn (SystemDto $project): iterable => $resolvedProvider->fetchRepositories($project),
@@ -87,6 +99,11 @@ final class InventorySyncService
                     $repoFilter,
                     $counts,
                 );
+
+                if ($shouldSweep) {
+                    $this->sweeper->sweepSystems($resolvedProvider->id(), $touched['systemIds']);
+                    $this->sweeper->sweepContainers($resolvedProvider->id(), $touched['containerIds']);
+                }
             });
         }
 
@@ -100,9 +117,13 @@ final class InventorySyncService
      *     projects_seen: int, systems_created: int, systems_updated: int, assets_created: int,
      *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int,
      * }  $counts
+     * @return array{systemIds: list<int>, containerIds: list<int>}
      */
-    private function syncOne(string $id, iterable $systemDtos, callable $fetchContainers, ?string $projectFilter, ?string $repoFilter, array &$counts): void
+    private function syncOne(string $id, iterable $systemDtos, callable $fetchContainers, ?string $projectFilter, ?string $repoFilter, array &$counts): array
     {
+        $systemIds = [];
+        $containerIds = [];
+
         foreach ($systemDtos as $systemDto) {
             if (! self::matches($projectFilter, $systemDto->name)) {
                 continue;
@@ -112,6 +133,7 @@ final class InventorySyncService
 
             ['system' => $system, 'wasCreated' => $systemIsNew] = $this->upserter->upsertSystem($id, $systemDto);
             $counts[$systemIsNew ? 'systems_created' : 'systems_updated']++;
+            $systemIds[] = $system->id;
 
             $hadAsset = $system->software_asset_id !== null;
             $this->linker->linkSystemToAsset($system);
@@ -128,6 +150,7 @@ final class InventorySyncService
 
                 ['container' => $container, 'wasCreated' => $containerIsNew] = $this->upserter->upsertContainer($system, $containerDto);
                 $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
+                $containerIds[] = $container->id;
 
                 $hadMapping = $container->repositoryMappings()->exists();
                 $this->linker->ensureRepositoryMapping($container);
@@ -136,6 +159,8 @@ final class InventorySyncService
                 }
             }
         }
+
+        return ['systemIds' => $systemIds, 'containerIds' => $containerIds];
     }
 
     private static function matches(?string $pattern, string $value): bool

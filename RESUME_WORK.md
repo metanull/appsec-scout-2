@@ -215,17 +215,34 @@ concept with nothing to borrow from.
 override, comments, and work-item create/link, all gated by plain `Gate::allows('alerts.edit')` /
 `Gate::allows('work-items.create')` / `Gate::allows('work-items.link')` checks — no Policy class was
 needed, contrary to the sequencing note originally written below. **D3 is now also DONE**, built
-directly on that same infrastructure — see the D3 section below. D1 (staleness/cleanup) remains open.
+directly on that same infrastructure — see the D3 section below. **D1 is now also DONE**, expanded
+per the user's follow-up scope (see epic #251 and its child stories #252/#253/#254) beyond the
+original narrow proposal — see below.
 
-### D1 — No staleness/cleanup mechanism
-- `AttachmentIngestionService::ingestSbom()`/`ingestFindings()`
-  (`app-laravel/app/Assets/AttachmentIngestionService.php:54-78,80-112`) both `firstOrNew()` keyed on a
-  natural key, then bump only `last_seen_at`; `first_seen_at` is set once on create. **No code anywhere
-  diffs "what existed before this scan" against "what this scan returned"** — no mark-and-sweep, no
-  `whereNotIn(...)->update(...)`, no delete of vanished rows.
-- Migrations confirm no staleness column exists on either `local_findings` or `software_components`
-  tables — no `status`, `is_stale`, `resolved_at`, or soft-delete trait.
-- `docs/concepts/sbom-and-static-analysis.md:128-133` states this verbatim already.
+### D1 — No staleness/cleanup mechanism (FIXED, expanded scope)
+- Original gap confirmed: `AttachmentIngestionService::ingestSbom()`/`ingestFindings()` both
+  `firstOrNew()` keyed on a natural key, then bumped only `last_seen_at` — no mark-and-sweep
+  anywhere, and neither `local_findings` nor `software_components` had a staleness column.
+- On reassessment, the user broadened D1's scope beyond `LocalFinding`/`SoftwareComponent`: (1) the
+  `SourceControlProvider` contract had no way to enumerate Organizations/Projects/Repositories, so
+  Source-Control-only integrations (GitHub) could never populate `SoftwareSystem`/
+  `SecurityContainer`; (2) there was no single on-demand mechanism syncing inventory from every
+  configured Source *and* Source Control provider; (3) `SoftwareSystem`/`SecurityContainer` needed
+  the same `removed_at` treatment as Dependencies/Local Findings.
+- Written up and implemented as epic #251 with three child stories, each its own commit:
+  - #252 — `App\SourceControl\Contracts\EnumeratesInventory` mixin (reusing `SystemDto`/
+    `ContainerDto`), implemented for `AzDoRepos`; `GitHubRepos` deliberately left unimplemented.
+  - #253 — `App\Sync\InventorySyncService` (walks enabled Sources + Source-Control providers
+    implementing the new interface, through the existing `SystemContainerUpserter`), a new
+    "Sync inventory" Ops-page action (`admin.queue`), and `assets:sync-azdo-projects` refactored
+    to call the same shared service.
+  - #254 — `App\Assets\StaleRecordSweeper` (nullable `removed_at` on `SoftwareSystem`/
+    `SecurityContainer`/`SoftwareComponent`; `LocalFinding` reuses its existing `status` enum),
+    wired into `FetchSourceJob`, `InventorySyncService` (skipped when a project/repo filter is
+    applied — a filtered pass is not "everything"), and `AttachmentIngestionService`. The sweep
+    only ever runs after a complete, successful pass.
+- `docs/concepts/sbom-and-static-analysis.md` and `docs/concepts/asset-system-container-alert.md`
+  updated to describe the fixed behavior instead of the old known-gap language.
 
 ### D2 — Fully read-only in Filament
 - `LocalFindingResource.php` and `SoftwareComponentResource.php` both register only `index`/`view` pages
@@ -348,7 +365,7 @@ tree. Investigation reflects the **post-fix** state.
    (move commands into `invoke-ops.ps1`, larger, resolves the Ops/Artisan inconsistency) vs. Option C
    (do A now, defer the relocation decision). Note the reusable primitive already exists three times
    in the codebase (`Vault::get($key, null, true)`).
-4. **Decide D's direction** — D2 and D3 are now done (see §C). What's left is D1's
-   staleness-detection approach (mark-and-sweep per (owner, kind) recommended — see the proposal
-   given directly to the user) as a separate, schema-touching story per CLAUDE.md's story-splitting
-   rule.
+4. **Finding D is now fully done** — D1, D2, and D3 are all fixed (see §C). Nothing left to decide
+   here; D1 shipped as epic #251 (#252/#253/#254), broader in scope than the original narrow
+   proposal per the user's own follow-up requirements (Source Control inventory enumeration,
+   generalized on-demand sync, and universal `removed_at` mark-and-sweep).

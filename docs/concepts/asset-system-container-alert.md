@@ -175,14 +175,18 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
   "Create work item"/"Link existing" header actions plus a "Work Items" relation manager with an
   "Unlink" action. A Dependency (`SoftwareComponent`) still has to go through the Alert it's
   correlated to, or a Curated Link, if it needs a tracker ticket.
-- **Re-scanning updates, but never removes.** Re-uploading a fresh SARIF/SBOM for the same
+- **Re-scanning updates and marks what disappeared.** Re-uploading a fresh SARIF/SBOM for the same
   owner upserts on a natural key (`(owner, kind, rule_id, file_path, start_line)` for Local
-  Finding; a true unique `(owner, purl)` constraint for Dependency), bumping `last_seen_at`. But
-  nothing diffs against the previous scan to notice a finding *disappeared* — there is no
-  staleness flag, no archival job, and no cleanup. A vulnerability that's since been fixed and no
-  longer appears in Trivy's output simply stops being touched; its row lingers indefinitely,
-  still fully visible, with an increasingly stale `last_seen_at` and no signal that it's actually
-  gone.
+  Finding; a true unique `(owner, purl)` constraint for Dependency), bumping `last_seen_at`. After
+  a complete, successful pass, `App\Assets\StaleRecordSweeper` diffs the ids touched this run
+  against everything previously present in that same `(owner, kind)` scope: a Local Finding no
+  longer reported auto-transitions to `status = Resolved` (never overriding a status an operator
+  already set manually), and a Dependency no longer reported gets `removed_at` set — cleared again
+  if it reappears in a later scan. The sweep only runs once the whole parse/upsert loop finishes
+  without throwing, so a partial scan (e.g. a malformed SARIF entry mid-file) can never be
+  misread as "everything else is gone." The same `removed_at` treatment now also applies to
+  `SoftwareSystem`/`SecurityContainer` after a full Source or Source Control inventory sync (see
+  [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
 
 ### Local Finding fields and severity
 
