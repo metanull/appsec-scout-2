@@ -60,28 +60,27 @@ Behavior worth knowing when reading this flow — `App\Sync\PendingSyncResolver`
 for every dirty event handed to a sync run, whether it actually has something pushable for its
 Source:
 
-- A staged **state** change (`pending_state`) is always pushable — every shipped Source declares
-  `canUpdateState: true` — and is handled exactly as before: `PushEventStatesJob` calls
+- A staged **state** change (`pending_state`) is pushable whenever the Source declares
+  `canUpdateState: true` (every shipped Source does): `PushEventStatesJob` calls
   `Source::pushEventState($event)`, and on success clears `pending_state`/`pending_comment` and
   sets `state = pending_state`.
-- A pending **severity** change is not pushable on any shipped Source today (no Source declares
-  `canUpdateSeverity: true` — see the capability matrix in
+- A pending **severity** change is pushable only when the Source declares `canUpdateSeverity: true`
+  (see the capability matrix in
   [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md#capability-matrices)
   and the full per-source detail in
-  [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)). Rather than
-  leaving the event flagged "pending sync" forever, the sync run resolves it as **local-only**:
-  it leaves a system-authored note on the alert's own Comments tab explaining why (visible right
-  where an operator would look, not as a warning at edit time), logs an `ErrorLog` warning, and
-  clears `is_dirty` — but `pending_severity` itself is left untouched, so the staged value stays
-  visible as a durable local annotation. If a future Source ever adds `canUpdateSeverity: true`,
-  this resolves the normal way instead (attempt the push, clear on success). Because of this, the
-  alert page's "Pending Sync" section stays visible whenever `pending_severity` is set, even after
-  `is_dirty` clears — not just while genuinely awaiting a push.
+  [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)) — resolved the
+  normal way when it is (attempt the push, clear on success). When it isn't, rather than leaving
+  the event flagged "pending sync" forever, the sync run resolves it as **local-only**: it leaves a
+  system-authored note on the alert's own Comments tab explaining why (visible right where an
+  operator would look, not as a warning at edit time), logs an `ErrorLog` warning, and clears
+  `is_dirty` — but `pending_severity` itself is left untouched, so the staged value stays visible
+  as a durable local annotation. Because of this, the alert page's "Pending Sync" section stays
+  visible whenever `pending_severity` is set, even after `is_dirty` clears — not just while
+  genuinely awaiting a push.
 - A standalone **comment** (staged by itself, not alongside a state/severity change) gets the
   identical local-only treatment — no Source can push a comment independent of a state/severity
-  change (a hard upstream API constraint on all three sources, not an appsec-scout gap; see
-  [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)), so it's
-  resolved the same way: a system note, an `ErrorLog` warning, `is_dirty` cleared.
+  change (see [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)),
+  so it's resolved the same way: a system note, an `ErrorLog` warning, `is_dirty` cleared.
 - `SourceCapabilities` isn't consulted by the Triage UI at edit time — "Change severity" and "Add
   comment" are available identically regardless of Source, gated purely by `alerts.edit`, by
   design: the local-first model always allows a local edit; the "this can't push anywhere" fact
@@ -153,10 +152,9 @@ resolved the same way `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` resolve their
 if given, otherwise the command falls back to the `azdo-repos.pat` system credential; if neither is
 available the command fails fast with a clear error instead of attempting the search. Running the
 command is gated only by having a shell on the `app` container — there is no in-app permission for
-it (an unenforced `triage.run-codesearch` permission used to be seeded for this; it was removed
-since Artisan commands aren't checked against Spatie permissions anywhere in the app, so it never
-did anything). `App\Triage\RunCodesearchJob` (a queued wrapper for the same logic) exists but is
-only exercised in tests today; nothing in production dispatches it.
+it, since Artisan commands aren't checked against Spatie permissions anywhere in the app.
+`App\Triage\RunCodesearchJob` (a queued wrapper for the same logic) exists but is only exercised in
+tests today; nothing in production dispatches it.
 
 ## Permission Matrix
 

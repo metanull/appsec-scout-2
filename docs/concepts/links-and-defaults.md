@@ -90,16 +90,13 @@ candidate matches.
 `ReconciliationService::reconcileEvent()` itself, if the alert's System/Container has **no**
 scoped links at all, silently **widens to every tracker/project pair that has a link anywhere in
 the system** — it never returns "nothing to search." The "Find existing work items" button on the
-alert detail page used to be stricter than the service (it pre-checked for a scoped link and
-stopped with an info notification if none existed, never invoking the service's own broader
-fallback) — that mismatch is fixed: the button now runs the same pre-check only to decide whether
-to show a **warning** notification ("Searching every configured tracker project instead of a
-scoped one — results may be less precise. Add a Tracker Project Link to this alert's system or
-container to narrow this search next time."), then unconditionally proceeds to call the service
-either way. So a System/Container with no `TrackerProjectLink` at all no longer blocks
-reconciliation from the UI — it just searches more broadly and tells the operator so.
-`reconcileAll()` (the background, Operations-page-triggered sweep of every alert) has no scoping
-concept at all — it always searches every linked project.
+alert detail page runs the same pre-check only to decide whether to show a **warning**
+notification ("Searching every configured tracker project instead of a scoped one — results may be
+less precise. Add a Tracker Project Link to this alert's system or container to narrow this search
+next time."), then unconditionally calls the service either way — a System/Container with no
+`TrackerProjectLink` at all does not block reconciliation from the UI, it just searches more
+broadly and tells the operator so. `reconcileAll()` (the background, Operations-page-triggered
+sweep of every alert) has no scoping concept at all — it always searches every linked project.
 
 ## Repository Mapping
 
@@ -123,7 +120,7 @@ for the fuller distinction between this and an actual Source Control credential.
 Repository Mappings are always created manually (via the relation manager) with one exception:
 `assets:sync-azdo-projects` and the AzDO fetch cycle auto-create one for every AzDO repository
 Container, using the AzDO organization/project as the base URL (see
-[Ops](sbom-and-static-analysis.md#related-inventory-only-azdo-sync-assetssync-azdo-projects)).
+[Ops](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
 
 ## Curated Link
 

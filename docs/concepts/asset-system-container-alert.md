@@ -76,7 +76,7 @@ Systems are simply orphaned back to unassigned rather than removed.
   already linked to an Asset — manual or prior automatic assignment is never overwritten. This
   runs as part of both the normal AzDO fetch cycle and the standalone
   `assets:sync-azdo-projects` command (see
-  [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-only-azdo-sync-assetssync-azdo-projects)).
+  [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
   No other Source has an equivalent auto-linker — an ASoC or Detectify System is never
   automatically grouped into an Asset; that's always a manual step.
 
@@ -143,13 +143,11 @@ scanner found" — with one structural difference that shapes everything else ab
 no external Source behind it**, only a file an operator (or the [Ops SbomScan/StaticAnalysis
 workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
 
-- **No writeback, because there's nothing to write back to.** `Source::pushEventState()` (the
-  mechanism [Triage](triage.md) uses to push a staged Alert change upstream) is implemented only
-  for `SecurityEvent`. There is no equivalent for `LocalFinding`/`SoftwareComponent` — not because
-  it's unimplemented, but because there's no upstream system on the other end to push to. This is
-  unrelated to the local triage actions below: those are purely local, so "no writeback" simply
-  means a `LocalFinding` status/severity change never needs a pending/sync state the way an Alert's
-  does — there's nothing external to reconcile with.
+- **No writeback.** `Source::pushEventState()` (the mechanism [Triage](triage.md) uses to push a
+  staged Alert change upstream) is implemented only for `SecurityEvent`. There is no equivalent for
+  `LocalFinding`/`SoftwareComponent`, since neither has an upstream system to push to. The local
+  triage actions below are unaffected by this: they are purely local, so a `LocalFinding`
+  status/severity change never needs a pending/sync state the way an Alert's does.
 - **`LocalFinding` has its own local-only triage lifecycle; `SoftwareComponent` still has none.**
   `LocalFinding` has `status` (an `EventState`, same enum and vocabulary as `SecurityEvent.state`)
   and `overridden_severity` (an `EventSeverity` override that coexists with, and is never

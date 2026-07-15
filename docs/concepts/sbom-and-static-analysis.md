@@ -3,7 +3,7 @@
 "Ops" here refers to the `ops` Docker container's two organization-wide scan workflows —
 **SbomScan** and **StaticAnalysis** — the pipeline that gets their output into appsec-scout as
 Local Findings and Dependencies, and a related, simpler inventory tool,
-`assets:sync-azdo-projects` (see [below](#related-inventory-only-azdo-sync-assetssync-azdo-projects)).
+`assets:sync-azdo-projects` (see [below](#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
 Don't confuse any of this with the `Admin -> Operations` **Filament page** (covered in
 [docs/concepts/integration.md](integration.md)), which is about monitoring and manually
 triggering Source/Tracker sync jobs — a completely different thing that happens to share the

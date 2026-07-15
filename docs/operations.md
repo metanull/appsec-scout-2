@@ -1,6 +1,6 @@
 # AppSec Scout — Operations Reference
 
-This guide covers day-2 operations for the implemented M1 to M6 Laravel app.
+This guide covers day-2 operations for the Laravel app.
 
 Related documents:
 
@@ -8,31 +8,40 @@ Related documents:
 - [docs/admin.md](admin.md)
 - [docs/security.md](security.md)
 - [docs/roles/admin.md](roles/admin.md)
+- [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md) — the
+  host-triggered SBOM/static-analysis scan pipeline covered in its own section below
+
+## Helper Scripts
+
+All day-to-day operations go through one of these PowerShell scripts (see each script's own
+`Get-Help` for full parameter documentation):
+
+| Script | Purpose |
+| --- | --- |
+| `scripts/appsec-scout.ps1` | Start/rebuild the stack (`-Rebuild` for a clean slate, `-Force` to skip the build cache) |
+| `scripts/invoke-app.ps1` | Shell/restart/tinker/artisan against the already-running `app` container |
+| `scripts/invoke-check.ps1` | Read-only checks: lint, tests, static analysis, dependency audit |
+| `scripts/invoke-fix.ps1` | Mutating fixes: auto-format, dependency updates |
+| `scripts/invoke-ops.ps1` | Sandboxed `ops` container: shell, Claude Code, org-wide SBOM/static-analysis scans |
+
+Use direct `docker compose`/`docker compose exec` commands only when these scripts don't cover
+the need.
 
 ## Build And Start
 
-```bash
-# Export host-trusted CAs first when needed
-./scripts/export-host-ca.sh
-./scripts/export-host-ca.ps1
-
-# Build the default application image
-docker compose build
-
-# Build the development image with dev dependencies
-APP_BUILD_TARGET=dev docker compose build app
-
-# Start the full stack
-docker compose up --build -d
+```powershell
+.\scripts\appsec-scout.ps1
 ```
 
-Start and stop commands:
+Rebuilds the `app` image (cache permitting) and starts every non-profiled service — see
+[docs/architecture.md](architecture.md#runtime-topology) for the full service list. Manual
+equivalent, plus stop/teardown:
 
 ```bash
-docker compose up -d
+docker compose up --build -d
 docker compose stop
 docker compose down
-docker compose down -v
+docker compose down -v   # also removes named volumes (database, storage, etc.)
 ```
 
 ## Health And Access
@@ -41,6 +50,8 @@ docker compose down -v
 | --- | --- |
 | `http://localhost:8080/` | Filament application shell and login |
 | `http://localhost:8080/up` | Health endpoint |
+| `http://localhost:8090/` | Dependency-Track UI |
+| `http://localhost:8091/` | Dependency-Track API |
 
 Quick checks:
 
@@ -50,40 +61,32 @@ curl http://localhost:8080/up
 docker compose logs -f app
 ```
 
-## Database, Migrations, And Seeding
+## Restarting, Shell Access, And Artisan
 
-```bash
-docker compose exec app php artisan migrate --force
-docker compose exec app php artisan db:seed
+```powershell
+.\scripts\invoke-app.ps1                 # shell into the running app container
+.\scripts\invoke-app.ps1 -Restart        # re-run the entrypoint's boot sequence without recreating the container
+.\scripts\invoke-app.ps1 -Tinker         # interactive php artisan tinker
+.\scripts\invoke-app.ps1 -Artisan <cmd>  # run one artisan command and exit
 ```
 
-Bootstrap the first Admin account:
-
-```bash
-docker compose exec app php artisan appsec:bootstrap-admin \
-    --name="Admin" \
-    --email="admin@example.com" \
-    --password="changeme-now"
-```
-
-The command refuses to run after the first user exists.
+`-Restart` re-runs migrations, seeding, the admin bootstrap (skipped once a user exists), the
+static-asset resync, and permission cache reset — the same sequence the container ran on its
+first boot — without recreating the container or touching any volume.
 
 ## Queue And Scheduler Model
 
-The single `app` container runs all application processes through Supervisor:
+The `app` container runs every application process through Supervisor (`docker/supervisord.conf`):
 
 - `nginx`
 - `php-fpm`
 - `php artisan schedule:work`
-- `php artisan queue:work --tries=3 --max-time=3600`
+- `php artisan queue:work --tries=3 --timeout=1800 --max-time=3600`
 
-Runtime backends in Compose:
-
-- queue: Redis
-- cache: Redis
-- sessions: Redis
-
-The scheduler uses one minutely dispatcher entry, `integrations:dispatch-due`, to decide which source fetch or tracker refresh jobs are due from database-backed integration settings.
+Queue, cache, and session backends are all Redis. The scheduler's one minutely entry,
+`integrations:dispatch-due`, decides which Source fetch or Tracker refresh jobs are due, based on
+`integration_settings` rows — see [docs/concepts/integration.md](concepts/integration.md) for the
+full dispatch model, including why Source Control never appears here.
 
 Manual checks:
 
@@ -95,139 +98,139 @@ docker compose exec app php artisan queue:work --once
 
 ## Operations Page
 
-The Admin `Operations` page is the main operator surface for background activity.
+`Admin -> Operations` (gated by `admin.queue` or `work-items.sync`) is the main operator surface
+for background activity. It shows:
 
-It shows:
+- Queued job count, failed job count.
+- Recent failed jobs with redacted payload previews.
+- Recent sync runs and recent error records.
+- Reconciliation and inventory-sync last-run summaries (new links created; systems/containers
+  synced).
+- SBOM scan status (most recent SbomScan/StaticAnalysis run per repository).
+- The AppSec Scout schedule entries managed in the container.
 
-- queued job count
-- failed job count
-- recent failed jobs with redacted payload previews
-- recent sync runs
-- recent error records
-- the AppSec Scout schedule entries managed in the container
+Actions:
 
-It supports the following actions:
+| Action | Gate | Effect |
+| --- | --- | --- |
+| Dispatch due integrations | `admin.queue` or `work-items.sync` | Runs `DispatchDueIntegrations` immediately instead of waiting for the next scheduler tick |
+| Fetch source | `admin.queue` or `work-items.sync` | Dispatches `FetchSourceJob` for one chosen Source right now |
+| Refresh tracker | `admin.queue` or `work-items.sync` | Dispatches `RefreshWorkItemsJob` for one chosen Tracker right now |
+| Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links |
+| Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every enabled Source and every Source Control provider that supports it |
+| Prune audit logs / Prune error logs | `admin.queue` or `work-items.sync` | Deletes retention-expired rows now |
+| Retry / Forget a failed job | `admin.queue` or `work-items.sync` | Requeues the stored payload, or discards it, per row |
 
-- dispatch due integrations now
-- queue a selected source fetch
-- queue a selected tracker refresh
-- queue a work item reconciliation (find and create missing alert-to-work-item links)
-- prune audit logs
-- prune error logs
-- retry one failed job
-- forget one failed job
-
-Every action emits an audit row.
+Every action writes an audit row.
 
 ## Failed Jobs
 
-Failed jobs are stored in Laravel's `failed_jobs` table using UUID identifiers.
-
-From the Operations page, Admin users can:
-
-- retry a failed job, which requeues the stored payload and removes the failed row
-- forget a failed job, which deletes the failed row without retrying it
-
-If a failed job needs deeper inspection, review the payload preview in the page and then check application logs for the full exception context.
+Failed jobs are stored in Laravel's `failed_jobs` table using UUID identifiers. From the
+Operations page, Admin/Sync users can retry a failed job (requeues the stored payload and removes
+the failed row) or forget it (deletes the failed row without retrying). Review the payload preview
+in the page, then check application logs for the full exception context if deeper inspection is
+needed.
 
 ## Logs And Error Records
-
-Preferred operational log views:
 
 ```bash
 docker compose logs -f app
 docker compose logs -f mysql
 docker compose logs -f redis
+docker compose logs -f dependencytrack-apiserver
+docker compose logs -f trivy-server
 ```
 
-Application errors are also copied into the `error_logs` table and exposed in the Admin `Errors` resource.
-
-Audit records are written to `audit_logs` and exposed in the Admin `Audit Log` resource.
+Application errors are also copied into the `error_logs` table and exposed in the Admin `Errors`
+resource. Audit records are written to `audit_logs` and exposed in the Admin `Audit Log` resource.
 
 ## Credentials And Integrations
 
 Admin operators manage integration configuration from three places:
 
-- `Admin -> System credentials` for shared system-owned credentials
-- `Profile integrations` for the signed-in user's personal credentials
-- `Admin -> Integrations` for enablement, interval, service user selection, connection tests, and the Jira default project key
+- `Admin -> System Credentials` for shared, system-owned credentials.
+- `Profile -> Integrations` for the signed-in user's own personal credentials.
+- `Admin -> Integrations` for enablement, interval, service-user selection, connection tests, and
+  the Jira default project key.
 
-Background resolution order now depends on the integration setting:
+Credential resolution order:
 
-1. explicit preferred user if a flow provides one
-2. authenticated user's personal credential for interactive actions
-3. integration-specific service user credential when configured
-4. system credential
+1. Explicit preferred user, when a flow specifies one.
+2. The authenticated user's own personal credential, for interactive actions.
+3. The integration's configured service-user credential.
+4. The system credential.
 
 ## Tracker Project Scope
 
-Each Software System and each Security Container can have one or more **Tracker project links** — a mapping of `(tracker_id, project_key)` that controls which project work items are created in and which projects are searched during reconciliation.
-
-Links are managed in two ways:
-
-- **Manually**, via the `Tracker project links` tab on the Software System or Security Container detail page.
-- **Automatically learned**, whenever a work item is created or linked from a specific alert — the tracker and project key are recorded against every system and container that the alert belongs to.
-
-A global **Jira default project key** can also be set on the `Admin → Integrations` page under the Jira tracker row. This value is used as a fallback when no project link exists for the event's system or container.
+Each Software System and each Security Container can have one or more Tracker Project Links — a
+mapping of `(tracker_id, project_key)` controlling which project new work items are created in and
+which projects are searched during reconciliation. Links are created manually (via the relation
+manager on the System/Container's Filament page) or auto-learned whenever a work item is created or
+linked from an alert. A global Jira default project key can also be set on `Admin -> Integrations`,
+used as a fallback when no link exists for the alert's system/container. Full resolution order in
+[docs/concepts/links-and-defaults.md](concepts/links-and-defaults.md).
 
 ## Work Item Reconciliation
 
-Reconciliation finds missing `alert ↔ work item` links without duplicating existing ones. It runs in the background and operates on the following heuristics:
+Reconciliation finds missing alert-to-work-item links by matching an alert's own URL against text
+mined from candidate tracker issues, without an operator manually searching. It runs from two
+places:
 
-1. **URL cross-reference**: if an alert's `url` or `version_control_url` matches the `work_item_url` stored on a `WorkItemLink` for another event, the current event is linked to that work item.
-2. **Description scan**: if a work item's description (fetched live from the tracker) contains the alert's URL, the alert is linked to that work item.
+- **Alert detail page** — "Find existing work items" calls `ReconciliationService::reconcileEvent()`
+  synchronously, scoped to the alert's own Tracker Project Links when one exists (falling back to
+  every configured project, with a warning, when it doesn't).
+- **Operations page** — "Reconcile all tracker links" dispatches `ReconcileAllJob`, sweeping every
+  alert in the background.
 
-Reconciliation can be triggered from two places:
+Both require `work-items.link` or `work-items.sync`. Every new link produces an audit row. Full
+detail in [docs/concepts/triage.md](concepts/triage.md#reconciliation-the-same-linking-mechanism-two-triggers).
 
-- **Operations page** → `Reconcile work items` action — queues a `ReconcileAllJob` that processes every alert.
-- **Alert detail page** → `Reconcile work items` action — queues a `ReconcileEventJob` scoped to that alert only.
+## SBOM and Static Analysis Scanning
 
-Both actions require the `work-items.link` permission. Every new link created by reconciliation produces an audit row with `via: reconciliation`.
+Separately from the always-on Source/Tracker sync above, `scripts/invoke-ops.ps1 -SbomScan` and
+`-StaticAnalysis` run host-triggered, organization-wide scans (Trivy for SBOM/vulnerabilities/
+secrets; Roslynator and SpotBugs for static analysis) against every repository in an Azure DevOps
+organization, feeding results into appsec-scout as Local Findings and Dependencies. This is
+entirely operator-initiated — there is no scheduler entry or in-app button to start a scan. Full
+detail, including the Dependency-Track visualization pipeline, in
+[docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md).
+
+```powershell
+.\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)
+.\scripts\invoke-ops.ps1 -StaticAnalysis -Credential (Get-Credential)
+```
 
 ## Development Verification
 
-Run all checks from the repository root after rebuilding the dev image:
+```powershell
+.\scripts\invoke-check.ps1                       # run all read-only checks
+.\scripts\invoke-check.ps1 -Check lint            # Pint, read-only
+.\scripts\invoke-check.ps1 -Check test            # Pest (SQLite)
+.\scripts\invoke-check.ps1 -Check test-mysql      # Pest (MySQL)
+.\scripts\invoke-check.ps1 -Check static-analysis # PHPStan
+.\scripts\invoke-check.ps1 -Check smoke           # smoke tests
+.\scripts\invoke-check.ps1 -Check dependencies    # composer outdated-dependency check
+.\scripts\invoke-check.ps1 -Check npm-audit       # npm audit
 
-```bash
-#APP_BUILD_TARGET=dev docker compose build app --no-cache
-APP_BUILD_TARGET=dev docker compose build app
-APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pint --test
-APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
-APP_BUILD_TARGET=dev docker compose run --rm app vendor/bin/pest --no-coverage
-APP_BUILD_TARGET=dev docker compose run --rm app composer smoke
+.\scripts\invoke-fix.ps1                          # run all auto-fixes
+.\scripts\invoke-fix.ps1 -Fix lint-fix            # Pint, auto-fix
+.\scripts\invoke-fix.ps1 -Fix dependencies-fix    # composer update
+.\scripts\invoke-fix.ps1 -Fix npm-audit-fix       # npm audit fix
+.\scripts\invoke-fix.ps1 -Fix npm-update          # npm update
 ```
 
-PowerShell equivalent:
+Direct `docker compose` equivalent for a single tool, run against the dev image:
 
 ```powershell
 $env:APP_BUILD_TARGET = 'dev'
-#docker compose build app --no-cache
 docker compose build app
 docker compose run --rm app vendor/bin/pint --test
 docker compose run --rm app vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 docker compose run --rm app vendor/bin/pest --no-coverage
-docker compose run --rm app composer smoke
 Remove-Item Env:\APP_BUILD_TARGET
 ```
 
-Helper scripts for the same dev-container checks:
-
-```powershell
-# Run all checks
-.\scripts\invoke-check.ps1
-
-# Run selected check passing the `-Check` parameter to specify which checks to run:
-#  - `-Check all` (runs all checks read-only/without fixing)
-#  - `-Check lint` (runs code style checks)
-#  - `-Check lint-fix` (runs code style checks with auto-fixing)
-#  - `-Check test` (runs all tests)
-#  - `-Check test-sqlite` (runs tests with SQLite in-memory database)
-#  - `-Check test-mysql` (runs tests with MySQL test database)
-#  - `-Check static-analysis` (runs static analysis checks)
-#  - `-Check smoke` (runs smoke tests, for example, checking if the app can serve a page successfully)
-#  - `-Check dependencies` (runs composer check for outdated dependencies)
-#  - `-Check dependencies-fix` (runs composer update to fix outdated dependencies)
-.\scripts\invoke-check.ps1 -Check 'static-analysis'
-```
-
-CI intentionally stops at the existing Laravel quality gates. It does not build a production image, generate an SBOM, or run image scans.
+CI (`.github/workflows/laravel-ci.yml`) runs Pint, PHPStan, and Pest on a bare PHP 8.4 runner
+without Docker. It does not build a production image, run Trivy image scans, or publish an SBOM
+artifact as part of that workflow — the Dependency-Track/Trivy pipeline above is a separate,
+always-on part of the running application, not a CI gate.
