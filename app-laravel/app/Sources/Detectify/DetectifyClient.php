@@ -57,7 +57,7 @@ final class DetectifyClient
         return is_array($finding) ? $finding : [];
     }
 
-    public function updateFindingStatus(string $domainToken, string $uuid, string $status, ?string $note = null): void
+    public function updateFindingStatus(string $domainToken, string $uuid, string $status): void
     {
         $this->request('POST', 'rest/v2/vulnerabilities/uuid/' . rawurlencode($uuid) . '/' . self::statusAction($status) . '/');
     }

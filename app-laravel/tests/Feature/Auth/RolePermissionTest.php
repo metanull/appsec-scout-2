@@ -21,7 +21,6 @@ it('creates all permissions', function () {
         'work-items.create', 'work-items.link', 'work-items.sync',
         'sources.push-state',
         'admin.users', 'admin.system-pats', 'admin.queue', 'admin.audit', 'admin.errors', 'admin.integrations',
-        'triage.run-codesearch',
     ] as $permission) {
         expect($permissionNames)->toContain($permission);
     }
@@ -52,5 +51,5 @@ it('seeder is idempotent on re-run', function () {
     (new RolePermissionSeeder)->run();
 
     expect(Role::count())->toBe(5)
-        ->and(Permission::count())->toBe(16);
+        ->and(Permission::count())->toBe(15);
 });

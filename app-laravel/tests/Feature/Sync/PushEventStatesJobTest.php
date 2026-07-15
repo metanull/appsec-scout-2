@@ -13,6 +13,8 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
 use App\Sources\ValueObjects\PushResult;
+use App\Sources\ValueObjects\SourceCapabilities;
+use App\Sync\PendingSyncResolver;
 use App\Sync\PushEventStatesJob;
 use Tests\Fakes\FakeSource;
 
@@ -33,7 +35,7 @@ it('pushes pending state successfully and clears the dirty state', function () {
 
     $operator = User::factory()->create();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
 
     $event->refresh();
 
@@ -71,7 +73,7 @@ it('uses the operator credential when pushing selected dirty records from the qu
         'is_dirty' => true,
     ]);
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
 
     $event->refresh();
 
@@ -97,7 +99,7 @@ it('preserves the dirty state and records retry metadata when a push fails', fun
 
     $operator = User::factory()->create();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
 
     $event->refresh();
 
@@ -109,7 +111,7 @@ it('preserves the dirty state and records retry metadata when a push fails', fun
         ->and(SyncRun::query()->latest('id')->first()?->status)->toBe('failure');
 });
 
-it('preserves pending severity data after a successful state push', function () {
+it('preserves pending severity as a local-only annotation after a successful state push', function () {
     bindFakePushSource(new FakeSource);
     $system = SoftwareSystem::factory()->create([
         'source_id' => 'fake',
@@ -127,14 +129,105 @@ it('preserves pending severity data after a successful state push', function () 
 
     $operator = User::factory()->create();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
 
     $event->refresh();
 
+    // FakeSource declares canUpdateSeverity: false, matching every real Source today — the
+    // severity change can never be pushed, so it no longer keeps the event flagged dirty forever.
+    // The staged value itself is preserved as a durable local annotation.
     expect($event->state)->toBe(EventState::Resolved)
         ->and($event->pending_state)->toBeNull()
         ->and($event->pending_severity)->toBe(EventSeverity::Low)
-        ->and($event->is_dirty)->toBeTrue();
+        ->and($event->is_dirty)->toBeFalse()
+        ->and($event->comments()->latest('id')->first()?->body)->toContain('Severity change to "low" could not be pushed')
+        ->and(ErrorLog::query()->where('channel', 'sync')->where('level', 'warning')->exists())->toBeTrue();
+});
+
+it('resolves a severity-only change as local-only without ever attempting a push', function () {
+    $source = bindFakePushSource(new FakeSource);
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => 'fake',
+        'source_system_id' => 'sys-001',
+    ]);
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'software_system_id' => $system->id,
+        'pending_state' => null,
+        'pending_severity' => EventSeverity::Critical,
+        'is_dirty' => true,
+    ]);
+
+    $operator = User::factory()->create();
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+
+    $event->refresh();
+
+    expect($source->pushCalls)->toBe(0)
+        ->and($event->pending_severity)->toBe(EventSeverity::Critical)
+        ->and($event->is_dirty)->toBeFalse()
+        ->and($event->comments()->latest('id')->first()?->body)->toContain('Severity change to "critical" could not be pushed')
+        ->and(SyncRun::query()->latest('id')->first()?->counts_json['events_resolved_local_only'])->toBe(1);
+});
+
+it('resolves a standalone-comment-only dirty event as local-only', function () {
+    $source = bindFakePushSource(new FakeSource);
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => 'fake',
+        'source_system_id' => 'sys-001',
+    ]);
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'software_system_id' => $system->id,
+        'pending_state' => null,
+        'pending_severity' => null,
+        'is_dirty' => true,
+    ]);
+
+    $operator = User::factory()->create();
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+
+    $event->refresh();
+
+    expect($source->pushCalls)->toBe(0)
+        ->and($event->is_dirty)->toBeFalse()
+        ->and($event->comments()->latest('id')->first()?->body)->toContain('This comment could not be pushed');
+});
+
+it('leaves a misconfigured canPushStandaloneComment source dirty and logs an error instead of silently resolving', function () {
+    $source = bindFakePushSource(new class extends FakeSource
+    {
+        public function capabilities(): SourceCapabilities
+        {
+            return new SourceCapabilities(
+                canUpdateState: true,
+                canPushStandaloneComment: true,
+            );
+        }
+    });
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => 'fake',
+        'source_system_id' => 'sys-001',
+    ]);
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'software_system_id' => $system->id,
+        'pending_state' => null,
+        'pending_severity' => null,
+        'is_dirty' => true,
+    ]);
+
+    $operator = User::factory()->create();
+
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+
+    $event->refresh();
+
+    expect($source->pushCalls)->toBe(0)
+        ->and($event->is_dirty)->toBeTrue()
+        ->and(ErrorLog::query()->where('channel', 'sync')->where('level', 'error')->where('message', 'like', '%canPushStandaloneComment%')->exists())->toBeTrue();
 });
 
 it('stops retrying automatically after the third failure', function () {
@@ -157,7 +250,7 @@ it('stops retrying automatically after the third failure', function () {
 
     $operator = User::factory()->create();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
+    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
 
     $event->refresh();
 

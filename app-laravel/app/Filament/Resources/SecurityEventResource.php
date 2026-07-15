@@ -173,7 +173,7 @@ class SecurityEventResource extends Resource
                 ]),
 
             Section::make('Pending Sync')
-                ->visible(fn (SecurityEvent $record): bool => (bool) $record->is_dirty)
+                ->visible(fn (SecurityEvent $record): bool => $record->is_dirty || $record->pending_severity !== null)
                 ->schema([
                     Grid::make(3)->schema([
                         TextEntry::make('pending_state')

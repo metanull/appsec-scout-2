@@ -262,3 +262,79 @@ it('dispatches enrichment jobs returned by a source that implements QueuesEnrich
 
     Queue::assertCount(2);
 });
+
+it('marks a system and its containers removed when they disappear from a re-fetch, and un-marks them on reappearance', function () {
+    config(['integration_settings.fake.enabled' => true]);
+
+    $source = (new FakeSource)
+        ->withSystems(
+            new SystemDto('sys-001', 'Payments API'),
+            new SystemDto('sys-002', 'Billing API'),
+        )
+        ->withContainers('sys-001', new ContainerDto('cont-001', 'Payments Repo', 'sys-001', 'repository'))
+        ->withContainers('sys-002', new ContainerDto('cont-002', 'Billing Repo', 'sys-002', 'repository'));
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+
+    (new FetchSourceJob('fake'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class));
+
+    $sys1 = SoftwareSystem::query()->where('source_id', 'fake')->where('source_system_id', 'sys-001')->firstOrFail();
+    $sys2 = SoftwareSystem::query()->where('source_id', 'fake')->where('source_system_id', 'sys-002')->firstOrFail();
+
+    expect($sys1->removed_at)->toBeNull()->and($sys2->removed_at)->toBeNull();
+
+    // Re-fetch with sys-002 gone from upstream.
+    $source->withSystems(new SystemDto('sys-001', 'Payments API'))
+        ->withContainers('sys-001', new ContainerDto('cont-001', 'Payments Repo', 'sys-001', 'repository'));
+
+    (new FetchSourceJob('fake'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class));
+
+    expect($sys1->fresh()->removed_at)->toBeNull()
+        ->and($sys2->fresh()->removed_at)->not->toBeNull()
+        ->and($sys2->fresh()->containers()->first()->removed_at)->not->toBeNull();
+
+    // Re-fetch with sys-002 back again.
+    $source->withSystems(
+        new SystemDto('sys-001', 'Payments API'),
+        new SystemDto('sys-002', 'Billing API'),
+    )->withContainers('sys-001', new ContainerDto('cont-001', 'Payments Repo', 'sys-001', 'repository'))
+        ->withContainers('sys-002', new ContainerDto('cont-002', 'Billing Repo', 'sys-002', 'repository'));
+
+    (new FetchSourceJob('fake'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class));
+
+    expect($sys2->fresh()->removed_at)->toBeNull()
+        ->and($sys2->fresh()->containers()->first()->removed_at)->toBeNull();
+});
+
+it('does not sweep any system when a mid-pass exception aborts the fetch', function () {
+    config(['integration_settings.broken-mid-pass.enabled' => true]);
+
+    $existingSystem = SoftwareSystem::factory()->create([
+        'source_id' => 'broken-mid-pass',
+        'source_system_id' => 'sys-existing',
+    ]);
+
+    $brokenSource = new class extends FakeSource
+    {
+        public function id(): string
+        {
+            return 'broken-mid-pass';
+        }
+
+        public function fetchContainers(SystemDto $system): iterable
+        {
+            throw new RuntimeException('upstream API failure mid-enumeration');
+        }
+    };
+
+    $brokenSource->withSystems(new SystemDto('sys-new', 'New System'));
+
+    $this->app->bind('appsec-scout.source.broken-mid-pass', fn () => $brokenSource);
+    $this->app->tag(['appsec-scout.source.broken-mid-pass'], 'appsec-scout.source');
+
+    expect(fn () => (new FetchSourceJob('broken-mid-pass'))->handle(app(SystemIntegrationRuntime::class), app(Upserter::class)))
+        ->toThrow(RuntimeException::class);
+
+    expect($existingSystem->fresh()->removed_at)->toBeNull();
+});

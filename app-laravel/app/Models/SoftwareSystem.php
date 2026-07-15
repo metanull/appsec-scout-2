@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'software_asset_id', 'source_id', 'source_system_id', 'name', 'description',
-    'url', 'metadata', 'first_seen_at', 'last_seen_at', 'synced_at',
+    'url', 'metadata', 'first_seen_at', 'last_seen_at', 'synced_at', 'removed_at',
 ])]
 class SoftwareSystem extends Model
 {
@@ -40,6 +40,7 @@ class SoftwareSystem extends Model
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'synced_at' => 'datetime',
+            'removed_at' => 'datetime',
         ];
     }
 

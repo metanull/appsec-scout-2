@@ -148,47 +148,28 @@ final class DashboardData
     }
 
     /**
-     * Format a counts_json array into a compact human-readable summary.
+     * Summarizes a SyncRun's counts_json into "N alerts retrieved, W warning(s), E error(s)" —
+     * a fetch run (systems/containers/events pulled from a Source) reports alerts retrieved as
+     * events created+updated, with an error only when the whole run failed; a push run (staged
+     * alert changes sent upstream) reports its own events_succeeded/events_resolved_local_only/
+     * events_failed counts directly.
      */
-    public static function formatCounts(mixed $counts): string
+    public static function formatCounts(SyncRun $run): string
     {
-        if ($counts === null) {
-            return 'No counts recorded';
+        $counts = $run->getAttribute('counts_json');
+        $counts = is_array($counts) ? $counts : [];
+
+        if (array_key_exists('events_succeeded', $counts)) {
+            $retrieved = (int) ($counts['events_succeeded'] ?? 0);
+            $warnings = (int) ($counts['events_resolved_local_only'] ?? 0);
+            $errors = (int) ($counts['events_failed'] ?? 0);
+        } else {
+            $retrieved = (int) ($counts['events_created'] ?? 0) + (int) ($counts['events_updated'] ?? 0);
+            $warnings = 0;
+            $errors = $run->status === 'failure' ? 1 : 0;
         }
 
-        if (! is_array($counts) || $counts === []) {
-            return '0 changes';
-        }
-
-        $parts = [];
-
-        $knownGroups = [
-            'sys' => ['systems_created', 'systems_updated'],
-            'ctr' => ['containers_created', 'containers_updated'],
-            'evt' => ['events_created', 'events_updated'],
-        ];
-
-        foreach ($knownGroups as $label => $keys) {
-            $created = (int) ($counts[$keys[0]] ?? 0);
-            $updated = (int) ($counts[$keys[1]] ?? 0);
-
-            if ($created > 0 || $updated > 0) {
-                $parts[] = "{$label} +{$created}/~{$updated}";
-            }
-        }
-
-        $pushed = (int) ($counts['events_pushed'] ?? $counts['pushed'] ?? 0);
-        $failed = (int) ($counts['events_failed'] ?? $counts['failed'] ?? 0);
-
-        if ($pushed > 0) {
-            $parts[] = "pushed {$pushed}";
-        }
-
-        if ($failed > 0) {
-            $parts[] = "failed {$failed}";
-        }
-
-        return $parts !== [] ? implode(', ', $parts) : '0 changes';
+        return "{$retrieved} alerts retrieved, {$warnings} warning(s), {$errors} error(s)";
     }
 
     public static function flushCache(): void

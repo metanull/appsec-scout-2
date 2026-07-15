@@ -16,6 +16,41 @@ it('fails when required arguments are missing', function () {
         ->toThrow(RuntimeException::class, 'Not enough arguments');
 });
 
+it('fails fast when no --pat is given and no system credential is configured', function () {
+    $this->artisan('triage:codesearch', ['search' => 'openssl'])
+        ->expectsOutputToContain('AzDO PAT not provided via --pat, and no system credential "azdo-repos.pat" is configured.')
+        ->assertExitCode(1);
+});
+
+it('falls back to the system credential when --pat is omitted', function () {
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
+    app(Vault::class)->set('azdo-repos.pat', null, 'system-pat');
+
+    app()->bind(CodesearchClientFactory::class, function () {
+        $payload = ['count' => 0, 'results' => []];
+
+        return new class($payload) extends CodesearchClientFactory
+        {
+            /** @param array<string, mixed> $payload */
+            public function __construct(private readonly array $payload) {}
+
+            public function make(string $organization, string $pat): CodesearchClient
+            {
+                expect($pat)->toBe('system-pat');
+
+                return new CodesearchClient($organization, $pat, new Client([
+                    'handler' => new MockHandler([
+                        new Response(200, [], json_encode($this->payload, JSON_THROW_ON_ERROR)),
+                    ]),
+                ]));
+            }
+        };
+    });
+
+    $this->artisan('triage:codesearch', ['search' => 'openssl'])
+        ->assertSuccessful();
+});
+
 it('runs code search and attaches the json payload to an alert', function () {
     app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
@@ -49,8 +84,8 @@ it('runs code search and attaches the json payload to an alert', function () {
     $event = SecurityEvent::factory()->create();
 
     $this->artisan('triage:codesearch', [
-        'pat' => 'top-secret-pat',
         'search' => 'openssl',
+        '--pat' => 'top-secret-pat',
         '--scope' => 'project:SecurityProject',
         '--attach-to' => $event->id,
     ])
@@ -74,8 +109,8 @@ it('rejects invalid scope values', function () {
     app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
     $this->artisan('triage:codesearch', [
-        'pat' => 'top-secret-pat',
         'search' => 'openssl',
+        '--pat' => 'top-secret-pat',
         '--scope' => 'invalid',
     ])
         ->expectsOutputToContain('Scope must use the format project:<name> or repo:<name>.')

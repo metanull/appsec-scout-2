@@ -44,7 +44,6 @@ class RecentErrorsTableWidget extends TableWidget
                 TextColumn::make('message')
                     ->label('Message')
                     ->wrap()
-                    ->limit(160)
                     ->grow()
                     ->placeholder('-'),
                 TextColumn::make('occurred_at')

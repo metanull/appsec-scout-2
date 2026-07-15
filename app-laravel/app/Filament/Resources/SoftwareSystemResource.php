@@ -24,7 +24,9 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -121,6 +123,12 @@ class SoftwareSystemResource extends Resource
                         ->label('Last updated')
                         ->since()
                         ->placeholder('-'),
+                    TextEntry::make('removed_at')
+                        ->label('Removed')
+                        ->since()
+                        ->placeholder('No — still present in the latest sync')
+                        ->badge()
+                        ->color(fn (SoftwareSystem $record): string => $record->removed_at !== null ? 'danger' : 'success'),
                 ])
                 ->columns(4),
 
@@ -189,6 +197,21 @@ class SoftwareSystemResource extends Resource
                 TextColumn::make('high_events_count')->label('High')->sortable()->placeholder('-'),
                 TextColumn::make('medium_events_count')->label('Medium')->sortable()->placeholder('-'),
                 TextColumn::make('updated_at')->label('Updated')->since()->placeholder('-'),
+                IconColumn::make('removed_at')
+                    ->label('Removed')
+                    ->boolean()
+                    ->getStateUsing(fn (SoftwareSystem $record): bool => $record->removed_at !== null)
+                    ->trueColor('danger')
+                    ->falseColor('success'),
+            ])
+            ->filters([
+                TernaryFilter::make('removed_at')
+                    ->label('Removed')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereNotNull('removed_at'),
+                        false: fn (Builder $query): Builder => $query->whereNull('removed_at'),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
             ])
             ->recordUrl(fn (SoftwareSystem $record): string => static::getUrl('view', ['record' => $record]))
             ->paginated([25, 50, 100]);

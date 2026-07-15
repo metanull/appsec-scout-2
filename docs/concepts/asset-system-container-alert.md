@@ -76,7 +76,7 @@ Systems are simply orphaned back to unassigned rather than removed.
   already linked to an Asset — manual or prior automatic assignment is never overwritten. This
   runs as part of both the normal AzDO fetch cycle and the standalone
   `assets:sync-azdo-projects` command (see
-  [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-only-azdo-sync-assetssync-azdo-projects)).
+  [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
   No other Source has an equivalent auto-linker — an ASoC or Detectify System is never
   automatically grouped into an Asset; that's always a manual step.
 
@@ -143,29 +143,48 @@ scanner found" — with one structural difference that shapes everything else ab
 no external Source behind it**, only a file an operator (or the [Ops SbomScan/StaticAnalysis
 workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
 
-- **No writeback, because there's nothing to write back to.** `Source::pushEventState()` (the
-  mechanism [Triage](triage.md) uses to push a staged Alert change upstream) is implemented only
-  for `SecurityEvent`. There is no equivalent for `LocalFinding`/`SoftwareComponent` — not because
-  it's unimplemented, but because there's no upstream system on the other end to push to.
-- **No triage lifecycle at all.** Unlike `SecurityEvent`, neither model has `state`,
-  `pending_state`, `pending_severity`, or `is_dirty` columns. `LocalFindingResource` and
-  `SoftwareComponentResource` are genuinely **read-only** in Filament: their `form()` is empty, no
-  `create`/`edit` page is registered, and there is no delete action anywhere — no
-  `StateChanger`/`SeverityChanger`/`CommentManager` equivalent exists for either model. Both are
-  gated by the same `alerts.view` permission as Alerts, with no separate view/edit/delete
-  permission of their own.
-- **No tracker linking.** `WorkItemLink` has exactly one subject column, `event_id` — a Local
-  Finding or Dependency cannot be linked to a Jira/GitHub issue the way an Alert can. If a Local
-  Finding needs a tracker ticket, that has to happen through the Alert it's correlated to (below),
-  or through a Curated Link pointing at wherever it's tracked externally.
-- **Re-scanning updates, but never removes.** Re-uploading a fresh SARIF/SBOM for the same
+- **No writeback.** `Source::pushEventState()` (the mechanism [Triage](triage.md) uses to push a
+  staged Alert change upstream) is implemented only for `SecurityEvent`. There is no equivalent for
+  `LocalFinding`/`SoftwareComponent`, since neither has an upstream system to push to. The local
+  triage actions below are unaffected by this: they are purely local, so a `LocalFinding`
+  status/severity change never needs a pending/sync state the way an Alert's does.
+- **`LocalFinding` has its own local-only triage lifecycle; `SoftwareComponent` still has none.**
+  `LocalFinding` has `status` (an `EventState`, same enum and vocabulary as `SecurityEvent.state`)
+  and `overridden_severity` (an `EventSeverity` override that coexists with, and is never
+  overwritten by, the scanner-reported `severity` string). `App\Assets\LocalFindingStatusChanger`
+  and `App\Assets\LocalFindingSeverityChanger` apply these changes immediately (no staging, since
+  there's no upstream push to wait on) and require the same 10-character justification comment
+  `StateChanger`/`SeverityChanger` require for Alerts; `App\Assets\LocalFindingCommentManager`
+  supports a standalone comment too. All three are gated by the same `alerts.edit` permission as
+  Alert triage, and are exposed as header actions on `LocalFindingResource`'s view page ("Change
+  status", "Change severity") and a "Comments" relation manager ("Add comment"). None of this
+  touches the scanner-reported fields themselves (`kind`, `title`, `rule_id`, `severity`, etc.) —
+  `LocalFindingResource`'s `form()` is still empty and there is still no `create`/`edit`/`delete`
+  page, so re-scanning can't be confused with the raw finding record being edited.
+  `SoftwareComponentResource` is untouched by this and remains genuinely **read-only**: no `state`,
+  no severity override, no comments, no tracker linking, no `create`/`edit` page.
+- **`LocalFinding` can now link to a tracker; `SoftwareComponent` still can't.** `WorkItemLink`
+  itself is unchanged — it still has exactly one subject column, `event_id`, so a `SoftwareAsset`
+  Dependency cannot be linked to a Jira/GitHub issue directly. Instead, `LocalFinding` has its own
+  parallel `LocalFindingWorkItemLink` table (same shape: tracker id, work item id/url/title/state,
+  `created_by_user_id`, `created_at`/`synced_at`) and `App\Assets\LocalFindingWorkItemService`
+  (create / link existing / unlink — no auto-reconciliation search, unlike Alerts), gated by the
+  same `work-items.create`/`work-items.link` permissions as Alert tracker actions, exposed as
+  "Create work item"/"Link existing" header actions plus a "Work Items" relation manager with an
+  "Unlink" action. A Dependency (`SoftwareComponent`) still has to go through the Alert it's
+  correlated to, or a Curated Link, if it needs a tracker ticket.
+- **Re-scanning updates and marks what disappeared.** Re-uploading a fresh SARIF/SBOM for the same
   owner upserts on a natural key (`(owner, kind, rule_id, file_path, start_line)` for Local
-  Finding; a true unique `(owner, purl)` constraint for Dependency), bumping `last_seen_at`. But
-  nothing diffs against the previous scan to notice a finding *disappeared* — there is no
-  staleness flag, no archival job, and no cleanup. A vulnerability that's since been fixed and no
-  longer appears in Trivy's output simply stops being touched; its row lingers indefinitely,
-  still fully visible, with an increasingly stale `last_seen_at` and no signal that it's actually
-  gone.
+  Finding; a true unique `(owner, purl)` constraint for Dependency), bumping `last_seen_at`. After
+  a complete, successful pass, `App\Assets\StaleRecordSweeper` diffs the ids touched this run
+  against everything previously present in that same `(owner, kind)` scope: a Local Finding no
+  longer reported auto-transitions to `status = Resolved` (never overriding a status an operator
+  already set manually), and a Dependency no longer reported gets `removed_at` set — cleared again
+  if it reappears in a later scan. The sweep only runs once the whole parse/upsert loop finishes
+  without throwing, so a partial scan (e.g. a malformed SARIF entry mid-file) can never be
+  misread as "everything else is gone." The same `removed_at` treatment now also applies to
+  `SoftwareSystem`/`SecurityContainer` after a full Source or Source Control inventory sync (see
+  [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
 
 ### Local Finding fields and severity
 
@@ -197,9 +216,15 @@ heuristics, scoped to the finding's own Asset/System/Container:
 A successful match sets `correlated_security_event_id` and `correlation_method` — this is a
 visible, queryable link (`LocalFindingResource` shows a "Correlated alert" column linking straight
 to the Alert), not a silent internal computation. **`SoftwareComponent` is never correlated** —
-the correlator's API only ever accepts a `LocalFinding`. Unlike the other three auto-linking
-mechanisms in the app (see [docs/concepts/automated-discovery.md](automated-discovery.md)), there
-is no way to correct a wrong correlation through the UI — `LocalFindingResource` is read-only.
+the correlator's API only ever accepts a `LocalFinding`.
+
+A wrong correlation (the heuristics are conservative but not infallible) can be corrected: the
+finding's detail page has an "Unlink correlation" header action, gated by `alerts.edit` and only
+visible when the finding is currently correlated, that clears `correlated_security_event_id` and
+`correlation_method` via `App\Assets\LocalFindingCorrelationManager` and records an audit entry
+with the previous values. Unlinking doesn't change the Alert itself, and a later re-scan may
+correlate the same pair again if the heuristic still matches — there is no "don't re-correlate
+this pair" suppression today.
 
 ## Curated Links, Repository Mappings, and Tracker Project Links
 
@@ -226,7 +251,9 @@ together, in depth, in
 | View Asset/System/Container/Alert/Finding/Component (`alerts.view`) | `alerts.view` | Reader and above |
 | Create/edit/delete a `SoftwareAsset`; attach/detach a System; add a Curated Link | `context.curate` | Plan, Sync, Admin |
 | Manage a Repository Provider (`admin.repository-providers`) | `admin.repository-providers` | Plan, Sync, Admin |
-| Edit or delete a `LocalFinding`/`SoftwareComponent` | *(none — no such action exists)* | Nobody; both are read-only |
+| Change a `LocalFinding`'s status/severity/comment | `alerts.edit` | Triage and above |
+| Create/link/unlink a `LocalFinding` tracker work item | `work-items.create` / `work-items.link` | Plan and above |
+| Edit or delete the scanner-reported fields of a `LocalFinding`, or anything on a `SoftwareComponent` | *(none — no such action exists)* | Nobody; both stay read-only for their scan-reported data |
 
 `assets:sync-azdo-projects` and the AzDO auto-linker inside the normal fetch cycle bypass all of
 this — they write directly via Eloquent from a trusted, unauthenticated context (a console

@@ -21,6 +21,7 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use App\Sources\Registry as SourceRegistry;
+use App\Sync\PendingSyncResolver;
 use App\Sync\PushEventStatesJob;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Registry;
@@ -116,7 +117,7 @@ it('covers the sync workflow and a denied admin action', function () {
         'is_dirty' => true,
     ]);
 
-    (new PushEventStatesJob([$event->id], $syncUser->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class));
+    (new PushEventStatesJob([$event->id], $syncUser->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
 
     $event->refresh();
 

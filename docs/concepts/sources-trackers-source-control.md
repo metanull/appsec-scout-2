@@ -65,7 +65,7 @@ and reconciliation on work items:
 
 ### Source Control (`App\SourceControl\Contracts\SourceControlProvider`)
 
-Deliberately minimal — four methods, no data-fetching methods at all:
+The base contract is deliberately minimal — four methods, no data-fetching:
 
 ```php
 interface SourceControlProvider
@@ -78,18 +78,25 @@ interface SourceControlProvider
 }
 ```
 
-Today, Source Control is *only* "a place to hold a dedicated repo-scoped credential and prove it
-works." Its consumers (`App\Triage\CodesearchService`, and `invoke-ops.ps1`'s SbomScan /
-StaticAnalysis / clone-push flows — see [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md))
-read the `azdo-repos.*` / `github-repos.*` credential straight out of the vault and build their
-own HTTP/git client; they do not call through the `SourceControlProvider` object itself. There
-is no capabilities value object for this role, unlike Source and Tracker — see
-[Not Yet Formalized](#not-yet-formalized-source-controls-capability-contract) below.
+Its primary purpose is holding a dedicated repo-scoped credential and proving it works. Two of its
+consumers (`App\Triage\CodesearchService`, and `invoke-ops.ps1`'s SbomScan/StaticAnalysis/clone-push
+flows — see [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md)) read the
+`azdo-repos.*`/`github-repos.*` credential straight out of the vault and build their own HTTP/git
+client, without going through the `SourceControlProvider` object.
+
+A provider can additionally implement `App\SourceControl\Contracts\EnumeratesInventory`, an
+optional mixin (the same pattern as Source's `EnrichesFetchedEvents`/`QueuesEnrichmentJobs`) with
+`fetchProjects(): iterable<SystemDto>` and `fetchRepositories(SystemDto $project):
+iterable<ContainerDto>` — reusing the identical DTOs `Source::fetchSystems()`/`fetchContainers()`
+return, so both feed the same `SystemContainerUpserter` path. `AzDoRepos` implements it; `GitHubRepos`
+does not. See [Populating Inventory From Source Control](#populating-inventory-from-source-control)
+below for how this is consumed.
 
 ## Capability Matrices
 
 Source and Tracker each expose a capabilities value object that *declares* what a concrete
-implementation can do. Source Control has no equivalent (see below).
+implementation can do. Source Control has no equivalent value object; its only declarable
+capability today is the `EnumeratesInventory` mixin described above.
 
 ### `App\Sources\ValueObjects\SourceCapabilities`
 
@@ -97,11 +104,24 @@ implementation can do. Source Control has no equivalent (see below).
 | --- | :---: | :---: | :---: | :---: | --- |
 | AzDO Advanced Security | Yes | Yes | No | Yes | Vulnerability, Code Quality, Dependency, Secret, License |
 | AppScan on Cloud (ASoC) | Yes | Yes | No | Yes | Vulnerability, Dependency, Secret, Misconfiguration |
-| Detectify | No | Yes | No | Yes | Vulnerability, Misconfiguration |
+| Detectify | No | Yes | No | No | Vulnerability, Misconfiguration |
 
 No implemented Source sets `canUpdateSeverity: true` today — severity is not currently pushable
 to any connected Source, regardless of how a change is staged in Triage (see
 [docs/concepts/triage.md](triage.md)).
+
+Detectify's status-change endpoints (`setfixedstatus`, `setacceptedriskstatus`,
+`setfalsepositivestatus`, `unsetfixedstatus`) take no comment/note field — there is no way to
+attach a comment to a Detectify status change, so `canAddComments` is `false`.
+
+`canAddComments` means "this Source accepts a comment riding along with a state/severity push" —
+it says nothing about pushing a comment added on its own (independent of any state/severity
+change). That's a separate, always-`false`-today capability, `canPushStandaloneComment`: no
+Source exposes an API for it at all. See
+[docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md) for the full
+per-source, per-operation breakdown, and [docs/concepts/triage.md](triage.md#staging-vs-pushing-a-change)
+for how a staged change with no pushable capability gets resolved as a local-only annotation
+instead of staying flagged "pending sync" forever.
 
 ### `App\Trackers\ValueObjects\TrackerCapabilities`
 
@@ -118,7 +138,8 @@ to any connected Source, regardless of how a change is staged in Triage (see
 | Source | `SecurityContainer` | `source_container_id` (inherits `source_id` transitively via its parent `SoftwareSystem`) |
 | Source | `SecurityEvent` | `source_id`, `source_event_id` |
 | Work Tracker | `WorkItemLink` | `tracker_id`, `work_item_id` / `work_item_url` |
-| Source Control | *(none — credential only)* | — |
+| Source Control | `SoftwareSystem` (only when implementing `EnumeratesInventory`) | `source_id` (the provider's own id, e.g. `azdo-repos`), `source_system_id` |
+| Source Control | `SecurityContainer` (only when implementing `EnumeratesInventory`) | `source_container_id` |
 
 `SecurityEvent` also carries code-location fields (`file_path`, `start_line`, `end_line`,
 `snippet`, `commit_sha`, `branch`, `version_control_url`) populated straight from the Source's
@@ -183,9 +204,22 @@ see [docs/concepts/links-and-defaults.md](links-and-defaults.md) for the full de
 
 A Source has no equivalent scoping step — `fetchSystems()`/`fetchContainers()` are full
 enumerations the Source itself decides to expose; `SoftwareSystem`/`SecurityContainer` rows are
-an *output* of running the Source, not a pre-configured input. Source Control has no scoping
-step either: just `enabled` + a credential, consumed wherever repo access is needed, with the
-caller supplying org/repo/search terms explicitly each time.
+an *output* of running the Source, not a pre-configured input. Source Control has no scoping step
+either: `triage:codesearch` and the ops container's clone/scan flows consume `enabled` + a
+credential, with the caller supplying org/repo/search terms explicitly each time. A provider
+implementing `EnumeratesInventory` follows the Source pattern instead — a full, unscoped
+enumeration — see below.
+
+### Populating Inventory From Source Control
+
+`App\Sync\InventorySyncService` walks every enabled Source (`fetchSystems()`/`fetchContainers()`)
+and every enabled Source Control provider implementing `EnumeratesInventory`
+(`fetchProjects()`/`fetchRepositories()`), upserting both through the same
+`SystemContainerUpserter`. It backs the `assets:sync-azdo-projects` Artisan command and the
+"Sync inventory" action on `Admin -> Operations` (gated by `admin.queue`) — see
+[docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)
+for the full mechanics, including the mark-and-sweep staleness handling
+(`App\Assets\StaleRecordSweeper`) that runs after a complete, unfiltered pass.
 
 ## Supported vs. Deferred
 
@@ -196,11 +230,11 @@ caller supplying org/repo/search terms explicitly each time.
 | Work Tracker | Jira Cloud, GitHub Issues | Implemented |
 | Source Control | AzDO Repos, GitHub Repos | Implemented |
 
-## Not Yet Formalized: Source Control's Capability Contract
+## Source Control's Capability Contract
 
-Unlike Source and Tracker, Source Control has no capabilities value object and no data-fetching
-methods on its contract — it is the leanest of the three roles by design, reflecting that its
-only current consumers (`triage:codesearch`, the ops container) each know exactly what they need
-and talk to the underlying HTTP/git client directly rather than through a shared abstraction. If
-Source Control grows more capabilities in the future (e.g. a formal "list repositories" or
-"clone" operation on the contract itself), this is the natural place that would be extended.
+Source Control still has no capabilities value object the way Source and Tracker do — it has one
+optional mixin, `EnumeratesInventory` (see above), rather than a declared set of flags. Its base
+contract stays lean because its original consumers (`triage:codesearch`, the ops container) each
+know exactly what they need and talk to the underlying HTTP/git client directly rather than
+through a shared abstraction; `EnumeratesInventory` is additive on top of that, for providers that
+also need to feed the System/Container hierarchy.

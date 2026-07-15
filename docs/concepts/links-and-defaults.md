@@ -10,7 +10,7 @@ generates a URL, and one does nothing but render as-is.
 
 | | `TrackerProjectLink` | `RepositoryMapping` | `CuratedLink` |
 | --- | --- | --- | --- |
-| Can attach to | Asset, System, Container | Asset, System, Container | Asset, System, Container, **and individual Alerts** |
+| Can attach to | System, Container (the model still allows Asset, but the Filament relation manager for it was removed — see below) | Asset, System, Container | Asset, System, Container, **and individual Alerts** |
 | Precedence when resolving for an Alert | Container → System → tracker-specific global fallback | Container → System | N/A — never resolved, always just rendered |
 | Asset-level entries ever consulted for an Alert? | **No** — `SecurityEvent` has no relation to `SoftwareAsset` | **No** — same reason | N/A |
 | What it drives | Default tracker/project preselection; reconciliation scope | "View in repo" / "View file" links | Nothing — informational only |
@@ -22,16 +22,18 @@ A `TrackerProjectLink` says "alerts under this System/Container/Asset should be 
 tracker's project by default." Columns: `owner_type`/`owner_id` (polymorphic), `tracker_id`,
 `project_key`, `project_name`, `is_default`, `created_by_user_id`, `metadata`.
 
-### It is genuinely usable at three levels, but only two are ever resolved
+### Only two levels are exposed in Filament, because only two are ever resolved
 
 The database and model place no restriction on `owner_type` — `SoftwareAsset`, `SoftwareSystem`,
-and `SecurityContainer` are all valid owners, and all three get the
-`TrackerProjectLinksRelationManager` tab in Filament. **But an Asset-level link is never
-consulted when resolving a default for a specific Alert**, because `SecurityEvent` has no
-relation to `SoftwareAsset` at all — only to its System and Container. An Asset-level link exists
-purely for that Asset's own display purposes; it plays no role in the resolution chain below. If
-you're setting up defaults, put the link on the System or Container that alerts actually belong
-to, not on the Asset.
+and `SecurityContainer` are all valid owners of a `TrackerProjectLink`. But **an Asset-level link
+is never consulted when resolving a default for a specific Alert**, because `SecurityEvent` has no
+relation to `SoftwareAsset` at all — only to its System and Container. Because an Asset-level
+link could never do anything, `TrackerProjectLinksRelationManager` is registered only on the
+System and Container Filament resources, not on the Asset resource — the option is hidden where
+it can't work, rather than left as a silent no-op. (`SoftwareAsset::trackerProjectLinks()` still
+exists on the model and cascades on delete, so any link created before this was cleaned up is
+still there in the database; it's just unreachable from the UI now.) If you're setting up
+defaults, put the link on the System or Container that alerts actually belong to.
 
 ### Default-project resolution: the exact precedence chain
 
@@ -59,8 +61,8 @@ grouped/bulk flows.
 
 ### How links get created: manual, or auto-learned
 
-An operator can create a `TrackerProjectLink` directly from the relation manager on an Asset,
-System, or Container's Filament page. But most links are never typed in by hand — they're
+An operator can create a `TrackerProjectLink` directly from the relation manager on a System or
+Container's Filament page. But most links are never typed in by hand — they're
 **auto-learned**: every time an operator creates a new work item or links an existing one (single
 or grouped), `App\Trackers\TrackerProjectLinker::learnFromEvents()` runs afterward and creates a
 link for **every distinct System and every distinct Container** among the alerts just
@@ -79,23 +81,21 @@ This auto-learning is one of four independent auto-linking mechanisms in the app
 [docs/concepts/automated-discovery.md](automated-discovery.md) for how it compares to the other
 three (Asset auto-creation, Work Item reconciliation, Local Finding correlation).
 
-### Reconciliation scoping — and a UI/service mismatch worth knowing about
+### Reconciliation scoping
 
 [Reconciliation](triage.md#reconciliation-the-same-linking-mechanism-two-triggers) uses the exact
 same Container/System `TrackerProjectLink` lookup to decide which tracker projects to search for
-candidate matches. But there's a subtlety between the service and the UI button that triggers it:
+candidate matches.
 
-- `ReconciliationService::reconcileEvent()` itself, if the alert's System/Container has **no**
-  scoped links at all, silently **widens to every tracker/project pair that has a link anywhere
-  in the system** — it never returns "nothing to search."
-- The "Find existing work items" button on the alert detail page is **stricter than that**: it
-  pre-checks for a scoped link before even calling the service, and if none exists, shows an
-  info notification ("No tracker project mappings configured for this system or container.") and
-  stops — it never lets the service's own broader fallback kick in.
-
-So in practice: reconciliation from the UI only ever runs once a System or Container has at least
-one `TrackerProjectLink`, even though the underlying service would have been willing to search
-more broadly if invoked directly. `reconcileAll()` (the background, Operations-page-triggered
+`ReconciliationService::reconcileEvent()` itself, if the alert's System/Container has **no**
+scoped links at all, silently **widens to every tracker/project pair that has a link anywhere in
+the system** — it never returns "nothing to search." The "Find existing work items" button on the
+alert detail page runs the same pre-check only to decide whether to show a **warning**
+notification ("Searching every configured tracker project instead of a scoped one — results may be
+less precise. Add a Tracker Project Link to this alert's system or container to narrow this search
+next time."), then unconditionally calls the service either way — a System/Container with no
+`TrackerProjectLink` at all does not block reconciliation from the UI, it just searches more
+broadly and tells the operator so. `reconcileAll()` (the background, Operations-page-triggered
 sweep of every alert) has no scoping concept at all — it always searches every linked project.
 
 ## Repository Mapping
@@ -120,7 +120,7 @@ for the fuller distinction between this and an actual Source Control credential.
 Repository Mappings are always created manually (via the relation manager) with one exception:
 `assets:sync-azdo-projects` and the AzDO fetch cycle auto-create one for every AzDO repository
 Container, using the AzDO organization/project as the base URL (see
-[Ops](sbom-and-static-analysis.md#related-inventory-only-azdo-sync-assetssync-azdo-projects)).
+[Ops](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
 
 ## Curated Link
 
@@ -142,10 +142,14 @@ consumers of `CuratedLink::` outside its own relation manager and service turns 
   System level if they should all share one default.
 - **If defaults stop resolving after they used to work**, check whether a second
   `TrackerProjectLink` was added at the same level without one of them being flagged
-  `is_default` — that silently disables resolution at that level rather than erroring.
-- **To make "Reconcile work items" available on an alert**, ensure its System or Container has at
-  least one `TrackerProjectLink` — the UI button will not fall back to a broader search the way
-  the underlying service technically could.
+  `is_default` — that disables resolution at that level rather than erroring, but it's no longer
+  silent: the create/link work-item forms now show a warning naming the ambiguous level so it's
+  visible before it causes confusion. There is still no database-level constraint preventing more
+  than one `is_default` link per level+tracker — the warning is the only safeguard today.
+- **"Reconcile work items" ("Find existing work items") always runs**, even with no
+  `TrackerProjectLink` on the alert's System or Container — it just widens the search to every
+  configured tracker project and warns that results may be less precise. Add a `TrackerProjectLink`
+  to narrow the search next time.
 - **To make "View in repo"/"View file" links appear on an alert**, add a `RepositoryMapping` at
   the Container level (preferred, since it wins) or the System level — this is unrelated to
   whether a Source Control credential is configured; the link is generated, not fetched.

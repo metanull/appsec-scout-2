@@ -55,21 +55,36 @@ permissions reviews and pushes them. The page groups dirty events by Source and 
 `Source::pushEventState($event)`. On success it clears `pending_state`/`pending_comment` and
 sets `state = pending_state`.
 
-Behavior worth knowing when reading this flow:
+Behavior worth knowing when reading this flow — `App\Sync\PendingSyncResolver` (shared by
+`PushEventStatesJob` and the one-off `events:recompute-pending-sync` backfill command) decides,
+for every dirty event handed to a sync run, whether it actually has something pushable for its
+Source:
 
-- A pending **comment**, staged by itself (not alongside a state change), rides along as part of
-  the *next* state-change push — there is no independent "push a comment" call. If a user only
-  ever adds standalone comments without changing state, `pending_state` stays null and
-  `PushEventStatesJob` always skips that event; it will show as pending on `Admin -> Pending Sync`
-  indefinitely.
-- A pending **severity** change is not cleared by `PushEventStatesJob` at all — no shipped
-  Source declares `canUpdateSeverity: true` (see the capability matrix in
-  [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md#capability-matrices)),
-  so a severity change is effectively a local annotation today, regardless of how it's staged.
-- `SourceCapabilities` (`canUpdateState`/`canUpdateSeverity`/`canAddComments`) exists as a
-  declared-per-Source flag set, but the Triage UI does not currently consult it to decide what
-  to show — visibility is driven purely by the `alerts.edit`/`alerts.bulk-edit` permissions, the
-  same way regardless of which Source an alert came from.
+- A staged **state** change (`pending_state`) is pushable whenever the Source declares
+  `canUpdateState: true` (every shipped Source does): `PushEventStatesJob` calls
+  `Source::pushEventState($event)`, and on success clears `pending_state`/`pending_comment` and
+  sets `state = pending_state`.
+- A pending **severity** change is pushable only when the Source declares `canUpdateSeverity: true`
+  (see the capability matrix in
+  [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md#capability-matrices)
+  and the full per-source detail in
+  [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)) — resolved the
+  normal way when it is (attempt the push, clear on success). When it isn't, rather than leaving
+  the event flagged "pending sync" forever, the sync run resolves it as **local-only**: it leaves a
+  system-authored note on the alert's own Comments tab explaining why (visible right where an
+  operator would look, not as a warning at edit time), logs an `ErrorLog` warning, and clears
+  `is_dirty` — but `pending_severity` itself is left untouched, so the staged value stays visible
+  as a durable local annotation. Because of this, the alert page's "Pending Sync" section stays
+  visible whenever `pending_severity` is set, even after `is_dirty` clears — not just while
+  genuinely awaiting a push.
+- A standalone **comment** (staged by itself, not alongside a state/severity change) gets the
+  identical local-only treatment — no Source can push a comment independent of a state/severity
+  change (see [docs/concepts/upstream-source-capabilities.md](upstream-source-capabilities.md)),
+  so it's resolved the same way: a system note, an `ErrorLog` warning, `is_dirty` cleared.
+- `SourceCapabilities` isn't consulted by the Triage UI at edit time — "Change severity" and "Add
+  comment" are available identically regardless of Source, gated purely by `alerts.edit`, by
+  design: the local-first model always allows a local edit; the "this can't push anywhere" fact
+  is only surfaced later, when a sync run actually resolves it, not as a warning while editing.
 
 ## Commenting
 
@@ -96,8 +111,8 @@ Both flows check that the acting user has a usable personal tracker credential f
 [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md)); if not,
 they're redirected to `Profile -> Integrations` instead of proceeding.
 
-Both forms also try to pre-select a tracker and project. That default — and, separately, whether
-"Find existing work items" (below) does anything at all — comes from a `TrackerProjectLink`
+Both forms also try to pre-select a tracker and project. That default — and, separately, how
+narrowly scoped "Find existing work items" (below) searches — comes from a `TrackerProjectLink`
 attached to the alert's System or Container, with its own precise Container-then-System fallback
 chain and an auto-learning mechanism that records one after every create/link action. See
 [docs/concepts/links-and-defaults.md](links-and-defaults.md) for the full resolution logic.
@@ -110,11 +125,13 @@ operator manually searching:
 
 - **Per-alert, on demand** — the alert detail page's "Find existing work items" action runs
   `ReconciliationService::reconcileEvent()` synchronously, scoped to the tracker projects linked
-  to that alert's system/container. Gated by `work-items.link` or `work-items.sync`. This is a
-  Triage action — and it's also one of the clearest examples of a feature that's silently
-  disabled without the right data present: with no `TrackerProjectLink` on the alert's System or
-  Container, the button shows an info notification and does nothing (see
-  [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping--and-a-uiservice-mismatch-worth-knowing-about)).
+  to that alert's system/container when one exists. Gated by `work-items.link` or
+  `work-items.sync`. This is a Triage action. With no `TrackerProjectLink` on the alert's System or
+  Container, the button still runs — it shows a warning notification ("Searching every configured
+  tracker project instead of a scoped one — results may be less precise.") and falls back to
+  searching every configured tracker project, exactly matching what the service itself does when
+  invoked without a scope (see
+  [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping)).
 - **Whole-database, in the background** — `Admin -> Operations`'s "Reconcile all tracker links"
   action queues `ReconcileAllJob` across every alert. Gated by `admin.queue`/`work-items.sync`.
   This is an Ops-page action, not a Triage one, even though it uses the identical underlying
@@ -128,13 +145,16 @@ three (Asset auto-creation, Tracker Project Link auto-learning, Local Finding co
 
 `triage:codesearch` is a manual **Artisan command**, not a Filament button — there is no
 "search code" action anywhere in the Triage UI today. An operator runs it directly
-(`php artisan triage:codesearch {pat} {search} --scope= --attach-to=`), optionally attaching the
+(`php artisan triage:codesearch {search} --pat= --scope= --attach-to=`), optionally attaching the
 JSON result to an alert as an Attachment (visible on that alert's Attachments tab, "Created by"
-shown as `triage:codesearch` since there's no interactive user attached to a CLI run). The
-`triage.run-codesearch` permission is seeded on the Triage role and above, but is not currently
-checked anywhere in the code — running the command is gated only by having a shell on the `app`
-container, not by an in-app permission. `App\Triage\RunCodesearchJob` (a queued wrapper for the
-same logic) exists but is only exercised in tests today; nothing in production dispatches it.
+shown as `triage:codesearch` since there's no interactive user attached to a CLI run). The PAT is
+resolved the same way `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` resolve theirs: `--pat` is used
+if given, otherwise the command falls back to the `azdo-repos.pat` system credential; if neither is
+available the command fails fast with a clear error instead of attempting the search. Running the
+command is gated only by having a shell on the `app` container — there is no in-app permission for
+it, since Artisan commands aren't checked against Spatie permissions anywhere in the app.
+`App\Triage\RunCodesearchJob` (a queued wrapper for the same logic) exists but is only exercised in
+tests today; nothing in production dispatches it.
 
 ## Permission Matrix
 
@@ -145,7 +165,6 @@ Roles are cumulative: `Reader ⊂ Triage ⊂ Plan ⊂ Sync ⊂ Admin`.
 | `alerts.view` (see alerts, list/detail pages) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `alerts.edit` (change state/severity, comment) | | ✓ | ✓ | ✓ | ✓ |
 | `alerts.bulk-edit` (bulk state change) | | ✓ | ✓ | ✓ | ✓ |
-| `triage.run-codesearch` (seeded, not enforced) | | ✓ | ✓ | ✓ | ✓ |
 | `work-items.create` (create tickets, single/grouped) | | | ✓ | ✓ | ✓ |
 | `work-items.link` (link existing tickets, reconcile) | | | ✓ | ✓ | ✓ |
 | `work-items.sync` (push staged changes; also gates reconcile-all) | | | | ✓ | ✓ |

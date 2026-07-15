@@ -25,7 +25,6 @@ class RolePermissionSeeder extends Seeder
         'admin.integrations',
         'admin.repository-providers',
         'context.curate',
-        'triage.run-codesearch',
     ];
 
     private const ROLE_PERMISSIONS = [
@@ -36,13 +35,11 @@ class RolePermissionSeeder extends Seeder
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
-            'triage.run-codesearch',
         ],
         'Plan' => [
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
-            'triage.run-codesearch',
             'work-items.create',
             'work-items.link',
             'admin.repository-providers',
@@ -52,7 +49,6 @@ class RolePermissionSeeder extends Seeder
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
-            'triage.run-codesearch',
             'work-items.create',
             'work-items.link',
             'admin.repository-providers',
@@ -64,7 +60,6 @@ class RolePermissionSeeder extends Seeder
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
-            'triage.run-codesearch',
             'work-items.create',
             'work-items.link',
             'admin.repository-providers',

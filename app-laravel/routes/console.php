@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Assets\AttachmentIngestionService;
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
-use App\Assets\AzDoProjectLinker;
 use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
@@ -15,20 +14,22 @@ use App\Assets\StaticAnalysis\PendingStaticAnalysisScanImporter;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\Attachment;
 use App\Models\SecurityContainer;
+use App\Models\SecurityEvent;
 use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
-use App\Sync\SystemContainerUpserter;
+use App\Sync\InventorySyncService;
+use App\Sync\PendingSyncResolver;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Triage\CodesearchService;
 use App\Users\UserAdminService;
 use GuzzleHttp\Exception\ClientException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -78,11 +79,21 @@ Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin}
     return self::SUCCESS;
 })->purpose('Create the first AppSec Scout admin account when no users exist');
 
-Artisan::command('triage:codesearch {pat} {search} {--scope=} {--attach-to=}', function (): int {
-    $pat = (string) $this->argument('pat');
+Artisan::command('triage:codesearch {search} {--pat=} {--scope=} {--attach-to=}', function (Vault $vault): int {
     $search = (string) $this->argument('search');
     $scope = $this->option('scope');
     $attachTo = $this->option('attach-to');
+
+    $patOption = $this->option('pat');
+    $pat = is_string($patOption) && $patOption !== ''
+        ? $patOption
+        : $vault->get('azdo-repos.pat', null, true);
+
+    if (! is_string($pat) || $pat === '') {
+        $this->error('AzDO PAT not provided via --pat, and no system credential "azdo-repos.pat" is configured.');
+
+        return 1;
+    }
 
     try {
         $result = app(CodesearchService::class)->run(
@@ -183,66 +194,18 @@ Artisan::command(
 )->purpose('Import a file (SBOM, dependency report, HTTP headers, pipeline run, ...) as an attachment on a software system or container');
 
 Artisan::command(
-    'assets:sync-azdo-projects {--project-filter=} {--repo-filter=}',
-    function (SystemIntegrationRuntime $runtime, SystemContainerUpserter $upserter, AzDoProjectLinker $linker): int {
+    'assets:sync-azdo-projects {--pat=} {--project-filter=} {--repo-filter=}',
+    function (InventorySyncService $service, Vault $vault): int {
         $projectFilter = $this->option('project-filter');
         $repoFilter = $this->option('repo-filter');
+        $patOption = $this->option('pat');
 
-        $matches = static function (?string $pattern, string $value): bool {
-            if (! is_string($pattern) || $pattern === '') {
-                return true;
-            }
-
-            return @preg_match('~' . str_replace('~', '\~', $pattern) . '~', $value) === 1;
-        };
-
-        $counts = [
-            'projects_seen' => 0,
-            'systems_created' => 0,
-            'systems_updated' => 0,
-            'assets_created' => 0,
-            'repos_seen' => 0,
-            'containers_created' => 0,
-            'containers_updated' => 0,
-            'repository_mappings_created' => 0,
-        ];
+        $runSync = fn (): array => $service->sync(AzDoNormalizer::SOURCE_ID, $projectFilter, $repoFilter);
 
         try {
-            $runtime->runSource(AzDoNormalizer::SOURCE_ID, function (Source $source) use ($matches, $projectFilter, $repoFilter, $upserter, $linker, &$counts): void {
-                foreach ($source->fetchSystems() as $systemDto) {
-                    if (! $matches($projectFilter, $systemDto->name)) {
-                        continue;
-                    }
-
-                    $counts['projects_seen']++;
-
-                    ['system' => $system, 'wasCreated' => $systemIsNew] = $upserter->upsertSystem(AzDoNormalizer::SOURCE_ID, $systemDto);
-                    $counts[$systemIsNew ? 'systems_created' : 'systems_updated']++;
-
-                    $hadAsset = $system->software_asset_id !== null;
-                    $linker->linkSystemToAsset($system);
-                    if (! $hadAsset && $system->refresh()->software_asset_id !== null) {
-                        $counts['assets_created']++;
-                    }
-
-                    foreach ($source->fetchContainers($systemDto) as $containerDto) {
-                        if (! $matches($repoFilter, $containerDto->name)) {
-                            continue;
-                        }
-
-                        $counts['repos_seen']++;
-
-                        ['container' => $container, 'wasCreated' => $containerIsNew] = $upserter->upsertContainer($system, $containerDto);
-                        $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
-
-                        $hadMapping = $container->repositoryMappings()->exists();
-                        $linker->ensureRepositoryMapping($container);
-                        if (! $hadMapping && $container->repositoryMappings()->exists()) {
-                            $counts['repository_mappings_created']++;
-                        }
-                    }
-                }
-            });
+            $counts = is_string($patOption) && $patOption !== ''
+                ? $vault->runWithOverrides(['azdo.pat' => $patOption], $runSync)
+                : $runSync();
         } catch (RuntimeException $exception) {
             $this->error($exception->getMessage());
 
@@ -883,6 +846,48 @@ Artisan::command('vault:list', function (): int {
 
     return self::SUCCESS;
 })->purpose('List every system-scoped key currently stored in the vault, keys only, not values');
+
+Artisan::command('events:recompute-pending-sync', function (SourceRegistry $sources, PendingSyncResolver $resolver): int {
+    $resolved = 0;
+    $skippedNoSource = 0;
+    $skippedMisconfigured = 0;
+
+    SecurityEvent::query()
+        ->where('is_dirty', true)
+        ->orderBy('id')
+        ->chunkById(200, function (Collection $events) use ($sources, $resolver, &$resolved, &$skippedNoSource, &$skippedMisconfigured): void {
+            foreach ($events as $event) {
+                $source = $sources->find((string) $event->source_id);
+
+                if (! $source instanceof Source) {
+                    $skippedNoSource++;
+
+                    continue;
+                }
+
+                $capabilities = $source->capabilities();
+
+                if ($resolver->hasPushableChange($event, $capabilities)) {
+                    continue;
+                }
+
+                if ($resolver->resolveUnpushableChange($event, $source, $capabilities, null)) {
+                    $resolved++;
+                } else {
+                    $skippedMisconfigured++;
+                }
+            }
+        });
+
+    $this->info(sprintf(
+        'Resolved %d event(s) previously stuck pending sync as local-only. Skipped %d (source not registered), %d (misconfigured capability, left dirty for review).',
+        $resolved,
+        $skippedNoSource,
+        $skippedMisconfigured,
+    ));
+
+    return self::SUCCESS;
+})->purpose('One-off backfill for events dirtied under the pre-fix logic, where a severity-only or comment-only change could never be pushed and stayed flagged pending sync forever. Leaves a system note + ErrorLog warning on each event it resolves, matching what PushEventStatesJob now does for new changes going forward. Safe to re-run — already-resolved events are no longer dirty and are skipped by the query.');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();

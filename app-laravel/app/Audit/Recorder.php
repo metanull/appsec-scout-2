@@ -69,6 +69,12 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordCorrelationCleared(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('correlation_cleared', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordTrackerStateChanged(string $subjectType, string $subjectId, array $payload = []): void
     {
         $this->write('tracker_state_changed', $subjectType, $subjectId, $payload);

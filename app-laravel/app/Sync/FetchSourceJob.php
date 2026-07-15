@@ -3,6 +3,7 @@
 namespace App\Sync;
 
 use App\Assets\AzDoProjectLinker;
+use App\Assets\StaleRecordSweeper;
 use App\Events\SyncRunFinished;
 use App\Integrations\IntegrationSettingsRepository;
 use App\Integrations\SystemIntegrationRuntime;
@@ -78,10 +79,12 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
         ?IntegrationSettingsRepository $settings = null,
         ?SystemContainerUpserter $systemContainerUpserter = null,
         ?AzDoProjectLinker $azDoProjectLinker = null,
+        ?StaleRecordSweeper $sweeper = null,
     ): void {
         $settings ??= app(IntegrationSettingsRepository::class);
         $systemContainerUpserter ??= app(SystemContainerUpserter::class);
         $azDoProjectLinker ??= app(AzDoProjectLinker::class);
+        $sweeper ??= app(StaleRecordSweeper::class);
 
         $run = SyncRun::query()->create([
             'source_id' => $this->sourceId,
@@ -109,7 +112,7 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
 
             $sinceCarbon = $since !== null ? Carbon::parse((string) $since) : null;
 
-            $runtime->runSource($this->sourceId, function (Source $source) use ($sinceCarbon, $upserter, $systemContainerUpserter, $azDoProjectLinker, &$counts): void {
+            $runtime->runSource($this->sourceId, function (Source $source) use ($sinceCarbon, $upserter, $systemContainerUpserter, $azDoProjectLinker, $sweeper, &$counts): void {
                 $systemIdMap = [];
                 $containerIdMap = [];
 
@@ -129,6 +132,12 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                         $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
                     }
                 }
+
+                // The systems/containers enumeration above just completed in full without
+                // throwing, so it's safe to sweep now — independent of whether the events fetch
+                // below succeeds, since that has no bearing on which systems/containers exist.
+                $sweeper->sweepSystems($this->sourceId, array_values($systemIdMap));
+                $sweeper->sweepContainers($this->sourceId, array_values(array_unique($containerIdMap)));
 
                 foreach ($source->fetchEvents($sinceCarbon) as $eventDto) {
                     if ($source instanceof EnrichesFetchedEvents) {

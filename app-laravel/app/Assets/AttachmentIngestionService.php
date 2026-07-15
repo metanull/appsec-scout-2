@@ -32,6 +32,7 @@ final class AttachmentIngestionService
         private readonly CycloneDxSbomParser $sbomParser,
         private readonly SarifFindingParser $sarifParser,
         private readonly SecurityEventCorrelator $correlator,
+        private readonly StaleRecordSweeper $sweeper,
     ) {}
 
     public function ingest(Attachment $attachment): void
@@ -53,6 +54,8 @@ final class AttachmentIngestionService
 
     private function ingestSbom(Attachment $attachment, SoftwareAsset|SoftwareSystem|SecurityContainer $owner): void
     {
+        $touchedIds = [];
+
         foreach ($this->sbomParser->parse($attachment->payload) as $component) {
             $record = $owner->softwareComponents()->firstOrNew(['purl' => $component->purl]);
             $isNew = ! $record->exists;
@@ -74,11 +77,18 @@ final class AttachmentIngestionService
             }
 
             $record->save();
+            $touchedIds[] = $record->id;
         }
+
+        // The whole SBOM parsed and every component upserted without throwing, so this is a
+        // complete pass — safe to mark anything not touched this time as no longer present.
+        $this->sweeper->sweepComponents($owner, $touchedIds);
     }
 
     private function ingestFindings(Attachment $attachment, SoftwareAsset|SoftwareSystem|SecurityContainer $owner, string $kind): void
     {
+        $touchedIds = [];
+
         foreach ($this->sarifParser->parse($attachment->payload) as $finding) {
             $record = $owner->localFindings()->firstOrNew([
                 'kind' => $kind,
@@ -106,9 +116,14 @@ final class AttachmentIngestionService
             }
 
             $record->save();
+            $touchedIds[] = $record->id;
 
             $this->correlator->correlate($record);
         }
+
+        // The whole SARIF file parsed and every finding upserted without throwing, so this is a
+        // complete pass — safe to auto-resolve anything of this kind not seen this time.
+        $this->sweeper->sweepFindingsAsResolved($owner, $kind, $touchedIds);
     }
 
     /** @return array{software_system_id: ?int, software_asset_id: ?int} */

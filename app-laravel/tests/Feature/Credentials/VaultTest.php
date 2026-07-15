@@ -134,6 +134,33 @@ it('supports strict owner scoping for integration tests', function () {
     expect($resolved)->toBe('system-token');
 });
 
+it('returns the override value instead of the stored credential during the callback', function () {
+    $vault = vault();
+    $vault->set('azdo.pat', null, 'system-token');
+
+    $resolved = $vault->runWithOverrides(
+        ['azdo.pat' => 'explicit-pat'],
+        fn (): ?string => $vault->get('azdo.pat', null, true),
+    );
+
+    expect($resolved)->toBe('explicit-pat')
+        ->and($vault->get('azdo.pat', null, true))->toBe('system-token');
+});
+
+it('restores the previous override state after the callback throws', function () {
+    $vault = vault();
+    $vault->set('azdo.pat', null, 'system-token');
+
+    expect(fn () => $vault->runWithOverrides(
+        ['azdo.pat' => 'explicit-pat'],
+        function (): never {
+            throw new RuntimeException('boom');
+        },
+    ))->toThrow(RuntimeException::class, 'boom');
+
+    expect($vault->get('azdo.pat', null, true))->toBe('system-token');
+});
+
 function vault(): Vault
 {
     return new Vault(new Recorder, app(CredentialResolver::class));

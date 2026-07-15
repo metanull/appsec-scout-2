@@ -4,10 +4,16 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
+use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
+use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Filament\Support\LocalFindingOwnerColumns;
+use App\Models\Enums\EventSeverity;
+use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\User;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
@@ -64,7 +70,24 @@ class LocalFindingResource extends Resource
                             LocalFinding::KIND_CODE_QUALITY => 'info',
                             default => 'warning',
                         }),
-                        TextEntry::make('severity')->label('Severity')->badge()->color(fn (?string $state): string => LocalFinding::severityColor($state))->placeholder('-'),
+                        TextEntry::make('status')
+                            ->label('Status')
+                            ->badge()
+                            ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
+                            ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
+                                EventState::Resolved->value => 'success',
+                                EventState::Dismissed->value => 'gray',
+                                EventState::InProgress->value => 'info',
+                                EventState::Acknowledged->value => 'warning',
+                                default => 'danger',
+                            }),
+                        TextEntry::make('_effective_severity')
+                            ->label('Severity')
+                            ->state(fn (LocalFinding $record): string => $record->overridden_severity !== null
+                                ? "{$record->effectiveSeverityLabel()} (reported: {$record->severity})"
+                                : $record->effectiveSeverityLabel())
+                            ->badge()
+                            ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
                         TextEntry::make('rule_id')->label('Rule ID')->placeholder('-'),
                         TextEntry::make('title')->label('Title')->wrap()->columnSpanFull(),
                         TextEntry::make('_location')
@@ -122,7 +145,23 @@ class LocalFindingResource extends Resource
                     LocalFinding::KIND_CODE_QUALITY => 'info',
                     default => 'warning',
                 }),
-                TextColumn::make('severity')->badge()->sortable()->color(fn (?string $state): string => LocalFinding::severityColor($state))->placeholder('-'),
+                TextColumn::make('status')
+                    ->badge()
+                    ->sortable()
+                    ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
+                    ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
+                        EventState::Resolved->value => 'success',
+                        EventState::Dismissed->value => 'gray',
+                        EventState::InProgress->value => 'info',
+                        EventState::Acknowledged->value => 'warning',
+                        default => 'danger',
+                    }),
+                TextColumn::make('_effective_severity')
+                    ->label('Severity')
+                    ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())
+                    ->badge()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('severity', $direction === 'desc' ? 'desc' : 'asc'))
+                    ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
                 TextColumn::make('title')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('file_path')->label('Location')
                     ->formatStateUsing(fn (LocalFinding $record): string => $record->start_line !== null
@@ -166,7 +205,10 @@ class LocalFindingResource extends Resource
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            CommentsRelationManager::class,
+            WorkItemLinksRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
@@ -174,6 +216,42 @@ class LocalFindingResource extends Resource
         return [
             'index' => ListLocalFindings::route('/'),
             'view' => ViewLocalFinding::route('/{record}'),
+        ];
+    }
+
+    /** @return array<int, Select|Textarea> */
+    public static function statusChangeForm(): array
+    {
+        return [
+            Select::make('new_status')
+                ->label('New status')
+                ->required()
+                ->options(fn (): array => collect(EventState::cases())
+                    ->mapWithKeys(fn (EventState $state): array => [$state->value => str($state->value)->replace('_', ' ')->title()->toString()])
+                    ->all()),
+            Textarea::make('comment')
+                ->label('Comment')
+                ->required()
+                ->minLength(10)
+                ->rows(4),
+        ];
+    }
+
+    /** @return array<int, Select|Textarea> */
+    public static function severityChangeForm(): array
+    {
+        return [
+            Select::make('new_severity')
+                ->label('New severity')
+                ->required()
+                ->options(fn (): array => collect(EventSeverity::cases())
+                    ->mapWithKeys(fn (EventSeverity $severity): array => [$severity->value => ucfirst($severity->value)])
+                    ->all()),
+            Textarea::make('comment')
+                ->label('Comment')
+                ->required()
+                ->minLength(10)
+                ->rows(4),
         ];
     }
 }

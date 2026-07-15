@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'owner_type', 'owner_id', 'attachment_id',
     'software_system_id', 'software_asset_id',
     'name', 'version', 'ecosystem', 'purl', 'license', 'metadata',
-    'first_seen_at', 'last_seen_at',
+    'first_seen_at', 'last_seen_at', 'removed_at',
 ])]
 class SoftwareComponent extends Model
 {
@@ -22,6 +22,7 @@ class SoftwareComponent extends Model
             'metadata' => 'array',
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'removed_at' => 'datetime',
         ];
     }
 

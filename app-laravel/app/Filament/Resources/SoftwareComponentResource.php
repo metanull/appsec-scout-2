@@ -14,8 +14,10 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -72,6 +74,12 @@ class SoftwareComponentResource extends Resource
                     TextEntry::make('purl')->label('Package URL')->wrap()->copyable(),
                     TextEntry::make('first_seen_at')->label('First seen')->dateTime('d M Y H:i')->placeholder('-'),
                     TextEntry::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
+                    TextEntry::make('removed_at')
+                        ->label('Removed')
+                        ->since()
+                        ->placeholder('No — still present in the latest scan')
+                        ->badge()
+                        ->color(fn (SoftwareComponent $record): string => $record->removed_at !== null ? 'danger' : 'success'),
                 ])
                 ->columns(3),
         ]);
@@ -87,6 +95,12 @@ class SoftwareComponentResource extends Resource
                 TextColumn::make('license')->placeholder('-')->toggleable(isToggledHiddenByDefault: true),
                 ...SoftwareComponentOwnerColumns::columns(),
                 TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
+                IconColumn::make('removed_at')
+                    ->label('Removed')
+                    ->boolean()
+                    ->getStateUsing(fn (SoftwareComponent $record): bool => $record->removed_at !== null)
+                    ->trueColor('danger')
+                    ->falseColor('success'),
             ])
             ->filters([
                 SelectFilter::make('ecosystem')
@@ -96,6 +110,13 @@ class SoftwareComponentResource extends Resource
                         ->orderBy('ecosystem')
                         ->pluck('ecosystem', 'ecosystem')
                         ->all()),
+                TernaryFilter::make('removed_at')
+                    ->label('Removed')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereNotNull('removed_at'),
+                        false: fn (Builder $query): Builder => $query->whereNull('removed_at'),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
             ])
             ->groups([
                 Group::make('name')->label('Component'),

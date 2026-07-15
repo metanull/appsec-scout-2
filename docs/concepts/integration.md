@@ -74,13 +74,18 @@ very next minutely tick — no scheduler restart is needed.
 
 ### Manual (on-demand)
 
-`Admin -> Operations` exposes three relevant actions that bypass the "is it due" check entirely:
+`Admin -> Operations` exposes several actions that bypass the "is it due" check entirely:
 
 - **Dispatch due integrations** — runs the exact same `DispatchDueIntegrations` logic
   immediately, instead of waiting for the next tick.
 - **Fetch source** — dispatches `FetchSourceJob` for one chosen source right now, regardless of
   its interval.
 - **Refresh tracker** — dispatches `RefreshWorkItemsJob` for one chosen tracker right now.
+- **Sync inventory** (`admin.queue`) — dispatches `App\Sync\SyncInventoryJob`, which walks every
+  enabled Source *and* every enabled Source Control provider that implements `EnumeratesInventory`
+  to sync `SoftwareSystem`/`SecurityContainer` rows — see
+  [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md#populating-inventory-from-source-control).
+  Unlike the other three actions, this one covers Source Control, not just Source/Tracker.
 
 Every action taken from the Operations page writes an audit row.
 

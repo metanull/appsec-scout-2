@@ -3,7 +3,7 @@
 "Ops" here refers to the `ops` Docker container's two organization-wide scan workflows —
 **SbomScan** and **StaticAnalysis** — the pipeline that gets their output into appsec-scout as
 Local Findings and Dependencies, and a related, simpler inventory tool,
-`assets:sync-azdo-projects` (see [below](#related-inventory-only-azdo-sync-assetssync-azdo-projects)).
+`assets:sync-azdo-projects` (see [below](#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
 Don't confuse any of this with the `Admin -> Operations` **Filament page** (covered in
 [docs/concepts/integration.md](integration.md)), which is about monitoring and manually
 triggering Source/Tracker sync jobs — a completely different thing that happens to share the
@@ -121,22 +121,40 @@ uploaded, instead of an operator uploading them one at a time.
 scanner found"), but with no external Source behind them, only a file this pipeline uploaded.
 That has two consequences worth knowing when relying on repeated SbomScan/StaticAnalysis runs:
 
-- They're **read-only** in appsec-scout — no state/severity change, no comment, no dismiss action,
-  and no way to push anything anywhere, unlike Alerts. See
-  [docs/concepts/asset-system-container-alert.md](asset-system-container-alert.md#local-finding-and-dependency-are-alerts-local-only-counterpart)
-  for the full comparison.
-- **Re-running a scan updates existing rows but never removes ones that disappeared.** A
-  vulnerability or secret that's since been fixed and no longer shows up in a later Trivy run
-  simply stops being touched by that repository's next `run.jsonl` line — its row stays visible
-  indefinitely, with a `last_seen_at` that quietly stops advancing. There is no staleness marker
-  and no cleanup job today; a stale finding is not distinguishable in the UI from a current one
-  except by comparing `last_seen_at` against how recently the repo was last scanned.
+- Dependencies (`SoftwareComponent`) are still **read-only** in appsec-scout — no state/severity
+  change, no comment, no dismiss action. Local Findings now support a local-only status/severity/
+  comment/tracker-linking lifecycle (see [Local Finding and Dependency are Alerts' local-only
+  counterpart](asset-system-container-alert.md#local-finding-and-dependency-are-alerts-local-only-counterpart)),
+  but re-scanning still never touches the scanner-reported fields themselves, and there is still no
+  way to push anything upstream, unlike Alerts — Local Findings and Dependencies have no upstream
+  Source to push to.
+- **Re-running a scan updates existing rows and marks the ones that disappeared.** A vulnerability
+  or secret that's since been fixed and no longer shows up in a later Trivy run is auto-resolved
+  (`LocalFinding.status` → `Resolved`, unless an operator already moved it to a different status —
+  automation never overrides a manual decision) once that same `(owner, kind)` scan completes in
+  full; a dependency dropped from a later SBOM gets `SoftwareComponent.removed_at` set the same
+  way, and clears again if it reappears in a later scan. `App\Assets\StaleRecordSweeper` is the
+  shared mark-and-sweep implementation `AttachmentIngestionService` calls after each complete
+  ingestion pass — it deliberately never runs on a partial/failed one, so an interrupted scan can't
+  be misread as "everything else disappeared."
 
-## Related: Inventory-Only AzDO Sync (`assets:sync-azdo-projects`)
+## Related: Inventory Sync (`assets:sync-azdo-projects`, `App\Sync\InventorySyncService`)
 
 A second, much simpler tool also browses an AzDO organization and populates the
 [Software Asset / System / Container hierarchy](asset-system-container-alert.md) — but it isn't
-a host-side script like SbomScan/StaticAnalysis, and it doesn't touch alerts at all.
+a host-side script like SbomScan/StaticAnalysis, and it doesn't touch alerts at all. The command
+is a thin wrapper around `App\Sync\InventorySyncService`, a shared service that also backs a
+"Sync inventory" button on `Admin -> Operations` (gated by `admin.queue`): that service walks
+every enabled Source (`fetchSystems()`/`fetchContainers()`) *and* every enabled Source Control
+provider that implements the optional `App\SourceControl\Contracts\EnumeratesInventory` mixin
+(`fetchProjects()`/`fetchRepositories()`, reusing the identical `SystemDto`/`ContainerDto` shapes)
+— today only `AzDoRepos` implements it, but any future Source-Control-only provider (e.g. a
+GitHub or Bitbucket repository lister with no matching Source) can plug into the same path without
+new upsert logic. A full, unfiltered run of either the command or the Ops button also sweeps
+`SoftwareSystem`/`SecurityContainer` rows the same way SBOM/SARIF ingestion sweeps Dependencies/
+Local Findings above — a `--project-filter`/`--repo-filter`-scoped run deliberately skips the
+sweep, since a filtered pass is not "everything," and marking filtered-out projects as removed
+would be wrong.
 
 ```bash
 docker compose exec app php artisan assets:sync-azdo-projects --project-filter='^Portal' --repo-filter='.*'
@@ -148,6 +166,13 @@ through `invoke-app.ps1`'s generic `-Artisan` passthrough, but nothing wraps it 
 There is also no permission gate on running it: Artisan commands aren't checked against Spatie
 permissions, so the security boundary is simply "who can exec into the `app` container" — the
 same trust model as any other console command.
+
+The AzDO PAT it uses to browse projects/repositories follows the same explicit-or-system-credential
+resolution as `triage:codesearch` and `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis`: pass `--pat=` to
+use a specific token for one run, or omit it to use the `azdo.pat` system credential (the AzDO
+Source's own ingestion credential, not the AzDO Repos `azdo-repos.pat` used for code search/clone
+access). The underlying `AzDoSource` already fails fast with a clear error if neither is available
+or the token is rejected.
 
 It reuses the exact same upsert machinery the normal AzDO Source fetch cycle uses
 (`SystemContainerUpserter`, keyed on `source_id`+`source_system_id` for systems and

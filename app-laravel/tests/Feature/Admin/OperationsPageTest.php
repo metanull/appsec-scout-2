@@ -8,6 +8,7 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
+use App\Sync\SyncInventoryJob;
 use App\Trackers\ReconcileAllJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;
@@ -226,7 +227,55 @@ it('header actions render for admin', function () {
         ->test(OperationsPage::class)
         ->assertActionExists('dispatchDueIntegrations')
         ->assertActionExists('fetchSource')
-        ->assertActionExists('refreshTracker');
+        ->assertActionExists('refreshTracker')
+        ->assertActionExists('syncInventory');
+});
+
+it('admin users can trigger the inventory sync action', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchSyncInventory');
+
+    Bus::assertDispatched(SyncInventoryJob::class);
+
+    expect(AuditLog::query()->where('action', 'operations.sync_inventory')->exists())->toBeTrue();
+});
+
+it('does not dispatch inventory sync when it is already queued', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    DB::table('jobs')->insert([
+        'queue' => 'default',
+        'payload' => json_encode(['displayName' => SyncInventoryJob::class], JSON_THROW_ON_ERROR),
+        'attempts' => 0,
+        'reserved_at' => null,
+        'available_at' => now()->timestamp,
+        'created_at' => now()->timestamp,
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchSyncInventory');
+
+    Bus::assertNotDispatched(SyncInventoryJob::class);
+});
+
+it('shows inventory sync last-run summary on operations page', function () {
+    $admin = operationsAdmin();
+
+    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
+    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 2, 'systems_updated' => 1, 'containers_created' => 3, 'containers_updated' => 0]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Inventory sync')
+        ->assertSee('3 system(s), 3 container(s) synced');
 });
 
 it('sync users can trigger global reconciliation action', function () {
