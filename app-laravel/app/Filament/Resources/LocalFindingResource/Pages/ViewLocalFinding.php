@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\LocalFindingResource\Pages;
 
+use App\Assets\LocalFindingCorrelationManager;
 use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
 use App\Assets\LocalFindingWorkItemService;
@@ -56,6 +57,15 @@ class ViewLocalFinding extends ViewRecord
                 ->visible(fn (): bool => Gate::allows('work-items.link'))
                 ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
                 ->action(fn (array $data): bool => $this->linkExistingWorkItem($data)),
+            Action::make('unlinkCorrelation')
+                ->label('Unlink correlation')
+                ->icon('heroicon-o-link-slash')
+                ->color('danger')
+                ->visible(fn (): bool => Gate::allows('alerts.edit') && $this->findingRecord()->correlated_security_event_id !== null)
+                ->requiresConfirmation()
+                ->modalHeading('Unlink correlated alert')
+                ->modalDescription('Remove the automatic correlation between this finding and the linked alert? This does not change the alert itself, and a future re-scan may correlate them again if the heuristic still matches.')
+                ->action(fn (): bool => $this->unlinkCorrelation()),
         ];
     }
 
@@ -93,6 +103,18 @@ class ViewLocalFinding extends ViewRecord
         $this->refreshFormData([]);
 
         Notification::make()->title('Severity changed')->success()->send();
+
+        return true;
+    }
+
+    public function unlinkCorrelation(): bool
+    {
+        Gate::authorize('alerts.edit');
+
+        app(LocalFindingCorrelationManager::class)->unlink($this->findingRecord());
+        $this->refreshFormData([]);
+
+        Notification::make()->title('Correlation unlinked')->success()->send();
 
         return true;
     }

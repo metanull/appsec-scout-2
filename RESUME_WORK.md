@@ -201,13 +201,21 @@ different places today.
 
 ## C. Finding D — No lifecycle management for locally-scanned data
 
-**Verdict: D1, D2, D3 all CONFIRMED.** All three are also already explicitly documented as known,
-accepted facts in `docs/concepts/sbom-and-static-analysis.md` and `docs/concepts/asset-system-container-alert.md`
-— a documented gap, not an undiscovered one. **No legacy precedent exists** for D1 — checked
-`legacy-code/core/src/{storage,sync}`, `legacy-code/dotnet*/src/AppSecScout.Core`, and the whole legacy
-tree for `trivy|sarif|cyclonedx|sbom` — zero matches. The Node TUI and both .NET rewrites were
-exclusively upstream-alert-triage and tracker-reconciliation tools; local SBOM/static-analysis scanning
-is a wholly new-to-appsec-scout-2 concept with nothing to borrow from.
+**Verdict: D1, D2, D3 all CONFIRMED as of the original investigation.** All three were also already
+explicitly documented as known, accepted facts in `docs/concepts/sbom-and-static-analysis.md` and
+`docs/concepts/asset-system-container-alert.md` — a documented gap, not an undiscovered one.
+**No legacy precedent exists** for D1 — checked `legacy-code/core/src/{storage,sync}`,
+`legacy-code/dotnet*/src/AppSecScout.Core`, and the whole legacy tree for `trivy|sarif|cyclonedx|sbom`
+— zero matches. The Node TUI and both .NET rewrites were exclusively upstream-alert-triage and
+tracker-reconciliation tools; local SBOM/static-analysis scanning is a wholly new-to-appsec-scout-2
+concept with nothing to borrow from.
+
+**D2 is now DONE** — "Fix D" (an earlier session phase, commits `5a25a3d`/`6096264`) gave
+`LocalFindingResource` the same triage parity as `SecurityEventResource`: status change, severity
+override, comments, and work-item create/link, all gated by plain `Gate::allows('alerts.edit')` /
+`Gate::allows('work-items.create')` / `Gate::allows('work-items.link')` checks — no Policy class was
+needed, contrary to the sequencing note originally written below. **D3 is now also DONE**, built
+directly on that same infrastructure — see the D3 section below. D1 (staleness/cleanup) remains open.
 
 ### D1 — No staleness/cleanup mechanism
 - `AttachmentIngestionService::ingestSbom()`/`ingestFindings()`
@@ -227,15 +235,19 @@ is a wholly new-to-appsec-scout-2 concept with nothing to borrow from.
   exists anywhere near these two models.
 - `docs/concepts/asset-system-container-alert.md:150-156,229` states this verbatim already.
 
-### D3 — SecurityEventCorrelator has no undo path
-- `SecurityEventCorrelator::correlate()` (`app-laravel/app/Assets/SecurityEventCorrelator.php:33-51`)
-  only ever **sets** `correlated_security_event_id` on a match; no other code path anywhere writes to
-  that column (no uncorrelate service, no listener clearing it on delete/dismiss of the linked alert, no
-  Filament action to unlink) — a direct consequence of D2's fully-read-only resource.
-- Notably, this is the **only** one of the app's four automatic-linking mechanisms marked
-  "Reversible? No" in `docs/concepts/automated-discovery.md:33` — the other three (Asset auto-link,
-  TrackerProjectLink auto-learn, WorkItemLink reconciliation) all already have an unlink/detach/edit path
-  in the app today, establishing a precedent pattern to follow rather than invent.
+### D3 — SecurityEventCorrelator has no undo path (FIXED)
+- Fixed: a new `App\Assets\LocalFindingCorrelationManager::unlink()` clears
+  `correlated_security_event_id`/`correlation_method` and records an audit entry with the previous
+  values (action `correlation_cleared`). `ViewLocalFinding` gained an "Unlink correlation" header
+  action — same shape as `changeStatus`/`changeSeverity` — gated by `Gate::allows('alerts.edit')`,
+  visible only when the finding is currently correlated, `requiresConfirmation()`.
+- This mirrors the **existing** `WorkItemLinksRelationManager` "Unlink" action pattern exactly (plain
+  Gate check, no Policy class, `requiresConfirmation()`), per the option chosen below.
+- `docs/concepts/automated-discovery.md` and `docs/concepts/asset-system-container-alert.md` updated:
+  the correlator is no longer the one mechanism marked "Reversible? No".
+- Tests: `tests/Feature/Assets/LocalFindingCorrelationManagerTest.php` (service-level clear + audit
+  entry) and new cases in `tests/Feature/Filament/LocalFindingActionsTest.php` (visibility gating,
+  action invocation).
 
 ### Remediation options
 - **D1 — staleness detection**, three options: (1) mark-and-sweep per scan run scoped to owner — snapshot
@@ -256,15 +268,14 @@ is a wholly new-to-appsec-scout-2 concept with nothing to borrow from.
   actually reported and could break re-scan upsert matching on natural keys. A bulk-only dismiss is
   cheaper but denies the single-item correction workflow the docs imply is missing; a combined per-row +
   bulk dismiss (via `ActionGroup::make([...])` per CLAUDE.md convention) is the natural fit.
-- **D3 — unlink correlation**: mirror the **existing** `ReconciliationService`/`WorkItemLink` "Unlink"
-  action pattern (same codebase, already reviewed) — clear `correlated_security_event_id`/
-  `correlation_method`, `requiresConfirmation()`, audit-logged. Lower-risk than inventing a new pattern.
-  Secondary options: a "re-correlate" action (re-run the correlator for one finding — doesn't help if the
-  heuristic itself is wrong), or a manual "correlate to..." picker (highest operator value, most work,
-  arguably scope creep beyond D3 narrowly).
-- **Sequencing note**: D3's fix cannot ship without D2's scaffolding (Policy class, permission gate,
-  `requiresConfirmation()`, AuditLog wiring) — building the D2 dismiss action and the D3 unlink action
-  together is the most efficient path since both need the same missing infrastructure.
+- **D3 — unlink correlation (DONE)**: implemented the chosen option — mirrored the **existing**
+  `ReconciliationService`/`WorkItemLink` "Unlink" action pattern, clearing `correlated_security_event_id`/
+  `correlation_method`, `requiresConfirmation()`, audit-logged. The rejected secondary options (a
+  "re-correlate" action; a manual "correlate to..." picker) remain open ideas if stronger operator
+  control is wanted later, but were out of scope for this fix.
+- D2's scaffolding turned out to already exist (Fix D's Gate-based checks, no Policy class needed), so
+  D3 shipped standalone without the dismiss-action work the original sequencing note assumed was a
+  prerequisite.
 
 ---
 
@@ -337,7 +348,7 @@ tree. Investigation reflects the **post-fix** state.
    (move commands into `invoke-ops.ps1`, larger, resolves the Ops/Artisan inconsistency) vs. Option C
    (do A now, defer the relocation decision). Note the reusable primitive already exists three times
    in the codebase (`Vault::get($key, null, true)`).
-4. **Decide D's direction** — likely sequence: build the D2 dismiss-action scaffolding (Policy class +
-   permission + `requiresConfirmation()` + AuditLog) together with the D3 unlink action, since D3 depends
-   on D2's infrastructure; decide D1's staleness-detection approach (mark-and-sweep recommended) as a
-   separate, schema-touching story per CLAUDE.md's story-splitting rule.
+4. **Decide D's direction** — D2 and D3 are now done (see §C). What's left is D1's
+   staleness-detection approach (mark-and-sweep per (owner, kind) recommended — see the proposal
+   given directly to the user) as a separate, schema-touching story per CLAUDE.md's story-splitting
+   rule.

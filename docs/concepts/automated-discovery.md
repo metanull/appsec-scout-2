@@ -19,9 +19,9 @@ was written by referencing the others:
 - **Additive-only — never overwrites a manual decision.** All four check first whether a
   relationship already exists and back off if it does. Automation only ever fills a gap; it never
   second-guesses something a human (or an earlier automated pass) already decided.
-- **The result is visible and reversible through the normal UI**, with one exception (see below)
-  — auto-created rows look and behave exactly like manually-created ones, so an operator can
-  always inspect, correct, or remove what automation produced.
+- **The result is visible and reversible through the normal UI** — auto-created rows look and
+  behave exactly like manually-created ones, so an operator can always inspect, correct, or remove
+  what automation produced.
 
 ## Comparison
 
@@ -30,7 +30,7 @@ was written by referencing the others:
 | `AzDoProjectLinker::linkSystemToAsset()` | Inline, every time an AzDO `SoftwareSystem` is upserted (normal fetch cycle or `assets:sync-azdo-projects`) | A new `SoftwareAsset`, 1:1 | None — always creates a fresh Asset, no name/similarity matching against existing ones | Only acts if the System has no Asset yet | Yes — detach/reattach via Filament |
 | `TrackerProjectLinker::learnFromEvents()` | Inline, after every "create work item" / "link existing work item" action | A `TrackerProjectLink` at System **and** Container level | None — deterministic: the exact System/Container ids of the events just acted on, and the project just used | Idempotent upsert; never marks the new link `is_default`; never overwrites an existing `project_name` | Yes — edit/delete via relation manager |
 | `ReconciliationService` | On-demand ("Find existing work items" button) or background sweep (`ReconcileAllJob`) | A `WorkItemLink` | URL cross-reference: the alert's own URL matched against text mined from candidate tracker issues | Only links when a URL match is found — no title/description similarity guessing | Yes — "Unlink" action |
-| `SecurityEventCorrelator::correlate()` | Inline, every time a Local Finding is ingested (including re-scans) | `correlated_security_event_id` on a `LocalFinding` | Vulnerability: exact package name + version. Secret: exact file path + line within 2. Code quality: never correlated | Only sets when a match is found; re-running never *clears* a previous successful correlation | **No** — `LocalFindingResource` now supports status/severity/comment/tracker-link actions, but none of them touch `correlated_security_event_id`; there is still no action to clear or correct a wrong correlation |
+| `SecurityEventCorrelator::correlate()` | Inline, every time a Local Finding is ingested (including re-scans) | `correlated_security_event_id` on a `LocalFinding` | Vulnerability: exact package name + version. Secret: exact file path + line within 2. Code quality: never correlated | Only sets when a match is found; re-running never *clears* a previous successful correlation | Yes — "Unlink correlation" header action on the finding's detail page (`alerts.edit`), via `App\Assets\LocalFindingCorrelationManager` |
 
 ## Each Mechanism, and Where to Read the Full Story
 

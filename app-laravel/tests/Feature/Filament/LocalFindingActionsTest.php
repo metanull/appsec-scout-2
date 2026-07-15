@@ -4,10 +4,12 @@ use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
+use App\Models\Enums\EventType;
 use App\Models\LocalFinding;
 use App\Models\LocalFindingComment;
 use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
+use App\Models\SecurityEvent;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
@@ -63,6 +65,51 @@ it('shows triage and work item actions to a plan-role operator', function () {
         ->assertSee('Change severity')
         ->assertSee('Create work item')
         ->assertSee('Link existing');
+});
+
+it('hides the unlink correlation action when the finding has no correlated alert', function () {
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+    $finding = localFindingWithSecret();
+
+    $this->actingAs($user)
+        ->get(LocalFindingResource::getUrl('view', ['record' => $finding]))
+        ->assertOk()
+        ->assertDontSee('Unlink correlation');
+});
+
+it('shows the unlink correlation action to a triage-role operator when the finding is correlated', function () {
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Triage']);
+    $finding = localFindingWithSecret();
+    $event = SecurityEvent::factory()->create(['type' => EventType::Secret]);
+    $finding->forceFill([
+        'correlated_security_event_id' => $event->id,
+        'correlation_method' => 'file_line',
+    ])->save();
+
+    $this->actingAs($user)
+        ->get(LocalFindingResource::getUrl('view', ['record' => $finding]))
+        ->assertOk()
+        ->assertSee('Unlink correlation');
+});
+
+it('clears the correlation when the unlink correlation action is invoked', function () {
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Triage']);
+    $finding = localFindingWithSecret();
+    $event = SecurityEvent::factory()->create(['type' => EventType::Secret]);
+    $finding->forceFill([
+        'correlated_security_event_id' => $event->id,
+        'correlation_method' => 'file_line',
+    ])->save();
+
+    Livewire::actingAs($user)
+        ->test(ViewLocalFinding::class, ['record' => $finding->getRouteKey()])
+        ->callAction('unlinkCorrelation');
+
+    expect($finding->fresh()->correlated_security_event_id)->toBeNull()
+        ->and($finding->fresh()->correlation_method)->toBeNull();
 });
 
 it('renders comments on the local finding comments relation manager', function () {

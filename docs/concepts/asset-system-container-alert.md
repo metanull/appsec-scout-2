@@ -214,11 +214,15 @@ heuristics, scoped to the finding's own Asset/System/Container:
 A successful match sets `correlated_security_event_id` and `correlation_method` — this is a
 visible, queryable link (`LocalFindingResource` shows a "Correlated alert" column linking straight
 to the Alert), not a silent internal computation. **`SoftwareComponent` is never correlated** —
-the correlator's API only ever accepts a `LocalFinding`. Unlike the other three auto-linking
-mechanisms in the app (see [docs/concepts/automated-discovery.md](automated-discovery.md)), there
-is still no way to correct a wrong correlation through the UI: the status/severity/comment/tracker
-actions described above never touch `correlated_security_event_id` or `correlation_method`, and no
-"unlink correlation" action exists yet.
+the correlator's API only ever accepts a `LocalFinding`.
+
+A wrong correlation (the heuristics are conservative but not infallible) can be corrected: the
+finding's detail page has an "Unlink correlation" header action, gated by `alerts.edit` and only
+visible when the finding is currently correlated, that clears `correlated_security_event_id` and
+`correlation_method` via `App\Assets\LocalFindingCorrelationManager` and records an audit entry
+with the previous values. Unlinking doesn't change the Alert itself, and a later re-scan may
+correlate the same pair again if the heuristic still matches — there is no "don't re-correlate
+this pair" suppression today.
 
 ## Curated Links, Repository Mappings, and Tracker Project Links
 
