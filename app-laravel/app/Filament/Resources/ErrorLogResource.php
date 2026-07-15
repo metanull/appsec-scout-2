@@ -22,7 +22,7 @@ class ErrorLogResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 25;
+    protected static ?int $navigationSort = 24;
 
     protected static ?string $navigationLabel = 'Errors';
 

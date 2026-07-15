@@ -16,9 +16,9 @@ class SystemCredentialsPage extends Page implements HasForms
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 23;
+    protected static ?int $navigationSort = 21;
 
-    protected static ?string $navigationLabel = 'System credentials';
+    protected static ?string $navigationLabel = 'System Credentials';
 
     protected static ?string $slug = 'admin/system-credentials';
 

@@ -39,7 +39,7 @@ class SecurityContainerResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Reader';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 14;
 
     protected static ?string $navigationLabel = 'Containers';
 

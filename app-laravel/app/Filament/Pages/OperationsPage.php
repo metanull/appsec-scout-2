@@ -54,7 +54,7 @@ class OperationsPage extends Page implements HasTable
 
     protected static string|\UnitEnum|null $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 21;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $navigationLabel = 'Operations';
 
