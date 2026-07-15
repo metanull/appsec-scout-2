@@ -1,6 +1,7 @@
 <?php
 
 use App\Credentials\Vault;
+use App\SourceControl\Contracts\EnumeratesInventory;
 use App\SourceControl\GitHub\GitHubRepos;
 use App\Trackers\GitHub\GitHubClient;
 use GuzzleHttp\Client;
@@ -69,4 +70,10 @@ it('fails to build a client when the github-repos credential is not configured',
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->toContain('Missing GitHub credential: github-repos.token');
+});
+
+it('does not implement EnumeratesInventory yet', function () {
+    $provider = new GitHubRepos(app(Vault::class));
+
+    expect($provider)->not->toBeInstanceOf(EnumeratesInventory::class);
 });

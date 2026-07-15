@@ -4,11 +4,15 @@ namespace App\SourceControl\AzDo;
 
 use App\Credentials\CredentialField;
 use App\Credentials\Vault;
+use App\SourceControl\Contracts\EnumeratesInventory;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\ValueObjects\TestResult;
 use App\Sources\AzDo\AzDoClient;
+use App\Sources\AzDo\AzDoNormalizer;
+use App\Sources\Dto\ContainerDto;
+use App\Sources\Dto\SystemDto;
 
-final class AzDoRepos implements SourceControlProvider
+final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
 {
     private ?AzDoClient $client = null;
 
@@ -43,6 +47,31 @@ final class AzDoRepos implements SourceControlProvider
             return $client->testConnection() ? TestResult::success() : TestResult::failure('Connection refused');
         } catch (\Throwable $e) {
             return TestResult::failure($e->getMessage());
+        }
+    }
+
+    /** @return iterable<SystemDto> */
+    public function fetchProjects(): iterable
+    {
+        foreach ($this->getClient()->listProjects() as $project) {
+            yield AzDoNormalizer::toSystem($project);
+        }
+    }
+
+    /** @return iterable<ContainerDto> */
+    public function fetchRepositories(SystemDto $project): iterable
+    {
+        foreach ($this->getClient()->listRepositories($project->sourceSystemId) as $repo) {
+            $dto = AzDoNormalizer::toContainer($repo);
+
+            yield new ContainerDto(
+                sourceContainerId: $dto->sourceContainerId,
+                name: $dto->name,
+                sourceSystemId: $project->sourceSystemId,
+                kind: $dto->kind,
+                url: $dto->url,
+                metadata: $dto->metadata,
+            );
         }
     }
 
