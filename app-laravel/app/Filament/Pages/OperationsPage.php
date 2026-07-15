@@ -3,11 +3,9 @@
 namespace App\Filament\Pages;
 
 use App\Audit\Recorder;
-use App\Filament\Widgets\InventorySyncSummaryWidget;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
-use App\Filament\Widgets\ReconciliationSummaryWidget;
 use App\Filament\Widgets\SbomScanStatusWidget;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
@@ -66,8 +64,6 @@ class OperationsPage extends Page implements HasTable
     public function getWidgets(): array
     {
         return [
-            ReconciliationSummaryWidget::class,
-            InventorySyncSummaryWidget::class,
             OperationsHealthStatsWidget::class,
             RecentSyncRunsTableWidget::class,
             RecentErrorsTableWidget::class,

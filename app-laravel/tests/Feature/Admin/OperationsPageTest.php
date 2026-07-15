@@ -2,7 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
-use App\Filament\Widgets\InventorySyncSummaryWidget;
+use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Models\ErrorLog;
 use App\Models\FailedJob;
 use App\Models\SyncRun;
@@ -14,6 +14,7 @@ use App\Trackers\ReconcileAllJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;
 use Database\Seeders\RolePermissionSeeder;
+use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -283,26 +284,26 @@ it('colors the inventory sync stat as warning when the last run found nothing', 
     Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
     Cache::put('inventory_sync:last_run_counts', ['systems_created' => 0, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
 
-    $method = new ReflectionMethod(InventorySyncSummaryWidget::class, 'getStats');
+    $method = new ReflectionMethod(OperationsHealthStatsWidget::class, 'inventorySyncStat');
     $method->setAccessible(true);
 
-    /** @var list<\Filament\Widgets\StatsOverviewWidget\Stat> $stats */
-    $stats = $method->invoke(new InventorySyncSummaryWidget);
+    /** @var Stat $stat */
+    $stat = $method->invoke(new OperationsHealthStatsWidget);
 
-    expect($stats[0]->getColor())->toBe('warning');
+    expect($stat->getColor())->toBe('warning');
 });
 
 it('colors the inventory sync stat as success when the last run found something', function () {
     Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
     Cache::put('inventory_sync:last_run_counts', ['systems_created' => 1, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
 
-    $method = new ReflectionMethod(InventorySyncSummaryWidget::class, 'getStats');
+    $method = new ReflectionMethod(OperationsHealthStatsWidget::class, 'inventorySyncStat');
     $method->setAccessible(true);
 
-    /** @var list<\Filament\Widgets\StatsOverviewWidget\Stat> $stats */
-    $stats = $method->invoke(new InventorySyncSummaryWidget);
+    /** @var Stat $stat */
+    $stat = $method->invoke(new OperationsHealthStatsWidget);
 
-    expect($stats[0]->getColor())->toBe('success');
+    expect($stat->getColor())->toBe('success');
 });
 
 it('warns and does not dispatch inventory sync when no inventory-capable provider is enabled', function () {
@@ -367,6 +368,33 @@ it('shows reconciliation last-run summary on operations page', function () {
         ->test(OperationsPage::class)
         ->assertSee('Reconciliation')
         ->assertSee('3 new link(s) created');
+});
+
+it('shows only the reconciliation stat to a work-items.sync-only user', function () {
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->assertSee('Reconciliation')
+        ->assertDontSee('Inventory sync')
+        ->assertDontSee('Jobs waiting in the queue')
+        ->assertDontSee('Failed jobs needing attention')
+        ->assertDontSee('Active source sync processes')
+        ->assertDontSee('Registered schedule entries');
+});
+
+it('shows all six operations health stats to an admin.queue user', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Reconciliation')
+        ->assertSee('Inventory sync')
+        ->assertSee('Jobs waiting in the queue')
+        ->assertSee('Failed jobs needing attention')
+        ->assertSee('Active source sync processes')
+        ->assertSee('Registered schedule entries');
 });
 
 it('header action dispatches source by form data', function () {
