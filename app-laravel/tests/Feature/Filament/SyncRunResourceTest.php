@@ -131,7 +131,11 @@ it('renders the sync run view page with its counts', function () {
 });
 
 it('denies the view page to a user without admin.queue', function () {
-    $reader = User::factory()->create();
+    $reader = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
     $reader->syncRoles(['Reader']);
 
     $run = SyncRun::query()->create([

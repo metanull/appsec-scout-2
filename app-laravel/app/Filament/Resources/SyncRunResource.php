@@ -17,6 +17,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 class SyncRunResource extends Resource
@@ -37,6 +38,11 @@ class SyncRunResource extends Resource
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('admin.queue') ?? false;
+    }
+
+    public static function canView(Model $record): bool
+    {
+        return static::canViewAny();
     }
 
     public static function form(Schema $schema): Schema
