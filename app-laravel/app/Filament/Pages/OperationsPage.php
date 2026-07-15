@@ -10,7 +10,6 @@ use App\Filament\Widgets\SbomScanStatusWidget;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
-use App\Models\ErrorLog;
 use App\Models\FailedJob;
 use App\Models\SyncRun;
 use App\Models\User;
@@ -168,7 +167,7 @@ class OperationsPage extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->query(FailedJob::query()->latest('failed_at'))
+            ->query(FailedJob::query()->latest('failed_at')->limit(5))
             ->columns([
                 TextColumn::make('failed_at')
                     ->label('Failed at')
@@ -262,7 +261,7 @@ class OperationsPage extends Page implements HasTable
         /** @var list<array{id: int, uuid: string, queue: string, failed_at: string, job: string, exception_preview: string, payload_preview: string}> $failedJobs */
         $failedJobs = DB::table('failed_jobs')
             ->orderByDesc('failed_at')
-            ->limit(10)
+            ->limit(5)
             ->get(['id', 'uuid', 'queue', 'payload', 'exception', 'failed_at'])
             ->map(fn (object $row): array => [
                 'id' => (int) $row->id,
@@ -277,24 +276,6 @@ class OperationsPage extends Page implements HasTable
             ->all();
 
         return $failedJobs;
-    }
-
-    /** @return list<SyncRun> */
-    public function recentSyncRuns(): array
-    {
-        /** @var list<SyncRun> $runs */
-        $runs = SyncRun::query()->latest('id')->limit(10)->get()->values()->all();
-
-        return $runs;
-    }
-
-    /** @return list<ErrorLog> */
-    public function recentErrors(): array
-    {
-        /** @var list<ErrorLog> $errors */
-        $errors = ErrorLog::query()->latest('occurred_at')->limit(10)->get()->values()->all();
-
-        return $errors;
     }
 
     /** @return list<array{id: string, cadence: string}> */

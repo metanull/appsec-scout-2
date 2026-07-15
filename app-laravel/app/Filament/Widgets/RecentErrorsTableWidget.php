@@ -25,7 +25,7 @@ class RecentErrorsTableWidget extends TableWidget
     public function table(Table $table): Table
     {
         return $table
-            ->query(fn (): Builder => ErrorLog::query()->latest('occurred_at')->limit(10))
+            ->query(fn (): Builder => ErrorLog::query()->latest('occurred_at')->limit(5))
             ->columns([
                 TextColumn::make('channel')
                     ->label('Channel')

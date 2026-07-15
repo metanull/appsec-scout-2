@@ -129,7 +129,7 @@ final class DashboardData
         /** @var Collection<int, SyncRun> $result */
         $result = SyncRun::query()
             ->latest('started_at')
-            ->limit(10)
+            ->limit(5)
             ->get();
 
         return $result;
