@@ -2,6 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
+use App\Filament\Widgets\InventorySyncSummaryWidget;
 use App\Models\ErrorLog;
 use App\Models\FailedJob;
 use App\Models\SyncRun;
@@ -276,6 +277,49 @@ it('shows inventory sync last-run summary on operations page', function () {
         ->test(OperationsPage::class)
         ->assertSee('Inventory sync')
         ->assertSee('3 system(s), 3 container(s) synced');
+});
+
+it('colors the inventory sync stat as warning when the last run found nothing', function () {
+    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
+    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 0, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
+
+    $method = new ReflectionMethod(InventorySyncSummaryWidget::class, 'getStats');
+    $method->setAccessible(true);
+
+    /** @var list<\Filament\Widgets\StatsOverviewWidget\Stat> $stats */
+    $stats = $method->invoke(new InventorySyncSummaryWidget);
+
+    expect($stats[0]->getColor())->toBe('warning');
+});
+
+it('colors the inventory sync stat as success when the last run found something', function () {
+    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
+    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 1, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
+
+    $method = new ReflectionMethod(InventorySyncSummaryWidget::class, 'getStats');
+    $method->setAccessible(true);
+
+    /** @var list<\Filament\Widgets\StatsOverviewWidget\Stat> $stats */
+    $stats = $method->invoke(new InventorySyncSummaryWidget);
+
+    expect($stats[0]->getColor())->toBe('success');
+});
+
+it('warns and does not dispatch inventory sync when no inventory-capable provider is enabled', function () {
+    Bus::fake();
+
+    config(['integration_settings.fake.enabled' => false]);
+    app()->forgetInstance(SourceRegistry::class);
+
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchSyncInventory')
+        ->assertNotified('No enabled Source or Source Control provider can supply inventory. Enable one in Integration Settings first.');
+
+    Bus::assertNotDispatched(SyncInventoryJob::class);
+    expect(AuditLog::query()->where('action', 'operations.sync_inventory')->exists())->toBeFalse();
 });
 
 it('sync users can trigger global reconciliation action', function () {

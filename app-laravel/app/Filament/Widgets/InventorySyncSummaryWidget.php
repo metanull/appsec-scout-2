@@ -43,7 +43,7 @@ final class InventorySyncSummaryWidget extends StatsOverviewWidget
         return [
             Stat::make('Inventory sync', $timestamp->toDayDateTimeString())
                 ->description(sprintf('%d system(s), %d container(s) synced', $systems, $containers))
-                ->color('success')
+                ->color($systems === 0 && $containers === 0 ? 'warning' : 'success')
                 ->icon('heroicon-o-square-3-stack-3d'),
         ];
     }
