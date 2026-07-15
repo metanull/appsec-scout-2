@@ -96,7 +96,7 @@ it('returns empty result but still searches every enabled tracker project when n
         ->and($tracker->reconciliationCalls)->toBe(0);
 });
 
-it('searches an enabled tracker project that has no existing TrackerProjectLink and can produce a match', function () {
+it('searches an enabled tracker project that has no existing TrackerProjectLink, produces a match, and auto-creates the link', function () {
     $tracker = (new FakeTracker)
         ->withProjects(new ProjectDto(key: 'UNLINKED', name: 'Unlinked Project'))
         ->withReconciliationCandidates('UNLINKED', new ReconciliationCandidateDto(
@@ -119,6 +119,45 @@ it('searches an enabled tracker project that has no existing TrackerProjectLink 
 
     expect(collect($results)->firstWhere('alreadyLinked', false))->not->toBeNull()
         ->and(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'UNLINKED#1')->exists())->toBeTrue();
+
+    $link = TrackerProjectLink::query()
+        ->where('owner_type', SoftwareSystem::class)
+        ->where('owner_id', $event->softwareSystem->id)
+        ->where('tracker_id', 'fake-tracker')
+        ->where('project_key', 'UNLINKED')
+        ->first();
+
+    expect($link)->not->toBeNull()
+        ->and($link->project_name)->toBe('Unlinked Project');
+});
+
+it('uses the scoped fast path on the next reconciliation run after an auto-created link', function () {
+    $tracker = (new FakeTracker)
+        ->withProjects(new ProjectDto(key: 'UNLINKED', name: 'Unlinked Project'))
+        ->withReconciliationCandidates('UNLINKED', new ReconciliationCandidateDto(
+            trackerId: 'fake-tracker',
+            workItemId: 'UNLINKED#1',
+            workItemUrl: 'https://tracker.test/UNLINKED%231',
+            title: 'Discovered issue',
+            state: 'Open',
+            labels: ['security'],
+            extractedUrls: ['https://tracker.test/UNLINKED%231'],
+            searchStrategy: 'project=UNLINKED',
+        ));
+    bindFakeWorkItemTracker($tracker);
+
+    $event = SecurityEvent::factory()->secret()->create([
+        'url' => 'https://tracker.test/UNLINKED%231',
+    ]);
+
+    app(ReconciliationService::class)->reconcileAll();
+
+    $tracker->fetchProjectsCalls = 0;
+
+    $results = app(ReconciliationService::class)->reconcileEvent($event, reconciliationOperator()->id);
+
+    expect(collect($results)->firstWhere('alreadyLinked', true))->not->toBeNull()
+        ->and($tracker->fetchProjectsCalls)->toBe(0);
 });
 
 it('continues reconciliation when fetchProjects throws for an enabled tracker', function () {
