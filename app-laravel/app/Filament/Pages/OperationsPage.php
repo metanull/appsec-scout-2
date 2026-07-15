@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Audit\Recorder;
+use App\Filament\Widgets\InventorySyncSummaryWidget;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
@@ -18,6 +19,7 @@ use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
+use App\Sync\SyncInventoryJob;
 use App\Trackers\ReconcileAllJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry as TrackerRegistry;
@@ -63,6 +65,7 @@ class OperationsPage extends Page implements HasTable
     {
         return [
             ReconciliationSummaryWidget::class,
+            InventorySyncSummaryWidget::class,
             OperationsHealthStatsWidget::class,
             RecentSyncRunsTableWidget::class,
             RecentErrorsTableWidget::class,
@@ -141,6 +144,14 @@ class OperationsPage extends Page implements HasTable
                 ->requiresConfirmation()
                 ->modalDescription('Queue a global reconciliation run to discover and link existing tracker work items.')
                 ->action(fn () => $this->dispatchReconcileAll()),
+
+            Action::make('syncInventory')
+                ->label('Sync inventory')
+                ->icon('heroicon-o-square-3-stack-3d')
+                ->visible(fn (): bool => Gate::allows('admin.queue'))
+                ->requiresConfirmation()
+                ->modalDescription('Queue a sync of Systems/Containers from every enabled Source and Source Control provider.')
+                ->action(fn () => $this->dispatchSyncInventory()),
 
             ActionGroup::make([
                 Action::make('pruneAuditLogs')
@@ -401,6 +412,29 @@ class OperationsPage extends Page implements HasTable
     {
         return DB::table('jobs')
             ->where('payload', 'like', '%ReconcileAllJob%')
+            ->exists();
+    }
+
+    public function dispatchSyncInventory(): void
+    {
+        Gate::authorize('admin.queue');
+
+        if ($this->isSyncInventoryQueued()) {
+            Notification::make()->title('Inventory sync is already queued or running.')->info()->send();
+
+            return;
+        }
+
+        SyncInventoryJob::dispatch();
+        app(Recorder::class)->recordAdminAction('operations.sync_inventory');
+
+        Notification::make()->title('Inventory sync started.')->success()->send();
+    }
+
+    private function isSyncInventoryQueued(): bool
+    {
+        return DB::table('jobs')
+            ->where('payload', 'like', '%SyncInventoryJob%')
             ->exists();
     }
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Assets\AttachmentIngestionService;
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
-use App\Assets\AzDoProjectLinker;
 use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
@@ -15,7 +14,6 @@ use App\Assets\StaticAnalysis\PendingStaticAnalysisScanImporter;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Integrations\DispatchDueIntegrations;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\Attachment;
@@ -23,10 +21,9 @@ use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\AzDo\AzDoNormalizer;
-use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
+use App\Sync\InventorySyncService;
 use App\Sync\PendingSyncResolver;
-use App\Sync\SystemContainerUpserter;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Triage\CodesearchService;
 use App\Users\UserAdminService;
@@ -197,74 +194,17 @@ Artisan::command(
 
 Artisan::command(
     'assets:sync-azdo-projects {--pat=} {--project-filter=} {--repo-filter=}',
-    function (SystemIntegrationRuntime $runtime, SystemContainerUpserter $upserter, AzDoProjectLinker $linker, Vault $vault): int {
+    function (InventorySyncService $service, Vault $vault): int {
         $projectFilter = $this->option('project-filter');
         $repoFilter = $this->option('repo-filter');
         $patOption = $this->option('pat');
 
-        $matches = static function (?string $pattern, string $value): bool {
-            if (! is_string($pattern) || $pattern === '') {
-                return true;
-            }
-
-            return @preg_match('~' . str_replace('~', '\~', $pattern) . '~', $value) === 1;
-        };
-
-        $counts = [
-            'projects_seen' => 0,
-            'systems_created' => 0,
-            'systems_updated' => 0,
-            'assets_created' => 0,
-            'repos_seen' => 0,
-            'containers_created' => 0,
-            'containers_updated' => 0,
-            'repository_mappings_created' => 0,
-        ];
-
-        $runSync = function () use ($runtime, $matches, $projectFilter, $repoFilter, $upserter, $linker, &$counts): void {
-            $runtime->runSource(AzDoNormalizer::SOURCE_ID, function (Source $source) use ($matches, $projectFilter, $repoFilter, $upserter, $linker, &$counts): void {
-                foreach ($source->fetchSystems() as $systemDto) {
-                    if (! $matches($projectFilter, $systemDto->name)) {
-                        continue;
-                    }
-
-                    $counts['projects_seen']++;
-
-                    ['system' => $system, 'wasCreated' => $systemIsNew] = $upserter->upsertSystem(AzDoNormalizer::SOURCE_ID, $systemDto);
-                    $counts[$systemIsNew ? 'systems_created' : 'systems_updated']++;
-
-                    $hadAsset = $system->software_asset_id !== null;
-                    $linker->linkSystemToAsset($system);
-                    if (! $hadAsset && $system->refresh()->software_asset_id !== null) {
-                        $counts['assets_created']++;
-                    }
-
-                    foreach ($source->fetchContainers($systemDto) as $containerDto) {
-                        if (! $matches($repoFilter, $containerDto->name)) {
-                            continue;
-                        }
-
-                        $counts['repos_seen']++;
-
-                        ['container' => $container, 'wasCreated' => $containerIsNew] = $upserter->upsertContainer($system, $containerDto);
-                        $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
-
-                        $hadMapping = $container->repositoryMappings()->exists();
-                        $linker->ensureRepositoryMapping($container);
-                        if (! $hadMapping && $container->repositoryMappings()->exists()) {
-                            $counts['repository_mappings_created']++;
-                        }
-                    }
-                }
-            });
-        };
+        $runSync = fn (): array => $service->sync(AzDoNormalizer::SOURCE_ID, $projectFilter, $repoFilter);
 
         try {
-            if (is_string($patOption) && $patOption !== '') {
-                $vault->runWithOverrides(['azdo.pat' => $patOption], $runSync);
-            } else {
-                $runSync();
-            }
+            $counts = is_string($patOption) && $patOption !== ''
+                ? $vault->runWithOverrides(['azdo.pat' => $patOption], $runSync)
+                : $runSync();
         } catch (RuntimeException $exception) {
             $this->error($exception->getMessage());
 
