@@ -8,13 +8,20 @@ use Illuminate\Support\Facades\Auth;
 
 class SeverityDistributionChartWidget extends ChartWidget
 {
-    protected ?string $heading = 'Severity Distribution';
-
     protected static ?int $sort = 3;
 
     public static function canView(): bool
     {
         return Auth::user()?->can('alerts.view') ?? false;
+    }
+
+    public function getHeading(): ?string
+    {
+        $hasSeverities = array_sum(DashboardData::stats()['severities']) > 0;
+
+        return $hasSeverities
+            ? 'Severity Distribution'
+            : 'Severity Distribution — no alerts recorded';
     }
 
     protected function getData(): array

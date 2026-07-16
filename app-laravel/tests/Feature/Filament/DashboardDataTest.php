@@ -8,6 +8,7 @@ use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
 use App\Models\WorkItemLink;
+use Filament\Support\Colors\Color;
 use Illuminate\Support\Carbon;
 
 beforeEach(function () {
@@ -49,7 +50,14 @@ it('builds doughnut chart dataset from severity counts', function () {
 
     expect($chart['labels'])->toBe(['Critical', 'High', 'Medium', 'Low', 'Informational'])
         ->and($chart['datasets'])->toHaveCount(1)
-        ->and($chart['datasets'][0]['data'])->toBe([1, 0, 2, 0, 0]);
+        ->and($chart['datasets'][0]['data'])->toBe([1, 0, 2, 0, 0])
+        ->and($chart['datasets'][0]['backgroundColor'])->toBe([
+            Color::Red[500],
+            Color::Orange[500],
+            Color::Blue[500],
+            Color::Gray[400],
+            Color::Gray[200],
+        ]);
 });
 
 it('returns the latest five sync runs in descending order', function () {
