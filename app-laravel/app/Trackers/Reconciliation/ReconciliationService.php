@@ -49,24 +49,18 @@ final class ReconciliationService
             $projectKey = $pair['project_key'];
             $projectName = $pair['project_name'];
 
-            try {
-                $tracker = $this->operatorRuntime->tracker($trackerId);
+            $tracker = $this->operatorRuntime->tracker($trackerId);
 
-                if (! $tracker instanceof Tracker) {
-                    continue;
-                }
-
-                /** @var list<ReconciliationCandidateDto> $candidates */
-                $candidates = $this->operatorRuntime->runTracker(
-                    $trackerId,
-                    $operatorUserId,
-                    fn (Tracker $tracker): array => iterator_to_array($tracker->reconciliationCandidates($projectKey), false),
-                );
-            } catch (\Throwable $exception) {
-                report($exception);
-
+            if (! $tracker instanceof Tracker) {
                 continue;
             }
+
+            /** @var list<ReconciliationCandidateDto> $candidates */
+            $candidates = $this->operatorRuntime->runTracker(
+                $trackerId,
+                $operatorUserId,
+                fn (Tracker $tracker): array => iterator_to_array($tracker->reconciliationCandidates($projectKey), false),
+            );
 
             foreach ($candidates as $candidate) {
                 foreach ($this->matchEventIdsForCandidate($index, $candidate) as $eventId) {
@@ -121,23 +115,17 @@ final class ReconciliationService
             $projectKey = $pair['project_key'];
             $projectName = $pair['project_name'];
 
-            try {
-                $tracker = $this->systemRuntime->tracker($trackerId);
+            $tracker = $this->systemRuntime->tracker($trackerId);
 
-                if (! $tracker instanceof Tracker) {
-                    continue;
-                }
-
-                /** @var list<ReconciliationCandidateDto> $candidates */
-                $candidates = $this->systemRuntime->runTracker(
-                    $trackerId,
-                    fn (Tracker $tracker): array => iterator_to_array($tracker->reconciliationCandidates($projectKey), false),
-                );
-            } catch (\Throwable $exception) {
-                report($exception);
-
+            if (! $tracker instanceof Tracker) {
                 continue;
             }
+
+            /** @var list<ReconciliationCandidateDto> $candidates */
+            $candidates = $this->systemRuntime->runTracker(
+                $trackerId,
+                fn (Tracker $tracker): array => iterator_to_array($tracker->reconciliationCandidates($projectKey), false),
+            );
 
             foreach ($candidates as $candidate) {
                 foreach ($this->matchEventIdsForCandidate($index, $candidate) as $eventId) {
@@ -248,17 +236,11 @@ final class ReconciliationService
         $pairs = [];
 
         foreach ($this->trackers->enabled() as $tracker) {
-            try {
-                /** @var list<ProjectDto> $projects */
-                $projects = $this->systemRuntime->runTracker(
-                    $tracker->id(),
-                    fn (Tracker $tracker): array => iterator_to_array($tracker->fetchProjects(), false),
-                );
-            } catch (\Throwable $exception) {
-                report($exception);
-
-                continue;
-            }
+            /** @var list<ProjectDto> $projects */
+            $projects = $this->systemRuntime->runTracker(
+                $tracker->id(),
+                fn (Tracker $tracker): array => iterator_to_array($tracker->fetchProjects(), false),
+            );
 
             foreach ($projects as $project) {
                 $pairs[] = ['tracker_id' => $tracker->id(), 'project_key' => $project->key, 'project_name' => $project->name];

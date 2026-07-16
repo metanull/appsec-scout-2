@@ -149,6 +149,33 @@ it('warns and still searches every tracker project when the alert has no scoped 
         ->exists())->toBeTrue();
 });
 
+it('surfaces a clear notification instead of a raw error when the tracker call fails', function () {
+    $plan = reconciliationFilamentUser(['Plan']);
+
+    $tracker = (new FakeTracker)->withReconciliationFailure('APP');
+    bindFakeWorkItemTracker($tracker);
+
+    $event = SecurityEvent::factory()->create([
+        'url' => 'https://tracker.test/APP%23500',
+    ]);
+
+    $event->softwareSystem->trackerProjectLinks()->create([
+        'tracker_id' => 'fake-tracker',
+        'project_key' => 'APP',
+        'project_name' => 'APP',
+        'is_default' => false,
+        'created_by_user_id' => $plan->id,
+        'metadata' => null,
+    ]);
+
+    Livewire::actingAs($plan)
+        ->test(ViewSecurityEvent::class, ['record' => $event->getRouteKey()])
+        ->callAction('reconcileWorkItems')
+        ->assertNotified('Reconciliation failed');
+
+    expect(WorkItemLink::query()->where('event_id', $event->id)->count())->toBe(0);
+});
+
 function reconciliationFilamentUser(array $roles): User
 {
     $user = User::factory()->create([

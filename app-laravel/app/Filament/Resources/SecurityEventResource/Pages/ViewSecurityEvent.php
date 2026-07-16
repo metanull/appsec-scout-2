@@ -293,7 +293,20 @@ class ViewSecurityEvent extends ViewRecord
                 ->send();
         }
 
-        $results = app(ReconciliationService::class)->reconcileEvent($this->eventRecord(), $user->id);
+        try {
+            $results = app(ReconciliationService::class)->reconcileEvent($this->eventRecord(), $user->id);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->title('Reconciliation failed')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            return true;
+        }
+
         $newLinks = count(array_filter($results, fn ($result): bool => $result->alreadyLinked === false));
 
         if ($newLinks > 0) {
