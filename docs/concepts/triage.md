@@ -145,16 +145,18 @@ three (Asset auto-creation, Tracker Project Link auto-learning, Local Finding co
 
 `triage:codesearch` is a manual **Artisan command**, not a Filament button — there is no
 "search code" action anywhere in the Triage UI today. An operator runs it directly
-(`php artisan triage:codesearch {search} --pat= --scope= --attach-to=`), optionally attaching the
-JSON result to an alert as an Attachment (visible on that alert's Attachments tab, "Created by"
-shown as `triage:codesearch` since there's no interactive user attached to a CLI run). The PAT is
-resolved the same way `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` resolve theirs: `--pat` is used
-if given, otherwise the command falls back to the `azdo-repos.pat` system credential; if neither is
-available the command fails fast with a clear error instead of attempting the search. Running the
-command is gated only by having a shell on the `app` container — there is no in-app permission for
-it, since Artisan commands aren't checked against Spatie permissions anywhere in the app.
-`App\Triage\RunCodesearchJob` (a queued wrapper for the same logic) exists but is only exercised in
-tests today; nothing in production dispatches it.
+(`php artisan triage:codesearch {search} --pat= --organization= --scope= --attach-to=`), optionally
+attaching the JSON result to an alert as an Attachment (visible on that alert's Attachments tab,
+"Created by" shown as `triage:codesearch` since there's no interactive user attached to a CLI run).
+Both the PAT and the organization are resolved the same way `invoke-ops.ps1
+-SbomScan`/`-StaticAnalysis` resolve theirs, and identically to each other: the matching `--pat`/
+`--organization` option is used if given, otherwise the command falls back to the system credential
+(`azdo-repos.pat`/`azdo-repos.organization`); if neither is available for either one, the command
+fails fast with a clear error instead of attempting the search. Running the command is gated only by
+having a shell on the `app` container — there is no in-app permission for it, since Artisan commands
+aren't checked against Spatie permissions anywhere in the app. `App\Triage\RunCodesearchJob` (a
+queued wrapper for the same logic, resolving both credentials strictly from the system vault) exists
+but is only exercised in tests today; nothing in production dispatches it.
 
 ## Permission Matrix
 

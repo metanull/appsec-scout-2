@@ -22,6 +22,14 @@ it('fails fast when no --pat is given and no system credential is configured', f
         ->assertExitCode(1);
 });
 
+it('fails fast when no --organization is given and no system credential is configured', function () {
+    app(Vault::class)->set('azdo-repos.pat', null, 'system-pat');
+
+    $this->artisan('triage:codesearch', ['search' => 'openssl'])
+        ->expectsOutputToContain('AzDO organization not provided via --organization, and no system credential "azdo-repos.organization" is configured.')
+        ->assertExitCode(1);
+});
+
 it('falls back to the system credential when --pat is omitted', function () {
     app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
     app(Vault::class)->set('azdo-repos.pat', null, 'system-pat');
