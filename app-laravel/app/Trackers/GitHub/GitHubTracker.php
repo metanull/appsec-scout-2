@@ -117,7 +117,7 @@ final class GitHubTracker implements Tracker
             return $this->client;
         }
 
-        $token = $this->vault->get('github.token', null, true) ?? throw new \RuntimeException('Missing GitHub credential: github.token');
+        $token = $this->vault->get('github.token', null) ?? throw new \RuntimeException('Missing GitHub credential: github.token');
 
         $fingerprint = hash('sha256', $token);
 

@@ -4,26 +4,25 @@ use App\Credentials\Credential;
 use App\Models\User;
 use App\Sync\CredentialResolver;
 
-it('prefers the authenticated users credential over system credentials', function () {
+it('resolves the system credential for a null owner', function () {
+    Credential::query()->create(['integration_key' => 'github.token', 'owner_user_id' => null, 'value' => 'system-token']);
+
+    expect(app(CredentialResolver::class)->exact('github.token', null)?->value)->toBe('system-token');
+});
+
+it('resolves a specific users credential for that owner id', function () {
     $user = User::factory()->create();
-    $this->actingAs($user);
 
     Credential::query()->create(['integration_key' => 'github.token', 'owner_user_id' => null, 'value' => 'system-token']);
     Credential::query()->create(['integration_key' => 'github.token', 'owner_user_id' => $user->id, 'value' => 'user-token']);
 
-    expect(app(CredentialResolver::class)->resolve('github.token')?->value)->toBe('user-token');
+    expect(app(CredentialResolver::class)->exact('github.token', $user->id)?->value)->toBe('user-token');
 });
 
-it('uses the system credential for background resolution', function () {
-    Credential::query()->create(['integration_key' => 'github.token', 'owner_user_id' => null, 'value' => 'system-token']);
+it('does not return another users credential when resolving the system owner', function () {
+    $otherUser = User::factory()->create();
 
-    expect(app(CredentialResolver::class)->resolve('github.token')?->value)->toBe('system-token');
-});
+    Credential::query()->create(['integration_key' => 'github.token', 'owner_user_id' => $otherUser->id, 'value' => 'user-token']);
 
-it('does not use another users credential for background resolution', function () {
-    $serviceUser = User::factory()->create();
-
-    Credential::query()->create(['integration_key' => 'github.token', 'owner_user_id' => $serviceUser->id, 'value' => 'service-token']);
-
-    expect(app(CredentialResolver::class)->resolve('github.token'))->toBeNull();
+    expect(app(CredentialResolver::class)->exact('github.token', null))->toBeNull();
 });

@@ -62,7 +62,7 @@ final class AzDoProjectLinker
             return;
         }
 
-        $organization = $this->vault->get('azdo.organization', null, true);
+        $organization = $this->vault->get('azdo.organization', null);
 
         if (! is_string($organization) || $organization === '') {
             return;

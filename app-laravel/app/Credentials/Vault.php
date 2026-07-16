@@ -13,8 +13,6 @@ class Vault
 
     private ?int $scopedOwnerId = null;
 
-    private bool $scopedOwnerIsStrict = false;
-
     /** @var array<string, string> */
     private array $valueOverrides = [];
 
@@ -23,13 +21,13 @@ class Vault
         private readonly CredentialResolver $resolver,
     ) {}
 
-    public function get(string $key, ?int $userId, bool $strict = false): ?string
+    public function get(string $key, ?int $userId): ?string
     {
         if (array_key_exists($key, $this->valueOverrides)) {
             return $this->valueOverrides[$key];
         }
 
-        $credential = $this->resolveCredential($key, $userId, $strict);
+        $credential = $this->resolveCredential($key, $userId);
 
         return $this->credentialValue($credential);
     }
@@ -48,9 +46,9 @@ class Vault
         $this->recorder->recordCredentialChange($key, $actor, 'set');
     }
 
-    public function test(string $key, ?int $userId, callable $probe, bool $strict = false): TestResult
+    public function test(string $key, ?int $userId, callable $probe): TestResult
     {
-        $credential = $this->resolveCredential($key, $userId, $strict);
+        $credential = $this->resolveCredential($key, $userId);
 
         if ($credential === null) {
             return TestResult::missing();
@@ -94,22 +92,19 @@ class Vault
      * @param  callable(): TReturn  $callback
      * @return TReturn
      */
-    public function runAsOwner(?int $ownerId, callable $callback, bool $strict = true): mixed
+    public function runAsOwner(?int $ownerId, callable $callback): mixed
     {
         $previousHasScopedOwner = $this->hasScopedOwner;
         $previousScopedOwnerId = $this->scopedOwnerId;
-        $previousScopedOwnerIsStrict = $this->scopedOwnerIsStrict;
 
         $this->hasScopedOwner = true;
         $this->scopedOwnerId = $ownerId;
-        $this->scopedOwnerIsStrict = $strict;
 
         try {
             return $callback();
         } finally {
             $this->hasScopedOwner = $previousHasScopedOwner;
             $this->scopedOwnerId = $previousScopedOwnerId;
-            $this->scopedOwnerIsStrict = $previousScopedOwnerIsStrict;
         }
     }
 
@@ -136,21 +131,13 @@ class Vault
         }
     }
 
-    private function resolveCredential(string $key, ?int $userId, bool $strict): ?Credential
+    private function resolveCredential(string $key, ?int $userId): ?Credential
     {
         if ($userId !== null) {
             return $this->resolver->exact($key, $userId);
         }
 
-        if ($this->hasScopedOwner) {
-            return $this->scopedOwnerIsStrict || $strict
-                ? $this->resolver->exact($key, $this->scopedOwnerId)
-                : $this->resolver->resolve($key, $this->scopedOwnerId);
-        }
-
-        return $strict
-            ? $this->resolver->exact($key, null)
-            : $this->resolver->resolve($key);
+        return $this->resolver->exact($key, $this->hasScopedOwner ? $this->scopedOwnerId : null);
     }
 
     private function markTested(Credential $credential, bool $ok, ?string $error): void

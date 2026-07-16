@@ -110,7 +110,7 @@ it('system and user credentials are stored separately', function () {
         ->and($vault->get('azdo.pat', $user->id))->toBe('user-token');
 });
 
-it('prefers the authenticated user credential when resolving without an explicit owner', function () {
+it('does not resolve another users credential when fetching with a null owner', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
@@ -119,11 +119,12 @@ it('prefers the authenticated user credential when resolving without an explicit
     $vault->set('azdo.pat', null, 'system-token');
     $vault->set('azdo.pat', $user->id, 'user-token');
 
-    expect($vault->get('azdo.pat', null))->toBe('user-token');
+    expect($vault->get('azdo.pat', null))->toBe('system-token');
 });
 
-it('supports strict owner scoping for integration tests', function () {
+it('resolves the scoped owner set via runAsOwner regardless of the authenticated user', function () {
     $user = User::factory()->create();
+    $this->actingAs($user);
     $vault = vault();
 
     $vault->set('azdo.pat', null, 'system-token');
@@ -140,11 +141,11 @@ it('returns the override value instead of the stored credential during the callb
 
     $resolved = $vault->runWithOverrides(
         ['azdo.pat' => 'explicit-pat'],
-        fn (): ?string => $vault->get('azdo.pat', null, true),
+        fn (): ?string => $vault->get('azdo.pat', null),
     );
 
     expect($resolved)->toBe('explicit-pat')
-        ->and($vault->get('azdo.pat', null, true))->toBe('system-token');
+        ->and($vault->get('azdo.pat', null))->toBe('system-token');
 });
 
 it('restores the previous override state after the callback throws', function () {
@@ -158,7 +159,7 @@ it('restores the previous override state after the callback throws', function ()
         },
     ))->toThrow(RuntimeException::class, 'boom');
 
-    expect($vault->get('azdo.pat', null, true))->toBe('system-token');
+    expect($vault->get('azdo.pat', null))->toBe('system-token');
 });
 
 function vault(): Vault

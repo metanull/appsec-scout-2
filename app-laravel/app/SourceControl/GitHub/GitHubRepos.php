@@ -51,7 +51,7 @@ final class GitHubRepos implements SourceControlProvider
             return $this->client;
         }
 
-        $token = $this->vault->get('github-repos.token', null, true) ?? throw new \RuntimeException('Missing GitHub credential: github-repos.token');
+        $token = $this->vault->get('github-repos.token', null) ?? throw new \RuntimeException('Missing GitHub credential: github-repos.token');
 
         $fingerprint = hash('sha256', $token);
 

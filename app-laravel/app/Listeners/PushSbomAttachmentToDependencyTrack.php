@@ -37,13 +37,13 @@ class PushSbomAttachmentToDependencyTrack implements ShouldQueue
             return;
         }
 
-        $apiKey = $this->vault->get('dependencytrack.apiKey', null, true);
+        $apiKey = $this->vault->get('dependencytrack.apiKey', null);
 
         if ($apiKey === null) {
             return;
         }
 
-        $baseUrl = $this->vault->get('dependencytrack.baseUrl', null, true) ?? 'http://dependencytrack-apiserver:8080';
+        $baseUrl = $this->vault->get('dependencytrack.baseUrl', null) ?? 'http://dependencytrack-apiserver:8080';
 
         $exporter = new DependencyTrackExporter($this->clientFactory->make($apiKey, $baseUrl));
         $exporter->export($owner, 'latest');
