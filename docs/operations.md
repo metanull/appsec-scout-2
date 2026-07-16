@@ -150,15 +150,14 @@ Admin operators manage integration configuration from three places:
 
 - `Admin -> System Credentials` for shared, system-owned credentials.
 - `Profile -> Integrations` for the signed-in user's own personal credentials.
-- `Admin -> Integrations` for enablement, interval, service-user selection, connection tests, and
-  the Jira default project key.
+- `Admin -> Integrations` for enablement, interval, connection tests, and the Jira default project
+  key.
 
-Credential resolution order:
-
-1. Explicit preferred user, when a flow specifies one.
-2. The authenticated user's own personal credential, for interactive actions.
-3. The integration's configured service-user credential.
-4. The system credential.
+There are exactly two credential-resolution flows, never a fallback chain between them:
+system-triggered operations (scheduled sync, background jobs, bulk Ops-page actions) always
+resolve the system credential; user-triggered interactive actions always resolve that specific
+user's own personal credential. Which flow applies is fixed by the kind of operation, not by
+trying one and falling back to another — a missing required credential fails with a clear error.
 
 ## Tracker Project Scope
 

@@ -185,9 +185,9 @@ All three registries are exposed identically through the same three Filament pag
 - **`Profile -> Integrations`** — personal override credential, for all three kinds (yes, an
   individual user can store their own `azdo-repos.pat` or `github-repos.token`, not just
   Source/Tracker credentials).
-- **`Admin -> Integrations`** — enable/disable, interval, service user, connection test, for all
-  three kinds' registered instances. The interval/service-user fields render for Source Control
-  rows too, but are inert — nothing reads them, since Source Control has no scheduled job.
+- **`Admin -> Integrations`** — enable/disable, interval, connection test, for all three kinds'
+  registered instances. The interval field renders for Source Control rows too, but is inert —
+  nothing reads it, since Source Control has no scheduled job.
 
 Two role-specific scoping mechanisms exist, but neither lives on these three pages — both are
 relation managers hung off the `SoftwareSystem`/`SecurityContainer` Filament resources, scoping

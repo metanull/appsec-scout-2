@@ -109,9 +109,9 @@ Three distinct UI surfaces control different things, gated by different permissi
 
 | Page | Controls | Permission | Who has it by default |
 | --- | --- | --- | --- |
-| `Admin -> Integrations` | Enable/disable, interval, service user, connection test | `admin.integrations` | Admin only |
+| `Admin -> Integrations` | Enable/disable, interval, connection test | `admin.integrations` | Admin only |
 | `Admin -> System Credentials` | System-wide PATs/tokens shared across all operators | `admin.system-pats` | Admin only |
-| `Profile -> Integrations` | Your own personal credential (used as a fallback/override) | none — just an authenticated session | Every signed-in user, Reader included |
+| `Profile -> Integrations` | Your own personal credential, used only for your own interactive actions | none — just an authenticated session | Every signed-in user, Reader included |
 | `Admin -> Operations` "Dispatch/Fetch/Refresh now" | Force an immediate run | `admin.queue` **or** `work-items.sync` | Admin and Sync |
 
 Roles are cumulative (`Reader < Triage < Plan < Sync < Admin`). Practically, this means:
@@ -120,9 +120,10 @@ Roles are cumulative (`Reader < Triage < Plan < Sync < Admin`). Practically, thi
   credentials.
 - **Sync**-role users can force a manual run from Operations without being able to see or edit
   the Integrations or System Credentials pages at all.
-- Every authenticated user can store their own personal credential on their profile, which the
-  [credential resolution order](../architecture.md#credentials) prefers over the system
-  credential for interactive actions taken as that user.
+- Every authenticated user can store their own personal credential on their profile. It is used
+  only for that user's own interactive actions — see the
+  [two-flow credential model](../architecture.md#credentials) — never as a fallback for anything
+  else, and never by system-triggered jobs.
 
 ## Observability
 

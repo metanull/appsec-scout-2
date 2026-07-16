@@ -34,8 +34,7 @@ changes back to upstream sources — only a Sync operator's push does that.
 
 ## Credential Model
 
-Tracker actions use the active credential resolution flow:
-
-- Personal credential when the user has one.
-- Integration service user, if configured for that tracker.
-- System credential otherwise.
+Tracker actions taken interactively by a Plan operator always resolve that operator's own personal
+tracker credential (`Profile -> Integrations`) — never a fallback to the system credential, and
+never another user's. If no personal credential is configured, the action fails with a clear error
+instead of degrading to something else.
