@@ -2,6 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Resources\AuditLogResource;
+use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
 use App\Models\SecurityEvent;
 use App\Models\User;
@@ -171,4 +172,24 @@ it('view page redacts sensitive payload keys', function () {
     expect($rendered)->not->toContain('super-secret')
         ->and($rendered)->toContain('[redacted]')
         ->and($rendered)->toContain('dispatch');
+});
+
+it('filters audit log rows by a created_at date range', function () {
+    $admin = auditAdmin();
+
+    $early = AuditLog::query()->create(['actor_kind' => 'system', 'action' => 'early.action', 'user_id' => null, 'ip' => null]);
+    $early->forceFill(['created_at' => '2026-01-05 00:00:00'])->save();
+
+    $late = AuditLog::query()->create(['actor_kind' => 'system', 'action' => 'late.action', 'user_id' => null, 'ip' => null]);
+    $late->forceFill(['created_at' => '2026-01-25 00:00:00'])->save();
+
+    Livewire::actingAs($admin)
+        ->test(ListAuditLogs::class)
+        ->filterTable('created_at_from', ['created_at_from' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$late])
+        ->assertCanNotSeeTableRecords([$early])
+        ->removeTableFilter('created_at_from')
+        ->filterTable('created_at_until', ['created_at_until' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$early])
+        ->assertCanNotSeeTableRecords([$late]);
 });

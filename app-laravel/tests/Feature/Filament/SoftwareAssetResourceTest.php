@@ -2,8 +2,10 @@
 
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Resources\SoftwareAssetResource;
+use App\Filament\Resources\SoftwareAssetResource\Pages\ListSoftwareAssets;
 use App\Filament\Resources\SoftwareAssetResource\Pages\ViewSoftwareAsset;
 use App\Filament\Resources\SoftwareAssetResource\RelationManagers\SoftwareSystemsRelationManager;
+use App\Models\SecurityEvent;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
@@ -61,6 +63,42 @@ it('lets plan users create software assets and link software systems', function 
 
 it('does not register tracker project links at the asset level, since they are never resolved for an alert', function () {
     expect(SoftwareAssetResource::getRelations())->not->toContain(TrackerProjectLinksRelationManager::class);
+});
+
+it('filters software assets by whether they have open or critical alerts', function () {
+    $user = twoFactorUser();
+    $user->syncRoles(['Reader']);
+
+    $withAlerts = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $systemWithAlerts = SoftwareSystem::factory()->create(['software_asset_id' => $withAlerts->id]);
+    SecurityEvent::factory()->secret()->forSystem($systemWithAlerts)->create();
+
+    $withoutAlerts = SoftwareAsset::factory()->create(['name' => 'Internal Tools']);
+    SoftwareSystem::factory()->create(['software_asset_id' => $withoutAlerts->id]);
+
+    Livewire::actingAs($user)
+        ->test(ListSoftwareAssets::class)
+        ->filterTable('has_open_events', true)
+        ->assertCanSeeTableRecords([$withAlerts])
+        ->assertCanNotSeeTableRecords([$withoutAlerts])
+        ->removeTableFilter('has_open_events')
+        ->filterTable('has_critical_events', true)
+        ->assertCanSeeTableRecords([$withAlerts])
+        ->assertCanNotSeeTableRecords([$withoutAlerts]);
+});
+
+it('badge-colors the critical and high alert count columns', function () {
+    $user = twoFactorUser();
+    $user->syncRoles(['Reader']);
+
+    $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id]);
+    SecurityEvent::factory()->secret()->forSystem($system)->create();
+
+    Livewire::actingAs($user)
+        ->test(ListSoftwareAssets::class)
+        ->assertTableColumnStateSet('critical_events_count', 1, $asset->fresh())
+        ->assertTableColumnStateSet('high_events_count', 0, $asset->fresh());
 });
 
 function twoFactorUser(): User

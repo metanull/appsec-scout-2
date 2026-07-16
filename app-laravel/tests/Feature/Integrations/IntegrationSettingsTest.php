@@ -267,6 +267,19 @@ it('detects queued source and tracker integrations from pending queue payloads',
         ->assertHasNoErrors();
 });
 
+it('filters integrations by kind', function () {
+    $admin = enrolledAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(IntegrationSettingsPage::class)
+        ->filterTable('integration_kind', IntegrationSetting::KIND_TRACKER)
+        ->assertSee('Fake Tracker')
+        ->assertDontSee('Fake Source Control')
+        ->filterTable('integration_kind', IntegrationSetting::KIND_SOURCE_CONTROL)
+        ->assertSee('Fake Source Control')
+        ->assertDontSee('Fake Tracker');
+});
+
 function bindFakeIntegrationsForSettings(): void
 {
     config([

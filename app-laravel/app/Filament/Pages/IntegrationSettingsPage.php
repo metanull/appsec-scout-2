@@ -27,6 +27,7 @@ use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -160,6 +161,15 @@ class IntegrationSettingsPage extends Page implements HasTable
                     ->label('Last synced')
                     ->since()
                     ->placeholder('-'),
+            ])
+            ->filters([
+                SelectFilter::make('integration_kind')
+                    ->label('Kind')
+                    ->options([
+                        IntegrationSetting::KIND_SOURCE => 'Source',
+                        IntegrationSetting::KIND_TRACKER => 'Tracker',
+                        IntegrationSetting::KIND_SOURCE_CONTROL => 'Source control',
+                    ]),
             ])
             ->actions([
                 Action::make('editSettings')

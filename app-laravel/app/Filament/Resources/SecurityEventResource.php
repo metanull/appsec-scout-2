@@ -12,6 +12,8 @@ use App\Filament\Resources\SecurityEventResource\RelationManagers\WorkItemLinksR
 use App\Filament\Resources\SecurityEventResource\Support\SecurityEventTableQuery;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Filament\Support\EventSeverityBadgeColor;
+use App\Filament\Support\EventStateBadgeColor;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -102,22 +104,10 @@ class SecurityEventResource extends Resource
                             ->formatStateUsing(fn (EventType|string $state): string => str($state instanceof EventType ? $state->value : $state)->replace('_', ' ')->title()->toString()),
                         TextEntry::make('severity')
                             ->badge()
-                            ->color(fn (EventSeverity|string $state): string => match ($state instanceof EventSeverity ? $state->value : $state) {
-                                EventSeverity::Critical->value => 'danger',
-                                EventSeverity::High->value => 'warning',
-                                EventSeverity::Medium->value => 'info',
-                                EventSeverity::Low->value => 'gray',
-                                default => 'secondary',
-                            }),
+                            ->color(fn (EventSeverity|string $state): string => EventSeverityBadgeColor::for($state)),
                         TextEntry::make('state')
                             ->badge()
-                            ->color(fn (EventState|string $state): string => match ($state instanceof EventState ? $state->value : $state) {
-                                EventState::Resolved->value => 'success',
-                                EventState::Dismissed->value => 'gray',
-                                EventState::InProgress->value => 'info',
-                                EventState::Acknowledged->value => 'warning',
-                                default => 'danger',
-                            })
+                            ->color(fn (EventState|string $state): string => EventStateBadgeColor::for($state))
                             ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()),
                         TextEntry::make('source_id')
                             ->label('Source')
@@ -404,23 +394,11 @@ class SecurityEventResource extends Resource
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(
                         "CASE severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'informational' THEN 1 ELSE 0 END " . ($direction === 'asc' ? 'ASC' : 'DESC')
                     ))
-                    ->color(fn (EventSeverity|string $state) => match ($state instanceof EventSeverity ? $state->value : $state) {
-                        EventSeverity::Critical->value => 'danger',
-                        EventSeverity::High->value => 'warning',
-                        EventSeverity::Medium->value => 'info',
-                        EventSeverity::Low->value => 'gray',
-                        default => 'secondary',
-                    }),
+                    ->color(fn (EventSeverity|string $state) => EventSeverityBadgeColor::for($state)),
                 TextColumn::make('state')
                     ->badge()
                     ->sortable()
-                    ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
-                        EventState::Resolved->value => 'success',
-                        EventState::Dismissed->value => 'gray',
-                        EventState::InProgress->value => 'info',
-                        EventState::Acknowledged->value => 'warning',
-                        default => 'danger',
-                    }),
+                    ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
                 TextColumn::make('is_dirty')
                     ->label('Sync')
                     ->state(fn (SecurityEvent $record): ?string => $record->is_dirty ? 'Pending' : null)

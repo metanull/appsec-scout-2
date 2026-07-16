@@ -1,8 +1,10 @@
 <?php
 
+use App\Audit\AuditLog;
 use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
+use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
@@ -59,9 +61,12 @@ it('lists a finding with the asset, system, and container columns', function () 
         ->test(ListLocalFindings::class)
         ->assertCanSeeTableRecords([$finding])
         ->assertSee('Jinja sandbox breakout')
-        ->assertSee('Payments Platform')
-        ->assertSee('payments-service')
-        ->assertSee('payments-api');
+        ->assertCanNotRenderTableColumn('softwareAsset.name')
+        ->assertCanNotRenderTableColumn('softwareSystem.name')
+        ->assertCanNotRenderTableColumn('_container')
+        ->assertTableColumnStateSet('softwareAsset.name', 'Payments Platform', $finding)
+        ->assertTableColumnStateSet('softwareSystem.name', 'payments-service', $finding)
+        ->assertTableColumnStateSet('_container', 'payments-api', $finding);
 
     expect(LocalFindingResource::getUrl('view', ['record' => $finding]))->toBeString();
 });
@@ -85,4 +90,99 @@ it('shows the finding detail page including the correlated alert link', function
         ->test(ViewLocalFinding::class, ['record' => $finding->getKey()])
         ->assertSee('GitHub PAT committed')
         ->assertSee('#' . $event->id);
+});
+
+it('hides the change status and change severity row actions from a reader on the findings list', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+    $finding = SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key',
+        'file_path' => 'config/services.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertTableActionHidden('changeStatus', $finding)
+        ->assertTableActionHidden('changeSeverity', $finding);
+});
+
+it('shows the change status and change severity row actions to a plan-role operator on the findings list', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Plan']);
+    $finding = SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key',
+        'file_path' => 'config/services.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertTableActionVisible('changeStatus', $finding)
+        ->assertTableActionVisible('changeSeverity', $finding);
+});
+
+it('changes the status of a finding via the row action and records an audit entry', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Triage']);
+    $finding = SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key',
+        'file_path' => 'config/services.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableAction('changeStatus', $finding, data: [
+            'new_status' => EventState::Resolved->value,
+            'comment' => 'Confirmed local-only usage, no risk.',
+        ]);
+
+    expect($finding->fresh()->status)->toBe(EventState::Resolved);
+
+    expect(AuditLog::query()
+        ->where('subject_type', LocalFinding::class)
+        ->where('subject_id', (string) $finding->id)
+        ->where('action', 'state_change')
+        ->exists())->toBeTrue();
+});
+
+it('changes the status of multiple findings via the bulk action', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Triage']);
+    $container = SecurityContainer::factory()->create();
+    $findingOne = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key one',
+        'file_path' => 'config/services.php',
+    ]);
+    $findingTwo = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key two',
+        'file_path' => 'config/database.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableBulkAction('changeStatusBulk', [$findingOne, $findingTwo], data: [
+            'new_status' => EventState::Dismissed->value,
+            'comment' => 'Bulk dismissed as false positives.',
+        ]);
+
+    expect($findingOne->fresh()->status)->toBe(EventState::Dismissed)
+        ->and($findingTwo->fresh()->status)->toBe(EventState::Dismissed);
+});
+
+it('hides the change status bulk action from a reader on the findings list', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertTableBulkActionHidden('changeStatusBulk');
 });

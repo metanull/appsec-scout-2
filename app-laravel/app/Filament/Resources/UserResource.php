@@ -8,6 +8,7 @@ use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\User;
 use App\Users\UserAdminService;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -17,6 +18,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -99,59 +101,85 @@ class UserResource extends Resource
                     ->since()
                     ->placeholder('Never'),
             ])
+            ->filters([
+                TernaryFilter::make('is_disabled')
+                    ->label('Disabled')
+                    ->queries(
+                        true: function (Builder $query): Builder {
+                            /** @var Builder<User> $query */
+                            return $query->where('is_disabled', true);
+                        },
+                        false: function (Builder $query): Builder {
+                            /** @var Builder<User> $query */
+                            return $query->where('is_disabled', false);
+                        },
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
+                TernaryFilter::make('two_factor_confirmed_at')
+                    ->label('2FA enrolled')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereNotNull('two_factor_confirmed_at'),
+                        false: fn (Builder $query): Builder => $query->whereNull('two_factor_confirmed_at'),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
+            ])
             ->actions([
-                EditAction::make(),
-                Action::make('resetTwoFactor')
-                    ->label('Reset 2FA')
-                    ->requiresConfirmation()
-                    ->visible(fn (User $record): bool => $record->id !== Auth::id())
-                    ->action(function (User $record): void {
-                        $actor = Auth::user();
+                ActionGroup::make([
+                    EditAction::make(),
+                    Action::make('resetTwoFactor')
+                        ->label('Reset 2FA')
+                        ->requiresConfirmation()
+                        ->visible(fn (User $record): bool => $record->id !== Auth::id())
+                        ->action(function (User $record): void {
+                            $actor = Auth::user();
 
-                        abort_unless($actor instanceof User, 403);
+                            abort_unless($actor instanceof User, 403);
 
-                        app(UserAdminService::class)->resetTwoFactor($record, $actor);
+                            app(UserAdminService::class)->resetTwoFactor($record, $actor);
 
-                        Notification::make()->title('Two-factor enrollment reset')->success()->send();
-                    }),
-                Action::make('sendPasswordReset')
-                    ->label('Send password reset')
-                    ->visible(fn (User $record): bool => $record->id !== Auth::id())
-                    ->action(function (User $record): void {
-                        $actor = Auth::user();
+                            Notification::make()->title('Two-factor enrollment reset')->success()->send();
+                        }),
+                    Action::make('sendPasswordReset')
+                        ->label('Send password reset')
+                        ->visible(fn (User $record): bool => $record->id !== Auth::id())
+                        ->action(function (User $record): void {
+                            $actor = Auth::user();
 
-                        abort_unless($actor instanceof User, 403);
+                            abort_unless($actor instanceof User, 403);
 
-                        app(UserAdminService::class)->sendPasswordResetLink($record, $actor);
+                            app(UserAdminService::class)->sendPasswordResetLink($record, $actor);
 
-                        Notification::make()->title('Password reset link sent')->success()->send();
-                    }),
-                Action::make('disableUser')
-                    ->label('Disable user')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->visible(fn (User $record): bool => ! $record->is_disabled && $record->id !== Auth::id())
-                    ->action(function (User $record): void {
-                        $actor = Auth::user();
+                            Notification::make()->title('Password reset link sent')->success()->send();
+                        }),
+                    Action::make('disableUser')
+                        ->label('Disable user')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->visible(fn (User $record): bool => ! $record->is_disabled && $record->id !== Auth::id())
+                        ->action(function (User $record): void {
+                            $actor = Auth::user();
 
-                        abort_unless($actor instanceof User, 403);
+                            abort_unless($actor instanceof User, 403);
 
-                        app(UserAdminService::class)->disable($record, $actor);
+                            app(UserAdminService::class)->disable($record, $actor);
 
-                        Notification::make()->title('User disabled')->success()->send();
-                    }),
-                Action::make('enableUser')
-                    ->label('Enable user')
-                    ->visible(fn (User $record): bool => $record->is_disabled)
-                    ->action(function (User $record): void {
-                        $actor = Auth::user();
+                            Notification::make()->title('User disabled')->success()->send();
+                        }),
+                    Action::make('enableUser')
+                        ->label('Enable user')
+                        ->visible(fn (User $record): bool => $record->is_disabled)
+                        ->action(function (User $record): void {
+                            $actor = Auth::user();
 
-                        abort_unless($actor instanceof User, 403);
+                            abort_unless($actor instanceof User, 403);
 
-                        app(UserAdminService::class)->enable($record, $actor);
+                            app(UserAdminService::class)->enable($record, $actor);
 
-                        Notification::make()->title('User enabled')->success()->send();
-                    }),
+                            Notification::make()->title('User enabled')->success()->send();
+                        }),
+                ])
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->tooltip('Actions'),
             ])
             ->paginated([25, 50, 100]);
     }

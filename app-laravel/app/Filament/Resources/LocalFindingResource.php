@@ -2,19 +2,26 @@
 
 namespace App\Filament\Resources;
 
+use App\Assets\LocalFindingSeverityChanger;
+use App\Assets\LocalFindingStatusChanger;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
+use App\Filament\Support\EventStateBadgeColor;
 use App\Filament\Support\LocalFindingOwnerColumns;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\User;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
+use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -23,7 +30,9 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Org-wide Trivy finding explorer (vulnerabilities and secrets), modeled on
@@ -74,13 +83,7 @@ class LocalFindingResource extends Resource
                             ->label('Status')
                             ->badge()
                             ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
-                            ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
-                                EventState::Resolved->value => 'success',
-                                EventState::Dismissed->value => 'gray',
-                                EventState::InProgress->value => 'info',
-                                EventState::Acknowledged->value => 'warning',
-                                default => 'danger',
-                            }),
+                            ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
                         TextEntry::make('_effective_severity')
                             ->label('Severity')
                             ->state(fn (LocalFinding $record): string => $record->overridden_severity !== null
@@ -149,13 +152,7 @@ class LocalFindingResource extends Resource
                     ->badge()
                     ->sortable()
                     ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
-                    ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
-                        EventState::Resolved->value => 'success',
-                        EventState::Dismissed->value => 'gray',
-                        EventState::InProgress->value => 'info',
-                        EventState::Acknowledged->value => 'warning',
-                        default => 'danger',
-                    }),
+                    ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
                 TextColumn::make('_effective_severity')
                     ->label('Severity')
                     ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())
@@ -172,8 +169,12 @@ class LocalFindingResource extends Resource
                     ->formatStateUsing(fn (?string $state, LocalFinding $record): ?string => $state !== null
                         ? trim("{$state} {$record->package_version}")
                         : null)
-                    ->placeholder('-'),
-                ...LocalFindingOwnerColumns::columns(),
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                ...array_map(
+                    fn (TextColumn $column): TextColumn => $column->toggleable(isToggledHiddenByDefault: true),
+                    LocalFindingOwnerColumns::columns(),
+                ),
                 TextColumn::make('correlated_security_event_id')
                     ->label('Correlated alert')
                     ->state(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? '#' . $record->correlated_security_event_id : '-')
@@ -197,6 +198,84 @@ class LocalFindingResource extends Resource
                         ->orderBy('severity')
                         ->pluck('severity', 'severity')
                         ->all()),
+            ])
+            ->actions([
+                ActionGroup::make([
+                    Action::make('changeStatus')
+                        ->label('Change status')
+                        ->icon('heroicon-o-pencil-square')
+                        ->visible(fn (): bool => Gate::allows('alerts.edit'))
+                        ->form(self::statusChangeForm())
+                        ->action(function (LocalFinding $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
+
+                            if ($user === null) {
+                                abort(403);
+                            }
+
+                            app(LocalFindingStatusChanger::class)->change(
+                                $record,
+                                $user,
+                                EventState::from((string) $data['new_status']),
+                                (string) $data['comment'],
+                            );
+
+                            Notification::make()->title('Status changed')->success()->send();
+                        }),
+                    Action::make('changeSeverity')
+                        ->label('Change severity')
+                        ->icon('heroicon-o-adjustments-horizontal')
+                        ->visible(fn (): bool => Gate::allows('alerts.edit'))
+                        ->form(self::severityChangeForm())
+                        ->action(function (LocalFinding $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
+
+                            if ($user === null) {
+                                abort(403);
+                            }
+
+                            app(LocalFindingSeverityChanger::class)->change(
+                                $record,
+                                $user,
+                                EventSeverity::from((string) $data['new_severity']),
+                                (string) $data['comment'],
+                            );
+
+                            Notification::make()->title('Severity changed')->success()->send();
+                        }),
+                ])
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->tooltip('Actions'),
+            ])
+            ->bulkActions([
+                BulkAction::make('changeStatusBulk')
+                    ->label('Change status (bulk)')
+                    ->icon('heroicon-o-pencil-square')
+                    ->requiresConfirmation()
+                    ->visible(fn (): bool => Gate::allows('alerts.bulk-edit'))
+                    ->form(self::statusChangeForm())
+                    ->action(function (Collection $records, array $data): void {
+                        /** @var Collection<int, LocalFinding> $records */
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        $newStatus = EventState::from((string) $data['new_status']);
+                        $comment = (string) $data['comment'];
+                        $changer = app(LocalFindingStatusChanger::class);
+
+                        foreach ($records as $record) {
+                            $changer->change($record, $user, $newStatus, $comment);
+                        }
+
+                        Notification::make()->title('Status changed for selected findings')->success()->send();
+                    })
+                    ->deselectRecordsAfterCompletion(),
             ])
             ->recordUrl(fn (LocalFinding $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultSort('severity')

@@ -26,6 +26,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -152,10 +153,48 @@ class SoftwareAssetResource extends Resource
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('software_systems_count')->label('Systems')->sortable(),
                 TextColumn::make('open_events_count')->label('Open')->sortable()->placeholder('-'),
-                TextColumn::make('critical_events_count')->label('Critical')->sortable()->placeholder('-'),
-                TextColumn::make('high_events_count')->label('High')->sortable()->placeholder('-'),
+                TextColumn::make('critical_events_count')
+                    ->label('Critical')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'danger' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
+                TextColumn::make('high_events_count')
+                    ->label('High')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'warning' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
                 TextColumn::make('attachments_count')->label('Attachments')->sortable(),
                 TextColumn::make('updated_at')->label('Updated')->since()->placeholder('-'),
+            ])
+            ->filters([
+                TernaryFilter::make('has_open_events')
+                    ->label('Has open alerts')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereHas('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('state', EventState::Open->value);
+                        }),
+                        false: fn (Builder $query): Builder => $query->whereDoesntHave('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('state', EventState::Open->value);
+                        }),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
+                TernaryFilter::make('has_critical_events')
+                    ->label('Has critical alerts')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereHas('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('severity', EventSeverity::Critical->value);
+                        }),
+                        false: fn (Builder $query): Builder => $query->whereDoesntHave('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('severity', EventSeverity::Critical->value);
+                        }),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
             ])
             ->recordUrl(fn (SoftwareAsset $record): string => static::getUrl('view', ['record' => $record]))
             ->paginated([25, 50, 100]);

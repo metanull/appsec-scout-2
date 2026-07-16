@@ -26,6 +26,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -193,9 +194,24 @@ class SoftwareSystemResource extends Resource
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('source_id')->label('Source')->badge()->color('info'),
                 TextColumn::make('open_events_count')->label('Open')->sortable()->placeholder('-'),
-                TextColumn::make('critical_events_count')->label('Critical')->sortable()->placeholder('-'),
-                TextColumn::make('high_events_count')->label('High')->sortable()->placeholder('-'),
-                TextColumn::make('medium_events_count')->label('Medium')->sortable()->placeholder('-'),
+                TextColumn::make('critical_events_count')
+                    ->label('Critical')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'danger' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
+                TextColumn::make('high_events_count')
+                    ->label('High')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'warning' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
+                TextColumn::make('medium_events_count')
+                    ->label('Medium')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'info' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
                 TextColumn::make('updated_at')->label('Updated')->since()->placeholder('-'),
                 IconColumn::make('removed_at')
                     ->label('Removed')
@@ -205,6 +221,10 @@ class SoftwareSystemResource extends Resource
                     ->falseColor('success'),
             ])
             ->filters([
+                SelectFilter::make('source_id')
+                    ->label('Source')
+                    ->multiple()
+                    ->options(fn (): array => SoftwareSystem::query()->distinct()->pluck('source_id', 'source_id')->all()),
                 TernaryFilter::make('removed_at')
                     ->label('Removed')
                     ->queries(

@@ -6,6 +6,7 @@ use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Livewire;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -73,6 +74,41 @@ it('shows sendPasswordReset for another user', function () {
     Auth::login($admin);
 
     expect($other->id !== Auth::id())->toBeTrue();
+});
+
+it('filters users by disabled state', function () {
+    $admin = enrolledAdminForUserResource();
+    $disabled = User::factory()->create(['is_disabled' => true]);
+    $enabled = User::factory()->create(['is_disabled' => false]);
+
+    Livewire::actingAs($admin)
+        ->test(ListUsers::class)
+        ->filterTable('is_disabled', true)
+        ->assertCanSeeTableRecords([$disabled])
+        ->assertCanNotSeeTableRecords([$enabled, $admin]);
+});
+
+it('filters users by 2FA enrollment', function () {
+    $admin = enrolledAdminForUserResource();
+    $notEnrolled = User::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ListUsers::class)
+        ->filterTable('two_factor_confirmed_at', true)
+        ->assertCanSeeTableRecords([$admin])
+        ->assertCanNotSeeTableRecords([$notEnrolled]);
+});
+
+it('groups the user row actions into a single action group', function () {
+    $admin = enrolledAdminForUserResource();
+    $other = User::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ListUsers::class)
+        ->assertTableActionVisible('edit', $other)
+        ->assertTableActionVisible('resetTwoFactor', $other)
+        ->assertTableActionVisible('sendPasswordReset', $other)
+        ->assertTableActionVisible('disableUser', $other);
 });
 
 function enrolledAdminForUserResource(): User

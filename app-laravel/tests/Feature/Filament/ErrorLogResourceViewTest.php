@@ -101,3 +101,24 @@ it('lists rows that link to the view page', function () {
 
     expect(ErrorLogResource::getUrl('view', ['record' => $log]))->toBeString();
 });
+
+it('filters error logs by an occurred_at date range, including an upper bound', function () {
+    $admin = errorLogAdmin();
+
+    $early = ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'early failure', 'trace' => '', 'occurred_at' => '2026-01-05',
+    ]);
+    $late = ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'late failure', 'trace' => '', 'occurred_at' => '2026-01-25',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListErrorLogs::class)
+        ->filterTable('occurred_at_from', ['occurred_at_from' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$late])
+        ->assertCanNotSeeTableRecords([$early])
+        ->removeTableFilter('occurred_at_from')
+        ->filterTable('occurred_at_until', ['occurred_at_until' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$early])
+        ->assertCanNotSeeTableRecords([$late]);
+});

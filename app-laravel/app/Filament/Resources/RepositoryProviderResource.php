@@ -5,14 +5,18 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\RepositoryProviderResource\Pages\CreateRepositoryProvider;
 use App\Filament\Resources\RepositoryProviderResource\Pages\EditRepositoryProvider;
 use App\Filament\Resources\RepositoryProviderResource\Pages\ListRepositoryProviders;
+use App\Filament\Resources\RepositoryProviderResource\Pages\ViewRepositoryProvider;
 use App\Models\Enums\RepositoryProviderType;
 use App\Models\RepositoryProvider;
 use App\Models\User;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -40,6 +44,11 @@ class RepositoryProviderResource extends Resource
     }
 
     public static function canCreate(): bool
+    {
+        return static::canViewAny();
+    }
+
+    public static function canView(Model $record): bool
     {
         return static::canViewAny();
     }
@@ -75,6 +84,36 @@ class RepositoryProviderResource extends Resource
         ]);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Summary')
+                ->schema([
+                    TextEntry::make('provider_type')
+                        ->label('Type')
+                        ->badge()
+                        ->color('gray')
+                        ->formatStateUsing(fn (RepositoryProviderType $state): string => self::providerTypeLabel($state)),
+                    TextEntry::make('name')
+                        ->label('Name')
+                        ->wrap(),
+                    TextEntry::make('base_url')
+                        ->label('Base URL')
+                        ->url(fn (RepositoryProvider $record): string => $record->base_url)
+                        ->openUrlInNewTab()
+                        ->wrap(),
+                    TextEntry::make('repository_mappings_count')
+                        ->label('Mappings')
+                        ->placeholder('-'),
+                    TextEntry::make('updated_at')
+                        ->label('Last updated')
+                        ->since()
+                        ->placeholder('-'),
+                ])
+                ->columns(3),
+        ]);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -103,10 +142,14 @@ class RepositoryProviderResource extends Resource
                     ->since(),
             ])
             ->actions([
-                EditAction::make(),
-                DeleteAction::make(),
+                ActionGroup::make([
+                    EditAction::make(),
+                    DeleteAction::make(),
+                ])
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->tooltip('Actions'),
             ])
-            ->recordUrl(fn (RepositoryProvider $record): string => static::getUrl('edit', ['record' => $record]))
+            ->recordUrl(fn (RepositoryProvider $record): string => static::getUrl('view', ['record' => $record]))
             ->paginated([25, 50, 100]);
     }
 
@@ -115,6 +158,7 @@ class RepositoryProviderResource extends Resource
         return [
             'index' => ListRepositoryProviders::route('/'),
             'create' => CreateRepositoryProvider::route('/create'),
+            'view' => ViewRepositoryProvider::route('/{record}'),
             'edit' => EditRepositoryProvider::route('/{record}/edit'),
         ];
     }
