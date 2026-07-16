@@ -61,11 +61,10 @@ group despite not being Admin-only).
 Use `Admin -> System Credentials` to store shared credentials for sources, trackers, and Source
 Control providers.
 
-System credentials are always used by system-triggered operations — scheduled sync, background
-jobs, and bulk Ops-page actions — never by trying a personal credential first. Personal credentials
-are managed by each signed-in user from `Profile -> Integrations`, and are used only for that
-user's own interactive actions. A missing required credential fails with a clear error rather than
-falling back to something else.
+System credentials are used by system-triggered operations — scheduled sync, background jobs, and
+bulk Ops-page actions. Personal credentials are managed by each signed-in user from
+`Profile -> Integrations`, and are used only for that user's own interactive actions. A missing
+required credential fails with a clear error.
 
 Connection tests use the same outbound HTTP factory as source sync and tracker actions. In direct
 internet environments, leave proxy and custom CA settings empty. In corporate SSL-inspection

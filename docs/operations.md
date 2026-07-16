@@ -153,11 +153,10 @@ Admin operators manage integration configuration from three places:
 - `Admin -> Integrations` for enablement, interval, connection tests, and the Jira default project
   key.
 
-There are exactly two credential-resolution flows, never a fallback chain between them:
-system-triggered operations (scheduled sync, background jobs, bulk Ops-page actions) always
-resolve the system credential; user-triggered interactive actions always resolve that specific
-user's own personal credential. Which flow applies is fixed by the kind of operation, not by
-trying one and falling back to another — a missing required credential fails with a clear error.
+There are exactly two credential-resolution flows: system-triggered operations (scheduled sync,
+background jobs, bulk Ops-page actions) resolve the system credential; user-triggered interactive
+actions resolve that specific user's own personal credential. Which flow applies is fixed by the
+kind of operation. A missing required credential fails with a clear error.
 
 ## Tracker Project Scope
 

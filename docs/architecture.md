@@ -179,20 +179,17 @@ AppSec Scout is the system of record for operator edits.
 
 Credential storage is centralized in the `credentials` table, encrypted at rest.
 
-There are exactly two credential-resolution flows, never a fallback chain between them:
+There are exactly two credential-resolution flows:
 
 - **System-triggered operations** (scheduled sync, background jobs, bulk Ops-page actions such as
-  "Reconcile all tracker links") always resolve the system credential (`owner_user_id IS NULL`,
-  set via `Admin -> System Credentials`, `Vault::runAsOwner(null, ...)`) — never whichever user
-  triggered them, and never any other user's credential.
+  "Reconcile all tracker links") resolve the system credential (`owner_user_id IS NULL`, set via
+  `Admin -> System Credentials`, `Vault::runAsOwner(null, ...)`).
 - **User-triggered interactive actions** (creating/linking a work item, the per-alert "Find
-  existing work items" action) always resolve that specific user's own personal credential (set
-  via `Profile -> Integrations`, `Vault::runAsOwner($operatorUserId, ...)`).
+  existing work items" action) resolve that specific user's own personal credential (set via
+  `Profile -> Integrations`, `Vault::runAsOwner($operatorUserId, ...)`).
 
-Which flow an operation uses is fixed by what kind of operation it is, decided in code, not by
-trying one credential and falling back to another. If the required credential is missing, the
-operation fails with a clear error instead of silently resolving to something else or succeeding
-with degraded results.
+Which flow applies is fixed by the kind of operation. A missing required credential fails with a
+clear error.
 
 ## Related Documents
 

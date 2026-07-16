@@ -44,12 +44,11 @@ from the Source/Tracker credential for the same product, since the required PAT 
 
 - `triage:codesearch {PAT} {search} [{project|repo_url}]` — AzDO code search, attaches findings with hyperlinks. From the web UI the user's PAT is resolved automatically from the AzDO Repos system credential (`azdo-repos.pat`/`azdo-repos.organization`), distinct from the AzDO source's alert-ingestion PAT.
 
-### Credential resolution order
+### Credential resolution
 
-1. Explicit preferred user (when a flow specifies one)
-2. Authenticated user's personal credential
-3. Integration service user credential (when configured per integration)
-4. System credential
+Two flows: system-triggered operations (scheduled sync, background jobs, bulk Ops-page actions)
+resolve the system credential; user-triggered interactive actions resolve that specific user's own
+personal credential. A missing required credential fails with a clear error.
 
 ## Environment
 
@@ -193,7 +192,7 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 
 - `SecurityEvent` — central entity; `EventState` (Open, Acknowledged, InProgress, Resolved, Dismissed), `EventSeverity` (Critical → Informational), `EventType` (Vulnerability, Secret, Dependency, License, Misconfiguration, CodeQuality, IaC, Posture)
 - `SoftwareAsset`, `SoftwareSystem`, `SecurityContainer` — hierarchy that alerts, local findings, and dependencies are scoped to
-- `Credential` — credential vault with explicit resolution hierarchy: preferred user → current user → integration service user → system credential
+- `Credential` — credential vault with two resolution flows: a specific user's own credential, or the system credential
 
 ## Testing
 

@@ -39,9 +39,8 @@ registry pattern (bound in `AppServiceProvider`), but only two of them actually 
 
 Every registered instance gets one row in the `integration_settings` table, keyed by
 `(integration_kind, integration_id)` — for example `source:azdo`, `tracker:jira`,
-`source_control:azdo-repos`. Each row holds `enabled`, `fetch_interval_minutes`,
-`service_user_id`, and the outcome of its last run (`last_synced_at`, `last_sync_status`,
-`last_sync_message`).
+`source_control:azdo-repos`. Each row holds `enabled`, `fetch_interval_minutes`, and the outcome
+of its last run (`last_synced_at`, `last_sync_status`, `last_sync_message`).
 
 ## Trigger
 
@@ -120,10 +119,9 @@ Roles are cumulative (`Reader < Triage < Plan < Sync < Admin`). Practically, thi
   credentials.
 - **Sync**-role users can force a manual run from Operations without being able to see or edit
   the Integrations or System Credentials pages at all.
-- Every authenticated user can store their own personal credential on their profile. It is used
-  only for that user's own interactive actions — see the
-  [two-flow credential model](../architecture.md#credentials) — never as a fallback for anything
-  else, and never by system-triggered jobs.
+- Every authenticated user can store their own personal credential on their profile, used only
+  for that user's own interactive actions — see the
+  [two-flow credential model](../architecture.md#credentials).
 
 ## Observability
 
