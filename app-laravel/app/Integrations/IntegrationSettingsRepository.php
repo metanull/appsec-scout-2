@@ -5,7 +5,6 @@ namespace App\Integrations;
 use App\Models\IntegrationSetting;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -14,7 +13,6 @@ use RuntimeException;
  *   integration_id: string,
  *   enabled: bool,
  *   fetch_interval_minutes: int,
- *   service_user_id: ?int,
  *   last_synced_at: ?Carbon,
  *   last_sync_status: ?string,
  *   last_sync_message: ?string,
@@ -36,7 +34,6 @@ final class IntegrationSettingsRepository
                 'integration_id' => $integrationId,
                 'enabled' => $defaults['enabled'],
                 'fetch_interval_minutes' => $defaults['fetch_interval_minutes'],
-                'service_user_id' => $defaults['service_user_id'],
                 'last_synced_at' => null,
                 'last_sync_status' => null,
                 'last_sync_message' => null,
@@ -63,7 +60,6 @@ final class IntegrationSettingsRepository
             'integration_id' => $setting->integration_id,
             'enabled' => (bool) $setting->enabled,
             'fetch_interval_minutes' => max(1, (int) $setting->fetch_interval_minutes),
-            'service_user_id' => $setting->service_user_id !== null ? (int) $setting->service_user_id : null,
             'last_synced_at' => $lastSyncedAt,
             'last_sync_status' => $setting->last_sync_status,
             'last_sync_message' => $setting->last_sync_message,
@@ -109,7 +105,7 @@ final class IntegrationSettingsRepository
         $setting->fill($attributes);
         $setting->save();
 
-        return $setting->fresh(['serviceUser']) ?? $setting;
+        return $setting->fresh() ?? $setting;
     }
 
     public function markSyncResult(string $kind, string $integrationId, bool $ok, ?string $message = null): void
@@ -123,25 +119,6 @@ final class IntegrationSettingsRepository
             'last_sync_status' => $ok ? 'success' : 'failure',
             'last_sync_message' => $message,
         ]);
-    }
-
-    public function serviceUserIdForCredentialKey(string $key): ?int
-    {
-        $integrationId = Str::before($key, '.');
-
-        if ($integrationId === '') {
-            return $this->legacyServiceUserId();
-        }
-
-        foreach ([IntegrationSetting::KIND_SOURCE, IntegrationSetting::KIND_TRACKER] as $kind) {
-            $serviceUserId = $this->get($kind, $integrationId)['service_user_id'];
-
-            if ($serviceUserId !== null) {
-                return $serviceUserId;
-            }
-        }
-
-        return $this->legacyServiceUserId();
     }
 
     /** @param iterable<string> $integrationIds */
@@ -171,31 +148,13 @@ final class IntegrationSettingsRepository
         }
     }
 
-    /** @return array{enabled: bool, fetch_interval_minutes: int, service_user_id: ?int} */
+    /** @return array{enabled: bool, fetch_interval_minutes: int} */
     private function defaults(string $integrationId): array
     {
-        $serviceUserId = $this->legacyServiceUserId();
-
         return [
             'enabled' => (bool) config("integration_settings.{$integrationId}.enabled", false),
             'fetch_interval_minutes' => max(1, (int) config("integration_settings.{$integrationId}.interval_minutes", 30)),
-            'service_user_id' => $serviceUserId,
         ];
-    }
-
-    private function legacyServiceUserId(): ?int
-    {
-        $serviceUserId = config('integration_settings.service_user_id');
-
-        if (is_int($serviceUserId)) {
-            return $serviceUserId;
-        }
-
-        if (is_string($serviceUserId) && $serviceUserId !== '') {
-            return (int) $serviceUserId;
-        }
-
-        return null;
     }
 
     private function tableExists(): bool

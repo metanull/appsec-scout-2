@@ -189,7 +189,6 @@ function bindFakeTrackerForWorkItemForms(bool $enabled = true): void
     app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
         'enabled' => $enabled,
         'fetch_interval_minutes' => 30,
-        'service_user_id' => null,
     ]);
 
     app()->forgetInstance(TrackerRegistry::class);
