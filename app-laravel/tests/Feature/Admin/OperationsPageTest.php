@@ -179,6 +179,27 @@ it('shows sbom scan status on the operations page', function () {
     File::deleteDirectory($cursorPath);
 });
 
+it('shows static analysis scan status on the operations page', function () {
+    $admin = operationsAdmin();
+
+    $importPath = sys_get_temp_dir() . '/static-analysis-status-page-test-' . uniqid();
+    $cursorPath = sys_get_temp_dir() . '/static-analysis-status-page-cursor-test-' . uniqid();
+    File::ensureDirectoryExists($importPath . '/20260101T000000Z');
+    File::put(
+        $importPath . '/20260101T000000Z/run.jsonl',
+        json_encode(['project' => 'Payments', 'repository' => 'payments-api'], JSON_THROW_ON_ERROR) . "\n",
+    );
+    config(['static_analysis.import_path' => $importPath, 'static_analysis.cursor_path' => $cursorPath]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Static analysis scan status')
+        ->assertSee('20260101T000000Z');
+
+    File::deleteDirectory($importPath);
+    File::deleteDirectory($cursorPath);
+});
+
 it('header actions render for admin', function () {
     $admin = operationsAdmin();
 

@@ -8,6 +8,7 @@ use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentFailedJobsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
 use App\Filament\Widgets\SbomScanStatusWidget;
+use App\Filament\Widgets\StaticAnalysisScanStatusWidget;
 use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
@@ -54,6 +55,7 @@ class OperationsPage extends Page
             RecentErrorsTableWidget::class,
             RecentFailedJobsTableWidget::class,
             SbomScanStatusWidget::class,
+            StaticAnalysisScanStatusWidget::class,
         ];
     }
 
