@@ -172,27 +172,27 @@ class SoftwareAssetResource extends Resource
                 TernaryFilter::make('has_open_events')
                     ->label('Has open alerts')
                     ->queries(
-                        true: fn (Builder $query): Builder => $query->whereHas(
-                            'events',
-                            fn (Builder $events) => $events->where('state', EventState::Open->value),
-                        ),
-                        false: fn (Builder $query): Builder => $query->whereDoesntHave(
-                            'events',
-                            fn (Builder $events) => $events->where('state', EventState::Open->value),
-                        ),
+                        true: fn (Builder $query): Builder => $query->whereHas('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('state', EventState::Open->value);
+                        }),
+                        false: fn (Builder $query): Builder => $query->whereDoesntHave('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('state', EventState::Open->value);
+                        }),
                         blank: fn (Builder $query): Builder => $query,
                     ),
                 TernaryFilter::make('has_critical_events')
                     ->label('Has critical alerts')
                     ->queries(
-                        true: fn (Builder $query): Builder => $query->whereHas(
-                            'events',
-                            fn (Builder $events) => $events->where('severity', EventSeverity::Critical->value),
-                        ),
-                        false: fn (Builder $query): Builder => $query->whereDoesntHave(
-                            'events',
-                            fn (Builder $events) => $events->where('severity', EventSeverity::Critical->value),
-                        ),
+                        true: fn (Builder $query): Builder => $query->whereHas('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('severity', EventSeverity::Critical->value);
+                        }),
+                        false: fn (Builder $query): Builder => $query->whereDoesntHave('events', function (Builder $events): Builder {
+                            /** @var Builder<SecurityEvent> $events */
+                            return $events->where('severity', EventSeverity::Critical->value);
+                        }),
                         blank: fn (Builder $query): Builder => $query,
                     ),
             ])

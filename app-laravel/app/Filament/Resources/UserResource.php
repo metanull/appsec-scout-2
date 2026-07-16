@@ -105,8 +105,14 @@ class UserResource extends Resource
                 TernaryFilter::make('is_disabled')
                     ->label('Disabled')
                     ->queries(
-                        true: fn (Builder $query): Builder => $query->where('is_disabled', true),
-                        false: fn (Builder $query): Builder => $query->where('is_disabled', false),
+                        true: function (Builder $query): Builder {
+                            /** @var Builder<User> $query */
+                            return $query->where('is_disabled', true);
+                        },
+                        false: function (Builder $query): Builder {
+                            /** @var Builder<User> $query */
+                            return $query->where('is_disabled', false);
+                        },
                         blank: fn (Builder $query): Builder => $query,
                     ),
                 TernaryFilter::make('two_factor_confirmed_at')
