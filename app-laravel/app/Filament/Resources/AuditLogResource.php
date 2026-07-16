@@ -5,20 +5,17 @@ namespace App\Filament\Resources;
 use App\Audit\AuditLog;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
+use App\Filament\Support\DateRangeFilters;
 use App\Models\SecurityEvent;
 use App\Models\User;
-use Filament\Forms\Components\DatePicker;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Carbon;
 
 class AuditLogResource extends Resource
 {
@@ -165,18 +162,7 @@ class AuditLogResource extends Resource
             ->filters([
                 SelectFilter::make('actor_kind')
                     ->options(['user' => 'User', 'job' => 'Job', 'cli' => 'CLI', 'system' => 'System']),
-                Filter::make('date_from')
-                    ->form([DatePicker::make('date_from')])
-                    ->query(fn (Builder $query, array $data) => $query->when(
-                        $data['date_from'],
-                        fn (Builder $q, string $v) => $q->whereDate('created_at', '>=', Carbon::parse($v)),
-                    )),
-                Filter::make('date_until')
-                    ->form([DatePicker::make('date_until')])
-                    ->query(fn (Builder $query, array $data) => $query->when(
-                        $data['date_until'],
-                        fn (Builder $q, string $v) => $q->whereDate('created_at', '<=', Carbon::parse($v)),
-                    )),
+                ...DateRangeFilters::for('created_at'),
             ])
             ->defaultSort('created_at', 'desc')
             ->paginated([25, 50, 100])

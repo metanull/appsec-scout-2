@@ -151,3 +151,26 @@ it('denies the view page to a user without admin.queue', function () {
         ->get(SyncRunResource::getUrl('view', ['record' => $run]))
         ->assertForbidden();
 });
+
+it('filters sync runs by a started_at date range', function () {
+    $admin = syncRunAdmin();
+
+    $early = SyncRun::query()->create([
+        'source_id' => 'azdo', 'started_at' => '2026-01-05 00:00:00', 'finished_at' => '2026-01-05 00:01:00',
+        'status' => 'success', 'counts_json' => [], 'error_message' => null,
+    ]);
+    $late = SyncRun::query()->create([
+        'source_id' => 'azdo', 'started_at' => '2026-01-25 00:00:00', 'finished_at' => '2026-01-25 00:01:00',
+        'status' => 'success', 'counts_json' => [], 'error_message' => null,
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListSyncRuns::class)
+        ->filterTable('started_at_from', ['started_at_from' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$late])
+        ->assertCanNotSeeTableRecords([$early])
+        ->removeTableFilter('started_at_from')
+        ->filterTable('started_at_until', ['started_at_until' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$early])
+        ->assertCanNotSeeTableRecords([$late]);
+});

@@ -4,20 +4,17 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
 use App\Filament\Resources\ErrorLogResource\Pages\ViewErrorLog;
+use App\Filament\Support\DateRangeFilters;
 use App\Models\ErrorLog;
-use Filament\Forms\Components\DatePicker;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
 
 class ErrorLogResource extends Resource
 {
@@ -107,12 +104,7 @@ class ErrorLogResource extends Resource
             ->filters([
                 SelectFilter::make('level')
                     ->options(['ERROR' => 'Error', 'CRITICAL' => 'Critical', 'ALERT' => 'Alert', 'EMERGENCY' => 'Emergency']),
-                Filter::make('date_from')
-                    ->form([DatePicker::make('date_from')])
-                    ->query(fn (Builder $query, array $data) => $query->when(
-                        $data['date_from'],
-                        fn (Builder $q, string $v) => $q->whereDate('occurred_at', '>=', Carbon::parse($v)),
-                    )),
+                ...DateRangeFilters::for('occurred_at'),
             ])
             ->defaultSort('occurred_at', 'desc')
             ->paginated([25, 50, 100])
