@@ -15,7 +15,6 @@ it('returns enabled source control providers from registry', function () {
     app(IntegrationSettingsRepository::class)->update('source_control', 'fake-repos', [
         'enabled' => true,
         'fetch_interval_minutes' => 30,
-        'service_user_id' => null,
     ]);
 
     $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
@@ -33,7 +32,6 @@ it('excludes disabled source control providers', function () {
     app(IntegrationSettingsRepository::class)->update('source_control', 'fake-repos', [
         'enabled' => false,
         'fetch_interval_minutes' => 30,
-        'service_user_id' => null,
     ]);
 
     $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));

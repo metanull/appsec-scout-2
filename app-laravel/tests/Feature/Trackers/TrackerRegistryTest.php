@@ -16,7 +16,6 @@ it('returns enabled trackers from registry', function () {
     app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
         'enabled' => true,
         'fetch_interval_minutes' => 30,
-        'service_user_id' => null,
     ]);
 
     $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
@@ -34,7 +33,6 @@ it('excludes disabled trackers', function () {
     app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
         'enabled' => false,
         'fetch_interval_minutes' => 30,
-        'service_user_id' => null,
     ]);
 
     $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
@@ -51,7 +49,6 @@ it('finds tracker by id', function () {
     app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
         'enabled' => true,
         'fetch_interval_minutes' => 30,
-        'service_user_id' => null,
     ]);
 
     $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
@@ -69,7 +66,6 @@ it('registered trackers satisfy the tracker contract', function () {
     app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
         'enabled' => true,
         'fetch_interval_minutes' => 30,
-        'service_user_id' => null,
     ]);
 
     $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));

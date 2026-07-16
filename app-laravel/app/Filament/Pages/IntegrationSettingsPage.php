@@ -16,7 +16,6 @@ use App\Trackers\Contracts\Tracker;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\TrackerConfigRepository;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -38,7 +37,6 @@ use Illuminate\Support\Facades\Auth;
  *   integration_id: string,
  *   enabled: bool,
  *   fetch_interval_minutes: int,
- *   service_user_id: ?int,
  *   last_synced_at: \Illuminate\Support\Carbon|null,
  *   last_sync_status: ?string,
  *   last_sync_message: ?string,
@@ -55,7 +53,7 @@ class IntegrationSettingsPage extends Page implements HasTable
     private ?array $queuedIntegrationIds = null;
 
     /**
-     * @var array<string, array{enabled: bool, fetch_interval_minutes: int, service_user_id: int|string|null, jira_default_project?: ?string}>
+     * @var array<string, array{enabled: bool, fetch_interval_minutes: int, jira_default_project?: ?string}>
      */
     public array $settings = [];
 
@@ -103,7 +101,6 @@ class IntegrationSettingsPage extends Page implements HasTable
                     $key => [
                         'enabled' => $setting->enabled,
                         'fetch_interval_minutes' => $setting->fetch_interval_minutes,
-                        'service_user_id' => $setting->service_user_id,
                     ],
                 ];
             })
@@ -134,10 +131,6 @@ class IntegrationSettingsPage extends Page implements HasTable
                 TextColumn::make('fetch_interval_minutes')
                     ->label('Interval (min)')
                     ->placeholder('-'),
-                TextColumn::make('serviceUser.name')
-                    ->label('Service user')
-                    ->placeholder('-')
-                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('last_sync_status')
                     ->label('Last sync status')
                     ->badge()
@@ -179,7 +172,6 @@ class IntegrationSettingsPage extends Page implements HasTable
                     ->fillForm(fn (IntegrationSetting $record): array => [
                         'enabled' => $record->enabled,
                         'fetch_interval_minutes' => $record->fetch_interval_minutes,
-                        'service_user_id' => $record->service_user_id,
                         'jira_default_project' => $record->integration_id === 'jira'
                             ? app(TrackerConfigRepository::class)->getJiraDefaultProjectKey()
                             : null,
@@ -279,11 +271,6 @@ class IntegrationSettingsPage extends Page implements HasTable
                 ->numeric()
                 ->minValue(1)
                 ->required(),
-            Select::make('service_user_id')
-                ->label('Service user')
-                ->options(User::query()->orderBy('name')->pluck('name', 'id')->all())
-                ->nullable()
-                ->searchable(),
         ];
 
         if ($record->integration_id === 'jira' && $record->integration_kind === IntegrationSetting::KIND_TRACKER) {
@@ -299,14 +286,9 @@ class IntegrationSettingsPage extends Page implements HasTable
     /** @param array<string, mixed> $data */
     private function persistIntegration(IntegrationSetting $record, array $data): void
     {
-        $serviceUserId = isset($data['service_user_id']) && is_numeric($data['service_user_id'])
-            ? (int) $data['service_user_id']
-            : null;
-
         $setting = app(IntegrationSettingsRepository::class)->update($record->integration_kind, $record->integration_id, [
             'enabled' => (bool) ($data['enabled'] ?? false),
             'fetch_interval_minutes' => max(1, (int) ($data['fetch_interval_minutes'] ?? 30)),
-            'service_user_id' => $serviceUserId,
         ]);
 
         app(Recorder::class)->recordAdminAction('integration.settings_updated', [
@@ -314,14 +296,12 @@ class IntegrationSettingsPage extends Page implements HasTable
             'integration_id' => $setting->integration_id,
             'enabled' => $setting->enabled,
             'fetch_interval_minutes' => $setting->fetch_interval_minutes,
-            'service_user_id' => $setting->service_user_id,
         ]);
 
         $legacyKey = $setting->integration_kind . ':' . $setting->integration_id;
         $this->settings[$legacyKey] = [
             'enabled' => $setting->enabled,
             'fetch_interval_minutes' => $setting->fetch_interval_minutes,
-            'service_user_id' => $setting->service_user_id,
         ];
 
         if ($record->integration_id === 'jira' && $record->integration_kind === IntegrationSetting::KIND_TRACKER) {
@@ -356,7 +336,6 @@ class IntegrationSettingsPage extends Page implements HasTable
         $this->persistIntegration($record, [
             'enabled' => (bool) ($legacy['enabled'] ?? $record->enabled),
             'fetch_interval_minutes' => (int) ($legacy['fetch_interval_minutes'] ?? $record->fetch_interval_minutes),
-            'service_user_id' => $legacy['service_user_id'] ?? $record->service_user_id,
             'jira_default_project' => $legacy['jira_default_project'] ?? null,
         ]);
     }
@@ -376,12 +355,11 @@ class IntegrationSettingsPage extends Page implements HasTable
             return;
         }
 
-        $result = app(Vault::class)->runAsOwner(null, fn () => $instance->testConnection(), true);
+        $result = app(Vault::class)->runAsOwner(null, fn () => $instance->testConnection());
 
         app(Recorder::class)->recordAdminAction('integration.connection_tested', [
             'integration_kind' => $record->integration_kind,
             'integration_id' => $record->integration_id,
-            'service_user_id' => null,
             'outcome' => $result->ok ? 'success' : 'failure',
             'error' => $result->error,
         ]);

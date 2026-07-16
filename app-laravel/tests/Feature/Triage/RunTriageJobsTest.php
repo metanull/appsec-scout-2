@@ -19,7 +19,7 @@ it('run codesearch job uses system azdo-repos pat and invokes the shared service
     {
         public function __construct() {}
 
-        public function run(string $pat, string $searchText, ?string $scope = null, ?int $attachToEventId = null, ?int $createdByUserId = null): CodesearchRunResult
+        public function run(string $pat, string $organization, string $searchText, ?string $scope = null, ?int $attachToEventId = null, ?int $createdByUserId = null): CodesearchRunResult
         {
             EventAttachment::query()->create([
                 'event_id' => $attachToEventId,

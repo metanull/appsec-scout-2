@@ -179,16 +179,17 @@ AppSec Scout is the system of record for operator edits.
 
 Credential storage is centralized in the `credentials` table, encrypted at rest.
 
-Resolution order:
+There are exactly two credential-resolution flows:
 
-1. Explicit preferred user (when a flow specifies one).
-2. The authenticated user's own personal credential.
-3. The integration's configured service-user credential.
-4. The system credential.
+- **System-triggered operations** (scheduled sync, background jobs, bulk Ops-page actions such as
+  "Reconcile all tracker links") resolve the system credential (`owner_user_id IS NULL`, set via
+  `Admin -> System Credentials`, `Vault::runAsOwner(null, ...)`).
+- **User-triggered interactive actions** (creating/linking a work item, the per-alert "Find
+  existing work items" action) resolve that specific user's own personal credential (set via
+  `Profile -> Integrations`, `Vault::runAsOwner($operatorUserId, ...)`).
 
-This supports both interactive user actions and scheduled/queued background jobs, which always
-resolve as the system credential (`Vault::runAsOwner(null, ...)`), never as whichever user
-triggered them.
+Which flow applies is fixed by the kind of operation. A missing required credential fails with a
+clear error.
 
 ## Related Documents
 

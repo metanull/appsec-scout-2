@@ -160,14 +160,14 @@ it('uses the scoped fast path on the next reconciliation run after an auto-creat
         ->and($tracker->fetchProjectsCalls)->toBe(0);
 });
 
-it('continues reconciliation when fetchProjects throws for an enabled tracker', function () {
+it('fails reconciliation instead of silently skipping when fetchProjects throws for an enabled tracker', function () {
     $tracker = (new FakeTracker)
         ->withFetchProjectsFailure()
         ->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
             trackerId: 'fake-tracker',
             workItemId: 'APP#5',
             workItemUrl: 'https://tracker.test/APP%235',
-            title: 'Still reachable via existing link',
+            title: 'Should not be reached',
             state: 'Open',
             labels: ['security'],
             extractedUrls: ['https://tracker.test/APP%235'],
@@ -181,21 +181,20 @@ it('continues reconciliation when fetchProjects throws for an enabled tracker', 
 
     attachTrackerProject($event->softwareSystem, 'fake-tracker', 'APP');
 
-    $results = app(ReconciliationService::class)->reconcileAll();
+    expect(fn () => app(ReconciliationService::class)->reconcileAll())
+        ->toThrow(RuntimeException::class, 'Failed to list projects');
 
-    expect($tracker->fetchProjectsCalls)->toBe(1)
-        ->and(collect($results)->firstWhere('alreadyLinked', false))->not->toBeNull()
-        ->and(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'APP#5')->exists())->toBeTrue();
+    expect(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'APP#5')->exists())->toBeFalse();
 });
 
-it('continues reconciliation when one project search throws', function () {
+it('fails reconciliation instead of silently skipping when one project search throws', function () {
     $tracker = (new FakeTracker)
         ->withReconciliationFailure('BROKEN')
         ->withReconciliationCandidates('OK', new ReconciliationCandidateDto(
             trackerId: 'fake-tracker',
             workItemId: 'OK#1',
             workItemUrl: 'https://tracker.test/OK%231',
-            title: 'Recoverable issue',
+            title: 'Should not be reached',
             state: 'Open',
             labels: ['security'],
             extractedUrls: ['https://tracker.test/OK%231'],
@@ -210,10 +209,10 @@ it('continues reconciliation when one project search throws', function () {
     attachTrackerProject($event->softwareSystem, 'fake-tracker', 'BROKEN');
     attachTrackerProject($event->softwareSystem, 'fake-tracker', 'OK');
 
-    $results = app(ReconciliationService::class)->reconcileAll();
+    expect(fn () => app(ReconciliationService::class)->reconcileAll())
+        ->toThrow(RuntimeException::class, 'Reconciliation failed for project BROKEN');
 
-    expect(collect($results)->firstWhere('alreadyLinked', false))->not->toBeNull()
-        ->and(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'OK#1')->exists())->toBeTrue();
+    expect(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'OK#1')->exists())->toBeFalse();
 });
 
 it('creates links for multiple events matching one work item', function () {

@@ -11,7 +11,7 @@ role has.
 2. Sign in and complete mandatory multi-factor enrollment.
 3. Create users and assign cumulative roles.
 4. Configure system credentials.
-5. Configure integrations, service users, and polling intervals.
+5. Configure integrations and polling intervals.
 6. Use the Operations page to inspect queues, retry failed jobs, reconcile tracker links, sync
    inventory, and run one-off maintenance actions.
 7. Review audit and error logs for operator and runtime visibility.
@@ -34,7 +34,6 @@ role has.
 - Keep user access current.
 - Disable unused or compromised accounts.
 - Reset multi-factor enrollment when needed.
-- Manage integration service-user ownership.
 - Review failed jobs and sync failures.
 - Ensure the health endpoint, queue workers, and scheduler continue running.
 

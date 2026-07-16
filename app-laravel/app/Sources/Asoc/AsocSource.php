@@ -302,9 +302,9 @@ final class AsocSource implements EnrichesFetchedEvents, Source
             return $this->client;
         }
 
-        $keyId = $this->vault->get('asoc.keyId', null, true) ?? throw new \RuntimeException('ASoC keyId is not configured');
-        $keySecret = $this->vault->get('asoc.keySecret', null, true) ?? throw new \RuntimeException('ASoC keySecret is not configured');
-        $baseUrl = $this->vault->get('asoc.baseUrl', null, true) ?? 'https://cloud.appscan.com';
+        $keyId = $this->vault->get('asoc.keyId', null) ?? throw new \RuntimeException('ASoC keyId is not configured');
+        $keySecret = $this->vault->get('asoc.keySecret', null) ?? throw new \RuntimeException('ASoC keySecret is not configured');
+        $baseUrl = $this->vault->get('asoc.baseUrl', null) ?? 'https://cloud.appscan.com';
         $fingerprint = hash('sha256', implode('|', [$keyId, $keySecret, $baseUrl]));
 
         if ($this->client === null || $this->clientFingerprint !== $fingerprint) {

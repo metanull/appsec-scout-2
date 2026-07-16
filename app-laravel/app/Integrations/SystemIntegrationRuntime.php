@@ -44,7 +44,7 @@ final class SystemIntegrationRuntime
     {
         $source = $this->source($sourceId) ?? throw new \RuntimeException("Source {$sourceId} is not registered.");
 
-        return $this->vault->runAsOwner(null, fn (): mixed => $callback($source), true);
+        return $this->vault->runAsOwner(null, fn (): mixed => $callback($source));
     }
 
     /**
@@ -57,7 +57,7 @@ final class SystemIntegrationRuntime
     {
         $tracker = $this->tracker($trackerId) ?? throw new \RuntimeException("Tracker {$trackerId} is not registered.");
 
-        return $this->vault->runAsOwner(null, fn (): mixed => $callback($tracker), true);
+        return $this->vault->runAsOwner(null, fn (): mixed => $callback($tracker));
     }
 
     /**
@@ -70,6 +70,6 @@ final class SystemIntegrationRuntime
     {
         $provider = $this->sourceControl($id) ?? throw new \RuntimeException("Source Control provider {$id} is not registered.");
 
-        return $this->vault->runAsOwner(null, fn (): mixed => $callback($provider), true);
+        return $this->vault->runAsOwner(null, fn (): mixed => $callback($provider));
     }
 }

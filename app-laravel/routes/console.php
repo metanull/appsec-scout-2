@@ -80,7 +80,7 @@ Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin}
     return self::SUCCESS;
 })->purpose('Create the first AppSec Scout admin account when no users exist');
 
-Artisan::command('triage:codesearch {search} {--pat=} {--scope=} {--attach-to=}', function (Vault $vault): int {
+Artisan::command('triage:codesearch {search} {--pat=} {--organization=} {--scope=} {--attach-to=}', function (Vault $vault): int {
     $search = (string) $this->argument('search');
     $scope = $this->option('scope');
     $attachTo = $this->option('attach-to');
@@ -88,7 +88,7 @@ Artisan::command('triage:codesearch {search} {--pat=} {--scope=} {--attach-to=}'
     $patOption = $this->option('pat');
     $pat = is_string($patOption) && $patOption !== ''
         ? $patOption
-        : $vault->get('azdo-repos.pat', null, true);
+        : $vault->get('azdo-repos.pat', null);
 
     if (! is_string($pat) || $pat === '') {
         $this->error('AzDO PAT not provided via --pat, and no system credential "azdo-repos.pat" is configured.');
@@ -96,9 +96,21 @@ Artisan::command('triage:codesearch {search} {--pat=} {--scope=} {--attach-to=}'
         return 1;
     }
 
+    $organizationOption = $this->option('organization');
+    $organization = is_string($organizationOption) && $organizationOption !== ''
+        ? $organizationOption
+        : $vault->get('azdo-repos.organization', null);
+
+    if (! is_string($organization) || $organization === '') {
+        $this->error('AzDO organization not provided via --organization, and no system credential "azdo-repos.organization" is configured.');
+
+        return 1;
+    }
+
     try {
         $result = app(CodesearchService::class)->run(
             pat: $pat,
+            organization: $organization,
             searchText: $search,
             scope: is_string($scope) ? $scope : null,
             attachToEventId: is_numeric($attachTo) ? (int) $attachTo : null,

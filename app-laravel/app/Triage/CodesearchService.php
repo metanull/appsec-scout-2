@@ -3,7 +3,6 @@
 namespace App\Triage;
 
 use App\Audit\Recorder;
-use App\Credentials\Vault;
 use App\Models\SecurityEvent;
 
 class CodesearchService
@@ -12,19 +11,16 @@ class CodesearchService
         private readonly AttachmentService $attachments,
         private readonly CodesearchClientFactory $clientFactory,
         private readonly Recorder $recorder,
-        private readonly Vault $vault,
     ) {}
 
     public function run(
         string $pat,
+        string $organization,
         string $searchText,
         ?string $scope = null,
         ?int $attachToEventId = null,
         ?int $createdByUserId = null,
     ): CodesearchRunResult {
-        $organization = $this->vault->get('azdo-repos.organization', null)
-            ?? throw new \RuntimeException('AzDO Repos organization not configured');
-
         $client = $this->clientFactory->make($organization, $pat);
         $result = new CodesearchRunResult($client->search($searchText, $this->parseScope($scope)));
 

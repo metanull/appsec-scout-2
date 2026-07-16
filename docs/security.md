@@ -65,7 +65,6 @@ Laravel's `encrypted` Eloquent cast (`Credential::$casts['value']`). Controls:
 - No secret is intentionally rendered back in plaintext in the UI.
 - Connection tests update last-tested state without exposing secret values.
 - The Operations page redacts sensitive keys from failed-job payload previews.
-- Service-user credential selection is explicit per integration.
 - Dependency-Track's own API key (`dependencytrack.apiKey`) is provisioned automatically by the
   `dependencytrack-bootstrap` one-shot container and stored in the same vault — no manual entry.
 - The shared token between `trivy-server` and Dependency-Track's Trivy analyzer is generated once,

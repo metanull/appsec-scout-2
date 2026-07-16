@@ -81,8 +81,8 @@ final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
             return $this->client;
         }
 
-        $pat = $this->vault->get('azdo-repos.pat', null, true) ?? throw new \RuntimeException('AzDO Repos PAT not configured');
-        $organization = $this->vault->get('azdo-repos.organization', null, true) ?? throw new \RuntimeException('AzDO Repos organization not configured');
+        $pat = $this->vault->get('azdo-repos.pat', null) ?? throw new \RuntimeException('AzDO Repos PAT not configured');
+        $organization = $this->vault->get('azdo-repos.organization', null) ?? throw new \RuntimeException('AzDO Repos organization not configured');
         $fingerprint = hash('sha256', implode('|', [$organization, $pat]));
 
         if ($this->client === null || $this->clientFingerprint !== $fingerprint) {

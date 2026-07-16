@@ -86,63 +86,57 @@ it('dispatches only due integrations from database-backed settings', function ()
 });
 
 it('uses system credentials for background credential resolution', function () {
-    $serviceUser = User::factory()->create();
+    $otherUser = User::factory()->create();
 
     Credential::query()->create(['integration_key' => 'fake.apiKey', 'owner_user_id' => null, 'value' => 'system-token']);
-    Credential::query()->create(['integration_key' => 'fake.apiKey', 'owner_user_id' => $serviceUser->id, 'value' => 'service-token']);
+    Credential::query()->create(['integration_key' => 'fake.apiKey', 'owner_user_id' => $otherUser->id, 'value' => 'user-token']);
 
     IntegrationSetting::query()->updateOrCreate(
         ['integration_kind' => 'source', 'integration_id' => 'fake'],
-        ['enabled' => true, 'fetch_interval_minutes' => 30, 'service_user_id' => $serviceUser->id],
+        ['enabled' => true, 'fetch_interval_minutes' => 30],
     );
 
-    expect(app(CredentialResolver::class)->resolve('fake.apiKey')?->value)->toBe('system-token');
+    expect(app(CredentialResolver::class)->exact('fake.apiKey', null)?->value)->toBe('system-token');
 });
 
 it('saves integration settings and records an audit row', function () {
     $admin = enrolledAdmin();
-    $serviceUser = User::factory()->create(['name' => 'Service User']);
     IntegrationSetting::query()->updateOrCreate(
         ['integration_kind' => 'source', 'integration_id' => 'fake'],
-        ['enabled' => false, 'fetch_interval_minutes' => 30, 'service_user_id' => null],
+        ['enabled' => false, 'fetch_interval_minutes' => 30],
     );
 
     Livewire::actingAs($admin)
         ->test(IntegrationSettingsPage::class)
         ->set('settings.source:fake.enabled', true)
         ->set('settings.source:fake.fetch_interval_minutes', 12)
-        ->set('settings.source:fake.service_user_id', (string) $serviceUser->id)
         ->call('saveIntegration', 'source:fake');
 
     expect(IntegrationSetting::query()->where('integration_kind', 'source')->where('integration_id', 'fake')->first())
         ->not->toBeNull()
         ->enabled->toBeTrue()
-        ->fetch_interval_minutes->toBe(12)
-        ->service_user_id->toBe($serviceUser->id);
+        ->fetch_interval_minutes->toBe(12);
 
     expect(AuditLog::query()->where('action', 'integration.settings_updated')->exists())->toBeTrue();
 });
 
 it('saves source control integration settings and records an audit row', function () {
     $admin = enrolledAdmin();
-    $serviceUser = User::factory()->create(['name' => 'Service User']);
     IntegrationSetting::query()->updateOrCreate(
         ['integration_kind' => 'source_control', 'integration_id' => 'fake-repos'],
-        ['enabled' => false, 'fetch_interval_minutes' => 30, 'service_user_id' => null],
+        ['enabled' => false, 'fetch_interval_minutes' => 30],
     );
 
     Livewire::actingAs($admin)
         ->test(IntegrationSettingsPage::class)
         ->set('settings.source_control:fake-repos.enabled', true)
         ->set('settings.source_control:fake-repos.fetch_interval_minutes', 12)
-        ->set('settings.source_control:fake-repos.service_user_id', (string) $serviceUser->id)
         ->call('saveIntegration', 'source_control:fake-repos');
 
     expect(IntegrationSetting::query()->where('integration_kind', 'source_control')->where('integration_id', 'fake-repos')->first())
         ->not->toBeNull()
         ->enabled->toBeTrue()
-        ->fetch_interval_minutes->toBe(12)
-        ->service_user_id->toBe($serviceUser->id);
+        ->fetch_interval_minutes->toBe(12);
 
     expect(AuditLog::query()->where('action', 'integration.settings_updated')->exists())->toBeTrue();
 });
@@ -172,7 +166,6 @@ it('tests a source control connection with system credentials and records an aud
 
 it('tests a connection with system credentials and records an audit row', function () {
     $admin = enrolledAdmin();
-    $serviceUser = User::factory()->create();
 
     Credential::query()->create([
         'integration_key' => 'fake.apiKey',
@@ -182,7 +175,7 @@ it('tests a connection with system credentials and records an audit row', functi
 
     IntegrationSetting::query()->updateOrCreate(
         ['integration_kind' => 'source', 'integration_id' => 'fake'],
-        ['enabled' => true, 'fetch_interval_minutes' => 30, 'service_user_id' => $serviceUser->id],
+        ['enabled' => true, 'fetch_interval_minutes' => 30],
     );
 
     $record = IntegrationSetting::query()

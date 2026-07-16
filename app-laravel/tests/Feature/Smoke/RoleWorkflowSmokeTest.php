@@ -163,7 +163,7 @@ it('covers the admin workflow and integration operations actions', function () {
 
     IntegrationSetting::query()->updateOrCreate(
         ['integration_kind' => 'source', 'integration_id' => 'fake'],
-        ['enabled' => false, 'fetch_interval_minutes' => 30, 'service_user_id' => null],
+        ['enabled' => false, 'fetch_interval_minutes' => 30],
     );
 
     $record = IntegrationSetting::query()
@@ -176,7 +176,6 @@ it('covers the admin workflow and integration operations actions', function () {
         ->callTableAction('editSettings', $record, data: [
             'enabled' => true,
             'fetch_interval_minutes' => 5,
-            'service_user_id' => null,
         ])
         ->callTableAction('testConnection', $record);
 

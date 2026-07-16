@@ -73,7 +73,7 @@ final class OperatorIntegrationRuntime
     {
         $source = $this->source($sourceId) ?? throw new \RuntimeException("Source {$sourceId} is not registered.");
 
-        return $this->vault->runAsOwner($operatorUserId, fn (): mixed => $callback($source), true);
+        return $this->vault->runAsOwner($operatorUserId, fn (): mixed => $callback($source));
     }
 
     /**
@@ -86,7 +86,7 @@ final class OperatorIntegrationRuntime
     {
         $tracker = $this->tracker($trackerId) ?? throw new \RuntimeException("Tracker {$trackerId} is not registered.");
 
-        return $this->vault->runAsOwner($operatorUserId, fn (): mixed => $callback($tracker), true);
+        return $this->vault->runAsOwner($operatorUserId, fn (): mixed => $callback($tracker));
     }
 
     /**
@@ -104,8 +104,7 @@ final class OperatorIntegrationRuntime
 
             $value = $this->vault->runAsOwner(
                 $operatorUserId,
-                fn (): ?string => $this->vault->get($field->key, null, true),
-                true,
+                fn (): ?string => $this->vault->get($field->key, null),
             );
 
             if (! is_string($value) || trim($value) === '') {
