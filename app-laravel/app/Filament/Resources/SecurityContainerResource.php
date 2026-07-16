@@ -12,9 +12,11 @@ use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationMan
 use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\EntityNavigationCatalog;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -89,6 +91,33 @@ class SecurityContainerResource extends Resource
                                 ->count();
                         })
                         ->placeholder('-'),
+                    TextEntry::make('critical_events_count')
+                        ->label('Critical')
+                        ->state(function (SecurityContainer $record): int {
+                            return SecurityEvent::query()
+                                ->where('container_id', $record->id)
+                                ->where('severity', EventSeverity::Critical->value)
+                                ->count();
+                        })
+                        ->placeholder('-'),
+                    TextEntry::make('high_events_count')
+                        ->label('High')
+                        ->state(function (SecurityContainer $record): int {
+                            return SecurityEvent::query()
+                                ->where('container_id', $record->id)
+                                ->where('severity', EventSeverity::High->value)
+                                ->count();
+                        })
+                        ->placeholder('-'),
+                    TextEntry::make('medium_events_count')
+                        ->label('Medium')
+                        ->state(function (SecurityContainer $record): int {
+                            return SecurityEvent::query()
+                                ->where('container_id', $record->id)
+                                ->where('severity', EventSeverity::Medium->value)
+                                ->count();
+                        })
+                        ->placeholder('-'),
                     TextEntry::make('first_seen_at')
                         ->label('First seen')
                         ->dateTime('d M Y H:i')
@@ -154,12 +183,49 @@ class SecurityContainerResource extends Resource
                     /** @var Builder<SecurityEvent> $events */
                     return $events->where('state', EventState::Open->value);
                 },
+                'events as critical_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('severity', EventSeverity::Critical->value);
+                },
+                'events as high_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('severity', EventSeverity::High->value);
+                },
+                'events as medium_events_count' => function (Builder $events) {
+                    /** @var Builder<SecurityEvent> $events */
+                    return $events->where('severity', EventSeverity::Medium->value);
+                },
             ]))
             ->columns([
                 TextColumn::make('name')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('kind')->badge()->color('gray')->placeholder('-'),
-                TextColumn::make('softwareSystem.name')->label('System')->searchable()->placeholder('-'),
+                TextColumn::make('softwareSystem.name')
+                    ->label('System')
+                    ->searchable()
+                    ->placeholder('-')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy(
+                        SoftwareSystem::select('name')->whereColumn('software_systems.id', 'security_containers.software_system_id'),
+                        $direction === 'desc' ? 'desc' : 'asc',
+                    )),
                 TextColumn::make('open_events_count')->label('Open')->sortable()->placeholder('-'),
+                TextColumn::make('critical_events_count')
+                    ->label('Critical')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'danger' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
+                TextColumn::make('high_events_count')
+                    ->label('High')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'warning' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
+                TextColumn::make('medium_events_count')
+                    ->label('Medium')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'info' : 'gray')
+                    ->sortable()
+                    ->placeholder('-'),
                 TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
                 IconColumn::make('removed_at')
                     ->label('Removed')
