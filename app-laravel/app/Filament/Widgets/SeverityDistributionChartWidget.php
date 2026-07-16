@@ -10,7 +10,7 @@ class SeverityDistributionChartWidget extends ChartWidget
 {
     protected ?string $heading = 'Severity Distribution';
 
-    protected static ?int $sort = 2;
+    protected static ?int $sort = 3;
 
     public static function canView(): bool
     {

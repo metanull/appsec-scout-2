@@ -16,6 +16,8 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 {
     protected static bool $isLazy = false;
 
+    protected static ?int $sort = 5;
+
     public static function canView(): bool
     {
         $user = Auth::user();
