@@ -8,6 +8,7 @@ use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
+use App\Filament\Support\EventStateBadgeColor;
 use App\Filament\Support\LocalFindingOwnerColumns;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -82,13 +83,7 @@ class LocalFindingResource extends Resource
                             ->label('Status')
                             ->badge()
                             ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
-                            ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
-                                EventState::Resolved->value => 'success',
-                                EventState::Dismissed->value => 'gray',
-                                EventState::InProgress->value => 'info',
-                                EventState::Acknowledged->value => 'warning',
-                                default => 'danger',
-                            }),
+                            ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
                         TextEntry::make('_effective_severity')
                             ->label('Severity')
                             ->state(fn (LocalFinding $record): string => $record->overridden_severity !== null
@@ -157,13 +152,7 @@ class LocalFindingResource extends Resource
                     ->badge()
                     ->sortable()
                     ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
-                    ->color(fn (EventState|string $state) => match ($state instanceof EventState ? $state->value : $state) {
-                        EventState::Resolved->value => 'success',
-                        EventState::Dismissed->value => 'gray',
-                        EventState::InProgress->value => 'info',
-                        EventState::Acknowledged->value => 'warning',
-                        default => 'danger',
-                    }),
+                    ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
                 TextColumn::make('_effective_severity')
                     ->label('Severity')
                     ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())

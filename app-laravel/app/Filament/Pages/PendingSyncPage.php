@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\EventSeverityBadgeColor;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Sync\PushEventStatesJob;
@@ -97,24 +98,12 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('severity')
                     ->label('Current severity')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->severity)) {
-                        'critical' => 'danger',
-                        'high' => 'warning',
-                        'medium' => 'info',
-                        'low' => 'gray',
-                        default => 'secondary',
-                    })
+                    ->color(fn (SecurityEvent $record): string => EventSeverityBadgeColor::for($record->severity))
                     ->placeholder('-'),
                 TextColumn::make('pending_severity')
                     ->label('Pending severity')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->pending_severity)) {
-                        'critical' => 'danger',
-                        'high' => 'warning',
-                        'medium' => 'info',
-                        'low' => 'gray',
-                        default => 'secondary',
-                    })
+                    ->color(fn (SecurityEvent $record): string => EventSeverityBadgeColor::for($record->pending_severity))
                     ->placeholder('-'),
                 TextColumn::make('pending_comment')
                     ->label('Comment')
