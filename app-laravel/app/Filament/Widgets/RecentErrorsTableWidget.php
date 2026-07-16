@@ -2,7 +2,9 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\ErrorLogResource;
 use App\Models\ErrorLog;
+use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
@@ -14,6 +16,8 @@ class RecentErrorsTableWidget extends TableWidget
     protected static ?string $heading = 'Recent errors';
 
     protected static bool $isLazy = false;
+
+    protected static ?int $sort = 9;
 
     protected int|string|array $columnSpan = 'full';
 
@@ -50,6 +54,12 @@ class RecentErrorsTableWidget extends TableWidget
                     ->label('Occurred')
                     ->since()
                     ->placeholder('-'),
+            ])
+            ->headerActions([
+                Action::make('viewAll')
+                    ->label('View all')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->url(fn (): string => ErrorLogResource::getUrl('index')),
             ])
             ->paginated(false)
             ->emptyStateHeading('No recent errors recorded');

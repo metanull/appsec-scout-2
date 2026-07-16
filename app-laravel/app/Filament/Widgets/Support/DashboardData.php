@@ -6,6 +6,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
+use Filament\Support\Colors\Color;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -80,6 +81,13 @@ final class DashboardData
                         $stats['severities'][EventSeverity::Medium->value],
                         $stats['severities'][EventSeverity::Low->value],
                         $stats['severities'][EventSeverity::Informational->value],
+                    ],
+                    'backgroundColor' => [
+                        Color::Red[500],
+                        Color::Orange[500],
+                        Color::Blue[500],
+                        Color::Gray[400],
+                        Color::Gray[200],
                     ],
                 ]],
             ];

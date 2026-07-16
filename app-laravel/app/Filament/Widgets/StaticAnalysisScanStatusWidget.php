@@ -2,19 +2,19 @@
 
 namespace App\Filament\Widgets;
 
-use App\Assets\Sbom\SbomScanStatusReporter;
+use App\Assets\StaticAnalysis\StaticAnalysisScanStatusReporter;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
 use Illuminate\Support\Facades\Auth;
 
-class SbomScanStatusWidget extends TableWidget
+class StaticAnalysisScanStatusWidget extends TableWidget
 {
-    protected static ?string $heading = 'SBOM scan status';
+    protected static ?string $heading = 'Static analysis scan status';
 
     protected static bool $isLazy = false;
 
-    protected static ?int $sort = 6;
+    protected static ?int $sort = 7;
 
     protected int|string|array $columnSpan = 'full';
 
@@ -26,7 +26,7 @@ class SbomScanStatusWidget extends TableWidget
     public function table(Table $table): Table
     {
         return $table
-            ->records(fn (): array => app(SbomScanStatusReporter::class)->statusForAllRuns())
+            ->records(fn (): array => app(StaticAnalysisScanStatusReporter::class)->statusForAllRuns())
             ->columns([
                 TextColumn::make('run')
                     ->label('Run'),
@@ -67,6 +67,6 @@ class SbomScanStatusWidget extends TableWidget
                     ->getStateUsing(fn (array $record): string => $record['dryRun'] ? '-' : ($record['lastUpdated']?->diffForHumans() ?? 'never')),
             ])
             ->paginated(false)
-            ->emptyStateHeading('No sbom-scan runs found');
+            ->emptyStateHeading('No static-analysis-scan runs found');
     }
 }
