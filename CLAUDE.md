@@ -175,6 +175,20 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 - Prefer relation managers over custom Blade for related data. Prefer `infolist()` on `ViewRecord` pages over custom view pages.
 - Notifications: always use `Filament\Notifications\Notification`. Never use `session()->flash()` or custom toast JS.
 
+### List page baseline checklist
+
+`SecurityEventResource` (Alerts) is the canonical example — compare a new or edited list page (`table()` method) against it. A list page should have:
+
+- The primary text column (e.g. `title`, `name`) marked `->searchable()`.
+- Every orderable column marked `->sortable()` — use a `sortable(query: ...)` closure for relation or derived columns (see `App\Filament\Support\LocalFindingOwnerColumns` / `SoftwareComponentOwnerColumns` for the subquery pattern).
+- Every enum/status column badge-colored with `badge()->color()` — reuse `App\Filament\Support\EventStateBadgeColor` / `EventSeverityBadgeColor` when the column is an `EventState`/`EventSeverity` value instead of re-deriving the color mapping.
+- Every nullable column with `->placeholder('-')`.
+- Columns beyond the first ~6 core ones marked `->toggleable()` (hidden by default where appropriate) so the table doesn't overflow horizontally.
+- `->recordUrl()` pointing at a dedicated view page, unless the page is action-only by explicit, documented design.
+- `->actions([...])` wrapped in `ActionGroup::make([...])` once a row has more than three actions.
+- `->paginated([25, 50, 100])` for consistent page-size options.
+- At least one meaningful `->filters([...])` entry when the model has an obviously filterable dimension (status, kind, boolean flag, relation) — reuse `App\Filament\Support\DateRangeFilters::for($column)` for a from/until date-range filter instead of hand-rolling one.
+
 ## Key Models and Enums
 
 - `SecurityEvent` — central entity; `EventState` (Open, Acknowledged, InProgress, Resolved, Dismissed), `EventSeverity` (Critical → Informational), `EventType` (Vulnerability, Secret, Dependency, License, Misconfiguration, CodeQuality, IaC, Posture)
