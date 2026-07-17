@@ -172,6 +172,35 @@ final class LocalFindingTableQuery
     }
 
     /**
+     * Escaped, portable LIKE search across every text-bearing column, mirroring
+     * SecurityEventTableQuery::applySearch.
+     *
+     * @param  Builder<LocalFinding>  $query
+     * @return Builder<LocalFinding>
+     */
+    public static function applySearch(Builder $query, ?string $search): Builder
+    {
+        $search = trim((string) $search);
+
+        if ($search === '') {
+            return $query;
+        }
+
+        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%';
+
+        return $query->where(function (Builder $nested) use ($like): void {
+            $nested
+                ->where('title', 'like', $like)
+                ->orWhere('description', 'like', $like)
+                ->orWhere('rule_id', 'like', $like)
+                ->orWhere('file_path', 'like', $like)
+                ->orWhere('package_name', 'like', $like)
+                ->orWhere('package_version', 'like', $like)
+                ->orWhere('metadata', 'like', $like);
+        });
+    }
+
+    /**
      * Parse a filter's raw selections into positive int ids. Returns null when
      * no filter is active (empty selection) so callers can pass through.
      *

@@ -290,6 +290,66 @@ it('filters findings by work item presence and by correlation', function () {
         ->and(LocalFindingTableQuery::applyIsCorrelated(LocalFinding::query(), false)->count())->toBe(2);
 });
 
+it('searches findings across description, rule id, package, location, and metadata with escaped like', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $byDescription = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'alpha', 'file_path' => 'f1',
+        'description' => 'ZZUNIQUEDESC breakout',
+    ]);
+    $byRule = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'CVE-2099-0001', 'title' => 'beta', 'file_path' => 'f2',
+    ]);
+    $byPackage = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r3', 'title' => 'gamma', 'file_path' => 'f3',
+        'package_name' => 'left-pad', 'package_version' => '1.3.0',
+    ]);
+    $byMetadata = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r4', 'title' => 'delta', 'file_path' => 'f4',
+        'metadata' => ['cwe' => 'CWE-1337'],
+    ]);
+
+    expect(LocalFindingTableQuery::applySearch(LocalFinding::query(), 'ZZUNIQUEDESC')->pluck('id')->all())->toBe([$byDescription->id])
+        ->and(LocalFindingTableQuery::applySearch(LocalFinding::query(), 'CVE-2099-0001')->pluck('id')->all())->toBe([$byRule->id])
+        ->and(LocalFindingTableQuery::applySearch(LocalFinding::query(), 'left-pad')->pluck('id')->all())->toBe([$byPackage->id])
+        ->and(LocalFindingTableQuery::applySearch(LocalFinding::query(), 'CWE-1337')->pluck('id')->all())->toBe([$byMetadata->id])
+        ->and(LocalFindingTableQuery::applySearch(LocalFinding::query(), 'f3')->pluck('id')->all())->toBe([$byPackage->id])
+        ->and(LocalFindingTableQuery::applySearch(LocalFinding::query(), 'no-such-term')->count())->toBe(0);
+});
+
+it('escapes like wildcards in the finding search term', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $literal = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => '100% coverage gap', 'file_path' => 'f1',
+    ]);
+    $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => '100 percent done', 'file_path' => 'f2',
+    ]);
+
+    expect(LocalFindingTableQuery::applySearch(LocalFinding::query(), '100%')->pluck('id')->all())->toBe([$literal->id]);
+});
+
+it('applies the finding search through the list page search box', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+    $container = SecurityContainer::factory()->create();
+
+    $match = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'searchable finding', 'file_path' => 'f1',
+        'package_name' => 'openssl',
+    ]);
+    $other = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => 'unrelated', 'file_path' => 'f2',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->set('tableSearch', 'openssl')
+        ->assertCanSeeTableRecords([$match])
+        ->assertCanNotSeeTableRecords([$other]);
+});
+
 it('hides the change status and change severity row actions from a reader on the findings list', function () {
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);

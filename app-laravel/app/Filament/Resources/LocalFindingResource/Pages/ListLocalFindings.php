@@ -26,4 +26,13 @@ class ListLocalFindings extends ListRecords
             ->orderByRaw(LocalFindingTableQuery::effectiveSeverityRankSql() . ' DESC')
             ->orderByDesc('last_seen_at');
     }
+
+    /**
+     * @param  Builder<LocalFinding>  $query
+     * @return Builder<LocalFinding>
+     */
+    protected function applySearchToTableQuery(Builder $query): Builder
+    {
+        return LocalFindingTableQuery::applySearch($query, $this->tableSearch);
+    }
 }
