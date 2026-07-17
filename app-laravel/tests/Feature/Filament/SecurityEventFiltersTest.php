@@ -84,6 +84,26 @@ it('filters by source', function () {
     expect($count)->toBe(1);
 });
 
+it('filters by software asset via the event system', function () {
+    $assetA = App\Models\SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $assetB = App\Models\SoftwareAsset::factory()->create(['name' => 'Identity Platform']);
+
+    $systemA = SoftwareSystem::factory()->create(['software_asset_id' => $assetA->id]);
+    $systemB = SoftwareSystem::factory()->create(['software_asset_id' => $assetB->id]);
+
+    SecurityEvent::factory()->forSystem($systemA)->create();
+    SecurityEvent::factory()->forSystem($systemA)->create();
+    SecurityEvent::factory()->forSystem($systemB)->create();
+
+    $count = SecurityEventTableQuery::applyAssetScopes(SecurityEvent::query(), [(string) $assetA->id])->count();
+    $none = SecurityEventTableQuery::applyAssetScopes(SecurityEvent::query(), ['0'])->count();
+    $noFilter = SecurityEventTableQuery::applyAssetScopes(SecurityEvent::query(), [])->count();
+
+    expect($count)->toBe(2)
+        ->and($none)->toBe(0)
+        ->and($noFilter)->toBe(3);
+});
+
 it('filters by software system', function () {
     [$systemA] = seedFilterFixture();
 

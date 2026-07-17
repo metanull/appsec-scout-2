@@ -19,6 +19,7 @@ use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\SecurityEvents\EventLinkCatalog;
@@ -80,6 +81,7 @@ class SecurityEventResource extends Resource
         return parent::getEloquentQuery()->with([
             'curatedLinks',
             'softwareSystem',
+            'softwareSystem.softwareAsset',
             'softwareSystem.repositoryMappings.repositoryProvider',
             'softwareSystem.curatedLinks',
             'container',
@@ -377,8 +379,19 @@ class SecurityEventResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->with(['workItemLinks', 'softwareSystem', 'container']))
+                ->with(['workItemLinks', 'softwareSystem', 'softwareSystem.softwareAsset', 'container']))
             ->columns([
+                TextColumn::make('softwareSystem.softwareAsset.name')
+                    ->label('Asset')
+                    ->placeholder('-')
+                    ->toggleable()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy(
+                        SoftwareAsset::select('name')->whereColumn(
+                            'software_assets.id',
+                            SoftwareSystem::select('software_asset_id')->whereColumn('software_systems.id', 'security_events.software_system_id'),
+                        ),
+                        $direction === 'desc' ? 'desc' : 'asc',
+                    )),
                 TextColumn::make('softwareSystem.name')
                     ->label('System')
                     ->placeholder('-')
@@ -432,7 +445,8 @@ class SecurityEventResource extends Resource
                     ->placeholder('-'),
                 TextColumn::make('last_seen_at')
                     ->label('Last seen')
-                    ->dateTime('d M H:i')
+                    ->since()
+                    ->placeholder('-')
                     ->sortable(),
                 TextColumn::make('first_seen_at')
                     ->label('First seen')
@@ -454,6 +468,12 @@ class SecurityEventResource extends Resource
                     ->multiple()
                     ->options(fn () => SecurityEvent::query()->distinct()->pluck('source_id', 'source_id')->all())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applySources($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('asset_scope')
+                    ->label('Asset')
+                    ->multiple()
+                    ->searchable()
+                    ->options(fn (): array => self::assetScopeOptions())
+                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyAssetScopes($query, self::stringArray($data['values'] ?? []))),
                 SelectFilter::make('system_scope')
                     ->label('System')
                     ->multiple()
@@ -853,6 +873,16 @@ class SecurityEventResource extends Resource
                     ->url(ProfileIntegrationsPage::getUrl()),
             ])
             ->send();
+    }
+
+    /** @return array<int, string> */
+    private static function assetScopeOptions(): array
+    {
+        return SoftwareAsset::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SoftwareAsset $asset): array => [$asset->id => $asset->name])
+            ->all();
     }
 
     /** @return array<int, string> */
