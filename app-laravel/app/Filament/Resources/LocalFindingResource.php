@@ -330,8 +330,8 @@ class LocalFindingResource extends Resource
                                 return;
                             }
 
-                            app(LocalFindingWorkItemService::class)->createForFinding(
-                                finding: $record,
+                            app(LocalFindingWorkItemService::class)->createForFindings(
+                                findingIds: [$record->id],
                                 userId: $user->id,
                                 trackerId: $trackerId,
                                 projectKey: (string) $data['project'],
@@ -368,7 +368,7 @@ class LocalFindingResource extends Resource
 
                             try {
                                 app(LocalFindingWorkItemService::class)->linkExisting(
-                                    finding: $record,
+                                    findingIds: [$record->id],
                                     userId: $user->id,
                                     trackerId: $trackerId,
                                     workItemId: (string) $data['selected_work_item'],

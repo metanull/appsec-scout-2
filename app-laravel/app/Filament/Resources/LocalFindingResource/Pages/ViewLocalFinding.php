@@ -139,8 +139,8 @@ class ViewLocalFinding extends ViewRecord
             return false;
         }
 
-        app(LocalFindingWorkItemService::class)->createForFinding(
-            finding: $this->findingRecord(),
+        app(LocalFindingWorkItemService::class)->createForFindings(
+            findingIds: [$this->findingRecord()->id],
             userId: $user->id,
             trackerId: $trackerId,
             projectKey: (string) $data['project'],
@@ -180,7 +180,7 @@ class ViewLocalFinding extends ViewRecord
 
         try {
             app(LocalFindingWorkItemService::class)->linkExisting(
-                finding: $this->findingRecord(),
+                findingIds: [$this->findingRecord()->id],
                 userId: $user->id,
                 trackerId: $trackerId,
                 workItemId: (string) $data['selected_work_item'],

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Trackers;
 
+use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
@@ -41,6 +42,55 @@ final class TrackerProjectLinker
             }
         }
 
+        $this->learnFromScopes($systemIds, $containerIds, $trackerId, $projectKey, $projectName, $userId);
+    }
+
+    /**
+     * Idempotently create tracker project links for the systems and containers of the given findings.
+     *
+     * @param  list<LocalFinding>  $findings
+     */
+    public function learnFromFindings(
+        array $findings,
+        string $trackerId,
+        string $projectKey,
+        ?string $projectName,
+        ?int $userId,
+    ): void {
+        $systemIds = [];
+        $containerIds = [];
+
+        foreach ($findings as $finding) {
+            $systemId = $finding->getAttribute('software_system_id');
+
+            if (is_int($systemId)) {
+                $systemIds[] = $systemId;
+            }
+
+            if ($finding->getAttribute('owner_type') === SecurityContainer::class) {
+                $ownerId = $finding->getAttribute('owner_id');
+
+                if (is_int($ownerId)) {
+                    $containerIds[] = $ownerId;
+                }
+            }
+        }
+
+        $this->learnFromScopes($systemIds, $containerIds, $trackerId, $projectKey, $projectName, $userId);
+    }
+
+    /**
+     * @param  list<int>  $systemIds
+     * @param  list<int>  $containerIds
+     */
+    private function learnFromScopes(
+        array $systemIds,
+        array $containerIds,
+        string $trackerId,
+        string $projectKey,
+        ?string $projectName,
+        ?int $userId,
+    ): void {
         $systemIds = array_values(array_unique($systemIds));
         $containerIds = array_values(array_unique($containerIds));
 

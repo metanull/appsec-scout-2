@@ -7,14 +7,11 @@ use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\SecurityEvents\EventLinkCatalog;
+use App\Trackers\Support\MarkdownTruncation;
 use Illuminate\Support\Carbon;
 
 final class DescriptionBuilder
 {
-    private const DEFAULT_MAX_BYTES = 16384;
-
-    private const TRUNCATION_MARKER = '...(truncated)';
-
     /** @var array<int, list<array{label: string, url: string, kind: string, external: bool}>> */
     private array $catalogCache = [];
 
@@ -24,7 +21,7 @@ final class DescriptionBuilder
 
     public function buildSingle(SecurityEvent $event): string
     {
-        return $this->truncateAtParagraphBoundary(implode("\n\n", array_filter([
+        return MarkdownTruncation::atParagraphBoundary(implode("\n\n", array_filter([
             sprintf('## %s', $this->buildTitle($event)),
             $this->buildEventSummary($event),
             $this->buildAlertLinks($event),
@@ -62,7 +59,7 @@ final class DescriptionBuilder
             $sections[] = $this->buildOccurrences($group['events']);
         }
 
-        return $this->truncateAtParagraphBoundary(implode("\n\n", array_filter($sections)));
+        return MarkdownTruncation::atParagraphBoundary(implode("\n\n", array_filter($sections)));
     }
 
     public function buildTitle(SecurityEvent $event): string
@@ -507,38 +504,6 @@ final class DescriptionBuilder
         }
 
         return null;
-    }
-
-    private function truncateAtParagraphBoundary(string $markdown, int $maxBytes = self::DEFAULT_MAX_BYTES): string
-    {
-        if (strlen($markdown) <= $maxBytes) {
-            return $markdown;
-        }
-
-        $paragraphs = explode("\n\n", $markdown);
-        $valid = '';
-        $low = 0;
-        $high = count($paragraphs);
-
-        while ($low <= $high) {
-            $mid = intdiv($low + $high, 2);
-            $candidate = implode("\n\n", array_slice($paragraphs, 0, $mid));
-
-            if ($candidate !== '') {
-                $candidate .= "\n\n" . self::TRUNCATION_MARKER;
-            } else {
-                $candidate = self::TRUNCATION_MARKER;
-            }
-
-            if (strlen($candidate) <= $maxBytes) {
-                $valid = $candidate;
-                $low = $mid + 1;
-            } else {
-                $high = $mid - 1;
-            }
-        }
-
-        return $valid === '' ? self::TRUNCATION_MARKER : $valid;
     }
 
     private function severityLabel(?string $severity): string
