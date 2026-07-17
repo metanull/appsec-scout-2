@@ -41,10 +41,13 @@ it('builds dashboard stats grouped by severity and state', function () {
         ->and($stats['states']['resolved'])->toBe(1);
 });
 
-it('builds doughnut chart dataset from severity counts', function () {
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical]);
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Medium]);
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Medium]);
+it('builds doughnut chart dataset from open severity counts', function () {
+    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical, 'state' => EventState::Open]);
+    SecurityEvent::factory()->create(['severity' => EventSeverity::Medium, 'state' => EventState::Open]);
+    SecurityEvent::factory()->create(['severity' => EventSeverity::Medium, 'state' => EventState::Open]);
+
+    // Resolved events should NOT be counted
+    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical, 'state' => EventState::Resolved]);
 
     $chart = DashboardData::severityChart();
 
@@ -58,6 +61,23 @@ it('builds doughnut chart dataset from severity counts', function () {
             Color::Gray[400],
             Color::Gray[200],
         ]);
+});
+
+it('builds doughnut chart dataset from open type counts', function () {
+    SecurityEvent::factory()->create(['type' => EventType::Secret, 'state' => EventState::Open]);
+    SecurityEvent::factory()->create(['type' => EventType::Dependency, 'state' => EventState::Open]);
+    SecurityEvent::factory()->create(['type' => EventType::Dependency, 'state' => EventState::Open]);
+
+    // Resolved events should NOT be counted
+    SecurityEvent::factory()->create(['type' => EventType::Secret, 'state' => EventState::Resolved]);
+
+    $chart = DashboardData::typeChart();
+
+    expect($chart['labels'])->toBe([
+        'Vulnerability', 'Secret', 'Dependency', 'License', 'Misconfiguration', 'Code Quality', 'Iac', 'Posture',
+    ])
+        ->and($chart['datasets'])->toHaveCount(1)
+        ->and($chart['datasets'][0]['data'])->toBe([0, 1, 2, 0, 0, 0, 0, 0]);
 });
 
 it('returns the latest five sync runs in descending order', function () {

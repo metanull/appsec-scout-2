@@ -4,6 +4,7 @@ namespace App\Filament\Widgets\Support;
 
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
+use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
 use Filament\Support\Colors\Color;
@@ -18,6 +19,8 @@ final class DashboardData
     public const STATS_CACHE_KEY = 'dashboard:stats';
 
     public const SEVERITY_CACHE_KEY = 'dashboard:severity-distribution';
+
+    public const TYPE_CACHE_KEY = 'dashboard:type-distribution';
 
     public const RUNS_CACHE_KEY = 'dashboard:recent-sync-runs';
 
@@ -69,18 +72,18 @@ final class DashboardData
     {
         /** @var array{labels: list<string>, datasets: list<array{label: string, data: list<int>}>} $result */
         $result = Cache::remember(self::SEVERITY_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
-            $stats = self::stats();
+            $severities = self::openSeverityCounts();
 
             return [
                 'labels' => ['Critical', 'High', 'Medium', 'Low', 'Informational'],
                 'datasets' => [[
-                    'label' => 'Alerts',
+                    'label' => 'Open Alerts',
                     'data' => [
-                        $stats['severities'][EventSeverity::Critical->value],
-                        $stats['severities'][EventSeverity::High->value],
-                        $stats['severities'][EventSeverity::Medium->value],
-                        $stats['severities'][EventSeverity::Low->value],
-                        $stats['severities'][EventSeverity::Informational->value],
+                        $severities[EventSeverity::Critical->value],
+                        $severities[EventSeverity::High->value],
+                        $severities[EventSeverity::Medium->value],
+                        $severities[EventSeverity::Low->value],
+                        $severities[EventSeverity::Informational->value],
                     ],
                     'backgroundColor' => [
                         Color::Red[500],
@@ -94,6 +97,84 @@ final class DashboardData
         });
 
         return $result;
+    }
+
+    /**
+     * @return array{labels: list<string>, datasets: list<array{label: string, data: list<int>}>}
+     */
+    public static function typeChart(): array
+    {
+        /** @var array{labels: list<string>, datasets: list<array{label: string, data: list<int>}>} $result */
+        $result = Cache::remember(self::TYPE_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $counts = self::openTypeCounts();
+
+            $labels = [];
+            $data = [];
+            foreach (EventType::cases() as $type) {
+                $labels[] = str($type->value)->replace('_', ' ')->title()->toString();
+                $data[] = $counts[$type->value];
+            }
+
+            return [
+                'labels' => $labels,
+                'datasets' => [[
+                    'label' => 'Open Alerts',
+                    'data' => $data,
+                    'backgroundColor' => [
+                        Color::Red[500],
+                        Color::Orange[500],
+                        Color::Amber[500],
+                        Color::Yellow[500],
+                        Color::Blue[500],
+                        Color::Purple[500],
+                        Color::Cyan[500],
+                        Color::Gray[400],
+                    ],
+                ]],
+            ];
+        });
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private static function openSeverityCounts(): array
+    {
+        $counts = SecurityEvent::query()
+            ->toBase()
+            ->selectRaw('severity, COUNT(*) as total')
+            ->where('state', EventState::Open->value)
+            ->groupBy('severity')
+            ->pluck('total', 'severity');
+
+        $severities = [];
+        foreach (EventSeverity::cases() as $severity) {
+            $severities[$severity->value] = (int) ($counts[$severity->value] ?? 0);
+        }
+
+        return $severities;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private static function openTypeCounts(): array
+    {
+        $counts = SecurityEvent::query()
+            ->toBase()
+            ->selectRaw('type, COUNT(*) as total')
+            ->where('state', EventState::Open->value)
+            ->groupBy('type')
+            ->pluck('total', 'type');
+
+        $types = [];
+        foreach (EventType::cases() as $type) {
+            $types[$type->value] = (int) ($counts[$type->value] ?? 0);
+        }
+
+        return $types;
     }
 
     /**
@@ -184,6 +265,7 @@ final class DashboardData
     {
         Cache::forget(self::STATS_CACHE_KEY);
         Cache::forget(self::SEVERITY_CACHE_KEY);
+        Cache::forget(self::TYPE_CACHE_KEY);
         Cache::forget(self::RUNS_CACHE_KEY);
         Cache::forget(self::SOURCE_WORKITEM_CACHE_KEY);
     }
