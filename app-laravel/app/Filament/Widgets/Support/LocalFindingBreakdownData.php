@@ -2,7 +2,9 @@
 
 namespace App\Filament\Widgets\Support;
 
+use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
+use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\LocalFindingWorkItemLink;
@@ -26,6 +28,11 @@ final class LocalFindingBreakdownData
     public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-system';
 
     public const KIND_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-kind';
+
+    public const SEVERITY_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-severity';
+
+    /** @var list<string> */
+    private const KNOWN_SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'];
 
     /**
      * @return list<BreakdownRow>
@@ -152,11 +159,68 @@ final class LocalFindingBreakdownData
         return $result;
     }
 
+    /**
+     * Open local findings grouped by effective (override-aware) severity —
+     * LOWER(COALESCE(overridden_severity, severity)), portable on MySQL 8 and
+     * SQLite — critical → informational then Unknown for anything unmapped, zero
+     * buckets omitted. Counts strictly status = open.
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function openBySeverityBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::SEVERITY_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $grouped = LocalFinding::query()
+                ->toBase()
+                ->selectRaw('LOWER(COALESCE(overridden_severity, severity)) as effective, COUNT(*) as total')
+                ->where('status', EventState::Open->value)
+                ->groupByRaw('LOWER(COALESCE(overridden_severity, severity))')
+                ->get();
+
+            $buckets = ['critical' => 0, 'high' => 0, 'medium' => 0, 'low' => 0, 'informational' => 0, 'unknown' => 0];
+
+            foreach ($grouped as $row) {
+                $effective = $row->effective;
+                $count = (int) $row->total;
+
+                if ($effective !== null && in_array($effective, self::KNOWN_SEVERITIES, true)) {
+                    $buckets[(string) $effective] += $count;
+                } else {
+                    $buckets['unknown'] += $count;
+                }
+            }
+
+            $rows = [];
+            foreach (EventSeverity::cases() as $severity) {
+                if ($buckets[$severity->value] === 0) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'key' => $severity->value,
+                    'label' => ucfirst($severity->value),
+                    'count' => $buckets[$severity->value],
+                    'color' => EventSeverityBadgeColor::for($severity),
+                ];
+            }
+
+            if ($buckets['unknown'] > 0) {
+                $rows[] = ['key' => 'unknown', 'label' => 'Unknown', 'count' => $buckets['unknown'], 'color' => 'gray'];
+            }
+
+            return $rows;
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
         Cache::forget(self::WORK_ITEM_STATUS_CACHE_KEY);
         Cache::forget(self::SYSTEM_CACHE_KEY);
         Cache::forget(self::KIND_CACHE_KEY);
+        Cache::forget(self::SEVERITY_CACHE_KEY);
     }
 }

@@ -2,7 +2,9 @@
 
 namespace App\Filament\Widgets\Support;
 
+use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
+use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
@@ -30,6 +32,8 @@ final class AlertBreakdownData
     public const SOURCE_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-source';
 
     public const TYPE_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-type';
+
+    public const SEVERITY_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-severity';
 
     /**
      * @return list<BreakdownRow>
@@ -193,6 +197,46 @@ final class AlertBreakdownData
         return $result;
     }
 
+    /**
+     * Open alerts grouped by severity, critical → informational with zero
+     * buckets omitted. Colors via EventSeverityBadgeColor so pie slices and
+     * list badges agree. Counts strictly state = open.
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function openBySeverityBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::SEVERITY_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $counts = SecurityEvent::query()
+                ->toBase()
+                ->selectRaw('severity, COUNT(*) as total')
+                ->where('state', EventState::Open->value)
+                ->groupBy('severity')
+                ->pluck('total', 'severity');
+
+            $rows = [];
+            foreach (EventSeverity::cases() as $severity) {
+                $count = (int) ($counts[$severity->value] ?? 0);
+
+                if ($count === 0) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'key' => $severity->value,
+                    'label' => ucfirst($severity->value),
+                    'count' => $count,
+                    'color' => EventSeverityBadgeColor::for($severity),
+                ];
+            }
+
+            return $rows;
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
@@ -200,5 +244,6 @@ final class AlertBreakdownData
         Cache::forget(self::SYSTEM_CACHE_KEY);
         Cache::forget(self::SOURCE_CACHE_KEY);
         Cache::forget(self::TYPE_CACHE_KEY);
+        Cache::forget(self::SEVERITY_CACHE_KEY);
     }
 }
