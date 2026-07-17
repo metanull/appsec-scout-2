@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SecurityEventResource\Support;
 
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\WorkItemLink;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -75,6 +76,29 @@ final class SecurityEventTableQuery
         }
 
         return $query->whereIn('software_system_id', $ids);
+    }
+
+    /**
+     * @param  Builder<SecurityEvent>  $query
+     * @param  list<string>  $selections
+     * @return Builder<SecurityEvent>
+     */
+    public static function applyAssetScopes(Builder $query, array $selections): Builder
+    {
+        if ($selections === []) {
+            return $query;
+        }
+
+        $ids = array_values(array_filter(array_map('intval', $selections), fn (int $id): bool => $id > 0));
+
+        if ($ids === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereHas('softwareSystem', function (Builder $q) use ($ids): void {
+            /** @var Builder<SoftwareSystem> $q */
+            $q->whereIn('software_asset_id', $ids);
+        });
     }
 
     /**

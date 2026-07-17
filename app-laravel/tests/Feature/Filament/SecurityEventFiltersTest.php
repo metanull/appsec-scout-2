@@ -6,6 +6,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventType;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
@@ -82,6 +83,26 @@ it('filters by source', function () {
     $count = SecurityEventTableQuery::applySources(SecurityEvent::query(), ['detectify'])->count();
 
     expect($count)->toBe(1);
+});
+
+it('filters by software asset via the event system', function () {
+    $assetA = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $assetB = SoftwareAsset::factory()->create(['name' => 'Identity Platform']);
+
+    $systemA = SoftwareSystem::factory()->create(['software_asset_id' => $assetA->id]);
+    $systemB = SoftwareSystem::factory()->create(['software_asset_id' => $assetB->id]);
+
+    SecurityEvent::factory()->forSystem($systemA)->create();
+    SecurityEvent::factory()->forSystem($systemA)->create();
+    SecurityEvent::factory()->forSystem($systemB)->create();
+
+    $count = SecurityEventTableQuery::applyAssetScopes(SecurityEvent::query(), [(string) $assetA->id])->count();
+    $none = SecurityEventTableQuery::applyAssetScopes(SecurityEvent::query(), ['0'])->count();
+    $noFilter = SecurityEventTableQuery::applyAssetScopes(SecurityEvent::query(), [])->count();
+
+    expect($count)->toBe(2)
+        ->and($none)->toBe(0)
+        ->and($noFilter)->toBe(3);
 });
 
 it('filters by software system', function () {

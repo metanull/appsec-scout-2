@@ -5,6 +5,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
@@ -142,6 +143,24 @@ it('alert list shows container name in container column', function () {
         ->get(SecurityEventResource::getUrl('index'))
         ->assertOk()
         ->assertSee('api-gateway-repo');
+});
+
+it('alert list shows the asset name reached via the event system', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Reader']);
+
+    $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id, 'name' => 'payments-service']);
+    SecurityEvent::factory()->forSystem($system)->create();
+
+    $this->actingAs($user)
+        ->get(SecurityEventResource::getUrl('index'))
+        ->assertOk()
+        ->assertSee('Payments Platform');
 });
 
 it('dashboard stats widget URLs contain correct filter parameters', function () {

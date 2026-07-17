@@ -6,7 +6,6 @@ use App\Assets\LocalFindingCorrelationManager;
 use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
 use App\Assets\LocalFindingWorkItemService;
-use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\LocalFindingResource;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -135,7 +134,7 @@ class ViewLocalFinding extends ViewRecord
         $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
 
         if ($missing !== []) {
-            $this->notifyMissingPersonalCredentials($trackerId, $missing);
+            LocalFindingResource::notifyMissingPersonalCredentials($trackerId, $missing);
 
             return false;
         }
@@ -174,7 +173,7 @@ class ViewLocalFinding extends ViewRecord
         $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
 
         if ($missing !== []) {
-            $this->notifyMissingPersonalCredentials($trackerId, $missing);
+            LocalFindingResource::notifyMissingPersonalCredentials($trackerId, $missing);
 
             return false;
         }
@@ -224,22 +223,5 @@ class ViewLocalFinding extends ViewRecord
         $record = $this->getRecord();
 
         return $record;
-    }
-
-    /** @param list<string> $missing */
-    private function notifyMissingPersonalCredentials(string $trackerId, array $missing): void
-    {
-        $fields = implode(', ', $missing);
-
-        Notification::make()
-            ->title('Personal tracker credentials required')
-            ->body("{$trackerId} is missing personal credentials: {$fields}.")
-            ->warning()
-            ->actions([
-                Action::make('openProfileIntegrations')
-                    ->label('Open profile integrations')
-                    ->url(ProfileIntegrationsPage::getUrl()),
-            ])
-            ->send();
     }
 }

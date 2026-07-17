@@ -4,17 +4,23 @@ namespace App\Filament\Resources;
 
 use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
+use App\Assets\LocalFindingWorkItemService;
+use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
+use App\Filament\Resources\LocalFindingResource\Support\LocalFindingTableQuery;
 use App\Filament\Support\EventStateBadgeColor;
 use App\Filament\Support\LocalFindingOwnerColumns;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareAsset;
+use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\Trackers\WorkItemFormOptions;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
@@ -28,6 +34,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -65,7 +72,7 @@ class LocalFindingResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['owner', 'softwareAsset', 'softwareSystem', 'correlatedSecurityEvent', 'attachment']);
+        return parent::getEloquentQuery()->with(['owner', 'softwareAsset', 'softwareSystem', 'correlatedSecurityEvent', 'attachment', 'workItemLinks']);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -143,61 +150,117 @@ class LocalFindingResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('kind')->badge()->sortable()->color(fn (string $state): string => match ($state) {
-                    LocalFinding::KIND_SECRET => 'danger',
-                    LocalFinding::KIND_CODE_QUALITY => 'info',
-                    default => 'warning',
-                }),
+                ...array_map(
+                    fn (TextColumn $column): TextColumn => $column->toggleable(),
+                    LocalFindingOwnerColumns::columns(),
+                ),
+                TextColumn::make('_effective_severity')
+                    ->label('Severity')
+                    ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())
+                    ->badge()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(LocalFindingTableQuery::effectiveSeverityRankSql() . ' ' . ($direction === 'asc' ? 'ASC' : 'DESC')))
+                    ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
                 TextColumn::make('status')
                     ->badge()
                     ->sortable()
                     ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
                     ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
-                TextColumn::make('_effective_severity')
-                    ->label('Severity')
-                    ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())
-                    ->badge()
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('severity', $direction === 'desc' ? 'desc' : 'asc'))
-                    ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
+                TextColumn::make('kind')->badge()->sortable()->toggleable()->color(fn (string $state): string => match ($state) {
+                    LocalFinding::KIND_SECRET => 'danger',
+                    LocalFinding::KIND_CODE_QUALITY => 'info',
+                    default => 'warning',
+                }),
                 TextColumn::make('title')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('file_path')->label('Location')
                     ->formatStateUsing(fn (LocalFinding $record): string => $record->start_line !== null
                         ? "{$record->file_path}:{$record->start_line}"
                         : $record->file_path)
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('package_name')->label('Package')
                     ->formatStateUsing(fn (?string $state, LocalFinding $record): ?string => $state !== null
                         ? trim("{$state} {$record->package_version}")
                         : null)
                     ->placeholder('-')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                ...array_map(
-                    fn (TextColumn $column): TextColumn => $column->toggleable(isToggledHiddenByDefault: true),
-                    LocalFindingOwnerColumns::columns(),
-                ),
                 TextColumn::make('correlated_security_event_id')
                     ->label('Correlated alert')
                     ->state(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? '#' . $record->correlated_security_event_id : '-')
                     ->url(fn (LocalFinding $record): ?string => $record->correlated_security_event_id !== null
                         ? SecurityEventResource::getUrl('view', ['record' => $record->correlated_security_event_id])
                         : null)
+                    ->sortable()
                     ->color(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? 'primary' : 'gray'),
-                TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
+                TextColumn::make('work_item_state')
+                    ->label('Tracker')
+                    ->state(function (LocalFinding $record): ?string {
+                        $link = $record->workItemLinks->first();
+
+                        if (! $link) {
+                            return null;
+                        }
+
+                        return $link->work_item_state ?? $link->work_item_id;
+                    })
+                    ->badge()
+                    ->placeholder('-'),
+                TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-')->sortable(),
+                TextColumn::make('first_seen_at')->label('First seen')->dateTime('d M Y')->placeholder('-')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('kind')
+                    ->multiple()
                     ->options([
                         LocalFinding::KIND_VULNERABILITY => 'Vulnerability',
                         LocalFinding::KIND_SECRET => 'Secret',
                         LocalFinding::KIND_CODE_QUALITY => 'Code Quality',
-                    ]),
+                    ])
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyKinds($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('status')
+                    ->multiple()
+                    ->options(collect(EventState::cases())->mapWithKeys(fn (EventState $state) => [$state->value => str($state->value)->replace('_', ' ')->title()->toString()])->all())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyStatuses($query, self::stringArray($data['values'] ?? []))),
                 SelectFilter::make('severity')
-                    ->options(fn (): array => LocalFinding::query()
-                        ->whereNotNull('severity')
-                        ->distinct()
-                        ->orderBy('severity')
-                        ->pluck('severity', 'severity')
-                        ->all()),
+                    ->label('Severity')
+                    ->multiple()
+                    ->options(collect(EventSeverity::cases())
+                        ->mapWithKeys(fn (EventSeverity $severity) => [$severity->value => ucfirst($severity->value)])
+                        ->put('unknown', 'Unknown')
+                        ->all())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyEffectiveSeverities($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('asset_scope')
+                    ->label('Asset')
+                    ->multiple()
+                    ->searchable()
+                    ->options(fn (): array => self::assetScopeOptions())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyAssetScopes($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('system_scope')
+                    ->label('System')
+                    ->multiple()
+                    ->searchable()
+                    ->options(fn (): array => self::systemScopeOptions())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applySystemScopes($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('container_scope')
+                    ->label('Container')
+                    ->multiple()
+                    ->searchable()
+                    ->options(fn (): array => self::containerScopeOptions())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyContainerScopes($query, self::stringArray($data['values'] ?? []))),
+                TernaryFilter::make('has_work_item')
+                    ->label('Has work item')
+                    ->queries(
+                        true: fn (Builder $query) => LocalFindingTableQuery::applyHasWorkItem($query, true),
+                        false: fn (Builder $query) => LocalFindingTableQuery::applyHasWorkItem($query, false),
+                        blank: fn (Builder $query) => $query,
+                    ),
+                TernaryFilter::make('is_correlated')
+                    ->label('Correlated to alert')
+                    ->queries(
+                        true: fn (Builder $query) => LocalFindingTableQuery::applyIsCorrelated($query, true),
+                        false: fn (Builder $query) => LocalFindingTableQuery::applyIsCorrelated($query, false),
+                        blank: fn (Builder $query) => $query,
+                    ),
             ])
             ->actions([
                 ActionGroup::make([
@@ -245,6 +308,80 @@ class LocalFindingResource extends Resource
 
                             Notification::make()->title('Severity changed')->success()->send();
                         }),
+                    Action::make('createWorkItem')
+                        ->label('Create work item')
+                        ->icon('heroicon-o-ticket')
+                        ->visible(fn (): bool => Gate::allows('work-items.create'))
+                        ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema())
+                        ->action(function (LocalFinding $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
+
+                            if ($user === null) {
+                                abort(403);
+                            }
+
+                            $trackerId = (string) $data['tracker'];
+                            $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                            if ($missing !== []) {
+                                self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                                return;
+                            }
+
+                            app(LocalFindingWorkItemService::class)->createForFinding(
+                                finding: $record,
+                                userId: $user->id,
+                                trackerId: $trackerId,
+                                projectKey: (string) $data['project'],
+                                itemType: (string) $data['item_type'],
+                                labels: self::stringArray($data['labels'] ?? []),
+                                priority: self::nullableString($data['priority'] ?? null),
+                                assigneeId: self::nullableString($data['assignee_id'] ?? null),
+                                parentId: self::nullableString($data['parent_id'] ?? null),
+                            );
+
+                            Notification::make()->title('Work item created')->success()->send();
+                        }),
+                    Action::make('linkExistingWorkItem')
+                        ->label('Link existing work item')
+                        ->icon('heroicon-o-link')
+                        ->visible(fn (): bool => Gate::allows('work-items.link'))
+                        ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                        ->action(function (LocalFinding $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
+
+                            if ($user === null) {
+                                abort(403);
+                            }
+
+                            $trackerId = (string) $data['tracker'];
+                            $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                            if ($missing !== []) {
+                                self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                                return;
+                            }
+
+                            try {
+                                app(LocalFindingWorkItemService::class)->linkExisting(
+                                    finding: $record,
+                                    userId: $user->id,
+                                    trackerId: $trackerId,
+                                    workItemId: (string) $data['selected_work_item'],
+                                    projectKey: (string) ($data['project'] ?? ''),
+                                );
+                            } catch (\RuntimeException $exception) {
+                                Notification::make()->title($exception->getMessage())->danger()->send();
+
+                                return;
+                            }
+
+                            Notification::make()->title('Work item linked')->success()->send();
+                        }),
                 ])
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->tooltip('Actions'),
@@ -278,7 +415,7 @@ class LocalFindingResource extends Resource
                     ->deselectRecordsAfterCompletion(),
             ])
             ->recordUrl(fn (LocalFinding $record): string => static::getUrl('view', ['record' => $record]))
-            ->defaultSort('severity')
+            ->defaultPaginationPageOption(25)
             ->paginated([25, 50, 100]);
     }
 
@@ -296,6 +433,72 @@ class LocalFindingResource extends Resource
             'index' => ListLocalFindings::route('/'),
             'view' => ViewLocalFinding::route('/{record}'),
         ];
+    }
+
+    /** @return list<string> */
+    public static function stringArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+    }
+
+    private static function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return trim($value);
+    }
+
+    /** @param list<string> $missing */
+    public static function notifyMissingPersonalCredentials(string $trackerId, array $missing): void
+    {
+        $fields = implode(', ', $missing);
+
+        Notification::make()
+            ->title('Personal tracker credentials required')
+            ->body("{$trackerId} is missing personal credentials: {$fields}.")
+            ->warning()
+            ->actions([
+                Action::make('openProfileIntegrations')
+                    ->label('Open profile integrations')
+                    ->url(ProfileIntegrationsPage::getUrl()),
+            ])
+            ->send();
+    }
+
+    /** @return array<int, string> */
+    private static function assetScopeOptions(): array
+    {
+        return SoftwareAsset::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SoftwareAsset $asset): array => [$asset->id => $asset->name])
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    private static function systemScopeOptions(): array
+    {
+        return SoftwareSystem::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SoftwareSystem $system): array => [$system->id => $system->name])
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    private static function containerScopeOptions(): array
+    {
+        return SecurityContainer::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SecurityContainer $container): array => [$container->id => $container->name])
+            ->all();
     }
 
     /** @return array<int, Select|Textarea> */
