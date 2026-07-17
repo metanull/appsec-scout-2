@@ -5,6 +5,7 @@ namespace App\Filament\Widgets\Support;
 use App\Filament\Support\EventStateBadgeColor;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
+use App\Models\LocalFindingWorkItemLink;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -19,6 +20,8 @@ final class LocalFindingBreakdownData
     private const CACHE_TTL_SECONDS = 300;
 
     public const STATE_CACHE_KEY = 'dashboard:breakdown:local-findings:state';
+
+    public const WORK_ITEM_STATUS_CACHE_KEY = 'dashboard:breakdown:local-findings:work-item-status';
 
     /**
      * @return list<BreakdownRow>
@@ -49,8 +52,34 @@ final class LocalFindingBreakdownData
         return $result;
     }
 
+    /**
+     * Mirror of AlertBreakdownData::workItemStatusBreakdown() over the
+     * LocalFindingWorkItemLink table. Rows are not additive.
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function workItemStatusBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::WORK_ITEM_STATUS_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $statusRows = LocalFindingWorkItemLink::query()
+                ->toBase()
+                ->selectRaw('work_item_state, COUNT(DISTINCT local_finding_id) as total')
+                ->groupBy('work_item_state')
+                ->orderByRaw('COUNT(DISTINCT local_finding_id) DESC')
+                ->get();
+
+            $noWorkItem = LocalFinding::query()->whereDoesntHave('workItemLinks')->count();
+
+            return WorkItemStatusBreakdown::rows($statusRows, $noWorkItem);
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
+        Cache::forget(self::WORK_ITEM_STATUS_CACHE_KEY);
     }
 }
