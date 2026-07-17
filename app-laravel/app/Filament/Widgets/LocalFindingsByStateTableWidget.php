@@ -9,8 +9,6 @@ use App\Models\Enums\EventState;
 
 class LocalFindingsByStateTableWidget extends BreakdownTableWidget
 {
-    protected static ?int $sort = -117;
-
     protected static ?string $heading = 'Local Findings by State';
 
     protected function labelColumnHeading(): string

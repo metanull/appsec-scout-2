@@ -7,8 +7,6 @@ use App\Filament\Widgets\Support\BreakdownPieChartWidget;
 
 class OpenAlertsBySeverityChartWidget extends BreakdownPieChartWidget
 {
-    protected static ?int $sort = -101;
-
     public function getHeading(): ?string
     {
         return 'Open Alerts by Severity';

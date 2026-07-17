@@ -9,8 +9,6 @@ use App\Models\Enums\EventState;
 
 class OpenLocalFindingsBySeverityTableWidget extends BreakdownTableWidget
 {
-    protected static ?int $sort = -99;
-
     protected static ?string $heading = 'Open Local Findings by Severity';
 
     protected function labelColumnHeading(): string

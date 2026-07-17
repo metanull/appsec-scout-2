@@ -9,8 +9,6 @@ use App\Filament\Widgets\Support\WorkItemStatusBreakdown;
 
 class AlertsByWorkItemStatusTableWidget extends BreakdownTableWidget
 {
-    protected static ?int $sort = -116;
-
     protected static ?string $heading = 'Alerts by Work Item status';
 
     protected function labelColumnHeading(): string

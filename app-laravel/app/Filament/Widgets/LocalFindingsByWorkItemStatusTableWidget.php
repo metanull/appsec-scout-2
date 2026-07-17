@@ -9,8 +9,6 @@ use App\Filament\Widgets\Support\WorkItemStatusBreakdown;
 
 class LocalFindingsByWorkItemStatusTableWidget extends BreakdownTableWidget
 {
-    protected static ?int $sort = -113;
-
     protected static ?string $heading = 'Local Findings by Work Item status';
 
     protected function labelColumnHeading(): string

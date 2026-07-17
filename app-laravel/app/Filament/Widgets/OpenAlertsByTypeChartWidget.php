@@ -7,8 +7,6 @@ use App\Filament\Widgets\Support\BreakdownPieChartWidget;
 
 class OpenAlertsByTypeChartWidget extends BreakdownPieChartWidget
 {
-    protected static ?int $sort = -105;
-
     public function getHeading(): ?string
     {
         return 'Open Alerts by Type';

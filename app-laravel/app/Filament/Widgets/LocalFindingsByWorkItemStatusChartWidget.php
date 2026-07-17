@@ -7,8 +7,6 @@ use App\Filament\Widgets\Support\LocalFindingBreakdownData;
 
 class LocalFindingsByWorkItemStatusChartWidget extends BreakdownPieChartWidget
 {
-    protected static ?int $sort = -114;
-
     public function getHeading(): ?string
     {
         return 'Local Findings by Work Item status';

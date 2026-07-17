@@ -9,8 +9,6 @@ use App\Models\Enums\EventState;
 
 class OpenAlertsBySourceBreakdownTableWidget extends BreakdownTableWidget
 {
-    protected static ?int $sort = -108;
-
     protected static ?string $heading = 'Open Alerts by Source';
 
     protected function labelColumnHeading(): string

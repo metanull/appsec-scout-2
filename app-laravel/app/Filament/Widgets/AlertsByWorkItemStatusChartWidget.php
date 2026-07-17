@@ -7,8 +7,6 @@ use App\Filament\Widgets\Support\BreakdownPieChartWidget;
 
 class AlertsByWorkItemStatusChartWidget extends BreakdownPieChartWidget
 {
-    protected static ?int $sort = -115;
-
     public function getHeading(): ?string
     {
         return 'Alerts by Work Item status';
