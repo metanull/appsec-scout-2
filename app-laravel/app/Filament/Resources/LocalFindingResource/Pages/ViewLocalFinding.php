@@ -48,13 +48,13 @@ class ViewLocalFinding extends ViewRecord
                 ->label('Create work item')
                 ->icon('heroicon-o-ticket')
                 ->visible(fn (): bool => Gate::allows('work-items.create'))
-                ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema())
+                ->form(fn (): array => app(WorkItemFormOptions::class)->createSchemaForFindings([$this->findingRecord()]))
                 ->action(fn (array $data): bool => $this->queueCreateWorkItem($data)),
             Action::make('linkExisting')
                 ->label('Link existing')
                 ->icon('heroicon-o-link')
                 ->visible(fn (): bool => Gate::allows('work-items.link'))
-                ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchemaForFindings([$this->findingRecord()]))
                 ->action(fn (array $data): bool => $this->linkExistingWorkItem($data)),
             Action::make('unlinkCorrelation')
                 ->label('Unlink correlation')

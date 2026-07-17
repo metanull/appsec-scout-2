@@ -312,7 +312,7 @@ class LocalFindingResource extends Resource
                         ->label('Create work item')
                         ->icon('heroicon-o-ticket')
                         ->visible(fn (): bool => Gate::allows('work-items.create'))
-                        ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema())
+                        ->form(fn (LocalFinding $record): array => app(WorkItemFormOptions::class)->createSchemaForFindings([$record]))
                         ->action(function (LocalFinding $record, array $data): void {
                             /** @var User|null $user */
                             $user = Auth::user();
@@ -348,7 +348,7 @@ class LocalFindingResource extends Resource
                         ->label('Link existing work item')
                         ->icon('heroicon-o-link')
                         ->visible(fn (): bool => Gate::allows('work-items.link'))
-                        ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                        ->form(fn (LocalFinding $record): array => app(WorkItemFormOptions::class)->linkSchemaForFindings([$record]))
                         ->action(function (LocalFinding $record, array $data): void {
                             /** @var User|null $user */
                             $user = Auth::user();
@@ -417,7 +417,9 @@ class LocalFindingResource extends Resource
                     ->label('Create grouped work item')
                     ->icon('heroicon-o-ticket')
                     ->visible(fn (): bool => Gate::allows('work-items.create'))
-                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->createSchema())
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->createSchemaForFindings(
+                        array_values($records->filter(fn (mixed $record): bool => $record instanceof LocalFinding)->all())
+                    ))
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, LocalFinding> $records */
                         /** @var User|null $user */
@@ -455,7 +457,9 @@ class LocalFindingResource extends Resource
                     ->label('Link existing')
                     ->icon('heroicon-o-link')
                     ->visible(fn (): bool => Gate::allows('work-items.link'))
-                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->linkSchema())
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->linkSchemaForFindings(
+                        array_values($records->filter(fn (mixed $record): bool => $record instanceof LocalFinding)->all())
+                    ))
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, LocalFinding> $records */
                         /** @var User|null $user */

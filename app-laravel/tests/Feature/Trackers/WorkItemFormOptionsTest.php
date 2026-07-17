@@ -3,6 +3,7 @@
 use App\Credentials\Vault;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Integrations\IntegrationSettingsRepository;
+use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
@@ -179,6 +180,65 @@ it('returns no default when no accepted mapping is available', function () {
     $result = app(WorkItemFormOptions::class)->trackerDefaultForEvents([$event], 'github');
 
     expect($result)->toBeNull();
+});
+
+it('prefills the finding create form tracker and project from a container mapping', function () {
+    $user = User::factory()->create();
+    Auth::login($user);
+
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+    $finding = $container->localFindings()->create([
+        'software_system_id' => $system->id,
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key',
+        'file_path' => 'config/services.php',
+    ]);
+
+    $container->trackerProjectLinks()->create([
+        'tracker_id' => 'jira',
+        'project_key' => 'APP',
+        'project_name' => 'Application',
+        'is_default' => true,
+    ]);
+
+    $schema = app(WorkItemFormOptions::class)->createSchemaForFindings([$finding]);
+
+    $tracker = collect($schema)->first(fn (mixed $component): bool => $component instanceof Select && $component->getName() === 'tracker');
+    $project = collect($schema)->first(fn (mixed $component): bool => $component instanceof Select && $component->getName() === 'project');
+
+    assert($tracker instanceof Select);
+    assert($project instanceof Select);
+
+    expect($tracker->getDefaultState())->toBe('jira')
+        ->and($project->getDefaultState())->toBe('APP');
+});
+
+it('applies no finding default when mappings exist on two trackers', function () {
+    $user = User::factory()->create();
+    Auth::login($user);
+
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+    $finding = $container->localFindings()->create([
+        'software_system_id' => $system->id,
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key',
+        'file_path' => 'config/services.php',
+    ]);
+
+    $container->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'APP', 'is_default' => true]);
+    $container->trackerProjectLinks()->create(['tracker_id' => 'github', 'project_key' => 'octo-org/appsec-scout', 'is_default' => true]);
+
+    $schema = app(WorkItemFormOptions::class)->linkSchemaForFindings([$finding]);
+
+    $tracker = collect($schema)->first(fn (mixed $component): bool => $component instanceof Select && $component->getName() === 'tracker');
+
+    assert($tracker instanceof Select);
+
+    expect($tracker->getDefaultState())->toBeNull();
 });
 
 function bindFakeTrackerForWorkItemForms(bool $enabled = true): void

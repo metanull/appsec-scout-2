@@ -4,6 +4,7 @@ namespace App\Trackers;
 
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Integrations\OperatorIntegrationRuntime;
+use App\Models\LocalFinding;
 use App\Models\SecurityEvent;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Defaults\TrackerProjectDefaultResolution;
@@ -50,9 +51,33 @@ final class WorkItemFormOptions
      */
     public function createSchema(array $events = []): array
     {
-        $formDefault = $this->resolveTrackerDefault($events);
-        $ambiguityWarnings = $this->resolveTrackerAmbiguityWarnings($events);
+        return $this->buildCreateSchema(
+            $this->resolveTrackerDefault($events),
+            $this->resolveTrackerAmbiguityWarnings($events),
+            $this->labelSuggestions($events),
+        );
+    }
 
+    /**
+     * @param  list<LocalFinding>  $findings
+     * @return array<int, Placeholder|Select|TagsInput>
+     */
+    public function createSchemaForFindings(array $findings = []): array
+    {
+        return $this->buildCreateSchema(
+            $this->resolveTrackerDefaultForFindings($findings),
+            $this->resolveTrackerAmbiguityWarningsForFindings($findings),
+            $this->findingLabelSuggestions($findings),
+        );
+    }
+
+    /**
+     * @param  list<string>  $ambiguityWarnings
+     * @param  list<string>  $labelSuggestions
+     * @return array<int, Placeholder|Select|TagsInput>
+     */
+    private function buildCreateSchema(?TrackerProjectDefaultResolution $formDefault, array $ambiguityWarnings, array $labelSuggestions): array
+    {
         return [
             Placeholder::make('enabled_tracker_notice')
                 ->label('Tracker availability')
@@ -122,7 +147,7 @@ final class WorkItemFormOptions
                 )),
             TagsInput::make('labels')
                 ->label('Labels')
-                ->suggestions($this->labelSuggestions($events))
+                ->suggestions($labelSuggestions)
                 ->placeholder('security, appsec-scout, source-id, severity, type')
                 ->nestedRecursiveRules(['string', 'max:255']),
             Select::make('assignee_id')
@@ -161,9 +186,30 @@ final class WorkItemFormOptions
      */
     public function linkSchema(array $events = []): array
     {
-        $formDefault = $this->resolveTrackerDefault($events);
-        $ambiguityWarnings = $this->resolveTrackerAmbiguityWarnings($events);
+        return $this->buildLinkSchema(
+            $this->resolveTrackerDefault($events),
+            $this->resolveTrackerAmbiguityWarnings($events),
+        );
+    }
 
+    /**
+     * @param  list<LocalFinding>  $findings
+     * @return array<int, Placeholder|Select>
+     */
+    public function linkSchemaForFindings(array $findings = []): array
+    {
+        return $this->buildLinkSchema(
+            $this->resolveTrackerDefaultForFindings($findings),
+            $this->resolveTrackerAmbiguityWarningsForFindings($findings),
+        );
+    }
+
+    /**
+     * @param  list<string>  $ambiguityWarnings
+     * @return array<int, Placeholder|Select>
+     */
+    private function buildLinkSchema(?TrackerProjectDefaultResolution $formDefault, array $ambiguityWarnings): array
+    {
         return [
             Placeholder::make('enabled_tracker_notice')
                 ->label('Tracker availability')
@@ -240,6 +286,16 @@ final class WorkItemFormOptions
     }
 
     /**
+     * @param  list<LocalFinding>  $findings
+     */
+    public function trackerDefaultForFindings(array $findings, string $trackerId): ?TrackerProjectDefaultResolution
+    {
+        $resolution = $this->trackerProjectDefaultResolver->resolveForFindings($findings, $trackerId);
+
+        return $resolution->hasDefault() ? $resolution : null;
+    }
+
+    /**
      * @param  list<SecurityEvent>  $events
      * @return list<string>
      */
@@ -251,6 +307,22 @@ final class WorkItemFormOptions
             $suggestions[] = $event->source_id;
             $suggestions[] = $this->backedEnumValue($event->severity);
             $suggestions[] = $this->backedEnumValue($event->type);
+        }
+
+        return array_values(array_unique(array_filter($suggestions)));
+    }
+
+    /**
+     * @param  list<LocalFinding>  $findings
+     * @return list<string>
+     */
+    private function findingLabelSuggestions(array $findings): array
+    {
+        $suggestions = ['security', 'appsec-scout'];
+
+        foreach ($findings as $finding) {
+            $suggestions[] = $finding->kind;
+            $suggestions[] = strtolower($finding->effectiveSeverityLabel());
         }
 
         return array_values(array_unique(array_filter($suggestions)));
@@ -557,6 +629,32 @@ final class WorkItemFormOptions
     }
 
     /**
+     * @param  list<LocalFinding>  $findings
+     */
+    private function resolveTrackerDefaultForFindings(array $findings): ?TrackerProjectDefaultResolution
+    {
+        if ($findings === []) {
+            return null;
+        }
+
+        $candidates = [];
+
+        foreach (array_keys($this->trackerOptions()) as $trackerId) {
+            $resolution = $this->trackerDefaultForFindings($findings, $trackerId);
+
+            if ($resolution instanceof TrackerProjectDefaultResolution) {
+                $candidates[] = $resolution;
+            }
+        }
+
+        if (count($candidates) !== 1) {
+            return null;
+        }
+
+        return $candidates[0];
+    }
+
+    /**
      * Surfaces ambiguous tracker project link configuration (multiple links at one level with
      * no single one marked default) even when a later level still resolved a usable default —
      * an operator relying on that lower-level default should still know a higher level needs
@@ -575,6 +673,29 @@ final class WorkItemFormOptions
 
         foreach (array_keys($this->trackerOptions()) as $trackerId) {
             $resolution = $this->trackerProjectDefaultResolver->resolveForEvents($events, $trackerId);
+
+            if ($resolution->ambiguityWarning !== null && ! in_array($resolution->ambiguityWarning, $warnings, true)) {
+                $warnings[] = $resolution->ambiguityWarning;
+            }
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * @param  list<LocalFinding>  $findings
+     * @return list<string>
+     */
+    private function resolveTrackerAmbiguityWarningsForFindings(array $findings): array
+    {
+        if ($findings === []) {
+            return [];
+        }
+
+        $warnings = [];
+
+        foreach (array_keys($this->trackerOptions()) as $trackerId) {
+            $resolution = $this->trackerProjectDefaultResolver->resolveForFindings($findings, $trackerId);
 
             if ($resolution->ambiguityWarning !== null && ! in_array($resolution->ambiguityWarning, $warnings, true)) {
                 $warnings[] = $resolution->ambiguityWarning;

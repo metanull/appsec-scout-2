@@ -12,6 +12,7 @@ use App\Models\LocalFindingComment;
 use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\WorkItemDto;
@@ -248,6 +249,31 @@ it('rejects the whole bulk link batch when one finding is already linked', funct
 
     expect(LocalFindingWorkItemLink::query()->where('local_finding_id', $findingTwo->id)->exists())->toBeFalse()
         ->and(LocalFindingWorkItemLink::query()->count())->toBe(1);
+});
+
+it('pre-fills the create work item form defaults from a finding container mapping', function () {
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+    $finding = $container->localFindings()->create([
+        'software_system_id' => $system->id,
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+    ]);
+    $container->trackerProjectLinks()->create([
+        'tracker_id' => 'jira', 'project_key' => 'APP', 'project_name' => 'Application', 'is_default' => true,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->mountTableAction('createWorkItem', $finding)
+        ->assertTableActionDataSet(function (array $data): array {
+            expect($data['tracker'])->toBe('jira')
+                ->and($data['project'])->toBe('APP');
+
+            return $data;
+        });
 });
 
 it('renders linked work items on the local finding work items relation manager', function () {
