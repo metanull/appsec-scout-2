@@ -4,8 +4,10 @@ namespace App\Filament\Widgets\Support;
 
 use App\Filament\Support\EventStateBadgeColor;
 use App\Models\Enums\EventState;
+use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
+use Filament\Support\Colors\Color;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -26,6 +28,8 @@ final class AlertBreakdownData
     public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-system';
 
     public const SOURCE_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-source';
+
+    public const TYPE_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-type';
 
     /**
      * @return list<BreakdownRow>
@@ -138,11 +142,63 @@ final class AlertBreakdownData
         return $result;
     }
 
+    /**
+     * Open alerts grouped by type, in EventType order with zero buckets omitted.
+     * Colors reuse the legacy type-distribution palette. Counts strictly
+     * state = open.
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function openByTypeBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::TYPE_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $counts = SecurityEvent::query()
+                ->toBase()
+                ->selectRaw('type, COUNT(*) as total')
+                ->where('state', EventState::Open->value)
+                ->groupBy('type')
+                ->pluck('total', 'type');
+
+            $palette = [
+                EventType::Vulnerability->value => Color::Red,
+                EventType::Secret->value => Color::Orange,
+                EventType::Dependency->value => Color::Amber,
+                EventType::License->value => Color::Yellow,
+                EventType::Misconfiguration->value => Color::Blue,
+                EventType::CodeQuality->value => Color::Purple,
+                EventType::Iac->value => Color::Cyan,
+                EventType::Posture->value => Color::Gray,
+            ];
+
+            $rows = [];
+            foreach (EventType::cases() as $type) {
+                $count = (int) ($counts[$type->value] ?? 0);
+
+                if ($count === 0) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'key' => $type->value,
+                    'label' => str($type->value)->replace('_', ' ')->title()->toString(),
+                    'count' => $count,
+                    'color' => $palette[$type->value],
+                ];
+            }
+
+            return $rows;
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
         Cache::forget(self::WORK_ITEM_STATUS_CACHE_KEY);
         Cache::forget(self::SYSTEM_CACHE_KEY);
         Cache::forget(self::SOURCE_CACHE_KEY);
+        Cache::forget(self::TYPE_CACHE_KEY);
     }
 }

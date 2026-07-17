@@ -25,6 +25,8 @@ final class LocalFindingBreakdownData
 
     public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-system';
 
+    public const KIND_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-kind';
+
     /**
      * @return list<BreakdownRow>
      */
@@ -104,10 +106,57 @@ final class LocalFindingBreakdownData
         return $result;
     }
 
+    /**
+     * Open local findings grouped by kind, with zero buckets omitted. Colors
+     * reuse the kind badge colors from LocalFindingResource. Counts strictly
+     * status = open.
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function openByKindBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::KIND_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $counts = LocalFinding::query()
+                ->toBase()
+                ->selectRaw('kind, COUNT(*) as total')
+                ->where('status', EventState::Open->value)
+                ->groupBy('kind')
+                ->pluck('total', 'kind');
+
+            $kinds = [
+                LocalFinding::KIND_VULNERABILITY => 'warning',
+                LocalFinding::KIND_SECRET => 'danger',
+                LocalFinding::KIND_CODE_QUALITY => 'info',
+            ];
+
+            $rows = [];
+            foreach ($kinds as $kind => $color) {
+                $count = (int) ($counts[$kind] ?? 0);
+
+                if ($count === 0) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'key' => $kind,
+                    'label' => str($kind)->replace('_', ' ')->title()->toString(),
+                    'count' => $count,
+                    'color' => $color,
+                ];
+            }
+
+            return $rows;
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
         Cache::forget(self::WORK_ITEM_STATUS_CACHE_KEY);
         Cache::forget(self::SYSTEM_CACHE_KEY);
+        Cache::forget(self::KIND_CACHE_KEY);
     }
 }
