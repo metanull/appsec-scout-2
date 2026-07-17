@@ -4,6 +4,7 @@ use App\Audit\AuditLog;
 use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
+use App\Filament\Resources\LocalFindingResource\Support\LocalFindingTableQuery;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
@@ -203,6 +204,90 @@ it('lets an explicit user sort override the default severity ordering', function
         ->test(ListLocalFindings::class)
         ->sortTable('title', 'asc')
         ->assertCanSeeTableRecords([$low, $critical], inOrder: true);
+});
+
+it('filters findings by kind and by status', function () {
+    $container = SecurityContainer::factory()->create();
+    $vuln = $container->localFindings()->create(['kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'v', 'file_path' => 'a', 'status' => EventState::Open]);
+    $secret = $container->localFindings()->create(['kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'r2', 'title' => 's', 'file_path' => 'b', 'status' => EventState::Resolved]);
+
+    expect(LocalFindingTableQuery::applyKinds(LocalFinding::query(), [LocalFinding::KIND_SECRET])->pluck('id')->all())->toBe([$secret->id])
+        ->and(LocalFindingTableQuery::applyStatuses(LocalFinding::query(), [EventState::Open->value])->pluck('id')->all())->toBe([$vuln->id])
+        ->and(LocalFindingTableQuery::applyKinds(LocalFinding::query(), [])->count())->toBe(2);
+});
+
+it('filters findings by effective severity, respecting overrides and unknown', function () {
+    $container = SecurityContainer::factory()->create();
+    $overridden = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'overridden', 'file_path' => 'a',
+        'severity' => 'HIGH', 'overridden_severity' => EventSeverity::Critical,
+    ]);
+    $plainHigh = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => 'high', 'file_path' => 'b', 'severity' => 'HIGH',
+    ]);
+    $unknown = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r3', 'title' => 'unknown', 'file_path' => 'c', 'severity' => 'UNKNOWN',
+    ]);
+
+    expect(LocalFindingTableQuery::applyEffectiveSeverities(LocalFinding::query(), ['critical'])->pluck('id')->all())->toBe([$overridden->id])
+        ->and(LocalFindingTableQuery::applyEffectiveSeverities(LocalFinding::query(), ['high'])->pluck('id')->all())->toBe([$plainHigh->id])
+        ->and(LocalFindingTableQuery::applyEffectiveSeverities(LocalFinding::query(), ['unknown'])->pluck('id')->all())->toBe([$unknown->id])
+        ->and(LocalFindingTableQuery::applyEffectiveSeverities(LocalFinding::query(), [])->count())->toBe(3);
+});
+
+it('filters findings by asset, system, and container scope', function () {
+    $assetA = SoftwareAsset::factory()->create();
+    $assetB = SoftwareAsset::factory()->create();
+    $systemA = SoftwareSystem::factory()->create(['software_asset_id' => $assetA->id]);
+    $containerA = SecurityContainer::factory()->forSystem($systemA)->create();
+    $containerB = SecurityContainer::factory()->create();
+
+    $inA = $containerA->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'a', 'file_path' => 'a',
+        'software_asset_id' => $assetA->id, 'software_system_id' => $systemA->id,
+    ]);
+    $containerB->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => 'b', 'file_path' => 'b',
+        'software_asset_id' => $assetB->id,
+    ]);
+
+    expect(LocalFindingTableQuery::applyAssetScopes(LocalFinding::query(), [(string) $assetA->id])->pluck('id')->all())->toBe([$inA->id])
+        ->and(LocalFindingTableQuery::applySystemScopes(LocalFinding::query(), [(string) $systemA->id])->pluck('id')->all())->toBe([$inA->id])
+        ->and(LocalFindingTableQuery::applyContainerScopes(LocalFinding::query(), [(string) $containerA->id])->pluck('id')->all())->toBe([$inA->id])
+        ->and(LocalFindingTableQuery::applyAssetScopes(LocalFinding::query(), ['0'])->count())->toBe(0);
+});
+
+it('container scope does not match findings owned by a non-container owner', function () {
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->create();
+
+    $containerOwned = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'c', 'file_path' => 'a',
+    ]);
+    LocalFinding::query()->create([
+        'owner_type' => SoftwareSystem::class, 'owner_id' => $container->id,
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => 's', 'file_path' => 'b',
+        'software_system_id' => $system->id,
+    ]);
+
+    expect(LocalFindingTableQuery::applyContainerScopes(LocalFinding::query(), [(string) $container->id])->pluck('id')->all())->toBe([$containerOwned->id]);
+});
+
+it('filters findings by work item presence and by correlation', function () {
+    $event = SecurityEvent::factory()->create();
+    $container = SecurityContainer::factory()->create();
+
+    $withWorkItem = $container->localFindings()->create(['kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'r1', 'title' => 'w', 'file_path' => 'a']);
+    $withWorkItem->workItemLinks()->create(['tracker_id' => 'github', 'work_item_id' => 'octo/app#1', 'created_at' => now(), 'synced_at' => now()]);
+
+    $correlated = $container->localFindings()->create(['kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'r2', 'title' => 'c', 'file_path' => 'b', 'correlated_security_event_id' => $event->id]);
+    $container->localFindings()->create(['kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'r3', 'title' => 'n', 'file_path' => 'c']);
+
+    expect(LocalFindingTableQuery::applyHasWorkItem(LocalFinding::query(), true)->pluck('id')->all())->toBe([$withWorkItem->id])
+        ->and(LocalFindingTableQuery::applyHasWorkItem(LocalFinding::query(), false)->count())->toBe(2)
+        ->and(LocalFindingTableQuery::applyHasWorkItem(LocalFinding::query(), null)->count())->toBe(3)
+        ->and(LocalFindingTableQuery::applyIsCorrelated(LocalFinding::query(), true)->pluck('id')->all())->toBe([$correlated->id])
+        ->and(LocalFindingTableQuery::applyIsCorrelated(LocalFinding::query(), false)->count())->toBe(2);
 });
 
 it('hides the change status and change severity row actions from a reader on the findings list', function () {

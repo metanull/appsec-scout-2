@@ -15,6 +15,8 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareAsset;
+use App\Models\SoftwareSystem;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -29,6 +31,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -204,18 +207,57 @@ class LocalFindingResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('kind')
+                    ->multiple()
                     ->options([
                         LocalFinding::KIND_VULNERABILITY => 'Vulnerability',
                         LocalFinding::KIND_SECRET => 'Secret',
                         LocalFinding::KIND_CODE_QUALITY => 'Code Quality',
-                    ]),
+                    ])
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyKinds($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('status')
+                    ->multiple()
+                    ->options(collect(EventState::cases())->mapWithKeys(fn (EventState $state) => [$state->value => str($state->value)->replace('_', ' ')->title()->toString()])->all())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyStatuses($query, self::stringArray($data['values'] ?? []))),
                 SelectFilter::make('severity')
-                    ->options(fn (): array => LocalFinding::query()
-                        ->whereNotNull('severity')
-                        ->distinct()
-                        ->orderBy('severity')
-                        ->pluck('severity', 'severity')
-                        ->all()),
+                    ->label('Severity')
+                    ->multiple()
+                    ->options(collect(EventSeverity::cases())
+                        ->mapWithKeys(fn (EventSeverity $severity) => [$severity->value => ucfirst($severity->value)])
+                        ->put('unknown', 'Unknown')
+                        ->all())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyEffectiveSeverities($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('asset_scope')
+                    ->label('Asset')
+                    ->multiple()
+                    ->searchable()
+                    ->options(fn (): array => self::assetScopeOptions())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyAssetScopes($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('system_scope')
+                    ->label('System')
+                    ->multiple()
+                    ->searchable()
+                    ->options(fn (): array => self::systemScopeOptions())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applySystemScopes($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('container_scope')
+                    ->label('Container')
+                    ->multiple()
+                    ->searchable()
+                    ->options(fn (): array => self::containerScopeOptions())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyContainerScopes($query, self::stringArray($data['values'] ?? []))),
+                TernaryFilter::make('has_work_item')
+                    ->label('Has work item')
+                    ->queries(
+                        true: fn (Builder $query) => LocalFindingTableQuery::applyHasWorkItem($query, true),
+                        false: fn (Builder $query) => LocalFindingTableQuery::applyHasWorkItem($query, false),
+                        blank: fn (Builder $query) => $query,
+                    ),
+                TernaryFilter::make('is_correlated')
+                    ->label('Correlated to alert')
+                    ->queries(
+                        true: fn (Builder $query) => LocalFindingTableQuery::applyIsCorrelated($query, true),
+                        false: fn (Builder $query) => LocalFindingTableQuery::applyIsCorrelated($query, false),
+                        blank: fn (Builder $query) => $query,
+                    ),
             ])
             ->actions([
                 ActionGroup::make([
@@ -314,6 +356,46 @@ class LocalFindingResource extends Resource
             'index' => ListLocalFindings::route('/'),
             'view' => ViewLocalFinding::route('/{record}'),
         ];
+    }
+
+    /** @return list<string> */
+    public static function stringArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+    }
+
+    /** @return array<int, string> */
+    private static function assetScopeOptions(): array
+    {
+        return SoftwareAsset::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SoftwareAsset $asset): array => [$asset->id => $asset->name])
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    private static function systemScopeOptions(): array
+    {
+        return SoftwareSystem::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SoftwareSystem $system): array => [$system->id => $system->name])
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    private static function containerScopeOptions(): array
+    {
+        return SecurityContainer::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (SecurityContainer $container): array => [$container->id => $container->name])
+            ->all();
     }
 
     /** @return array<int, Select|Textarea> */
