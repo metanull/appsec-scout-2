@@ -2,7 +2,10 @@
 
 namespace App\Trackers\Defaults;
 
+use App\Models\LocalFinding;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
 use App\Trackers\TrackerConfigRepository;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -79,11 +82,88 @@ final class TrackerProjectDefaultResolver
             $resolved[] = $this->resolveForEvent($event, $normalizedTrackerId);
         }
 
+        return $this->aggregate($resolved, $normalizedTrackerId);
+    }
+
+    public function resolveForFinding(
+        LocalFinding $finding,
+        string $trackerId,
+    ): TrackerProjectDefaultResolution {
+        $normalizedTrackerId = trim($trackerId);
+
+        if ($normalizedTrackerId === '') {
+            return TrackerProjectDefaultResolution::none($trackerId, 'Tracker is required to resolve a default project.');
+        }
+
+        $warnings = [];
+
+        $container = $this->findingContainerResolution($finding, $normalizedTrackerId);
+
+        if ($container['warning'] !== null) {
+            $warnings[] = $container['warning'];
+        }
+
+        if ($container['resolution'] instanceof TrackerProjectDefaultResolution) {
+            return $this->withWarnings($container['resolution'], $warnings);
+        }
+
+        $system = $this->findingSystemResolution($finding, $normalizedTrackerId);
+
+        if ($system['warning'] !== null) {
+            $warnings[] = $system['warning'];
+        }
+
+        if ($system['resolution'] instanceof TrackerProjectDefaultResolution) {
+            return $this->withWarnings($system['resolution'], $warnings);
+        }
+
+        $fallback = $this->trackerFallback($normalizedTrackerId);
+
+        if ($fallback instanceof TrackerProjectDefaultResolution) {
+            return $this->withWarnings($fallback, $warnings);
+        }
+
+        return $this->withWarnings(
+            TrackerProjectDefaultResolution::none(
+                trackerId: $normalizedTrackerId,
+                reasonText: 'No accepted context mapping or tracker fallback configured for this tracker.',
+            ),
+            $warnings,
+        );
+    }
+
+    /**
+     * @param  iterable<LocalFinding>  $findings
+     */
+    public function resolveForFindings(
+        iterable $findings,
+        string $trackerId,
+    ): TrackerProjectDefaultResolution {
+        $normalizedTrackerId = trim($trackerId);
+
+        if ($normalizedTrackerId === '') {
+            return TrackerProjectDefaultResolution::none($trackerId, 'Tracker is required to resolve a default project.');
+        }
+
+        $resolved = [];
+
+        foreach ($findings as $finding) {
+            $resolved[] = $this->resolveForFinding($finding, $normalizedTrackerId);
+        }
+
+        return $this->aggregate($resolved, $normalizedTrackerId);
+    }
+
+    /**
+     * @param  list<TrackerProjectDefaultResolution>  $resolved
+     */
+    private function aggregate(array $resolved, string $normalizedTrackerId): TrackerProjectDefaultResolution
+    {
         $warnings = $this->collectWarnings($resolved);
 
         if ($resolved === []) {
             return $this->withWarnings(
-                TrackerProjectDefaultResolution::none($normalizedTrackerId, 'No alerts were provided for default resolution.'),
+                TrackerProjectDefaultResolution::none($normalizedTrackerId, 'No records were provided for default resolution.'),
                 $warnings,
             );
         }
@@ -121,7 +201,7 @@ final class TrackerProjectDefaultResolver
                 return $this->withWarnings(
                     TrackerProjectDefaultResolution::none(
                         trackerId: $normalizedTrackerId,
-                        reasonText: 'Selected alerts resolve to different projects, so no grouped default was applied.',
+                        reasonText: 'Selected records resolve to different projects, so no grouped default was applied.',
                     ),
                     $warnings,
                 );
@@ -173,6 +253,56 @@ final class TrackerProjectDefaultResolver
         $system = $event->getRelationValue('softwareSystem');
 
         if ($system === null) {
+            return ['resolution' => null, 'warning' => null];
+        }
+
+        /** @var EloquentCollection<int, TrackerProjectLink> $links */
+        $links = $system->trackerProjectLinks->where('tracker_id', $trackerId)->values();
+
+        return $this->resolveFromLinks(
+            links: $links,
+            trackerId: $trackerId,
+            source: 'system_mapping',
+            confidenceLabel: 'System mapping',
+            reasonText: 'Resolved from accepted system tracker mapping.',
+            levelLabel: 'system',
+        );
+    }
+
+    /** @return array{resolution: ?TrackerProjectDefaultResolution, warning: ?string} */
+    private function findingContainerResolution(LocalFinding $finding, string $trackerId): array
+    {
+        $finding->loadMissing('owner');
+
+        $owner = $finding->getRelationValue('owner');
+
+        if (! $owner instanceof SecurityContainer) {
+            return ['resolution' => null, 'warning' => null];
+        }
+
+        $owner->loadMissing('trackerProjectLinks');
+
+        /** @var EloquentCollection<int, TrackerProjectLink> $links */
+        $links = $owner->trackerProjectLinks->where('tracker_id', $trackerId)->values();
+
+        return $this->resolveFromLinks(
+            links: $links,
+            trackerId: $trackerId,
+            source: 'container_mapping',
+            confidenceLabel: 'Container mapping',
+            reasonText: 'Resolved from accepted container tracker mapping.',
+            levelLabel: 'container',
+        );
+    }
+
+    /** @return array{resolution: ?TrackerProjectDefaultResolution, warning: ?string} */
+    private function findingSystemResolution(LocalFinding $finding, string $trackerId): array
+    {
+        $finding->loadMissing('softwareSystem.trackerProjectLinks');
+
+        $system = $finding->getRelationValue('softwareSystem');
+
+        if (! $system instanceof SoftwareSystem) {
             return ['resolution' => null, 'warning' => null];
         }
 

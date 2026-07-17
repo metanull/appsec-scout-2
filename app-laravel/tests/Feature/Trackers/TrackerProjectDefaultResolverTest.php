@@ -1,10 +1,24 @@
 <?php
 
+use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Trackers\Defaults\TrackerProjectDefaultResolver;
 use App\Trackers\TrackerConfigRepository;
+
+function resolverFinding(SecurityContainer|SoftwareSystem $owner, ?SoftwareSystem $system = null): LocalFinding
+{
+    return LocalFinding::query()->create([
+        'owner_type' => $owner::class,
+        'owner_id' => $owner->id,
+        'software_system_id' => $system?->id,
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Hardcoded API key',
+        'file_path' => 'config/services.php',
+    ]);
+}
 
 it('prefers physical container mappings before physical system mappings', function () {
     $system = SoftwareSystem::factory()->create();
@@ -172,6 +186,79 @@ it('returns no grouped default for conflicting alert defaults', function () {
     ]);
 
     $result = app(TrackerProjectDefaultResolver::class)->resolveForEvents([$eventA, $eventB], 'jira');
+
+    expect($result->hasDefault())->toBeFalse()
+        ->and($result->reasonText)->toContain('different projects');
+});
+
+it('prefers a finding container mapping before a finding system mapping', function () {
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+    $finding = resolverFinding($container, $system);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'SYS', 'is_default' => true]);
+    $container->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'CONT', 'is_default' => true]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForFinding($finding, 'jira');
+
+    expect($result->hasDefault())->toBeTrue()
+        ->and($result->projectKey)->toBe('CONT')
+        ->and($result->source)->toBe('container_mapping');
+});
+
+it('uses a finding system mapping when the owner is not a container', function () {
+    $system = SoftwareSystem::factory()->create();
+    $finding = resolverFinding($system, $system);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'SYS', 'is_default' => true]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForFinding($finding, 'jira');
+
+    expect($result->hasDefault())->toBeTrue()
+        ->and($result->projectKey)->toBe('SYS')
+        ->and($result->source)->toBe('system_mapping');
+});
+
+it('warns when a finding level has multiple links with no unique default', function () {
+    $system = SoftwareSystem::factory()->create();
+    $finding = resolverFinding($system, $system);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'ONE', 'is_default' => false]);
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'TWO', 'is_default' => false]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForFinding($finding, 'jira');
+
+    expect($result->hasDefault())->toBeFalse()
+        ->and($result->ambiguityWarning)->not->toBeNull()
+        ->and($result->ambiguityWarning)->toContain('system level')
+        ->and($result->ambiguityWarning)->toContain('none of them is marked as the default');
+});
+
+it('applies the jira fallback for a finding only when configured', function () {
+    app(TrackerConfigRepository::class)->setJiraDefaultProjectKey('FALLBACK');
+
+    $system = SoftwareSystem::factory()->create();
+    $finding = resolverFinding($system, $system);
+
+    $jiraResult = app(TrackerProjectDefaultResolver::class)->resolveForFinding($finding, 'jira');
+    $githubResult = app(TrackerProjectDefaultResolver::class)->resolveForFinding($finding, 'github');
+
+    expect($jiraResult->hasDefault())->toBeTrue()
+        ->and($jiraResult->projectKey)->toBe('FALLBACK')
+        ->and($jiraResult->source)->toBe('tracker_fallback')
+        ->and($githubResult->hasDefault())->toBeFalse();
+});
+
+it('returns no grouped finding default when findings resolve to different projects', function () {
+    $systemA = SoftwareSystem::factory()->create();
+    $systemB = SoftwareSystem::factory()->create();
+    $findingA = resolverFinding($systemA, $systemA);
+    $findingB = resolverFinding($systemB, $systemB);
+
+    $systemA->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'APP', 'is_default' => true]);
+    $systemB->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'OPS', 'is_default' => true]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForFindings([$findingA, $findingB], 'jira');
 
     expect($result->hasDefault())->toBeFalse()
         ->and($result->reasonText)->toContain('different projects');
