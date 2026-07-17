@@ -3,6 +3,7 @@
 use App\Filament\Widgets\SeverityDistributionChartWidget;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\Enums\EventSeverity;
+use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -32,16 +33,25 @@ function severityChartReader(): User
 it('shows a no-data heading when there are no recorded severities', function () {
     Livewire::actingAs(severityChartReader())
         ->test(SeverityDistributionChartWidget::class)
-        ->assertSee('Severity Distribution — no alerts recorded')
+        ->assertSee('Open Alerts by Severity — no alerts recorded')
         ->assertHasNoErrors();
 });
 
-it('shows the plain heading once at least one severity is recorded', function () {
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical]);
+it('shows the plain heading once at least one open severity is recorded', function () {
+    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical, 'state' => EventState::Open]);
 
     Livewire::actingAs(severityChartReader())
         ->test(SeverityDistributionChartWidget::class)
-        ->assertSee('Severity Distribution')
-        ->assertDontSee('Severity Distribution — no alerts recorded')
+        ->assertSee('Open Alerts by Severity')
+        ->assertDontSee('Open Alerts by Severity — no alerts recorded')
+        ->assertHasNoErrors();
+});
+
+it('shows the no-data heading when only non-open severities are recorded', function () {
+    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical, 'state' => EventState::Resolved]);
+
+    Livewire::actingAs(severityChartReader())
+        ->test(SeverityDistributionChartWidget::class)
+        ->assertSee('Open Alerts by Severity — no alerts recorded')
         ->assertHasNoErrors();
 });

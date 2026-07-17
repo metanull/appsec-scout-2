@@ -6,9 +6,9 @@ use App\Filament\Widgets\Support\DashboardData;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Auth;
 
-class SeverityDistributionChartWidget extends ChartWidget
+class TypeDistributionChartWidget extends ChartWidget
 {
-    protected static ?int $sort = 3;
+    protected static ?int $sort = 4;
 
     public static function canView(): bool
     {
@@ -17,16 +17,16 @@ class SeverityDistributionChartWidget extends ChartWidget
 
     public function getHeading(): ?string
     {
-        $hasSeverities = array_sum(DashboardData::severityChart()['datasets'][0]['data']) > 0;
+        $hasTypes = array_sum(DashboardData::typeChart()['datasets'][0]['data']) > 0;
 
-        return $hasSeverities
-            ? 'Open Alerts by Severity'
-            : 'Open Alerts by Severity — no alerts recorded';
+        return $hasTypes
+            ? 'Open Alerts by Type'
+            : 'Open Alerts by Type — no alerts recorded';
     }
 
     protected function getData(): array
     {
-        return DashboardData::severityChart();
+        return DashboardData::typeChart();
     }
 
     protected function getType(): string
