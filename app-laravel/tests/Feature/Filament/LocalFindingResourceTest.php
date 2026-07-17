@@ -61,14 +61,51 @@ it('lists a finding with the asset, system, and container columns', function () 
         ->test(ListLocalFindings::class)
         ->assertCanSeeTableRecords([$finding])
         ->assertSee('Jinja sandbox breakout')
-        ->assertCanNotRenderTableColumn('softwareAsset.name')
-        ->assertCanNotRenderTableColumn('softwareSystem.name')
-        ->assertCanNotRenderTableColumn('_container')
+        ->assertCanRenderTableColumn('softwareAsset.name')
+        ->assertCanRenderTableColumn('softwareSystem.name')
+        ->assertCanRenderTableColumn('_container')
         ->assertTableColumnStateSet('softwareAsset.name', 'Payments Platform', $finding)
         ->assertTableColumnStateSet('softwareSystem.name', 'payments-service', $finding)
         ->assertTableColumnStateSet('_container', 'payments-api', $finding);
 
     expect(LocalFindingResource::getUrl('view', ['record' => $finding]))->toBeString();
+});
+
+it('renders the tracker and first seen columns on the findings list', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $container = SecurityContainer::factory()->create();
+
+    $findingWithLink = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'github-pat',
+        'title' => 'Linked finding',
+        'file_path' => 'config.php',
+        'first_seen_at' => now()->subDays(3),
+    ]);
+    $findingWithLink->workItemLinks()->create([
+        'tracker_id' => 'github',
+        'work_item_id' => 'octo/app#7',
+        'work_item_title' => 'Rotate the key',
+        'work_item_state' => 'In Progress',
+        'created_at' => now(),
+        'synced_at' => now(),
+    ]);
+
+    $findingWithoutLink = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Unlinked finding',
+        'file_path' => 'services.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertCanRenderTableColumn('work_item_state')
+        ->assertCanRenderTableColumn('first_seen_at')
+        ->assertTableColumnStateSet('work_item_state', 'In Progress', $findingWithLink)
+        ->assertTableColumnStateSet('work_item_state', null, $findingWithoutLink);
 });
 
 it('shows the finding detail page including the correlated alert link', function () {

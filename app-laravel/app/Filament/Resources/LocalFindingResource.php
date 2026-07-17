@@ -65,7 +65,7 @@ class LocalFindingResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['owner', 'softwareAsset', 'softwareSystem', 'correlatedSecurityEvent', 'attachment']);
+        return parent::getEloquentQuery()->with(['owner', 'softwareAsset', 'softwareSystem', 'correlatedSecurityEvent', 'attachment', 'workItemLinks']);
     }
 
     public static function infolist(Schema $schema): Schema
@@ -143,22 +143,26 @@ class LocalFindingResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('kind')->badge()->sortable()->color(fn (string $state): string => match ($state) {
-                    LocalFinding::KIND_SECRET => 'danger',
-                    LocalFinding::KIND_CODE_QUALITY => 'info',
-                    default => 'warning',
-                }),
-                TextColumn::make('status')
-                    ->badge()
-                    ->sortable()
-                    ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
-                    ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
+                ...array_map(
+                    fn (TextColumn $column): TextColumn => $column->toggleable(),
+                    LocalFindingOwnerColumns::columns(),
+                ),
                 TextColumn::make('_effective_severity')
                     ->label('Severity')
                     ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())
                     ->badge()
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('severity', $direction === 'desc' ? 'desc' : 'asc'))
                     ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
+                TextColumn::make('status')
+                    ->badge()
+                    ->sortable()
+                    ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
+                    ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
+                TextColumn::make('kind')->badge()->sortable()->toggleable()->color(fn (string $state): string => match ($state) {
+                    LocalFinding::KIND_SECRET => 'danger',
+                    LocalFinding::KIND_CODE_QUALITY => 'info',
+                    default => 'warning',
+                }),
                 TextColumn::make('title')->searchable()->sortable()->wrap()->grow(),
                 TextColumn::make('file_path')->label('Location')
                     ->formatStateUsing(fn (LocalFinding $record): string => $record->start_line !== null
@@ -171,10 +175,6 @@ class LocalFindingResource extends Resource
                         : null)
                     ->placeholder('-')
                     ->toggleable(isToggledHiddenByDefault: true),
-                ...array_map(
-                    fn (TextColumn $column): TextColumn => $column->toggleable(isToggledHiddenByDefault: true),
-                    LocalFindingOwnerColumns::columns(),
-                ),
                 TextColumn::make('correlated_security_event_id')
                     ->label('Correlated alert')
                     ->state(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? '#' . $record->correlated_security_event_id : '-')
@@ -182,7 +182,21 @@ class LocalFindingResource extends Resource
                         ? SecurityEventResource::getUrl('view', ['record' => $record->correlated_security_event_id])
                         : null)
                     ->color(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? 'primary' : 'gray'),
+                TextColumn::make('work_item_state')
+                    ->label('Tracker')
+                    ->state(function (LocalFinding $record): ?string {
+                        $link = $record->workItemLinks->first();
+
+                        if (! $link) {
+                            return null;
+                        }
+
+                        return $link->work_item_state ?? $link->work_item_id;
+                    })
+                    ->badge()
+                    ->placeholder('-'),
                 TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
+                TextColumn::make('first_seen_at')->label('First seen')->dateTime('d M Y')->placeholder('-')->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('kind')
@@ -279,6 +293,7 @@ class LocalFindingResource extends Resource
             ])
             ->recordUrl(fn (LocalFinding $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultSort('severity')
+            ->defaultPaginationPageOption(25)
             ->paginated([25, 50, 100]);
     }
 
