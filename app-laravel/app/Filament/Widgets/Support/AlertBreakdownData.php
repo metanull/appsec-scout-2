@@ -25,6 +25,8 @@ final class AlertBreakdownData
 
     public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-system';
 
+    public const SOURCE_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-source';
+
     /**
      * @return list<BreakdownRow>
      */
@@ -106,10 +108,41 @@ final class AlertBreakdownData
         return $result;
     }
 
+    /**
+     * Open alerts grouped by source, ordered by count descending. Counts
+     * strictly state = open. (Local Findings have no source, so this pair has no
+     * counterpart.)
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function openBySourceBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::SOURCE_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $rows = SecurityEvent::query()
+                ->toBase()
+                ->selectRaw('source_id, COUNT(*) as total')
+                ->where('state', EventState::Open->value)
+                ->groupBy('source_id')
+                ->orderByRaw('COUNT(*) DESC')
+                ->get();
+
+            return $rows->map(fn (object $row): array => [
+                'key' => (string) $row->source_id,
+                'label' => (string) $row->source_id,
+                'count' => (int) $row->total,
+                'color' => BreakdownColor::neutral((string) $row->source_id),
+            ])->values()->all();
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
         Cache::forget(self::WORK_ITEM_STATUS_CACHE_KEY);
         Cache::forget(self::SYSTEM_CACHE_KEY);
+        Cache::forget(self::SOURCE_CACHE_KEY);
     }
 }
