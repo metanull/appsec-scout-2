@@ -23,6 +23,8 @@ final class AlertBreakdownData
 
     public const WORK_ITEM_STATUS_CACHE_KEY = 'dashboard:breakdown:alerts:work-item-status';
 
+    public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-system';
+
     /**
      * @return list<BreakdownRow>
      */
@@ -79,9 +81,35 @@ final class AlertBreakdownData
         return $result;
     }
 
+    /**
+     * Open alerts grouped by software system (top systems, then Others, then
+     * Unassigned). Counts strictly state = open.
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function openBySystemBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::SYSTEM_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $rows = SecurityEvent::query()
+                ->toBase()
+                ->leftJoin('software_systems', 'security_events.software_system_id', '=', 'software_systems.id')
+                ->selectRaw('security_events.software_system_id as system_id, software_systems.name as system_name, COUNT(*) as total')
+                ->where('security_events.state', EventState::Open->value)
+                ->groupBy('security_events.software_system_id', 'software_systems.name')
+                ->orderByRaw('COUNT(*) DESC')
+                ->get();
+
+            return OpenBySystemBreakdown::rows($rows);
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
         Cache::forget(self::WORK_ITEM_STATUS_CACHE_KEY);
+        Cache::forget(self::SYSTEM_CACHE_KEY);
     }
 }

@@ -23,6 +23,8 @@ final class LocalFindingBreakdownData
 
     public const WORK_ITEM_STATUS_CACHE_KEY = 'dashboard:breakdown:local-findings:work-item-status';
 
+    public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-system';
+
     /**
      * @return list<BreakdownRow>
      */
@@ -77,9 +79,35 @@ final class LocalFindingBreakdownData
         return $result;
     }
 
+    /**
+     * Open local findings grouped by software system (top systems, then Others,
+     * then Unassigned). Counts strictly status = open.
+     *
+     * @return list<BreakdownRow>
+     */
+    public static function openBySystemBreakdown(): array
+    {
+        /** @var list<BreakdownRow> $result */
+        $result = Cache::remember(self::SYSTEM_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
+            $rows = LocalFinding::query()
+                ->toBase()
+                ->leftJoin('software_systems', 'local_findings.software_system_id', '=', 'software_systems.id')
+                ->selectRaw('local_findings.software_system_id as system_id, software_systems.name as system_name, COUNT(*) as total')
+                ->where('local_findings.status', EventState::Open->value)
+                ->groupBy('local_findings.software_system_id', 'software_systems.name')
+                ->orderByRaw('COUNT(*) DESC')
+                ->get();
+
+            return OpenBySystemBreakdown::rows($rows);
+        });
+
+        return $result;
+    }
+
     public static function flushCache(): void
     {
         Cache::forget(self::STATE_CACHE_KEY);
         Cache::forget(self::WORK_ITEM_STATUS_CACHE_KEY);
+        Cache::forget(self::SYSTEM_CACHE_KEY);
     }
 }
