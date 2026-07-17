@@ -6,6 +6,7 @@ use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
+use App\Filament\Resources\LocalFindingResource\Support\LocalFindingTableQuery;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Filament\Support\EventStateBadgeColor;
@@ -151,7 +152,7 @@ class LocalFindingResource extends Resource
                     ->label('Severity')
                     ->state(fn (LocalFinding $record): string => $record->effectiveSeverityLabel())
                     ->badge()
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('severity', $direction === 'desc' ? 'desc' : 'asc'))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(LocalFindingTableQuery::effectiveSeverityRankSql() . ' ' . ($direction === 'asc' ? 'ASC' : 'DESC')))
                     ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
                 TextColumn::make('status')
                     ->badge()
@@ -168,12 +169,14 @@ class LocalFindingResource extends Resource
                     ->formatStateUsing(fn (LocalFinding $record): string => $record->start_line !== null
                         ? "{$record->file_path}:{$record->start_line}"
                         : $record->file_path)
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('package_name')->label('Package')
                     ->formatStateUsing(fn (?string $state, LocalFinding $record): ?string => $state !== null
                         ? trim("{$state} {$record->package_version}")
                         : null)
                     ->placeholder('-')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('correlated_security_event_id')
                     ->label('Correlated alert')
@@ -181,6 +184,7 @@ class LocalFindingResource extends Resource
                     ->url(fn (LocalFinding $record): ?string => $record->correlated_security_event_id !== null
                         ? SecurityEventResource::getUrl('view', ['record' => $record->correlated_security_event_id])
                         : null)
+                    ->sortable()
                     ->color(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? 'primary' : 'gray'),
                 TextColumn::make('work_item_state')
                     ->label('Tracker')
@@ -195,8 +199,8 @@ class LocalFindingResource extends Resource
                     })
                     ->badge()
                     ->placeholder('-'),
-                TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
-                TextColumn::make('first_seen_at')->label('First seen')->dateTime('d M Y')->placeholder('-')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-')->sortable(),
+                TextColumn::make('first_seen_at')->label('First seen')->dateTime('d M Y')->placeholder('-')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('kind')
@@ -292,7 +296,6 @@ class LocalFindingResource extends Resource
                     ->deselectRecordsAfterCompletion(),
             ])
             ->recordUrl(fn (LocalFinding $record): string => static::getUrl('view', ['record' => $record]))
-            ->defaultSort('severity')
             ->defaultPaginationPageOption(25)
             ->paginated([25, 50, 100]);
     }

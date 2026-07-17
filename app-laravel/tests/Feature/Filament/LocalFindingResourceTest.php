@@ -4,6 +4,7 @@ use App\Audit\AuditLog;
 use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
+use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
@@ -127,6 +128,81 @@ it('shows the finding detail page including the correlated alert link', function
         ->test(ViewLocalFinding::class, ['record' => $finding->getKey()])
         ->assertSee('GitHub PAT committed')
         ->assertSee('#' . $event->id);
+});
+
+it('orders findings by effective severity rank by default, respecting overrides', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+    $container = SecurityContainer::factory()->create();
+
+    $criticalOverride = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'critical override',
+        'file_path' => 'a.txt', 'severity' => 'HIGH', 'overridden_severity' => EventSeverity::Critical,
+        'last_seen_at' => now(),
+    ]);
+    $plainHigh = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => 'plain high',
+        'file_path' => 'b.txt', 'severity' => 'HIGH', 'last_seen_at' => now()->subMinute(),
+    ]);
+    $medium = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r3', 'title' => 'plain medium',
+        'file_path' => 'c.txt', 'severity' => 'MEDIUM', 'last_seen_at' => now()->subMinutes(2),
+    ]);
+    $lowOverride = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r4', 'title' => 'low override',
+        'file_path' => 'd.txt', 'severity' => 'CRITICAL', 'overridden_severity' => EventSeverity::Low,
+        'last_seen_at' => now()->subMinutes(3),
+    ]);
+    $low = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r5', 'title' => 'plain low',
+        'file_path' => 'e.txt', 'severity' => 'LOW', 'last_seen_at' => now()->subMinutes(4),
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertCanSeeTableRecords([$criticalOverride, $plainHigh, $medium, $lowOverride, $low], inOrder: true);
+});
+
+it('sorts findings by last seen and by location on explicit user sort', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+    $container = SecurityContainer::factory()->create();
+
+    $older = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'older',
+        'file_path' => 'zeta.txt', 'severity' => 'LOW', 'last_seen_at' => now()->subDays(5),
+    ]);
+    $newer = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => 'newer',
+        'file_path' => 'alpha.txt', 'severity' => 'LOW', 'last_seen_at' => now(),
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->sortTable('last_seen_at', 'asc')
+        ->assertCanSeeTableRecords([$older, $newer], inOrder: true)
+        ->sortTable('file_path', 'asc')
+        ->assertCanSeeTableRecords([$newer, $older], inOrder: true);
+});
+
+it('lets an explicit user sort override the default severity ordering', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+    $container = SecurityContainer::factory()->create();
+
+    $critical = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r1', 'title' => 'zzz title',
+        'file_path' => 'a.txt', 'severity' => 'CRITICAL', 'last_seen_at' => now(),
+    ]);
+    $low = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY, 'rule_id' => 'r2', 'title' => 'aaa title',
+        'file_path' => 'b.txt', 'severity' => 'LOW', 'last_seen_at' => now()->subDay(),
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->sortTable('title', 'asc')
+        ->assertCanSeeTableRecords([$low, $critical], inOrder: true);
 });
 
 it('hides the change status and change severity row actions from a reader on the findings list', function () {
