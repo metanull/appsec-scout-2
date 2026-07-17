@@ -4,11 +4,13 @@ namespace App\Filament\Resources;
 
 use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
+use App\Assets\LocalFindingWorkItemService;
+use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
-use App\Filament\Resources\LocalFindingResource\Support\LocalFindingTableQuery;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
+use App\Filament\Resources\LocalFindingResource\Support\LocalFindingTableQuery;
 use App\Filament\Support\EventStateBadgeColor;
 use App\Filament\Support\LocalFindingOwnerColumns;
 use App\Models\Enums\EventSeverity;
@@ -18,6 +20,7 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\Trackers\WorkItemFormOptions;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
@@ -305,6 +308,80 @@ class LocalFindingResource extends Resource
 
                             Notification::make()->title('Severity changed')->success()->send();
                         }),
+                    Action::make('createWorkItem')
+                        ->label('Create work item')
+                        ->icon('heroicon-o-ticket')
+                        ->visible(fn (): bool => Gate::allows('work-items.create'))
+                        ->form(fn (): array => app(WorkItemFormOptions::class)->createSchema())
+                        ->action(function (LocalFinding $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
+
+                            if ($user === null) {
+                                abort(403);
+                            }
+
+                            $trackerId = (string) $data['tracker'];
+                            $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                            if ($missing !== []) {
+                                self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                                return;
+                            }
+
+                            app(LocalFindingWorkItemService::class)->createForFinding(
+                                finding: $record,
+                                userId: $user->id,
+                                trackerId: $trackerId,
+                                projectKey: (string) $data['project'],
+                                itemType: (string) $data['item_type'],
+                                labels: self::stringArray($data['labels'] ?? []),
+                                priority: self::nullableString($data['priority'] ?? null),
+                                assigneeId: self::nullableString($data['assignee_id'] ?? null),
+                                parentId: self::nullableString($data['parent_id'] ?? null),
+                            );
+
+                            Notification::make()->title('Work item created')->success()->send();
+                        }),
+                    Action::make('linkExistingWorkItem')
+                        ->label('Link existing work item')
+                        ->icon('heroicon-o-link')
+                        ->visible(fn (): bool => Gate::allows('work-items.link'))
+                        ->form(fn (): array => app(WorkItemFormOptions::class)->linkSchema())
+                        ->action(function (LocalFinding $record, array $data): void {
+                            /** @var User|null $user */
+                            $user = Auth::user();
+
+                            if ($user === null) {
+                                abort(403);
+                            }
+
+                            $trackerId = (string) $data['tracker'];
+                            $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                            if ($missing !== []) {
+                                self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                                return;
+                            }
+
+                            try {
+                                app(LocalFindingWorkItemService::class)->linkExisting(
+                                    finding: $record,
+                                    userId: $user->id,
+                                    trackerId: $trackerId,
+                                    workItemId: (string) $data['selected_work_item'],
+                                    projectKey: (string) ($data['project'] ?? ''),
+                                );
+                            } catch (\RuntimeException $exception) {
+                                Notification::make()->title($exception->getMessage())->danger()->send();
+
+                                return;
+                            }
+
+                            Notification::make()->title('Work item linked')->success()->send();
+                        }),
                 ])
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->tooltip('Actions'),
@@ -366,6 +443,32 @@ class LocalFindingResource extends Resource
         }
 
         return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+    }
+
+    private static function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return trim($value);
+    }
+
+    /** @param list<string> $missing */
+    public static function notifyMissingPersonalCredentials(string $trackerId, array $missing): void
+    {
+        $fields = implode(', ', $missing);
+
+        Notification::make()
+            ->title('Personal tracker credentials required')
+            ->body("{$trackerId} is missing personal credentials: {$fields}.")
+            ->warning()
+            ->actions([
+                Action::make('openProfileIntegrations')
+                    ->label('Open profile integrations')
+                    ->url(ProfileIntegrationsPage::getUrl()),
+            ])
+            ->send();
     }
 
     /** @return array<int, string> */

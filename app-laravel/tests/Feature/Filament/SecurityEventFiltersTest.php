@@ -6,6 +6,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventType;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
@@ -85,8 +86,8 @@ it('filters by source', function () {
 });
 
 it('filters by software asset via the event system', function () {
-    $assetA = App\Models\SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
-    $assetB = App\Models\SoftwareAsset::factory()->create(['name' => 'Identity Platform']);
+    $assetA = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $assetB = SoftwareAsset::factory()->create(['name' => 'Identity Platform']);
 
     $systemA = SoftwareSystem::factory()->create(['software_asset_id' => $assetA->id]);
     $systemB = SoftwareSystem::factory()->create(['software_asset_id' => $assetB->id]);

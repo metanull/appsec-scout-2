@@ -1,6 +1,7 @@
 <?php
 
 use App\Audit\AuditLog;
+use App\Credentials\Vault;
 use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
@@ -9,13 +10,17 @@ use App\Filament\Support\UserViewStateStore;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
+use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\Trackers\Dto\ProjectDto;
+use App\Trackers\Dto\WorkItemDto;
 use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
+use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -106,7 +111,7 @@ it('renders the tracker and first seen columns on the findings list', function (
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
         ->assertCanRenderTableColumn('work_item_state')
-        ->assertCanRenderTableColumn('first_seen_at')
+        ->assertTableColumnExists('first_seen_at')
         ->assertTableColumnStateSet('work_item_state', 'In Progress', $findingWithLink)
         ->assertTableColumnStateSet('work_item_state', null, $findingWithoutLink);
 });
@@ -467,6 +472,62 @@ it('changes the status of multiple findings via the bulk action', function () {
 
     expect($findingOne->fresh()->status)->toBe(EventState::Dismissed)
         ->and($findingTwo->fresh()->status)->toBe(EventState::Dismissed);
+});
+
+it('hides the work item row actions from a reader on the findings list', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+    $finding = SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertTableActionHidden('createWorkItem', $finding)
+        ->assertTableActionHidden('linkExistingWorkItem', $finding);
+});
+
+it('shows the work item row actions to a plan-role operator on the findings list', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Plan']);
+    $finding = SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertTableActionVisible('createWorkItem', $finding)
+        ->assertTableActionVisible('linkExistingWorkItem', $finding);
+});
+
+it('links an existing work item to a finding via the row action', function () {
+    bindFakeWorkItemTracker((new FakeTracker)
+        ->withProjects(new ProjectDto(key: 'APP', name: 'Application'))
+        ->withExistingWorkItem(new WorkItemDto(
+            id: 'APP#7',
+            projectKey: 'APP',
+            title: 'Existing tracker item',
+            state: 'Open',
+            url: 'https://tracker.test/APP%237',
+        )));
+
+    $user = User::factory()->create();
+    $user->syncRoles(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
+
+    $finding = SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableAction('linkExistingWorkItem', $finding, data: [
+            'tracker' => 'fake-tracker',
+            'project' => 'APP',
+            'selected_work_item' => 'APP#7',
+        ]);
+
+    expect(LocalFindingWorkItemLink::query()->where('local_finding_id', $finding->id)->where('work_item_id', 'APP#7')->exists())->toBeTrue();
 });
 
 it('hides the change status bulk action from a reader on the findings list', function () {

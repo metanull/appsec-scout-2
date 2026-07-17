@@ -5,6 +5,7 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
@@ -152,7 +153,7 @@ it('alert list shows the asset name reached via the event system', function () {
     ]);
     $user->syncRoles(['Reader']);
 
-    $asset = App\Models\SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
+    $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
     $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id, 'name' => 'payments-service']);
     SecurityEvent::factory()->forSystem($system)->create();
 

@@ -386,7 +386,7 @@ class SecurityEventResource extends Resource
                     ->placeholder('-')
                     ->toggleable()
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy(
-                        SoftwareAsset::select('name')->whereColumn(
+                        SoftwareAsset::select('name')->whereIn(
                             'software_assets.id',
                             SoftwareSystem::select('software_asset_id')->whereColumn('software_systems.id', 'security_events.software_system_id'),
                         ),

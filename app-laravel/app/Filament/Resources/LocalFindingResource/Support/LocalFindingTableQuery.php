@@ -15,6 +15,8 @@ final class LocalFindingTableQuery
      * lowercase so the scanner-reported (uppercase) and operator-overridden
      * (lowercase) values rank identically on MySQL 8 and SQLite. Unmapped
      * values (e.g. UNKNOWN) rank 0.
+     *
+     * @return literal-string
      */
     public static function effectiveSeverityRankSql(): string
     {
@@ -186,17 +188,14 @@ final class LocalFindingTableQuery
             return $query;
         }
 
-        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%';
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
 
-        return $query->where(function (Builder $nested) use ($like): void {
-            $nested
-                ->where('title', 'like', $like)
-                ->orWhere('description', 'like', $like)
-                ->orWhere('rule_id', 'like', $like)
-                ->orWhere('file_path', 'like', $like)
-                ->orWhere('package_name', 'like', $like)
-                ->orWhere('package_version', 'like', $like)
-                ->orWhere('metadata', 'like', $like);
+        $columns = ['title', 'description', 'rule_id', 'file_path', 'package_name', 'package_version', 'metadata'];
+
+        return $query->where(function (Builder $nested) use ($columns, $like): void {
+            foreach ($columns as $column) {
+                $nested->orWhereRaw($column . " LIKE ? ESCAPE '\\'", [$like]);
+            }
         });
     }
 
