@@ -66,6 +66,10 @@ class ListLocalFindings extends ListRecords
 
     private function restoreUserViewState(): void
     {
+        if ($this->requestCarriesTableState()) {
+            return;
+        }
+
         $userId = Auth::id();
 
         if (! is_int($userId)) {
@@ -89,6 +93,26 @@ class ListLocalFindings extends ListRecords
         if (array_key_exists('sort', $state) && (is_string($state['sort']) || $state['sort'] === null)) {
             $this->tableSort = $state['sort'];
         }
+    }
+
+    /**
+     * A deep link (e.g. a dashboard breakdown row) carries the user's most
+     * recent intent in the query string; when present it must win over any
+     * persisted view state rather than be silently overwritten on mount.
+     */
+    private function requestCarriesTableState(): bool
+    {
+        $request = request();
+
+        foreach (['tableFilters', 'tableSearch', 'tableSort'] as $key) {
+            $value = $request->query($key);
+
+            if (is_array($value) ? $value !== [] : ($value !== null && $value !== '')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function persistUserViewState(): void
