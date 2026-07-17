@@ -413,6 +413,84 @@ class LocalFindingResource extends Resource
                         Notification::make()->title('Status changed for selected findings')->success()->send();
                     })
                     ->deselectRecordsAfterCompletion(),
+                BulkAction::make('createGroupedWorkItem')
+                    ->label('Create grouped work item')
+                    ->icon('heroicon-o-ticket')
+                    ->visible(fn (): bool => Gate::allows('work-items.create'))
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->createSchema())
+                    ->action(function (Collection $records, array $data): void {
+                        /** @var Collection<int, LocalFinding> $records */
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        $trackerId = (string) $data['tracker'];
+                        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                        if ($missing !== []) {
+                            self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                            return;
+                        }
+
+                        app(LocalFindingWorkItemService::class)->createForFindings(
+                            findingIds: self::selectedFindingIds($records),
+                            userId: $user->id,
+                            trackerId: $trackerId,
+                            projectKey: (string) $data['project'],
+                            itemType: (string) $data['item_type'],
+                            labels: self::stringArray($data['labels'] ?? []),
+                            priority: self::nullableString($data['priority'] ?? null),
+                            assigneeId: self::nullableString($data['assignee_id'] ?? null),
+                            parentId: self::nullableString($data['parent_id'] ?? null),
+                        );
+
+                        Notification::make()->title('Grouped work item created')->success()->send();
+                    })
+                    ->deselectRecordsAfterCompletion(),
+                BulkAction::make('linkExistingWorkItemBulk')
+                    ->label('Link existing')
+                    ->icon('heroicon-o-link')
+                    ->visible(fn (): bool => Gate::allows('work-items.link'))
+                    ->form(fn (Collection $records): array => app(WorkItemFormOptions::class)->linkSchema())
+                    ->action(function (Collection $records, array $data): void {
+                        /** @var Collection<int, LocalFinding> $records */
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        $trackerId = (string) $data['tracker'];
+                        $missing = app(WorkItemFormOptions::class)->missingCredentialLabelsForTracker($trackerId);
+
+                        if ($missing !== []) {
+                            self::notifyMissingPersonalCredentials($trackerId, $missing);
+
+                            return;
+                        }
+
+                        try {
+                            app(LocalFindingWorkItemService::class)->linkExisting(
+                                findingIds: self::selectedFindingIds($records),
+                                userId: $user->id,
+                                trackerId: $trackerId,
+                                workItemId: (string) $data['selected_work_item'],
+                                projectKey: (string) ($data['project'] ?? ''),
+                            );
+                        } catch (\RuntimeException $exception) {
+                            Notification::make()->title($exception->getMessage())->danger()->send();
+
+                            return;
+                        }
+
+                        Notification::make()->title('Existing work item linked')->success()->send();
+                    })
+                    ->deselectRecordsAfterCompletion(),
             ])
             ->recordUrl(fn (LocalFinding $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultPaginationPageOption(25)
@@ -452,6 +530,15 @@ class LocalFindingResource extends Resource
         }
 
         return trim($value);
+    }
+
+    /**
+     * @param  Collection<int, LocalFinding>  $records
+     * @return list<int>
+     */
+    private static function selectedFindingIds(Collection $records): array
+    {
+        return array_values($records->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
     }
 
     /** @param list<string> $missing */

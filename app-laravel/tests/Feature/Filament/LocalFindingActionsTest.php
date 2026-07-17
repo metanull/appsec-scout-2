@@ -1,6 +1,8 @@
 <?php
 
+use App\Credentials\Vault;
 use App\Filament\Resources\LocalFindingResource;
+use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelationManager;
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
@@ -11,8 +13,11 @@ use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\User;
+use App\Trackers\Dto\ProjectDto;
+use App\Trackers\Dto\WorkItemDto;
 use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
+use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -131,6 +136,118 @@ it('renders comments on the local finding comments relation manager', function (
         ])
         ->call('loadTable')
         ->assertSee('Investigated and confirmed local-only usage.');
+});
+
+it('hides the grouped work-item bulk actions from a reader', function () {
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Reader']);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertTableBulkActionHidden('createGroupedWorkItem')
+        ->assertTableBulkActionHidden('linkExistingWorkItemBulk');
+});
+
+it('shows the grouped work-item bulk actions to a plan-role operator', function () {
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertTableBulkActionVisible('createGroupedWorkItem')
+        ->assertTableBulkActionVisible('linkExistingWorkItemBulk');
+});
+
+it('creates one grouped work item for the selected findings via the bulk action', function () {
+    $tracker = bindFakeWorkItemTracker((new FakeTracker)->withProjects(new ProjectDto(key: 'APP', name: 'Application')));
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
+
+    $container = SecurityContainer::factory()->create();
+    $findingOne = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'file_path' => 'config/services.php',
+    ]);
+    $findingTwo = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'file_path' => 'config/database.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableBulkAction('createGroupedWorkItem', [$findingOne, $findingTwo], data: [
+            'tracker' => 'fake-tracker',
+            'project' => 'APP',
+            'item_type' => 'Bug',
+        ]);
+
+    $links = LocalFindingWorkItemLink::query()->get();
+
+    expect($tracker->createCalls)->toBe(1)
+        ->and($links)->toHaveCount(2)
+        ->and($links->pluck('work_item_id')->unique())->toHaveCount(1);
+});
+
+it('links all selected findings to an existing work item via the bulk action', function () {
+    bindFakeWorkItemTracker((new FakeTracker)
+        ->withProjects(new ProjectDto(key: 'APP', name: 'Application'))
+        ->withExistingWorkItem(new WorkItemDto(id: 'APP#7', projectKey: 'APP', title: 'Existing tracker item', state: 'Open', url: 'https://tracker.test/APP%237')));
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
+
+    $container = SecurityContainer::factory()->create();
+    $findingOne = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'file_path' => 'config/services.php',
+    ]);
+    $findingTwo = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'file_path' => 'config/database.php',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableBulkAction('linkExistingWorkItemBulk', [$findingOne, $findingTwo], data: [
+            'tracker' => 'fake-tracker',
+            'project' => 'APP',
+            'selected_work_item' => 'APP#7',
+        ]);
+
+    expect(LocalFindingWorkItemLink::query()->where('work_item_id', 'APP#7')->count())->toBe(2);
+});
+
+it('rejects the whole bulk link batch when one finding is already linked', function () {
+    bindFakeWorkItemTracker((new FakeTracker)
+        ->withProjects(new ProjectDto(key: 'APP', name: 'Application'))
+        ->withExistingWorkItem(new WorkItemDto(id: 'APP#7', projectKey: 'APP', title: 'Existing tracker item', state: 'Open', url: 'https://tracker.test/APP%237')));
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
+
+    $container = SecurityContainer::factory()->create();
+    $findingOne = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'file_path' => 'config/services.php',
+    ]);
+    $findingTwo = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'file_path' => 'config/database.php',
+    ]);
+
+    LocalFindingWorkItemLink::query()->create([
+        'local_finding_id' => $findingOne->id,
+        'tracker_id' => 'fake-tracker',
+        'work_item_id' => 'APP#7',
+        'work_item_title' => 'Existing tracker item',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableBulkAction('linkExistingWorkItemBulk', [$findingOne, $findingTwo], data: [
+            'tracker' => 'fake-tracker',
+            'project' => 'APP',
+            'selected_work_item' => 'APP#7',
+        ])
+        ->assertNotified('One or more selected findings are already linked to this work item.');
+
+    expect(LocalFindingWorkItemLink::query()->where('local_finding_id', $findingTwo->id)->exists())->toBeFalse()
+        ->and(LocalFindingWorkItemLink::query()->count())->toBe(1);
 });
 
 it('renders linked work items on the local finding work items relation manager', function () {
