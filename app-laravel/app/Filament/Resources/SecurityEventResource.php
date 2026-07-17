@@ -22,6 +22,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\Models\WorkItemLink;
 use App\SecurityEvents\EventLinkCatalog;
 use App\SecurityEvents\SourceLinkHelper;
 use App\Trackers\Registry as TrackerRegistry;
@@ -490,6 +491,11 @@ class SecurityEventResource extends Resource
                     ->multiple()
                     ->options(collect(EventType::cases())->mapWithKeys(fn (EventType $type) => [$type->value => str($type->value)->replace('_', ' ')->title()->toString()])->all())
                     ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyTypes($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('work_item_state')
+                    ->label('Work item status')
+                    ->multiple()
+                    ->options(fn (): array => self::workItemStateOptions())
+                    ->query(fn (Builder $query, array $data) => SecurityEventTableQuery::applyWorkItemStates($query, self::stringArray($data['values'] ?? []))),
                 TernaryFilter::make('has_work_item')
                     ->label('Has work item')
                     ->queries(
@@ -893,6 +899,21 @@ class SecurityEventResource extends Resource
             ->get(['id', 'name'])
             ->mapWithKeys(fn (SoftwareSystem $system): array => [$system->id => $system->name])
             ->all();
+    }
+
+    /** @return array<string, string> */
+    private static function workItemStateOptions(): array
+    {
+        $options = WorkItemLink::query()
+            ->whereNotNull('work_item_state')
+            ->distinct()
+            ->orderBy('work_item_state')
+            ->pluck('work_item_state', 'work_item_state')
+            ->all();
+
+        $options['__none__'] = 'Unknown';
+
+        return $options;
     }
 
     /** @return array<int, string> */

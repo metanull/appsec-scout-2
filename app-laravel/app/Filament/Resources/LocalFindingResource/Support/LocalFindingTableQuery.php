@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\LocalFindingResource\Support;
 
 use App\Models\LocalFinding;
+use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -141,6 +142,39 @@ final class LocalFindingTableQuery
         }
 
         return $query->where('owner_type', SecurityContainer::class)->whereIn('owner_id', $ids);
+    }
+
+    /**
+     * Filter to findings holding a work-item link whose state is one of the
+     * given values. The sentinel `__none__` additionally matches links with a
+     * null state ("Unknown"). Findings without any link are matched by the
+     * `has_work_item` ternary, not this filter.
+     *
+     * @param  Builder<LocalFinding>  $query
+     * @param  list<string>  $states
+     * @return Builder<LocalFinding>
+     */
+    public static function applyWorkItemStates(Builder $query, array $states): Builder
+    {
+        if ($states === []) {
+            return $query;
+        }
+
+        $includeNone = in_array('__none__', $states, true);
+        $concrete = array_values(array_filter($states, fn (string $state): bool => $state !== '__none__'));
+
+        return $query->whereHas('workItemLinks', function (Builder $relation) use ($concrete, $includeNone): void {
+            /** @var Builder<LocalFindingWorkItemLink> $relation */
+            $relation->where(function (Builder $inner) use ($concrete, $includeNone): void {
+                if ($concrete !== []) {
+                    $inner->orWhereIn('work_item_state', $concrete);
+                }
+
+                if ($includeNone) {
+                    $inner->orWhereNull('work_item_state');
+                }
+            });
+        });
     }
 
     /**

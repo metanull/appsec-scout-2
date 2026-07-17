@@ -1,87 +1,15 @@
 <?php
 
 use App\Events\SyncRunFinished;
+use App\Filament\Widgets\Support\AlertBreakdownData;
 use App\Filament\Widgets\Support\DashboardData;
-use App\Models\Enums\EventSeverity;
+use App\Filament\Widgets\Support\LocalFindingBreakdownData;
 use App\Models\Enums\EventState;
-use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
-use App\Models\WorkItemLink;
-use Filament\Support\Colors\Color;
 use Illuminate\Support\Carbon;
 
-beforeEach(function () {
-    DashboardData::flushCache();
-});
-
-afterEach(function () {
-    DashboardData::flushCache();
-});
-
-it('builds dashboard stats grouped by severity and state', function () {
-    SecurityEvent::factory()->create([
-        'severity' => EventSeverity::Critical,
-        'state' => EventState::Open,
-        'type' => EventType::Secret,
-    ]);
-
-    SecurityEvent::factory()->create([
-        'severity' => EventSeverity::High,
-        'state' => EventState::Resolved,
-        'type' => EventType::Vulnerability,
-    ]);
-
-    $stats = DashboardData::stats();
-
-    expect($stats['totalOpen'])->toBe(1)
-        ->and($stats['severities']['critical'])->toBe(1)
-        ->and($stats['severities']['high'])->toBe(1)
-        ->and($stats['states']['open'])->toBe(1)
-        ->and($stats['states']['resolved'])->toBe(1);
-});
-
-it('builds doughnut chart dataset from open severity counts', function () {
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical, 'state' => EventState::Open]);
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Medium, 'state' => EventState::Open]);
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Medium, 'state' => EventState::Open]);
-
-    // Resolved events should NOT be counted
-    SecurityEvent::factory()->create(['severity' => EventSeverity::Critical, 'state' => EventState::Resolved]);
-
-    $chart = DashboardData::severityChart();
-
-    expect($chart['labels'])->toBe(['Critical', 'High', 'Medium', 'Low', 'Informational'])
-        ->and($chart['datasets'])->toHaveCount(1)
-        ->and($chart['datasets'][0]['data'])->toBe([1, 0, 2, 0, 0])
-        ->and($chart['datasets'][0]['backgroundColor'])->toBe([
-            Color::Red[500],
-            Color::Orange[500],
-            Color::Blue[500],
-            Color::Gray[400],
-            Color::Gray[200],
-        ]);
-});
-
-it('builds doughnut chart dataset from open type counts', function () {
-    SecurityEvent::factory()->create(['type' => EventType::Secret, 'state' => EventState::Open]);
-    SecurityEvent::factory()->create(['type' => EventType::Dependency, 'state' => EventState::Open]);
-    SecurityEvent::factory()->create(['type' => EventType::Dependency, 'state' => EventState::Open]);
-
-    // Resolved events should NOT be counted
-    SecurityEvent::factory()->create(['type' => EventType::Secret, 'state' => EventState::Resolved]);
-
-    $chart = DashboardData::typeChart();
-
-    expect($chart['labels'])->toBe([
-        'Vulnerability', 'Secret', 'Dependency', 'License', 'Misconfiguration', 'Code Quality', 'Iac', 'Posture',
-    ])
-        ->and($chart['datasets'])->toHaveCount(1)
-        ->and($chart['datasets'][0]['data'])->toBe([0, 1, 2, 0, 0, 0, 0, 0]);
-});
-
 it('returns the latest five sync runs in descending order', function () {
-    DashboardData::flushCache();
     SyncRun::query()->delete();
 
     Carbon::setTestNow('2026-05-22 12:00:00');
@@ -106,17 +34,20 @@ it('returns the latest five sync runs in descending order', function () {
     Carbon::setTestNow();
 });
 
-it('flushes dashboard cache when sync run finished event is dispatched', function () {
+it('flushes the breakdown caches when a sync run finished event is dispatched', function () {
+    AlertBreakdownData::flushCache();
+    LocalFindingBreakdownData::flushCache();
+
     SecurityEvent::factory()->create(['state' => EventState::Open]);
 
-    $before = DashboardData::stats();
+    $before = AlertBreakdownData::stateBreakdown();
 
     SecurityEvent::factory()->create(['state' => EventState::Open]);
 
-    $cached = DashboardData::stats();
+    $cached = AlertBreakdownData::stateBreakdown();
 
-    expect($before['totalOpen'])->toBe(1)
-        ->and($cached['totalOpen'])->toBe(1);
+    expect(collect($before)->firstWhere('key', 'open')['count'])->toBe(1)
+        ->and(collect($cached)->firstWhere('key', 'open')['count'])->toBe(1);
 
     $run = SyncRun::query()->create([
         'source_id' => 'azdo',
@@ -129,9 +60,9 @@ it('flushes dashboard cache when sync run finished event is dispatched', functio
 
     event(new SyncRunFinished($run));
 
-    $after = DashboardData::stats();
+    $after = AlertBreakdownData::stateBreakdown();
 
-    expect($after['totalOpen'])->toBe(2);
+    expect(collect($after)->firstWhere('key', 'open')['count'])->toBe(2);
 });
 
 it('returns non-negative duration when finished_at is after started_at', function () {
@@ -216,50 +147,4 @@ it('formats a push run using its succeeded/local-only/failed counts', function (
     ]);
 
     expect(DashboardData::formatCounts($run))->toBe('5 alerts retrieved, 2 warning(s), 1 error(s)');
-});
-
-it('groups open alerts by source and work item linkage', function () {
-    $eventA = SecurityEvent::factory()->create([
-        'source_id' => 'azdo',
-        'state' => EventState::Open,
-    ]);
-
-    SecurityEvent::factory()->create([
-        'source_id' => 'azdo',
-        'state' => EventState::Open,
-    ]);
-
-    SecurityEvent::factory()->create([
-        'source_id' => 'detectify',
-        'state' => EventState::Open,
-    ]);
-
-    // Resolved events should NOT be counted
-    SecurityEvent::factory()->create([
-        'source_id' => 'azdo',
-        'state' => EventState::Resolved,
-    ]);
-
-    WorkItemLink::query()->create([
-        'event_id' => $eventA->id,
-        'tracker_id' => 'jira',
-        'work_item_id' => 'WI-99',
-        'work_item_title' => 'Fix it',
-        'work_item_state' => 'Open',
-        'work_item_url' => null,
-        'created_by_user_id' => null,
-        'synced_at' => now(),
-    ]);
-
-    $groups = DashboardData::openAlertsBySourceAndWorkItemState();
-
-    $azdo = collect($groups)->firstWhere('source_id', 'azdo');
-    $detectify = collect($groups)->firstWhere('source_id', 'detectify');
-
-    expect($azdo)->not->toBeNull()
-        ->and($azdo['linked'])->toBe(1)
-        ->and($azdo['unlinked'])->toBe(1)
-        ->and($detectify)->not->toBeNull()
-        ->and($detectify['linked'])->toBe(0)
-        ->and($detectify['unlinked'])->toBe(1);
 });

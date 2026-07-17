@@ -16,6 +16,7 @@ use App\Filament\Support\LocalFindingOwnerColumns;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
+use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
@@ -247,6 +248,11 @@ class LocalFindingResource extends Resource
                     ->searchable()
                     ->options(fn (): array => self::containerScopeOptions())
                     ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyContainerScopes($query, self::stringArray($data['values'] ?? []))),
+                SelectFilter::make('work_item_state')
+                    ->label('Work item status')
+                    ->multiple()
+                    ->options(fn (): array => self::workItemStateOptions())
+                    ->query(fn (Builder $query, array $data) => LocalFindingTableQuery::applyWorkItemStates($query, self::stringArray($data['values'] ?? []))),
                 TernaryFilter::make('has_work_item')
                     ->label('Has work item')
                     ->queries(
@@ -590,6 +596,44 @@ class LocalFindingResource extends Resource
             ->get(['id', 'name'])
             ->mapWithKeys(fn (SecurityContainer $container): array => [$container->id => $container->name])
             ->all();
+    }
+
+    /** @return array<string, string> */
+    private static function workItemStateOptions(): array
+    {
+        $options = LocalFindingWorkItemLink::query()
+            ->whereNotNull('work_item_state')
+            ->distinct()
+            ->orderBy('work_item_state')
+            ->pluck('work_item_state', 'work_item_state')
+            ->all();
+
+        $options['__none__'] = 'Unknown';
+
+        return $options;
+    }
+
+    /**
+     * Build a URL to the local findings list with pre-applied filter state.
+     *
+     * The Filament table filter query parameter format (Livewire URL binding) is:
+     *   tableFilters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
+     *
+     * @param  array<string, list<string>>  $multiSelectFilters  filter name => list of values
+     */
+    public static function filteredIndexUrl(array $multiSelectFilters = []): string
+    {
+        $params = [];
+
+        foreach ($multiSelectFilters as $filterName => $values) {
+            foreach ($values as $idx => $value) {
+                $params['tableFilters'][$filterName]['values'][$idx] = $value;
+            }
+        }
+
+        $base = static::getUrl('index');
+
+        return $params !== [] ? $base . '?' . http_build_query($params) : $base;
     }
 
     /** @return array<int, Select|Textarea> */

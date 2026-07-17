@@ -146,6 +146,39 @@ final class SecurityEventTableQuery
     }
 
     /**
+     * Filter to events holding a work-item link whose state is one of the given
+     * values. The sentinel `__none__` additionally matches links with a null
+     * state ("Unknown"). Records without any link are matched by the
+     * `has_work_item` ternary, not this filter.
+     *
+     * @param  Builder<SecurityEvent>  $query
+     * @param  list<string>  $states
+     * @return Builder<SecurityEvent>
+     */
+    public static function applyWorkItemStates(Builder $query, array $states): Builder
+    {
+        if ($states === []) {
+            return $query;
+        }
+
+        $includeNone = in_array('__none__', $states, true);
+        $concrete = array_values(array_filter($states, fn (string $state): bool => $state !== '__none__'));
+
+        return $query->whereHas('workItemLinks', function (Builder $relation) use ($concrete, $includeNone): void {
+            /** @var Builder<WorkItemLink> $relation */
+            $relation->where(function (Builder $inner) use ($concrete, $includeNone): void {
+                if ($concrete !== []) {
+                    $inner->orWhereIn('work_item_state', $concrete);
+                }
+
+                if ($includeNone) {
+                    $inner->orWhereNull('work_item_state');
+                }
+            });
+        });
+    }
+
+    /**
      * Filter to events linked to a specific tracker work item (by tracker_id + work_item_id).
      *
      * @param  Builder<SecurityEvent>  $query
