@@ -5,6 +5,7 @@ use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
 use App\Filament\Resources\LocalFindingResource\Support\LocalFindingTableQuery;
+use App\Filament\Support\UserViewStateStore;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
@@ -348,6 +349,38 @@ it('applies the finding search through the list page search box', function () {
         ->set('tableSearch', 'openssl')
         ->assertCanSeeTableRecords([$match])
         ->assertCanNotSeeTableRecords([$other]);
+});
+
+it('persists local findings list filters, search, and sort per user and view id', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->set('tableFilters.kind.values', [LocalFinding::KIND_SECRET])
+        ->set('tableSearch', 'openssl')
+        ->set('tableSort', 'file_path');
+
+    $state = app(UserViewStateStore::class)->load($user->id, 'local-findings:list');
+
+    expect($state['filters']['kind']['values'])->toBe([LocalFinding::KIND_SECRET])
+        ->and($state['search'])->toBe('openssl')
+        ->and($state['sort'])->toBe('file_path');
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->assertSet('tableSearch', 'openssl')
+        ->assertSet('tableSort', 'file_path')
+        ->assertSet('tableFilters.kind.values', [LocalFinding::KIND_SECRET]);
+
+    $other = User::factory()->create();
+    $other->syncRoles(['Reader']);
+
+    Livewire::actingAs($other)
+        ->test(ListLocalFindings::class)
+        ->assertSet('tableSearch', '');
+
+    expect(app(UserViewStateStore::class)->load($user->id, 'security-events:list'))->toBe([]);
 });
 
 it('hides the change status and change severity row actions from a reader on the findings list', function () {
