@@ -191,6 +191,15 @@ class SecurityEventResource extends Resource
                     ]),
                 ]),
 
+            Section::make('Remediation')
+                ->schema([
+                    TextEntry::make('remediation')
+                        ->label('')
+                        ->html()
+                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
+                        ->columnSpanFull(),
+                ]),
+
             Section::make('Secret Details')
                 ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Secret))
                 ->schema([
@@ -352,15 +361,6 @@ class SecurityEventResource extends Resource
                         ) ?: '{}')
                         ->fontFamily('mono')
                         ->copyable()
-                        ->columnSpanFull(),
-                ]),
-
-            Section::make('Remediation')
-                ->schema([
-                    TextEntry::make('remediation')
-                        ->label('')
-                        ->html()
-                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
                         ->columnSpanFull(),
                 ]),
 
