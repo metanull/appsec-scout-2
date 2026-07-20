@@ -340,17 +340,6 @@ class SecurityEventResource extends Resource
                     ]),
                 ]),
 
-            Section::make('Remediation')
-                ->schema([
-                    TextEntry::make('remediation')
-                        ->label('')
-                        ->html()
-                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
-                        ->columnSpanFull(),
-                ]),
-
-            self::linksSection(),
-
             Section::make('Raw Evidence')
                 ->collapsible()
                 ->collapsed()
@@ -365,6 +354,17 @@ class SecurityEventResource extends Resource
                         ->copyable()
                         ->columnSpanFull(),
                 ]),
+
+            Section::make('Remediation')
+                ->schema([
+                    TextEntry::make('remediation')
+                        ->label('')
+                        ->html()
+                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
+                        ->columnSpanFull(),
+                ]),
+
+            self::linksSection(),
         ]);
     }
 
