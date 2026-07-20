@@ -6,12 +6,14 @@ use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Http\Middleware\EnsureUserIsEnabled;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
+use Filament\Facades\Filament;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\MenuItem;
 use Filament\Navigation\NavigationGroup;
+use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -34,6 +36,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->login()
             ->colors(['primary' => Color::Amber])
             ->maxContentWidth(Width::Full)
+            ->sidebarCollapsibleOnDesktop()
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([Dashboard::class])
@@ -42,6 +45,18 @@ class AppSecScoutPanelProvider extends PanelProvider
                 NavigationGroup::make('Reader'),
                 NavigationGroup::make('Admin'),
                 NavigationGroup::make('Sync'),
+            ])
+            ->navigationItems([
+                NavigationItem::make('Profile')
+                    ->icon('heroicon-o-user-circle')
+                    ->url(fn (): ?string => Filament::getProfileUrl())
+                    ->isActiveWhen(fn (): bool => request()->routeIs('filament.appsec-scout.auth.profile'))
+                    ->sort(-1),
+                NavigationItem::make('Profile integrations')
+                    ->icon('heroicon-o-key')
+                    ->url(fn (): string => ProfileIntegrationsPage::getUrl())
+                    ->isActiveWhen(fn (): bool => request()->routeIs(ProfileIntegrationsPage::getRouteName()))
+                    ->sort(0),
             ])
             ->profile(isSimple: false)
             ->userMenuItems([
