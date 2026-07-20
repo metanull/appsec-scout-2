@@ -224,6 +224,12 @@ Remove-Item Env:\APP_BUILD_TARGET
 
 All three gates (Pint clean, PHPStan clean, Pest green) must pass before reporting code work complete.
 
+## Git & Verification Conventions
+
+- Never add a `Co-Authored-By` trailer or a `Claude-Session` line to commit messages or PR descriptions.
+- Unless explicitly requested, do not install Composer dev dependencies and do not run Pint, PHPStan, or Pest directly (locally or in a cloud/container session without Docker). Push the branch, open/update the PR, and rely on CI (`.github/workflows/laravel-ci.yml`) as the gate instead.
+- Monitor that CI by subscribing to the PR's GitHub activity (webhook-driven), not by sleeping and polling.
+
 ## Coding Rules
 
 ### Framework first
