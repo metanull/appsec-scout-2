@@ -140,6 +140,13 @@ class SecurityEventResource extends Resource
                         TextEntry::make('rule_id')
                             ->label('Rule ID')
                             ->placeholder('-'),
+                        TextEntry::make('_readiness')
+                            ->label('Readiness')
+                            ->state(fn (SecurityEvent $record): array => self::readinessBadges($record))
+                            ->badge()
+                            ->color(fn (string $state): string => str_ends_with($state, '✗') ? 'warning' : 'success')
+                            ->placeholder('-')
+                            ->columnSpanFull(),
                         TextEntry::make('_tags')
                             ->label('Tags')
                             ->state(function (SecurityEvent $record): array {
@@ -152,17 +159,6 @@ class SecurityEventResource extends Resource
                             ->placeholder('-')
                             ->columnSpanFull(),
                     ]),
-                ]),
-
-            Section::make('Context quality')
-                ->schema([
-                    TextEntry::make('_context_quality')
-                        ->label('Quality indicators')
-                        ->badge()
-                        ->color(fn (SecurityEvent $record): string => self::qualityColor($record))
-                        ->state(fn (SecurityEvent $record): string => self::qualitySummary($record))
-                        ->wrap()
-                        ->placeholder('-'),
                 ]),
 
             Section::make('Pending Sync')
@@ -194,12 +190,6 @@ class SecurityEventResource extends Resource
                             ->placeholder('-'),
                     ]),
                 ]),
-
-            self::linkCatalogSection('source'),
-            self::linkCatalogSection('code'),
-            self::linkCatalogSection('remediation'),
-            self::linkCatalogSection('standard'),
-            self::linkCatalogSection('tracker'),
 
             Section::make('Secret Details')
                 ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Secret))
@@ -350,15 +340,6 @@ class SecurityEventResource extends Resource
                     ]),
                 ]),
 
-            Section::make('Remediation')
-                ->schema([
-                    TextEntry::make('remediation')
-                        ->label('')
-                        ->html()
-                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
-                        ->columnSpanFull(),
-                ]),
-
             Section::make('Raw Evidence')
                 ->collapsible()
                 ->collapsed()
@@ -373,6 +354,17 @@ class SecurityEventResource extends Resource
                         ->copyable()
                         ->columnSpanFull(),
                 ]),
+
+            Section::make('Remediation')
+                ->schema([
+                    TextEntry::make('remediation')
+                        ->label('')
+                        ->html()
+                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
+                        ->columnSpanFull(),
+                ]),
+
+            self::linksSection(),
         ]);
     }
 
@@ -926,39 +918,51 @@ class SecurityEventResource extends Resource
             ->all();
     }
 
-    private static function linkCatalogSection(string $kind): Section
+    /**
+     * A single, compact catalog of every reference link for the alert.
+     *
+     * Replaces five per-kind sections (each of which rendered every link as a
+     * full Label / Kind / URL card) with one collapsible section that lists
+     * every link as a single compact row: a kind badge, the label, and the
+     * long upstream URL collapsed down to a single "Open" affordance.
+     */
+    private static function linksSection(): Section
     {
-        return Section::make(EventLinkCatalog::kindLabel($kind))
+        return Section::make('Links & References')
             ->collapsible()
-            ->visible(fn (SecurityEvent $record): bool => self::linkCatalogRows($record, $kind) !== [])
+            ->visible(fn (SecurityEvent $record): bool => self::allLinkCatalogRows($record) !== [])
             ->schema([
-                RepeatableEntry::make('_link_catalog_' . $kind)
-                    ->label('')
-                    ->state(fn (SecurityEvent $record): array => self::linkCatalogRows($record, $kind))
+                RepeatableEntry::make('_links')
+                    ->hiddenLabel()
+                    ->state(fn (SecurityEvent $record): array => self::allLinkCatalogRows($record))
                     ->schema([
-                        TextEntry::make('label')
-                            ->label('Label')
-                            ->wrap(),
                         TextEntry::make('kind_label')
-                            ->label('Kind')
+                            ->hiddenLabel()
                             ->badge()
                             ->color('gray'),
+                        TextEntry::make('label')
+                            ->hiddenLabel()
+                            ->wrap()
+                            ->columnSpan(2),
                         TextEntry::make('url')
-                            ->label('URL')
+                            ->hiddenLabel()
+                            ->formatStateUsing(fn (?string $state): string => filled($state) ? 'Open' : '-')
                             ->url(fn (?string $state): ?string => filled($state) ? $state : null)
                             ->openUrlInNewTab()
-                            ->placeholder('-'),
+                            ->badge()
+                            ->color('primary')
+                            ->icon('heroicon-m-arrow-top-right-on-square'),
                     ])
-                    ->columns(3),
+                    ->columns(4),
             ]);
     }
 
     /**
      * @return list<array{label: string, kind: string, kind_label: string, url: string, external: bool}>
      */
-    private static function linkCatalogRows(SecurityEvent $record, string $kind): array
+    private static function allLinkCatalogRows(SecurityEvent $record): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (array $link): array => [
                 'label' => $link['label'],
                 'kind' => $link['kind'],
@@ -966,11 +970,23 @@ class SecurityEventResource extends Resource
                 'url' => $link['url'],
                 'external' => $link['external'],
             ],
-            array_filter(
-                app(EventLinkCatalog::class)->build($record),
-                static fn (array $link): bool => $link['kind'] === $kind,
-            ),
-        ));
+            app(EventLinkCatalog::class)->build($record),
+        );
+    }
+
+    /**
+     * Compact readiness signals (repository / tracker / source-URL mapping)
+     * rendered as inline badges on the Alert Summary. A trailing ✓/✗ encodes
+     * the state so the badge colour can be derived without a sibling lookup.
+     *
+     * @return list<string>
+     */
+    private static function readinessBadges(SecurityEvent $record): array
+    {
+        return array_map(
+            static fn (array $indicator): string => $indicator['label'] . ' ' . ($indicator['color'] === 'success' ? '✓' : '✗'),
+            self::qualityIndicators($record),
+        );
     }
 
     /**
