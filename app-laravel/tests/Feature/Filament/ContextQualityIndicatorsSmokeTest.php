@@ -16,14 +16,17 @@ beforeEach(function () {
     (new RolePermissionSeeder)->run();
 });
 
-it('shows context quality sections for reader-visible pages', function () {
+it('shows context quality signals for reader-visible pages', function () {
     $reader = qualityUser(['Reader']);
     [$system, $container, $event] = seededQualityGraph();
 
+    // On the alert page the signals are folded into the Alert Summary as
+    // compact "Readiness" badges rather than a standalone section.
     $this->actingAs($reader)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('Context quality');
+        ->assertSee('Readiness')
+        ->assertSee('Repository mapping');
 
     $this->actingAs($reader)
         ->get(SoftwareSystemResource::getUrl('view', ['record' => $system]))

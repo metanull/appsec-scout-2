@@ -61,6 +61,7 @@ it('renders the typed link catalog for an alert with all link kinds', function (
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
+        ->assertSee('Links & References')
         ->assertSee('Source')
         ->assertSee('Code')
         ->assertSee('Remediation')
