@@ -962,7 +962,7 @@ class SecurityEventResource extends Resource
      */
     private static function allLinkCatalogRows(SecurityEvent $record): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (array $link): array => [
                 'label' => $link['label'],
                 'kind' => $link['kind'],
@@ -971,7 +971,7 @@ class SecurityEventResource extends Resource
                 'external' => $link['external'],
             ],
             app(EventLinkCatalog::class)->build($record),
-        ));
+        );
     }
 
     /**
