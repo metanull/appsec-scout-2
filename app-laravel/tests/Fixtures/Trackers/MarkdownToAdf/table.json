@@ -14,7 +14,6 @@
           "content": [
             {
               "type": "tableHeader",
-              "attrs": {},
               "content": [
                 {
                   "type": "paragraph",
@@ -29,7 +28,6 @@
             },
             {
               "type": "tableHeader",
-              "attrs": {},
               "content": [
                 {
                   "type": "paragraph",
@@ -49,7 +47,6 @@
           "content": [
             {
               "type": "tableCell",
-              "attrs": {},
               "content": [
                 {
                   "type": "paragraph",
@@ -64,7 +61,6 @@
             },
             {
               "type": "tableCell",
-              "attrs": {},
               "content": [
                 {
                   "type": "paragraph",

@@ -34,6 +34,15 @@ it('produces identical adf output for the same markdown twice', function () {
     expect(MarkdownToAdf::convert($markdown))->toEqual(MarkdownToAdf::convert($markdown));
 });
 
+it('encodes table cell attrs as json objects, never arrays', function () {
+    // Regression: an empty PHP array serializes to the JSON array `[]`, which Jira
+    // rejects as "not valid Atlassian Document Format (ADF) content". This only
+    // surfaced on grouped work items, whose description carries a severity table.
+    $json = json_encode(MarkdownToAdf::convert(markdownFixtureText('DescriptionBuilder/grouped-10.md')), JSON_THROW_ON_ERROR);
+
+    expect($json)->not->toContain('"attrs":[]');
+});
+
 it('truncates markdown input at sixteen kilobytes before conversion', function () {
     $markdown = str_repeat("Paragraph text that exceeds the size cap.\n\n", 1200);
     $adf = MarkdownToAdf::convert($markdown);

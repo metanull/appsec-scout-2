@@ -177,7 +177,6 @@ final class MarkdownToAdf
 
                     $cells[] = [
                         'type' => $cell->getType() === TableCell::TYPE_HEADER ? 'tableHeader' : 'tableCell',
-                        'attrs' => [],
                         'content' => [[
                             'type' => 'paragraph',
                             'content' => self::convertInlineChildren($cell),
