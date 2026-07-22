@@ -91,6 +91,7 @@ it('alert list shows tracker badge for events with work item links', function ()
 
     $event = SecurityEvent::factory()->create([
         'state' => EventState::Open,
+        'severity' => EventSeverity::High,
         'title' => 'Alert with work item',
     ]);
 
@@ -120,7 +121,7 @@ it('alert list shows software system name in system column', function () {
     $user->syncRoles(['Reader']);
 
     $system = SoftwareSystem::factory()->create(['name' => 'My Test Application']);
-    SecurityEvent::factory()->forSystem($system)->create();
+    SecurityEvent::factory()->forSystem($system)->create(['state' => EventState::Open, 'severity' => EventSeverity::High]);
 
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('index'))
@@ -137,7 +138,7 @@ it('alert list shows container name in container column', function () {
     $user->syncRoles(['Reader']);
 
     $container = SecurityContainer::factory()->create(['name' => 'api-gateway-repo']);
-    SecurityEvent::factory()->forContainer($container)->create();
+    SecurityEvent::factory()->forContainer($container)->create(['state' => EventState::Open, 'severity' => EventSeverity::High]);
 
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('index'))
@@ -155,7 +156,7 @@ it('alert list shows the asset name reached via the event system', function () {
 
     $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
     $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id, 'name' => 'payments-service']);
-    SecurityEvent::factory()->forSystem($system)->create();
+    SecurityEvent::factory()->forSystem($system)->create(['state' => EventState::Open, 'severity' => EventSeverity::High]);
 
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('index'))

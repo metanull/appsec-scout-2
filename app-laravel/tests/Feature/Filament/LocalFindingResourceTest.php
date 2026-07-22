@@ -56,7 +56,7 @@ it('lists a finding with the asset, system, and container columns', function () 
         'kind' => LocalFinding::KIND_VULNERABILITY,
         'rule_id' => 'CVE-2024-56201',
         'title' => 'Jinja sandbox breakout',
-        'severity' => 'MEDIUM',
+        'severity' => 'HIGH',
         'file_path' => 'requirements.txt',
         'start_line' => 8,
         'package_name' => 'Jinja2',
@@ -167,6 +167,7 @@ it('orders findings by effective severity rank by default, respecting overrides'
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->assertCanSeeTableRecords([$criticalOverride, $plainHigh, $medium, $lowOverride, $low], inOrder: true);
 });
 
@@ -186,6 +187,7 @@ it('sorts findings by last seen and by location on explicit user sort', function
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->sortTable('last_seen_at', 'asc')
         ->assertCanSeeTableRecords([$older, $newer], inOrder: true)
         ->sortTable('file_path', 'asc')
@@ -208,6 +210,7 @@ it('lets an explicit user sort override the default severity ordering', function
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->sortTable('title', 'asc')
         ->assertCanSeeTableRecords([$low, $critical], inOrder: true);
 });
@@ -351,6 +354,7 @@ it('applies the finding search through the list page search box', function () {
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->set('tableSearch', 'openssl')
         ->assertCanSeeTableRecords([$match])
         ->assertCanNotSeeTableRecords([$other]);

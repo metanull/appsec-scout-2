@@ -4,40 +4,23 @@ namespace App\Filament\Resources\SecurityEventResource\Pages;
 
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SecurityEventResource\Support\SecurityEventTableQuery;
-use App\Filament\Support\UserViewStateStore;
+use App\Filament\Support\PersistsListViewState;
+use App\Models\Enums\EventSeverity;
+use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
 
 class ListSecurityEvents extends ListRecords
 {
-    protected static string $resource = SecurityEventResource::class;
+    use PersistsListViewState;
 
-    private const VIEW_ID = 'security-events:list';
+    protected static string $resource = SecurityEventResource::class;
 
     public function mount(): void
     {
         parent::mount();
-        $this->restoreUserViewState();
-    }
-
-    public function updatedTableFilters(): void
-    {
-        parent::updatedTableFilters();
-        $this->persistUserViewState();
-    }
-
-    public function updatedTableSearch(): void
-    {
-        parent::updatedTableSearch();
-        $this->persistUserViewState();
-    }
-
-    public function updatedTableSort(): void
-    {
-        parent::updatedTableSort();
-        $this->persistUserViewState();
+        $this->restoreOrApplyDefaultViewState();
     }
 
     /**
@@ -64,69 +47,17 @@ class ListSecurityEvents extends ListRecords
         return SecurityEventTableQuery::applySearch($query, $this->tableSearch);
     }
 
-    private function restoreUserViewState(): void
+    protected function viewStateId(): string
     {
-        if ($this->requestCarriesTableState()) {
-            return;
-        }
-
-        $userId = Auth::id();
-
-        if (! is_int($userId)) {
-            return;
-        }
-
-        $state = app(UserViewStateStore::class)->load($userId, self::VIEW_ID);
-
-        if ($state === []) {
-            return;
-        }
-
-        if (isset($state['filters']) && is_array($state['filters'])) {
-            $this->tableFilters = $state['filters'];
-        }
-
-        if (array_key_exists('search', $state)) {
-            $this->tableSearch = is_string($state['search']) ? $state['search'] : '';
-        }
-
-        if (array_key_exists('sort', $state) && (is_string($state['sort']) || $state['sort'] === null)) {
-            $this->tableSort = $state['sort'];
-        }
+        return 'security-events:list';
     }
 
-    /**
-     * A deep link (e.g. a dashboard breakdown row) carries the user's most
-     * recent intent in the query string; when present it must win over any
-     * persisted view state rather than be silently overwritten on mount.
-     */
-    private function requestCarriesTableState(): bool
+    /** @return array<string, mixed> */
+    protected function defaultTableFilters(): array
     {
-        $request = request();
-
-        foreach (['tableFilters', 'tableSearch', 'tableSort'] as $key) {
-            $value = $request->query($key);
-
-            if (is_array($value) ? $value !== [] : ($value !== null && $value !== '')) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function persistUserViewState(): void
-    {
-        $userId = Auth::id();
-
-        if (! is_int($userId)) {
-            return;
-        }
-
-        app(UserViewStateStore::class)->save($userId, self::VIEW_ID, [
-            'filters' => $this->tableFilters,
-            'search' => $this->tableSearch,
-            'sort' => $this->tableSort,
-        ]);
+        return [
+            'state' => ['values' => [EventState::Open->value]],
+            'severity' => ['values' => [EventSeverity::Critical->value, EventSeverity::High->value]],
+        ];
     }
 }

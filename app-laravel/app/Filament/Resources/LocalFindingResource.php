@@ -502,6 +502,7 @@ class LocalFindingResource extends Resource
                     })
                     ->deselectRecordsAfterCompletion(),
             ])
+            ->deferFilters(false)
             ->recordUrl(fn (LocalFinding $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultPaginationPageOption(25)
             ->paginated([25, 50, 100]);
