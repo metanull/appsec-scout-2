@@ -173,7 +173,7 @@ trait PersistsListViewState
             'filters' => $this->normalizedTableFilters(),
             'search' => $this->tableSearch,
             'sort' => $this->tableSort,
-            'columns' => is_array($this->tableColumns) ? $this->tableColumns : [],
+            'columns' => $this->tableColumns,
         ];
     }
 
