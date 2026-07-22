@@ -86,7 +86,7 @@ class SyncRunResource extends Resource
                 ->schema([
                     CodeEntry::make('_counts')
                         ->label('')
-                        ->state(fn (SyncRun $record): array => $record->counts_json ?? [])
+                        ->state(fn (SyncRun $record): array => (array) $record->counts_json)
                         ->grammar(Grammar::Json)
                         ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
                         ->copyable()
