@@ -8,6 +8,7 @@ use App\Filament\Resources\FailedJobResource\Pages\ViewFailedJob;
 use App\Models\FailedJob;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -22,6 +23,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Phiki\Grammar\Grammar;
 
 class FailedJobResource extends Resource
 {
@@ -86,10 +88,10 @@ class FailedJobResource extends Resource
             Section::make('Payload')
                 ->collapsible()
                 ->schema([
-                    TextEntry::make('_payload')
+                    CodeEntry::make('_payload')
                         ->label('')
                         ->state(fn (FailedJob $record): string => self::payloadFull($record->payload))
-                        ->fontFamily('mono')
+                        ->grammar(Grammar::Json)
                         ->copyable()
                         ->columnSpanFull(),
                 ]),

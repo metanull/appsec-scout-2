@@ -36,6 +36,7 @@ use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
@@ -52,6 +53,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Phiki\Grammar\Grammar;
 
 class SecurityEventResource extends Resource
 {
@@ -351,15 +353,12 @@ class SecurityEventResource extends Resource
 
             Section::make('Raw Evidence')
                 ->collapsible()
-                ->collapsed()
                 ->schema([
-                    TextEntry::make('_raw_evidence')
+                    CodeEntry::make('_raw_evidence')
                         ->label('')
-                        ->state(fn (SecurityEvent $record): string => json_encode(
-                            self::buildRawEvidence($record),
-                            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-                        ) ?: '{}')
-                        ->fontFamily('mono')
+                        ->state(fn (SecurityEvent $record): array => self::buildRawEvidence($record))
+                        ->grammar(Grammar::Json)
+                        ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                         ->copyable()
                         ->columnSpanFull(),
                 ]),

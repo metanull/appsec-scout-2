@@ -8,6 +8,7 @@ use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
 use App\Filament\Support\DateRangeFilters;
 use App\Models\SecurityEvent;
 use App\Models\User;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
@@ -16,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Phiki\Grammar\Grammar;
 
 class AuditLogResource extends Resource
 {
@@ -98,13 +100,11 @@ class AuditLogResource extends Resource
             Section::make('Payload')
                 ->collapsible()
                 ->schema([
-                    TextEntry::make('_payload_redacted')
+                    CodeEntry::make('_payload_redacted')
                         ->label('')
-                        ->state(fn (AuditLog $record): string => json_encode(
-                            self::redactPayload($record),
-                            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-                        ) ?: '{}')
-                        ->fontFamily('mono')
+                        ->state(fn (AuditLog $record): array => self::redactPayload($record))
+                        ->grammar(Grammar::Json)
+                        ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                         ->copyable()
                         ->columnSpanFull(),
                 ]),

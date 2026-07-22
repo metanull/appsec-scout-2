@@ -54,6 +54,6 @@ it('redacts sensitive keys in the audit log payload section', function () {
     $this->actingAs($user)
         ->get(AuditLogResource::getUrl('view', ['record' => $log]))
         ->assertOk()
-        ->assertSee('[redacted]', false)
-        ->assertSee('visible value');
+        ->assertSeeText('[redacted]')
+        ->assertSeeText('visible value');
 });
