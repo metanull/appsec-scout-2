@@ -89,6 +89,7 @@ it('renders the tracker and first seen columns on the findings list', function (
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'github-pat',
         'title' => 'Linked finding',
+        'severity' => 'HIGH',
         'file_path' => 'config.php',
         'first_seen_at' => now()->subDays(3),
     ]);
@@ -105,6 +106,7 @@ it('renders the tracker and first seen columns on the findings list', function (
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Unlinked finding',
+        'severity' => 'HIGH',
         'file_path' => 'services.php',
     ]);
 
