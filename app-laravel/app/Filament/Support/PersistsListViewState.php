@@ -6,12 +6,13 @@ use Filament\Actions\Action;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Persists a list page's table filters, search, sort, and toggled columns per
- * user, so the view survives navigation. On the very first visit (no saved
- * state) the page falls back to {@see self::defaultTableFilters()}; once the
- * user changes — or clears — the view, that exact state (including an
- * intentionally empty one) is remembered and restored, rather than being
- * re-defaulted. A "Reset view" header action returns everything to the default.
+ * Persists a list page's table filters, search, and sort per user, so the view
+ * survives navigation. On the very first visit (no saved state) the page falls
+ * back to {@see self::defaultTableFilters()}; once the user changes — or clears
+ * — the view, that exact state (including an intentionally empty one) is
+ * remembered and restored, rather than being re-defaulted. Column visibility is
+ * persisted by Filament's own Column Manager (server session). A "Reset view"
+ * header action returns filters, search, sort, and columns to their defaults.
  *
  * A deep link that carries table state in the query string always wins over the
  * saved state and is treated as transient (visiting it never overwrites what the
@@ -78,10 +79,6 @@ trait PersistsListViewState
 
             if (array_key_exists('sort', $state) && (is_string($state['sort']) || $state['sort'] === null)) {
                 $this->tableSort = $state['sort'];
-            }
-
-            if (isset($state['columns']) && is_array($state['columns']) && $state['columns'] !== []) {
-                $this->applyTableColumnManager($state['columns']);
             }
         }
 
@@ -173,7 +170,6 @@ trait PersistsListViewState
             'filters' => $this->normalizedTableFilters(),
             'search' => $this->tableSearch,
             'sort' => $this->tableSort,
-            'columns' => $this->tableColumns,
         ];
     }
 
