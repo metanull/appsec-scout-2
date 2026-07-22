@@ -4,10 +4,11 @@ namespace App\Filament\Resources\SecurityEventResource\RelationManagers;
 
 use App\Audit\AuditLog;
 use Filament\Actions\Action;
-use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Phiki\Grammar\Grammar;
 
 class AuditHistoryRelationManager extends RelationManager
 {
@@ -50,13 +51,12 @@ class AuditHistoryRelationManager extends RelationManager
                     ->icon('heroicon-o-eye')
                     ->modalHeading('Audit record payload')
                     ->infolist([
-                        TextEntry::make('payload_json')
+                        CodeEntry::make('payload_json')
                             ->label('')
-                            ->formatStateUsing(fn (mixed $state): string => is_array($state)
-                                ? (json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}')
-                                : '—')
-                            ->fontFamily('mono')
-                            ->wrap(),
+                            ->state(fn (AuditLog $record): array => is_array($record->payload_json) ? $record->payload_json : [])
+                            ->grammar(Grammar::Json)
+                            ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                            ->columnSpanFull(),
                     ])
                     ->modalSubmitAction(false)
                     ->visible(fn (AuditLog $record): bool => is_array($record->payload_json) && $record->payload_json !== []),

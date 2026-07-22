@@ -7,6 +7,7 @@ use App\Filament\Resources\SyncRunResource\Pages\ViewSyncRun;
 use App\Filament\Support\DateRangeFilters;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\SyncRun;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
@@ -16,6 +17,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Phiki\Grammar\Grammar;
 
 class SyncRunResource extends Resource
 {
@@ -82,13 +84,11 @@ class SyncRunResource extends Resource
             Section::make('Counts')
                 ->collapsible()
                 ->schema([
-                    TextEntry::make('_counts')
+                    CodeEntry::make('_counts')
                         ->label('')
-                        ->state(fn (SyncRun $record): string => json_encode(
-                            $record->counts_json ?? [],
-                            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
-                        ) ?: '{}')
-                        ->fontFamily('mono')
+                        ->state(fn (SyncRun $record): array => (array) $record->counts_json)
+                        ->grammar(Grammar::Json)
+                        ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
                         ->copyable()
                         ->columnSpanFull(),
                 ]),

@@ -135,7 +135,7 @@ it('renders secret occurrences table when metadata has occurrences', function ()
         ->assertSee('Occurrences');
 });
 
-it('renders the raw evidence section collapsed by default', function () {
+it('renders the raw evidence section expanded with the formatted payload', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -145,10 +145,13 @@ it('renders the raw evidence section collapsed by default', function () {
 
     $event = SecurityEvent::factory()->create();
 
+    // The section renders its highlighted JSON payload server-side; assertSeeText
+    // ignores the syntax-highlighting markup Phiki wraps around each token.
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('Raw Evidence');
+        ->assertSee('Raw Evidence')
+        ->assertSeeText('source_event_id');
 });
 
 it('redacts sensitive keys from raw evidence payload', function () {
@@ -173,8 +176,8 @@ it('redacts sensitive keys from raw evidence payload', function () {
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('***REDACTED***', false)
-        ->assertSee('visible value');
+        ->assertSeeText('***REDACTED***')
+        ->assertSeeText('visible value');
 });
 
 it('shows the add attachment action for users with work-items.create permission', function () {

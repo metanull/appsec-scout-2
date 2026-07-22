@@ -127,7 +127,7 @@ it('renders the sync run view page with its counts', function () {
         ->get(SyncRunResource::getUrl('view', ['record' => $run]))
         ->assertOk()
         ->assertSee('azdo')
-        ->assertSee('events_created');
+        ->assertSeeText('events_created');
 });
 
 it('denies the view page to a user without admin.queue', function () {

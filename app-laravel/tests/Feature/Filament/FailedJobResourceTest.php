@@ -131,7 +131,7 @@ it('renders the failed job view page with redacted exception and payload', funct
     $this->actingAs($admin)
         ->get(FailedJobResource::getUrl('view', ['record' => $record]))
         ->assertOk()
-        ->assertSee('[redacted]', false)
+        ->assertSeeText('[redacted]')
         ->assertDontSee('my-secret-exception-value')
         ->assertDontSee('my-secret');
 });
