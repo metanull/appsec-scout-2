@@ -399,6 +399,7 @@ it('hides the change status and change severity row actions from a reader on the
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
 
@@ -415,6 +416,7 @@ it('shows the change status and change severity row actions to a plan-role opera
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
 
@@ -431,6 +433,7 @@ it('changes the status of a finding via the row action and records an audit entr
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
 
@@ -458,12 +461,14 @@ it('changes the status of multiple findings via the bulk action', function () {
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key one',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
     $findingTwo = $container->localFindings()->create([
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key two',
+        'severity' => 'HIGH',
         'file_path' => 'config/database.php',
     ]);
 
@@ -482,7 +487,7 @@ it('hides the work item row actions from a reader on the findings list', functio
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);
     $finding = SecurityContainer::factory()->create()->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
 
     Livewire::actingAs($user)
@@ -495,7 +500,7 @@ it('shows the work item row actions to a plan-role operator on the findings list
     $user = User::factory()->create();
     $user->syncRoles(['Plan']);
     $finding = SecurityContainer::factory()->create()->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
 
     Livewire::actingAs($user)
@@ -520,7 +525,7 @@ it('links an existing work item to a finding via the row action', function () {
     app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
 
     $finding = SecurityContainer::factory()->create()->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
 
     Livewire::actingAs($user)
