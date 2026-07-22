@@ -15,8 +15,8 @@ use Illuminate\Support\Facades\Auth;
  * saved state and is treated as transient (visiting it never overwrites what the
  * user previously saved).
  *
- * Used only by list pages that extend {@see \Filament\Resources\Pages\ListRecords},
- * so the table state properties it reads resolve from that class hierarchy.
+ * Used only by list pages that extend Filament's ListRecords page, so the table
+ * state properties it reads resolve from that class hierarchy.
  */
 trait PersistsListViewState
 {
