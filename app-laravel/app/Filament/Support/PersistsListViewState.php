@@ -2,14 +2,16 @@
 
 namespace App\Filament\Support;
 
+use Filament\Actions\Action;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Persists a list page's table filters, search, and sort per user, so the view
- * survives navigation. On the very first visit (no saved state) the page falls
- * back to {@see self::defaultTableFilters()}; once the user changes — or clears
- * — the filters, that exact state (including an intentionally empty one) is
- * remembered and restored, rather than being re-defaulted.
+ * Persists a list page's table filters, search, sort, and toggled columns per
+ * user, so the view survives navigation. On the very first visit (no saved
+ * state) the page falls back to {@see self::defaultTableFilters()}; once the
+ * user changes — or clears — the view, that exact state (including an
+ * intentionally empty one) is remembered and restored, rather than being
+ * re-defaulted. A "Reset view" header action returns everything to the default.
  *
  * A deep link that carries table state in the query string always wins over the
  * saved state and is treated as transient (visiting it never overwrites what the
@@ -77,6 +79,10 @@ trait PersistsListViewState
             if (array_key_exists('sort', $state) && (is_string($state['sort']) || $state['sort'] === null)) {
                 $this->tableSort = $state['sort'];
             }
+
+            if (isset($state['columns']) && is_array($state['columns']) && $state['columns'] !== []) {
+                $this->applyTableColumnManager($state['columns']);
+            }
         }
 
         $this->persistedViewSignature = $this->currentViewStateSignature();
@@ -102,13 +108,37 @@ trait PersistsListViewState
             return;
         }
 
-        app(UserViewStateStore::class)->save($userId, $this->viewStateId(), [
-            'filters' => $this->normalizedTableFilters(),
-            'search' => $this->tableSearch,
-            'sort' => $this->tableSort,
-        ]);
+        app(UserViewStateStore::class)->save($userId, $this->viewStateId(), $this->currentViewState());
 
         $this->persistedViewSignature = $signature;
+    }
+
+    /**
+     * Reset the whole view back to the baseline: default filters, no search, no
+     * explicit sort, and default column visibility. The change is persisted by
+     * the dehydrate hook like any other, so the reset itself is remembered.
+     */
+    protected function resetView(): void
+    {
+        $this->tableFilters = $this->defaultTableFilters();
+        $this->tableSort = null;
+        $this->resetTableSearch();
+        $this->resetTableColumnManager();
+    }
+
+    /** @return array<int, Action> */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('resetView')
+                ->label('Reset view')
+                ->icon('heroicon-o-arrow-path')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Reset view')
+                ->modalDescription('Restore the default filters, sorting, search, and columns for this list.')
+                ->action(fn () => $this->resetView()),
+        ];
     }
 
     /**
@@ -133,11 +163,18 @@ trait PersistsListViewState
 
     private function currentViewStateSignature(): string
     {
-        return json_encode([
+        return json_encode($this->currentViewState()) ?: '';
+    }
+
+    /** @return array<string, mixed> */
+    private function currentViewState(): array
+    {
+        return [
             'filters' => $this->normalizedTableFilters(),
             'search' => $this->tableSearch,
             'sort' => $this->tableSort,
-        ]) ?: '';
+            'columns' => is_array($this->tableColumns) ? $this->tableColumns : [],
+        ];
     }
 
     /** @return array<string, mixed> */

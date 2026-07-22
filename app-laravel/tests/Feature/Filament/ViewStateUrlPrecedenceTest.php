@@ -184,3 +184,78 @@ it('persists an emptied alerts filter so the cleared state survives navigation',
     expect($state['filters']['severity']['values'])->toBe([])
         ->and($state['filters']['state']['values'])->toBe([]);
 });
+
+it('remembers removing a single filter from the active-filters bar', function () {
+    $user = precedenceReader();
+
+    // The default seeds severity = [critical, high]; removing the indicator
+    // (no Apply step) must be persisted, not reappear on the next visit.
+    Livewire::actingAs($user)
+        ->test(ListSecurityEvents::class)
+        ->call('removeTableFilter', 'severity')
+        ->assertOk();
+
+    $state = app(UserViewStateStore::class)->load($user->id, 'security-events:list');
+
+    expect($state['filters']['severity']['values'] ?? [])->toBe([]);
+});
+
+it('persists and restores the alerts list sort column', function () {
+    $user = precedenceReader();
+
+    Livewire::actingAs($user)
+        ->test(ListSecurityEvents::class)
+        ->sortTable('first_seen_at', 'asc');
+
+    $state = app(UserViewStateStore::class)->load($user->id, 'security-events:list');
+    expect($state['sort'])->toBe('first_seen_at:asc');
+
+    Livewire::actingAs($user)
+        ->test(ListSecurityEvents::class)
+        ->assertSet('tableSort', 'first_seen_at:asc');
+});
+
+it('resets the whole alerts view back to defaults and remembers the reset', function () {
+    $user = precedenceReader();
+
+    Livewire::actingAs($user)
+        ->test(ListSecurityEvents::class)
+        ->set('tableFilters.state.values', ['resolved'])
+        ->set('tableFilters.severity.values', ['low'])
+        ->sortTable('first_seen_at', 'asc')
+        ->callAction('resetView')
+        ->assertSet('tableFilters.state.values', ['open'])
+        ->assertSet('tableFilters.severity.values', ['critical', 'high'])
+        ->assertSet('tableSort', null);
+
+    $state = app(UserViewStateStore::class)->load($user->id, 'security-events:list');
+    expect($state['filters']['state']['values'])->toBe(['open'])
+        ->and($state['filters']['severity']['values'])->toBe(['critical', 'high'])
+        ->and($state['sort'])->toBeNull();
+});
+
+it('remembers hiding a toggleable column across navigation', function () {
+    $user = precedenceReader();
+
+    $first = Livewire::actingAs($user)->test(ListSecurityEvents::class);
+
+    $columns = collect($first->get('tableColumns'))
+        ->map(function (array $item): array {
+            if (($item['name'] ?? null) === 'type') {
+                $item['isToggled'] = false;
+            }
+
+            return $item;
+        })
+        ->values()
+        ->all();
+
+    $first->call('applyTableColumnManager', $columns);
+
+    $saved = app(UserViewStateStore::class)->load($user->id, 'security-events:list');
+    expect(collect($saved['columns'] ?? [])->firstWhere('name', 'type')['isToggled'] ?? true)->toBeFalse();
+
+    // A fresh mount restores the hidden column from the per-user store.
+    $second = Livewire::actingAs($user)->test(ListSecurityEvents::class);
+    expect(collect($second->get('tableColumns'))->firstWhere('name', 'type')['isToggled'] ?? true)->toBeFalse();
+});
