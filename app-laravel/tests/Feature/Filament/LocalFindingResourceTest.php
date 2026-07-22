@@ -56,7 +56,7 @@ it('lists a finding with the asset, system, and container columns', function () 
         'kind' => LocalFinding::KIND_VULNERABILITY,
         'rule_id' => 'CVE-2024-56201',
         'title' => 'Jinja sandbox breakout',
-        'severity' => 'MEDIUM',
+        'severity' => 'HIGH',
         'file_path' => 'requirements.txt',
         'start_line' => 8,
         'package_name' => 'Jinja2',
@@ -89,6 +89,7 @@ it('renders the tracker and first seen columns on the findings list', function (
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'github-pat',
         'title' => 'Linked finding',
+        'severity' => 'HIGH',
         'file_path' => 'config.php',
         'first_seen_at' => now()->subDays(3),
     ]);
@@ -105,6 +106,7 @@ it('renders the tracker and first seen columns on the findings list', function (
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Unlinked finding',
+        'severity' => 'HIGH',
         'file_path' => 'services.php',
     ]);
 
@@ -167,6 +169,7 @@ it('orders findings by effective severity rank by default, respecting overrides'
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->assertCanSeeTableRecords([$criticalOverride, $plainHigh, $medium, $lowOverride, $low], inOrder: true);
 });
 
@@ -186,6 +189,7 @@ it('sorts findings by last seen and by location on explicit user sort', function
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->sortTable('last_seen_at', 'asc')
         ->assertCanSeeTableRecords([$older, $newer], inOrder: true)
         ->sortTable('file_path', 'asc')
@@ -208,6 +212,7 @@ it('lets an explicit user sort override the default severity ordering', function
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->sortTable('title', 'asc')
         ->assertCanSeeTableRecords([$low, $critical], inOrder: true);
 });
@@ -351,6 +356,7 @@ it('applies the finding search through the list page search box', function () {
 
     Livewire::actingAs($user)
         ->test(ListLocalFindings::class)
+        ->set('tableFilters.severity.values', [])
         ->set('tableSearch', 'openssl')
         ->assertCanSeeTableRecords([$match])
         ->assertCanNotSeeTableRecords([$other]);
@@ -395,6 +401,7 @@ it('hides the change status and change severity row actions from a reader on the
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
 
@@ -411,6 +418,7 @@ it('shows the change status and change severity row actions to a plan-role opera
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
 
@@ -427,6 +435,7 @@ it('changes the status of a finding via the row action and records an audit entr
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
 
@@ -454,12 +463,14 @@ it('changes the status of multiple findings via the bulk action', function () {
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key one',
+        'severity' => 'HIGH',
         'file_path' => 'config/services.php',
     ]);
     $findingTwo = $container->localFindings()->create([
         'kind' => LocalFinding::KIND_SECRET,
         'rule_id' => 'generic-api-key',
         'title' => 'Hardcoded API key two',
+        'severity' => 'HIGH',
         'file_path' => 'config/database.php',
     ]);
 
@@ -478,7 +489,7 @@ it('hides the work item row actions from a reader on the findings list', functio
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);
     $finding = SecurityContainer::factory()->create()->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
 
     Livewire::actingAs($user)
@@ -491,7 +502,7 @@ it('shows the work item row actions to a plan-role operator on the findings list
     $user = User::factory()->create();
     $user->syncRoles(['Plan']);
     $finding = SecurityContainer::factory()->create()->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
 
     Livewire::actingAs($user)
@@ -516,7 +527,7 @@ it('links an existing work item to a finding via the row action', function () {
     app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
 
     $finding = SecurityContainer::factory()->create()->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
 
     Livewire::actingAs($user)

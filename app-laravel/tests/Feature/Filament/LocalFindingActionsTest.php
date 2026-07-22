@@ -167,10 +167,10 @@ it('creates one grouped work item for the selected findings via the bulk action'
 
     $container = SecurityContainer::factory()->create();
     $findingOne = $container->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
     $findingTwo = $container->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'file_path' => 'config/database.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'severity' => 'HIGH', 'file_path' => 'config/database.php',
     ]);
 
     Livewire::actingAs($user)
@@ -198,10 +198,10 @@ it('links all selected findings to an existing work item via the bulk action', f
 
     $container = SecurityContainer::factory()->create();
     $findingOne = $container->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
     $findingTwo = $container->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'file_path' => 'config/database.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'severity' => 'HIGH', 'file_path' => 'config/database.php',
     ]);
 
     Livewire::actingAs($user)
@@ -225,10 +225,10 @@ it('rejects the whole bulk link batch when one finding is already linked', funct
 
     $container = SecurityContainer::factory()->create();
     $findingOne = $container->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key one', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
     $findingTwo = $container->localFindings()->create([
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'file_path' => 'config/database.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key two', 'severity' => 'HIGH', 'file_path' => 'config/database.php',
     ]);
 
     LocalFindingWorkItemLink::query()->create([
@@ -259,7 +259,7 @@ it('pre-fills the create work item form defaults from a finding container mappin
     $container = SecurityContainer::factory()->forSystem($system)->create();
     $finding = $container->localFindings()->create([
         'software_system_id' => $system->id,
-        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'file_path' => 'config/services.php',
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
     ]);
     $container->trackerProjectLinks()->create([
         'tracker_id' => 'jira', 'project_key' => 'APP', 'project_name' => 'Application', 'is_default' => true,
