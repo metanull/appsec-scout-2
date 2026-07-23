@@ -22,10 +22,11 @@ function azdoFakeSource(): FakeSource
 }
 
 beforeEach(function () {
-    // Inventory sync only runs configured integrations, so the AzDO source needs both
-    // its PAT and organization seeded.
-    app(Vault::class)->set('azdo.pat', null, 'testpat');
     app(Vault::class)->set('azdo.organization', null, 'testorg');
+    // Inventory sync only runs configured integrations. The command binds a FakeSource
+    // (id 'azdo') whose credential field is fake.apiKey, so that is what must be seeded
+    // for the gate to run it.
+    app(Vault::class)->set('fake.apiKey', null, 'fake-key');
     // Repository auto-linking resolves the organization from the Source Control
     // credential (azdo-repos.*), so it must be seeded for mappings to be created.
     app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
