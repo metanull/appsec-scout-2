@@ -1,43 +1,20 @@
 <?php
 
-use App\Integrations\IntegrationSettingsRepository;
 use App\Sources\Contracts\Source;
 use App\Sources\Registry;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
 use Tests\Fakes\FakeSource;
 
-it('returns enabled sources from registry', function () {
+it('returns every registered source from the registry', function () {
     $fake = new FakeSource;
 
     $this->app->bind('appsec-scout.source.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 
-    app(IntegrationSettingsRepository::class)->update('source', 'fake', [
-        'enabled' => true,
-        'fetch_interval_minutes' => 30,
-    ]);
+    $registry = new Registry($this->app);
 
-    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
-
-    expect($registry->enabled())->toHaveCount(1)
-        ->and($registry->enabled()[0]->id())->toBe('fake');
-});
-
-it('excludes disabled sources', function () {
-    $fake = new FakeSource;
-
-    $this->app->bind('appsec-scout.source.fake', fn () => $fake);
-    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
-
-    app(IntegrationSettingsRepository::class)->update('source', 'fake', [
-        'enabled' => false,
-        'fetch_interval_minutes' => 30,
-    ]);
-
-    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
-
-    expect($registry->enabled())->toBeEmpty();
+    expect(collect($registry->all())->map->id()->all())->toContain('fake');
 });
 
 it('finds source by id', function () {
@@ -46,12 +23,7 @@ it('finds source by id', function () {
     $this->app->bind('appsec-scout.source.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 
-    app(IntegrationSettingsRepository::class)->update('source', 'fake', [
-        'enabled' => true,
-        'fetch_interval_minutes' => 30,
-    ]);
-
-    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
+    $registry = new Registry($this->app);
 
     expect($registry->find('fake'))->toBe($fake)
         ->and($registry->find('nonexistent'))->toBeNull();

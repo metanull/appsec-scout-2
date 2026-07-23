@@ -216,7 +216,7 @@ final class ReconciliationService
         $seen = [];
         $merged = [];
 
-        foreach ([...$linkedPairs, ...$this->allEnabledTrackerProjectPairs()] as $pair) {
+        foreach ([...$linkedPairs, ...$this->allTrackerProjectPairs()] as $pair) {
             $key = "{$pair['tracker_id']}\0{$pair['project_key']}";
 
             if (isset($seen[$key])) {
@@ -231,11 +231,11 @@ final class ReconciliationService
     }
 
     /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
-    private function allEnabledTrackerProjectPairs(): array
+    private function allTrackerProjectPairs(): array
     {
         $pairs = [];
 
-        foreach ($this->trackers->enabled() as $tracker) {
+        foreach ($this->trackers->all() as $tracker) {
             /** @var list<ProjectDto> $projects */
             $projects = $this->systemRuntime->runTracker(
                 $tracker->id(),

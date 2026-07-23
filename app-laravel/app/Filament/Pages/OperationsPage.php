@@ -305,11 +305,11 @@ class OperationsPage extends Page
     private function inventoryCapableProviderCount(): int
     {
         $sourceControlCount = count(array_filter(
-            app(SourceControlRegistry::class)->enabled(),
+            app(SourceControlRegistry::class)->all(),
             fn ($provider): bool => $provider instanceof EnumeratesInventory,
         ));
 
-        return count(app(SourceRegistry::class)->enabled()) + $sourceControlCount;
+        return count(app(SourceRegistry::class)->all()) + $sourceControlCount;
     }
 
     private function isSyncInventoryQueued(): bool

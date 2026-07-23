@@ -27,37 +27,20 @@ beforeEach(function () {
     bindFakeIntegrationsForSettings();
 });
 
-it('exposes all integrations while enabled filters use database-backed settings', function () {
-    IntegrationSetting::query()->updateOrCreate(
-        ['integration_kind' => 'source', 'integration_id' => 'fake'],
-        ['enabled' => false, 'fetch_interval_minutes' => 30],
-    );
-    IntegrationSetting::query()->updateOrCreate(
-        ['integration_kind' => 'tracker', 'integration_id' => 'fake-tracker'],
-        ['enabled' => true, 'fetch_interval_minutes' => 30],
-    );
-
+it('exposes all registered integrations through the registries', function () {
     $sources = app(SourceRegistry::class);
     $trackers = app(TrackerRegistry::class);
 
     expect(collect($sources->all())->map->id()->all())->toContain('fake')
-        ->and(collect($sources->enabled())->map->id()->all())->not->toContain('fake')
-        ->and(collect($trackers->all())->map->id()->all())->toContain('fake-tracker')
-        ->and(collect($trackers->enabled())->map->id()->all())->toContain('fake-tracker');
+        ->and(collect($trackers->all())->map->id()->all())->toContain('fake-tracker');
 });
 
 it('exposes source control providers alongside sources and trackers', function () {
-    IntegrationSetting::query()->updateOrCreate(
-        ['integration_kind' => 'source_control', 'integration_id' => 'fake-repos'],
-        ['enabled' => true, 'fetch_interval_minutes' => 30],
-    );
-
     $sourceControls = app(SourceControlRegistry::class);
 
     expect(collect($sourceControls->all())->map->id()->all())->toContain('fake-repos')
         ->and(collect($sourceControls->all())->map->id()->all())->toContain('azdo-repos')
-        ->and(collect($sourceControls->all())->map->id()->all())->toContain('github-repos')
-        ->and(collect($sourceControls->enabled())->map->id()->all())->toContain('fake-repos');
+        ->and(collect($sourceControls->all())->map->id()->all())->toContain('github-repos');
 });
 
 it('dispatches only due integrations from database-backed settings', function () {

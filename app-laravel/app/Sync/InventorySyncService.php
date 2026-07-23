@@ -55,7 +55,7 @@ final class InventorySyncService
         // filtered-out project/repo as removed, so only sweep on a genuinely full pass.
         $shouldSweep = $projectFilter === null && $repoFilter === null;
 
-        foreach ($this->sources->enabled() as $source) {
+        foreach ($this->sources->all() as $source) {
             if ($onlyId !== null && $source->id() !== $onlyId) {
                 continue;
             }
@@ -77,7 +77,7 @@ final class InventorySyncService
             });
         }
 
-        foreach ($this->sourceControls->enabled() as $provider) {
+        foreach ($this->sourceControls->all() as $provider) {
             if (! $provider instanceof EnumeratesInventory) {
                 continue;
             }
