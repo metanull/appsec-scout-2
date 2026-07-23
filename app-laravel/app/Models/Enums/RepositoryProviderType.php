@@ -6,6 +6,7 @@ enum RepositoryProviderType: string
 {
     case AzureRepos = 'azure-repos';
     case GitHub = 'github';
+    case Bitbucket = 'bitbucket';
 
     /** @return list<string> */
     public static function values(): array

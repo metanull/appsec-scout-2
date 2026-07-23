@@ -11,6 +11,7 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\SourceCode\RepositoryCodeUrlGenerator;
 use App\SourceCode\RepositoryMappingService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Placeholder;
@@ -244,10 +245,7 @@ class RepositoryMappingsRelationManager extends RelationManager
             return '—';
         }
 
-        return match ($providerType) {
-            RepositoryProviderType::AzureRepos => $normalizedBaseUrl . '/_git/' . $normalizedRepositoryName,
-            RepositoryProviderType::GitHub => $normalizedBaseUrl . '/' . $normalizedRepositoryName,
-        };
+        return RepositoryCodeUrlGenerator::browseUrl($providerType, $normalizedBaseUrl, $normalizedRepositoryName);
     }
 
     private function validationMessage(ValidationException $exception): string
