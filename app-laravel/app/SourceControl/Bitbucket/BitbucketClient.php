@@ -37,6 +37,11 @@ final class BitbucketClient
         ]);
     }
 
+    public function workspace(): string
+    {
+        return $this->workspace;
+    }
+
     public function testConnection(): bool
     {
         $response = $this->http->get('repositories/' . rawurlencode($this->workspace), [
