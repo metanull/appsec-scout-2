@@ -19,10 +19,6 @@ flowchart LR
         GHREPOS[GitHub Repos]
     end
 
-    subgraph Scheduler
-        DISP[integrations:dispatch-due]
-    end
-
     subgraph Queue
         FETCH[FetchSourceJob]
         TRACK[RefreshWorkItemsJob]
@@ -41,7 +37,6 @@ flowchart LR
         SC[software_components]
         LINKS[work_item_links]
         RUNS[sync_runs]
-        ISET[integration_settings]
         CREDS[credentials]
         AUD[audit_logs]
         ERR[error_logs]
@@ -77,9 +72,8 @@ flowchart LR
     AZDOREPOS --> SYNCINV
     GHREPOS -.->|no EnumeratesInventory yet| SYNCINV
 
-    DISP --> FETCH
-    DISP --> TRACK
-    OPSPAGE --> DISP
+    OPSPAGE --> FETCH
+    OPSPAGE --> TRACK
     OPSPAGE --> SYNCINV
     OPSPAGE --> RECON
 
@@ -93,7 +87,6 @@ flowchart LR
 
     TRACK --> LINKS
     TRACK --> AUD
-    TRACK --> ISET
     RECON --> LINKS
 
     ALERTS --> EVT
@@ -103,7 +96,6 @@ flowchart LR
     ALERTS --> SC
     PLAN --> LINKS
     SYNC --> PUSH
-    ADMIN --> ISET
     ADMIN --> CREDS
     ADMIN --> FAIL
     ADMIN --> RUNS

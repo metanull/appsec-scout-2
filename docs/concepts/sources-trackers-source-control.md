@@ -181,13 +181,11 @@ instances, but no duplicated HTTP/auth logic.
 All three registries are exposed identically through the same three Filament pages (see
 [docs/concepts/integration.md](integration.md#access-control) for the permission gates on each):
 
-- **`Admin -> System Credentials`** — system-wide secret, for all three kinds.
+- **`Admin -> System Credentials`** — system-wide secret, for all three kinds; also runs a
+  connection test with the system credential.
 - **`Profile -> Integrations`** — personal override credential, for all three kinds (yes, an
   individual user can store their own `azdo-repos.pat` or `github-repos.token`, not just
-  Source/Tracker credentials).
-- **`Admin -> Integrations`** — enable/disable, interval, connection test, for all three kinds'
-  registered instances. The interval field renders for Source Control rows too, but is inert —
-  nothing reads it, since Source Control has no scheduled job.
+  Source/Tracker credentials); also runs a connection test with that personal credential.
 
 Two role-specific scoping mechanisms exist, but neither lives on these three pages — both are
 relation managers hung off the `SoftwareSystem`/`SecurityContainer` Filament resources, scoping

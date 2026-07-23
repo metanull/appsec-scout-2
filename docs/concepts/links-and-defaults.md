@@ -43,9 +43,9 @@ defaults, put the link on the System or Container that alerts actually belong to
 1. **Container-level link** for this tracker, if the alert has a Container.
 2. **System-level link** for this tracker.
 3. **Tracker-specific global fallback** — today this step only exists for Jira: the "Jira default
-   project key" set on `Admin -> Integrations` (under the Jira row). GitHub has no equivalent
-   fallback; if neither Container nor System has a link, GitHub resolution simply comes back
-   empty.
+   project key" stored in tracker configuration (`TrackerConfig`), read by
+   `TrackerProjectDefaultResolver`. GitHub has no equivalent fallback; if neither Container nor
+   System has a link, GitHub resolution simply comes back empty.
 4. Otherwise: no default — the operator has to pick a project manually.
 
 **Tie-break within a level**: if exactly one link exists for that tracker at a level, it's used

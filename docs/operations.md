@@ -83,10 +83,11 @@ The `app` container runs every application process through Supervisor (`docker/s
 - `php artisan schedule:work`
 - `php artisan queue:work --tries=3 --timeout=1800 --max-time=3600`
 
-Queue, cache, and session backends are all Redis. The scheduler's one minutely entry,
-`integrations:dispatch-due`, decides which Source fetch or Tracker refresh jobs are due, based on
-`integration_settings` rows — see [docs/concepts/integration.md](concepts/integration.md) for the
-full dispatch model, including why Source Control never appears here.
+Queue, cache, and session backends are all Redis. Source fetch and Tracker refresh are not
+scheduled: they run only when triggered on demand from `Admin -> Operations` (or the
+`assets:sync-azdo-projects` CLI command) — see [docs/concepts/integration.md](concepts/integration.md)
+for the full trigger model. The scheduler's minutely entries are limited to the SBOM/static-analysis
+pending-scan importers; log pruning runs daily.
 
 Manual checks:
 
@@ -113,11 +114,10 @@ Actions:
 
 | Action | Gate | Effect |
 | --- | --- | --- |
-| Dispatch due integrations | `admin.queue` or `work-items.sync` | Runs `DispatchDueIntegrations` immediately instead of waiting for the next scheduler tick |
 | Fetch source | `admin.queue` or `work-items.sync` | Dispatches `FetchSourceJob` for one chosen Source right now |
 | Refresh tracker | `admin.queue` or `work-items.sync` | Dispatches `RefreshWorkItemsJob` for one chosen Tracker right now |
 | Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links |
-| Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every enabled Source and every Source Control provider that supports it |
+| Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every registered Source and every Source Control provider that supports it |
 | Prune audit logs / Prune error logs | `admin.queue` or `work-items.sync` | Deletes retention-expired rows now |
 | Retry / Forget a failed job | `admin.queue` or `work-items.sync` | Requeues the stored payload, or discards it, per row |
 
@@ -146,17 +146,20 @@ resource. Audit records are written to `audit_logs` and exposed in the Admin `Au
 
 ## Credentials And Integrations
 
-Admin operators manage integration configuration from three places:
+Admin operators manage integration credentials from two places:
 
-- `Admin -> System Credentials` for shared, system-owned credentials.
-- `Profile -> Integrations` for the signed-in user's own personal credentials.
-- `Admin -> Integrations` for enablement, interval, connection tests, and the Jira default project
-  key.
+- `Admin -> System Credentials` for shared, system-owned credentials (with a connection test).
+- `Profile -> Integrations` for the signed-in user's own personal credentials (with a connection
+  test).
 
-There are exactly two credential-resolution flows: system-triggered operations (scheduled sync,
-background jobs, bulk Ops-page actions) resolve the system credential; user-triggered interactive
-actions resolve that specific user's own personal credential. Which flow applies is fixed by the
-kind of operation. A missing required credential fails with a clear error.
+Integrations have no enablement or interval settings and are not scheduled — they sync on demand
+from `Admin -> Operations`.
+
+There are exactly two credential-resolution flows: system-triggered operations (background jobs,
+Ops-page fetch/refresh actions, `assets:sync-azdo-projects`) resolve the system credential;
+user-triggered interactive actions resolve that specific user's own personal credential. Which
+flow applies is fixed by the kind of operation. A missing required credential fails with a clear
+error.
 
 ## Tracker Project Scope
 
@@ -164,9 +167,9 @@ Each Software System and each Security Container can have one or more Tracker Pr
 mapping of `(tracker_id, project_key)` controlling which project new work items are created in and
 which projects are searched during reconciliation. Links are created manually (via the relation
 manager on the System/Container's Filament page) or auto-learned whenever a work item is created or
-linked from an alert. A global Jira default project key can also be set on `Admin -> Integrations`,
-used as a fallback when no link exists for the alert's system/container. Full resolution order in
-[docs/concepts/links-and-defaults.md](concepts/links-and-defaults.md).
+linked from an alert. A global Jira default project key stored in tracker configuration
+(`TrackerConfig`) is used as a fallback when no link exists for the alert's system/container. Full
+resolution order in [docs/concepts/links-and-defaults.md](concepts/links-and-defaults.md).
 
 ## Work Item Reconciliation
 

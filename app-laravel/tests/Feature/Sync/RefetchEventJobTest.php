@@ -94,8 +94,6 @@ it('preserves dirty pending state and pending severity across a refresh', functi
 
 function bindFakeRefetchSource(FakeSource $source): FakeSource
 {
-    config(['integration_settings.fake.enabled' => true]);
-
     app()->bind('appsec-scout.source.fake', fn () => $source);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 

@@ -131,7 +131,7 @@ final class JiraTracker implements Tracker
 
         $this->clientFingerprint = $fingerprint;
 
-        $labels = config('integration_settings.jira.reconciliation_labels', ['security', 'vulnerability', 'appsec-scout']);
+        $labels = config('reconciliation.jira.reconciliation_labels', ['security', 'vulnerability', 'appsec-scout']);
         $reconciliationLabels = is_array($labels) ? array_values(array_filter(array_map('strval', $labels), static fn (string $label): bool => $label !== '')) : ['security', 'vulnerability', 'appsec-scout'];
 
         return $this->client = new JiraClient($host, $email, $apiToken, null, $reconciliationLabels);

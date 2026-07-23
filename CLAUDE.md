@@ -46,8 +46,8 @@ from the Source/Tracker credential for the same product, since the required PAT 
 
 ### Credential resolution
 
-Two flows: system-triggered operations (scheduled sync, background jobs, bulk Ops-page actions)
-resolve the system credential; user-triggered interactive actions resolve that specific user's own
+Two flows: system-triggered operations (background jobs, the Ops-page fetch/refresh actions,
+`assets:sync-azdo-projects`) resolve the system credential; user-triggered interactive actions resolve that specific user's own
 personal credential. A missing required credential fails with a clear error.
 
 ## Environment
@@ -127,16 +127,15 @@ app/
   Sources/           # Source integrations (AzDo, Asoc, Detectify) — Contracts + DTO factories
   Trackers/          # Tracker integrations (GitHub, Jira) — Contracts, Reconciliation, VOs
   SourceControl/     # Source Control providers (AzDO Repos, GitHub Repos) — Contracts, Registry
-  Integrations/      # Integration scheduling and dispatch
-  Sync/              # Synchronization logic
-  Triage/            # Triage services (CodesearchService, StateChanger, SeverityChanger, CommentManager)
+  Sync/              # Synchronization logic (incl. SystemIntegrationRuntime — system-credentialed execution)
+  Triage/            # Triage services (CodesearchService, StateChanger, SeverityChanger, CommentManager, OperatorIntegrationRuntime)
   Credentials/       # Credential vault and cipher implementations
   Audit/             # AuditLog recorder
   SecurityEvents/    # Event linking and triage context
   Context/           # Application domain context
   Providers/         # AppServiceProvider (registers Source/Tracker/Source Control singletons), FortifyServiceProvider, PanelProvider
 routes/
-  console.php        # Artisan commands + scheduler (integrations:dispatch-due runs every minute)
+  console.php        # Artisan commands + scheduler (log pruning daily; sbom/static-analysis import every minute)
   web.php            # Authenticated routes for alert attachment downloads
 tests/
   Feature/           # Admin, Attachments, Audit, Auth, Credentials, Filament, Integrations, Smoke, Sources, Sync, Trackers, Triage
@@ -149,7 +148,7 @@ Panel id: `appsec-scout`, path: `/` (root). Auto-discovers resources, pages, and
 
 **Resources** (10): SecurityEvent, SecurityContainer, SoftwareSystem, SoftwareAsset, SoftwareComponent, LocalFinding, User, AuditLog, ErrorLog, RepositoryProvider, and shared RelationManagers for CuratedLinks, RepositoryMappings, TrackerProjectLinks.
 
-**Custom Pages**: IntegrationSettingsPage, OperationsPage, PendingSyncPage, ProfileIntegrationsPage, SystemCredentialsPage.
+**Custom Pages**: OperationsPage, PendingSyncPage, ProfileIntegrationsPage, SystemCredentialsPage.
 
 **Widgets**: SecurityOverviewStats, SeverityDistributionChart, OpenAlertsBySource, RecentSyncRuns, RecentErrors, OperationsHealthStats.
 

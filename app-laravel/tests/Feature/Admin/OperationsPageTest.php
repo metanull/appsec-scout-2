@@ -284,7 +284,6 @@ it('colors the inventory sync stat as success when the last run found something'
 it('warns and does not dispatch inventory sync when no inventory-capable provider is enabled', function () {
     Bus::fake();
 
-    config(['integration_settings.fake.enabled' => false]);
     app()->forgetInstance(SourceRegistry::class);
 
     $admin = operationsAdmin();
@@ -396,12 +395,6 @@ it('header action dispatches tracker by form data', function () {
 
 function bindFakeOperationsIntegrations(): void
 {
-    config([
-        'integration_settings.fake.enabled' => true,
-        'integration_settings.fake.interval_minutes' => 1,
-        'integration_settings.fake-tracker.enabled' => false,
-    ]);
-
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 

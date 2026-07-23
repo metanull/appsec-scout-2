@@ -5,7 +5,6 @@ namespace App\Sync;
 use App\Assets\AzDoProjectLinker;
 use App\Assets\StaleRecordSweeper;
 use App\Events\SyncRunFinished;
-use App\Integrations\IntegrationSettingsRepository;
 use App\Models\ErrorLog;
 use App\Models\SyncRun;
 use App\Sources\Contracts\EnrichesFetchedEvents;
@@ -55,8 +54,6 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
             'error_message' => $message,
         ]);
 
-        app(IntegrationSettingsRepository::class)->markSyncResult('source', $this->sourceId, false, $message);
-
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'sync',
@@ -75,12 +72,10 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
     public function handle(
         SystemIntegrationRuntime $runtime,
         Upserter $upserter,
-        ?IntegrationSettingsRepository $settings = null,
         ?SystemContainerUpserter $systemContainerUpserter = null,
         ?AzDoProjectLinker $azDoProjectLinker = null,
         ?StaleRecordSweeper $sweeper = null,
     ): void {
-        $settings ??= app(IntegrationSettingsRepository::class);
         $systemContainerUpserter ??= app(SystemContainerUpserter::class);
         $azDoProjectLinker ??= app(AzDoProjectLinker::class);
         $sweeper ??= app(StaleRecordSweeper::class);
@@ -162,8 +157,6 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                 'error_message' => null,
             ]);
 
-            $settings->markSyncResult('source', $this->sourceId, true);
-
             event(new SyncRunFinished($run));
         } catch (Throwable $e) {
             $message = $this->syncErrorMessage($e);
@@ -174,8 +167,6 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                 'counts_json' => $counts,
                 'error_message' => $message,
             ]);
-
-            $settings->markSyncResult('source', $this->sourceId, false, $message);
 
             ErrorLog::query()->create([
                 'level' => 'error',

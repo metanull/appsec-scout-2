@@ -76,8 +76,6 @@ it('deduplicates tracker gets for grouped work item links', function () {
 
 function bindFakeRefreshTracker(FakeTracker $tracker): FakeTracker
 {
-    config(['integration_settings.fake-tracker.enabled' => true]);
-
     app()->bind('appsec-scout.tracker.fake', fn () => $tracker);
     app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
 

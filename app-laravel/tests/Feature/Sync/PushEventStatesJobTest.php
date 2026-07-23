@@ -262,8 +262,6 @@ it('stops retrying automatically after the third failure', function () {
 
 function bindFakePushSource(FakeSource $source): FakeSource
 {
-    config(['integration_settings.fake.enabled' => true]);
-
     app()->bind('appsec-scout.source.fake', fn () => $source);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
     app()->forgetInstance(SourceRegistry::class);
