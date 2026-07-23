@@ -8,18 +8,25 @@ use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
+use App\SourceCode\RepositoryCodeIdentityResolver;
 use App\SourceCode\RepositoryMappingService;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Context\SourceContextFacts;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Keeps the Azure DevOps organization's projects and repositories reflected
- * as SoftwareAsset/RepositoryMapping rows. Azure DevOps is treated as the
- * "main organizational unit": every AzDO project gets its own SoftwareAsset
- * (unless the underlying SoftwareSystem is already linked to one — manual or
- * automatic assignment is never overwritten), and every repository container
- * gets a RepositoryMapping derived straight from Azure DevOps' own data.
+ * Keeps the Azure DevOps organization's projects reflected as SoftwareAsset
+ * rows: every AzDO project gets its own SoftwareAsset (unless the underlying
+ * SoftwareSystem is already linked to one — manual or automatic assignment is
+ * never overwritten).
+ *
+ * It also backfills a RepositoryMapping for a repository container, but only
+ * when the container does not already carry its own code identity. A synced
+ * AzDO repository records its own browse URL, provider and default branch, so a
+ * mapping would merely restate them (and would then be an editable duplicate,
+ * a redundant readiness row, and audit noise); the link machinery reads that
+ * identity directly. The backfill therefore only fires for a container that
+ * lacks a native identity, where a mapping genuinely adds the missing link.
  *
  * Every method is a no-op unless the record actually originates from the
  * 'azdo' source, so it is safe to call unconditionally from any sync path.
@@ -30,6 +37,7 @@ final class AzDoProjectLinker
         private readonly SoftwareAssetService $softwareAssets,
         private readonly RepositoryMappingService $repositoryMappings,
         private readonly Vault $vault,
+        private readonly RepositoryCodeIdentityResolver $identityResolver,
     ) {}
 
     public function linkSystemToAsset(SoftwareSystem $system): void
@@ -59,6 +67,12 @@ final class AzDoProjectLinker
         }
 
         if ($container->repositoryMappings()->exists()) {
+            return;
+        }
+
+        // The container already knows how to build its own code links — a mapping
+        // would only duplicate its browse URL/provider/branch. Skip it.
+        if ($this->identityResolver->containerIdentity($container) !== null) {
             return;
         }
 

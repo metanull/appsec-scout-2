@@ -81,6 +81,26 @@ it('creates a project-scoped repository mapping for an azdo repository container
         ->and($provider->base_url)->toBe('https://dev.azure.com/testorg/TelCodes');
 });
 
+it('does not backfill a repository mapping when the container already carries its own code identity', function () {
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => AzDoNormalizer::SOURCE_ID,
+        'name' => 'TelCodes',
+    ]);
+    $container = SecurityContainer::factory()->forSystem($system)->create([
+        'name' => 'tinc-front',
+        'kind' => 'repository',
+        'url' => 'https://dev.azure.com/testorg/TelCodes/_git/tinc-front',
+        'metadata' => [
+            'source' => ['provider' => 'azure-repos'],
+            'code' => ['default_branch' => 'develop'],
+        ],
+    ]);
+
+    app(AzDoProjectLinker::class)->ensureRepositoryMapping($container);
+
+    expect(RepositoryMapping::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(0);
+});
+
 it('does not create a duplicate repository mapping on repeated calls', function () {
     $system = SoftwareSystem::factory()->create(['source_id' => AzDoNormalizer::SOURCE_ID, 'name' => 'TelCodes']);
     $container = SecurityContainer::factory()->forSystem($system)->create(['kind' => 'repository', 'name' => 'tinc-front']);

@@ -39,10 +39,16 @@ final class RepositoryCodeIdentityResolver
             }
         }
 
-        return $this->identityFromContainer($container);
+        return $this->containerIdentity($container);
     }
 
-    private function identityFromContainer(?SecurityContainer $container): ?RepositoryCodeIdentity
+    /**
+     * The container's own, mapping-independent code identity — non-null only when
+     * the container carries its own browse URL and provider (i.e. it came from a
+     * code-native Source such as AzDO). Callers use this to tell whether a
+     * RepositoryMapping would add anything or merely restate what the row knows.
+     */
+    public function containerIdentity(?SecurityContainer $container): ?RepositoryCodeIdentity
     {
         if (! $container instanceof SecurityContainer) {
             return null;
