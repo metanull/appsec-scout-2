@@ -31,6 +31,7 @@ function makeMapping(SecurityContainer $container, ?User $author): RepositoryMap
     return $container->repositoryMappings()->create([
         'repository_provider_id' => $provider->id,
         'repository_name' => $container->name,
+        'repository_url' => 'https://dev.azure.com/org/Proj/_git/' . $container->name,
         'default_branch' => 'main',
         'created_by_user_id' => $author?->id,
         'metadata' => null,
