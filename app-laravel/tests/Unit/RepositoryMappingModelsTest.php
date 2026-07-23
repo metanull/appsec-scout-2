@@ -30,7 +30,7 @@ class RepositoryMappingModelsTest extends TestCase
 
         $this->assertSame(RepositoryProviderType::GitHub, $provider->provider_type);
         $this->assertSame('github', $provider->provider_type->value);
-        $this->assertSame(['azure-repos', 'github'], RepositoryProviderType::values());
+        $this->assertSame(['azure-repos', 'github', 'bitbucket'], RepositoryProviderType::values());
 
         $this->expectException(ValueError::class);
 
