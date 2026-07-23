@@ -66,7 +66,7 @@ final class BitbucketClient
         do {
             $response = $this->http->get($url, $options);
 
-            /** @var array{values?: list<array<string, mixed>>, next?: string} $data */
+            /** @var array{values?: list<array<string, mixed>>, next?: mixed} $data */
             $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
 
             foreach ($data['values'] ?? [] as $item) {
