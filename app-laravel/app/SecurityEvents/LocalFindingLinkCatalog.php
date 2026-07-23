@@ -102,7 +102,7 @@ final class LocalFindingLinkCatalog
 
         $filePath = $finding->file_path;
 
-        if (! is_string($filePath) || $filePath === '') {
+        if ($filePath === '') {
             return;
         }
 
