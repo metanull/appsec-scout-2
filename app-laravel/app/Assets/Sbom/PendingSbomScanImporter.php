@@ -6,6 +6,7 @@ namespace App\Assets\Sbom;
 
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
+use App\Assets\AzDoScanResultDtoFactory;
 use App\Models\ErrorLog;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Filesystem\Filesystem;
@@ -224,8 +225,28 @@ final class PendingSbomScanImporter
         $project = (string) ($result['project'] ?? '');
         $repository = (string) ($result['repository'] ?? '');
 
-        $owner = $this->resolver->resolveSystem(AzDoNormalizer::SOURCE_ID, $projectId, $project);
-        $owner = $this->resolver->resolveContainer($owner, $repositoryId, $repository, 'repository');
+        // Normalize through the same path an AzDO source sync uses, so a row this
+        // import creates holds the same description, web URLs and SourceContextFacts
+        // a sync produces. The resolver applies this enrichment on create only.
+        $system = AzDoScanResultDtoFactory::system($result);
+        $container = AzDoScanResultDtoFactory::container($result);
+
+        $owner = $this->resolver->resolveSystem(
+            AzDoNormalizer::SOURCE_ID,
+            $projectId,
+            $project,
+            url: $system->url,
+            description: $system->description,
+            metadata: $system->metadata ?? [],
+        );
+        $owner = $this->resolver->resolveContainer(
+            $owner,
+            $repositoryId,
+            $repository,
+            'repository',
+            url: $container->url,
+            metadata: $container->metadata ?? [],
+        );
 
         $this->attachments->attachTo(
             owner: $owner,

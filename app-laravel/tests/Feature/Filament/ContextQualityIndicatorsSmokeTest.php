@@ -26,7 +26,7 @@ it('shows context quality signals for reader-visible pages', function () {
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
         ->assertSee('Readiness')
-        ->assertSee('Repository mapping');
+        ->assertSee('Code location');
 
     $this->actingAs($reader)
         ->get(SoftwareSystemResource::getUrl('view', ['record' => $system]))

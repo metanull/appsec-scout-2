@@ -203,6 +203,28 @@ describe('EventLinkCatalog', function () {
         expect(array_column($catalog, 'kind'))->not()->toContain('code');
     });
 
+    it('generates code links from the container’s own identity when no mapping exists', function () {
+        $system = SoftwareSystem::factory()->create();
+        $container = SecurityContainer::factory()->forSystem($system)->create([
+            'url' => 'https://dev.azure.com/EESC-CoR/PW-API/_git/consultation-api',
+            'metadata' => [
+                'source' => ['provider' => 'azure-repos'],
+                'code' => ['default_branch' => 'main'],
+            ],
+        ]);
+
+        $event = SecurityEvent::factory()->forContainer($container)->create([
+            'file_path' => 'src/Example.cs',
+            'start_line' => 5,
+        ]);
+
+        $catalog = app(EventLinkCatalog::class)->build($event);
+        $urls = array_column($catalog, 'url');
+
+        expect(array_column($catalog, 'kind'))->toContain('code')
+            ->and($urls)->toContain('https://dev.azure.com/EESC-CoR/PW-API/_git/consultation-api?path=/src/Example.cs&version=GBmain&line=5&lineStartColumn=1&lineEndColumn=1');
+    });
+
     it('prefers alert curated links over container and system curated links', function () {
         $system = SoftwareSystem::factory()->make([
             'url' => 'https://docs.example.com/shared-link',

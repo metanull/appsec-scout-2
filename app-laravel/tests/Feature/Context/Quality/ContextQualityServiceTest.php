@@ -37,20 +37,36 @@ it('reports complete context when mappings and source links exist', function () 
 
     $indicators = app(ContextQualityService::class)->forSoftwareSystem($system);
 
-    expect(indicatorMessage($indicators, 'Repository mapping'))->toBe('Repository mapping ready')
+    expect(indicatorMessage($indicators, 'Code location'))->toBe('Code location ready')
         ->and(indicatorMessage($indicators, 'Tracker mapping'))->toBe('Tracker mapping ready')
         ->and(indicatorMessage($indicators, 'Source URL'))->toBe('Source URL available');
 });
 
-it('reports missing repository mapping when file paths exist', function () {
+it('reports a ready code location from the container’s own identity, with no mapping', function () {
     $system = SoftwareSystem::factory()->create();
-    $container = SecurityContainer::factory()->forSystem($system)->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create([
+        'url' => 'https://dev.azure.com/EESC-CoR/PW-API/_git/consultation-api',
+        'metadata' => [
+            'source' => ['provider' => 'azure-repos'],
+            'code' => ['default_branch' => 'main'],
+        ],
+    ]);
+    SecurityEvent::factory()->forContainer($container)->create(['file_path' => 'src/App.cs']);
+
+    $indicators = app(ContextQualityService::class)->forSecurityContainer($container);
+
+    expect(indicatorMessage($indicators, 'Code location'))->toBe('Code location ready');
+});
+
+it('reports missing code location when file paths exist but no identity or mapping is available', function () {
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create(['url' => null, 'metadata' => null]);
 
     SecurityEvent::factory()->forContainer($container)->create(['file_path' => 'src/app.php']);
 
     $indicators = app(ContextQualityService::class)->forSoftwareSystem($system);
 
-    expect(indicatorMessage($indicators, 'Repository mapping'))->toBe('Missing repository mapping');
+    expect(indicatorMessage($indicators, 'Code location'))->toBe('Code location missing');
 });
 
 it('reports missing tracker project mapping when none exists', function () {

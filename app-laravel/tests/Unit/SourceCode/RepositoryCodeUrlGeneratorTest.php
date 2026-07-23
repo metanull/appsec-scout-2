@@ -2,12 +2,14 @@
 
 namespace Tests\Unit\SourceCode;
 
+use App\Models\Enums\RepositoryProviderType;
 use App\Models\RepositoryMapping;
 use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\SecurityEvents\SourceLinkHelper;
 use App\SourceCode\CodeLocation;
+use App\SourceCode\RepositoryCodeIdentity;
 use App\SourceCode\RepositoryCodeUrlGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -15,6 +17,52 @@ use Tests\TestCase;
 class RepositoryCodeUrlGeneratorTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_builds_azure_file_url_from_a_container_style_browse_identity(): void
+    {
+        $generator = new RepositoryCodeUrlGenerator;
+
+        // No RepositoryMapping — just the repository's own browse URL + default
+        // branch, exactly what a container carries after enumeration.
+        $identity = new RepositoryCodeIdentity(
+            providerType: RepositoryProviderType::AzureRepos,
+            repositoryBrowseUrl: 'https://dev.azure.com/EESC-CoR/PW-API/_git/consultation-api',
+            defaultBranch: 'main',
+        );
+
+        $this->assertSame(
+            'https://dev.azure.com/EESC-CoR/PW-API/_git/consultation-api',
+            $generator->repositoryUrlFor($identity),
+        );
+
+        $url = $generator->fileUrlFor($identity, new CodeLocation(
+            filePath: 'src/App/appsettings.json',
+            startLine: 55,
+            endLine: 60,
+        ));
+
+        $this->assertSame(
+            'https://dev.azure.com/EESC-CoR/PW-API/_git/consultation-api?path=/src/App/appsettings.json&version=GBmain&line=55&lineEnd=60&lineStartColumn=1&lineEndColumn=1',
+            $url,
+        );
+        $this->assertTrue(SourceLinkHelper::isSafeUrl($url));
+    }
+
+    public function test_builds_github_file_url_from_a_browse_identity(): void
+    {
+        $generator = new RepositoryCodeUrlGenerator;
+
+        $identity = new RepositoryCodeIdentity(
+            providerType: RepositoryProviderType::GitHub,
+            repositoryBrowseUrl: 'https://github.com/appsec-scout/platform',
+            defaultBranch: 'develop',
+        );
+
+        $this->assertSame(
+            'https://github.com/appsec-scout/platform/blob/develop/src/Example.php#L10',
+            $generator->fileUrlFor($identity, new CodeLocation(filePath: 'src/Example.php', startLine: 10)),
+        );
+    }
 
     public function test_generates_github_repository_and_file_urls(): void
     {

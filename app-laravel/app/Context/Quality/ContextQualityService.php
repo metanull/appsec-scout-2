@@ -5,10 +5,15 @@ namespace App\Context\Quality;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
+use App\SourceCode\RepositoryCodeIdentityResolver;
 use Illuminate\Database\Eloquent\Model;
 
 final class ContextQualityService
 {
+    public function __construct(
+        private readonly RepositoryCodeIdentityResolver $identityResolver,
+    ) {}
+
     /**
      * @return list<array{label: string, message: string, state: string, color: string, url: ?string}>
      */
@@ -17,16 +22,16 @@ final class ContextQualityService
         $system = $event->softwareSystem;
         $container = $event->container;
 
-        $repositoryMappingMissing = $this->hasFilePaths($event) && ! $this->hasRepositoryMapping($system, $container);
+        $codeLocationMissing = $this->hasFilePaths($event) && ! $this->hasCodeLocation($system, $container);
         $trackerMappingMissing = ! $this->hasTrackerMapping($system, $container);
         $sourceUrlMissing = ! filled($event->url);
 
         return [
             $this->indicator(
-                'Repository mapping',
-                $repositoryMappingMissing ? 'Missing repository mapping' : 'Repository mapping ready',
-                $repositoryMappingMissing ? 'File paths exist but no repository mapping is available.' : 'Repository mappings are present for this alert context.',
-                $repositoryMappingMissing ? 'warning' : 'success',
+                'Code location',
+                $codeLocationMissing ? 'Code location missing' : 'Code location ready',
+                $codeLocationMissing ? 'File paths exist but this alert cannot be linked to source code — no repository identity or mapping is available.' : 'This alert can be linked to source code.',
+                $codeLocationMissing ? 'warning' : 'success',
             ),
             $this->indicator(
                 'Tracker mapping',
@@ -48,16 +53,16 @@ final class ContextQualityService
      */
     public function forSoftwareSystem(SoftwareSystem $system): array
     {
-        $repositoryMappingMissing = $this->hasFilePaths($system) && ! $this->hasRepositoryMapping($system, null);
+        $codeLocationMissing = $this->hasFilePaths($system) && ! $this->hasCodeLocation($system, null);
         $trackerMappingMissing = ! $this->hasTrackerMapping($system, null);
         $sourceUrlMissing = ! filled($system->url);
 
         return [
             $this->indicator(
-                'Repository mapping',
-                $repositoryMappingMissing ? 'Missing repository mapping' : 'Repository mapping ready',
-                $repositoryMappingMissing ? 'This system has file paths but no repository mapping.' : 'This system already has repository mapping context.',
-                $repositoryMappingMissing ? 'warning' : 'success',
+                'Code location',
+                $codeLocationMissing ? 'Code location missing' : 'Code location ready',
+                $codeLocationMissing ? 'This system has file paths but cannot be linked to source code — no repository identity or mapping is available.' : 'This system can be linked to source code.',
+                $codeLocationMissing ? 'warning' : 'success',
             ),
             $this->indicator(
                 'Tracker mapping',
@@ -79,17 +84,16 @@ final class ContextQualityService
      */
     public function forSecurityContainer(SecurityContainer $container): array
     {
-        $system = $container->softwareSystem;
-        $repositoryMappingMissing = $this->hasFilePaths($container) && ! $this->hasRepositoryMapping(null, $container);
+        $codeLocationMissing = $this->hasFilePaths($container) && ! $this->hasCodeLocation(null, $container);
         $trackerMappingMissing = ! $this->hasTrackerMapping(null, $container);
         $sourceUrlMissing = ! filled($container->url);
 
         return [
             $this->indicator(
-                'Repository mapping',
-                $repositoryMappingMissing ? 'Missing repository mapping' : 'Repository mapping ready',
-                $repositoryMappingMissing ? 'This container has file paths but no repository mapping.' : 'This container already has repository mapping context.',
-                $repositoryMappingMissing ? 'warning' : 'success',
+                'Code location',
+                $codeLocationMissing ? 'Code location missing' : 'Code location ready',
+                $codeLocationMissing ? 'This container has file paths but cannot be linked to source code — no repository identity or mapping is available.' : 'This container can be linked to source code.',
+                $codeLocationMissing ? 'warning' : 'success',
             ),
             $this->indicator(
                 'Tracker mapping',
@@ -118,6 +122,35 @@ final class ContextQualityService
             'color' => $color,
             'url' => $url,
         ];
+    }
+
+    /**
+     * Whether findings in this context can be linked to source code — either an
+     * operator RepositoryMapping override exists, or the container carries its
+     * own native code identity (browse URL + provider), which the link
+     * machinery reads directly without a mapping.
+     */
+    private function hasCodeLocation(?SoftwareSystem $system, ?SecurityContainer $container): bool
+    {
+        if ($this->hasRepositoryMapping($system, $container)) {
+            return true;
+        }
+
+        if ($container instanceof SecurityContainer && $this->identityResolver->containerIdentity($container) !== null) {
+            return true;
+        }
+
+        $system ??= $container?->softwareSystem;
+
+        if ($system instanceof SoftwareSystem) {
+            foreach ($system->containers()->whereNotNull('url')->get() as $systemContainer) {
+                if ($this->identityResolver->containerIdentity($systemContainer) !== null) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function hasRepositoryMapping(?SoftwareSystem $system, ?SecurityContainer $container): bool

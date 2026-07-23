@@ -16,8 +16,18 @@ final class RepositoryMappingResolver
             'softwareSystem.repositoryMappings.repositoryProvider',
         ]);
 
-        $container = $event->container;
+        return $this->resolveFromOwners($event->container, $event->softwareSystem);
+    }
 
+    /**
+     * Resolve the mapping override for an arbitrary container/system pair,
+     * preferring a container mapping over a system one. Shared by the
+     * SecurityEvent path above and the Local Finding path, which owns a
+     * container (its morph owner) and a system directly rather than through an
+     * event.
+     */
+    public function resolveFromOwners(?SecurityContainer $container, ?SoftwareSystem $system): ?RepositoryMapping
+    {
         if ($container instanceof SecurityContainer) {
             $mapping = $this->firstRepositoryMapping($container->repositoryMappings);
 
@@ -25,8 +35,6 @@ final class RepositoryMappingResolver
                 return $mapping;
             }
         }
-
-        $system = $event->softwareSystem;
 
         if ($system instanceof SoftwareSystem) {
             $mapping = $this->firstRepositoryMapping($system->repositoryMappings);
