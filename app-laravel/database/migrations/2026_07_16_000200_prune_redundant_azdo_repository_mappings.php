@@ -8,13 +8,11 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Removes the machine-generated RepositoryMapping rows that AzDoProjectLinker
- * used to create for every synced AzDO repository. Those rows only restated the
- * container's own browse URL / provider / default branch — data the link
- * machinery now reads straight from the container's identity — so they are
- * redundant, show up as editable duplicates in the RepositoryMappings manager,
- * and add audit noise. Operator-authored mappings (created_by_user_id set) and
- * mappings for containers with no native identity are left untouched.
+ * Deletes machine-generated (created_by_user_id null) RepositoryMapping rows
+ * whose owning AzDO SecurityContainer already resolves to its own code identity
+ * (browse URL + source.provider), for which the container's identity is
+ * authoritative. Operator-authored mappings and mappings on containers without a
+ * native identity are left untouched.
  */
 return new class extends Migration
 {
@@ -43,8 +41,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Irreversible: the pruned rows are reconstructable from the AzDO source
-        // (and are no longer created), so there is nothing to restore.
+        // Irreversible: the deleted rows are reconstructable from the AzDO source,
+        // so there is nothing to restore.
     }
 
     private function containerHasNativeIdentity(mixed $container): bool

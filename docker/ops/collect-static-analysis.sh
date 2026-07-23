@@ -305,8 +305,8 @@ repo_count=0
 while IFS= read -r project; do
     project_name=$(jq -r '.name' <<<"$project")
     project_id=$(jq -r '.id' <<<"$project")
-    # description/url come straight off the same projects response the AzDO source
-    # sync reads; appsec-scout derives the project's browser URL from the API url.
+    # description and url come from the project record; appsec-scout derives the
+    # project's browser URL from the API url.
     project_description=$(jq -r '.description // ""' <<<"$project")
     project_url=$(jq -r '.url // ""' <<<"$project")
     if [ -n "$PROJECT_FILTER" ] && ! grep -Eq "$PROJECT_FILTER" <<<"$project_name"; then
@@ -320,9 +320,8 @@ while IFS= read -r project; do
         repo_id=$(jq -r '.id' <<<"$repo")
         is_disabled=$(jq -r '.isDisabled' <<<"$repo")
         remote_url=$(jq -r '.remoteUrl' <<<"$repo")
-        # webUrl is the browser URL, defaultBranch the repo's default ref — both are
-        # on the same repositories response the AzDO source sync reads, so appsec-scout
-        # can link an ops-first repository row exactly as a sync would.
+        # webUrl is the repository's browser URL and defaultBranch its default ref;
+        # both feed the container's code identity so findings can be linked to source.
         repo_web_url=$(jq -r '.webUrl // ""' <<<"$repo")
         default_branch=$(jq -r '.defaultBranch // ""' <<<"$repo")
         if [ "$is_disabled" = "true" ]; then

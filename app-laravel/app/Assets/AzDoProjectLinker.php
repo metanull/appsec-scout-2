@@ -21,12 +21,10 @@ use Illuminate\Validation\ValidationException;
  * never overwritten).
  *
  * It also backfills a RepositoryMapping for a repository container, but only
- * when the container does not already carry its own code identity. A synced
- * AzDO repository records its own browse URL, provider and default branch, so a
- * mapping would merely restate them (and would then be an editable duplicate,
- * a redundant readiness row, and audit noise); the link machinery reads that
- * identity directly. The backfill therefore only fires for a container that
- * lacks a native identity, where a mapping genuinely adds the missing link.
+ * when the container does not carry its own code identity. An AzDO repository
+ * container records its own browse URL, provider and default branch, which the
+ * link machinery reads directly; a mapping is created only for a container that
+ * lacks that native identity, where it supplies the missing link.
  *
  * Every method is a no-op unless the record actually originates from the
  * 'azdo' source, so it is safe to call unconditionally from any sync path.
@@ -70,8 +68,8 @@ final class AzDoProjectLinker
             return;
         }
 
-        // The container already knows how to build its own code links — a mapping
-        // would only duplicate its browse URL/provider/branch. Skip it.
+        // A container that resolves to its own code identity needs no mapping to
+        // build code links.
         if ($this->identityResolver->containerIdentity($container) !== null) {
             return;
         }

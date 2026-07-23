@@ -211,10 +211,9 @@ final class PendingStaticAnalysisScanImporter
         $project = (string) ($result['project'] ?? '');
         $repository = (string) ($result['repository'] ?? '');
 
-        // Normalize through the exact same path a live AzDO source sync uses, so an
-        // ops-first row (created here before any sync has seen the project/repo) is
-        // born with the identical description, web URLs and SourceContextFacts a sync
-        // would have written — enrichment the resolver applies on create only.
+        // Normalize through the same path an AzDO source sync uses, so a row this
+        // import creates holds the same description, web URLs and SourceContextFacts
+        // a sync produces. The resolver applies this enrichment on create only.
         $system = AzDoScanResultDtoFactory::system($result);
         $container = AzDoScanResultDtoFactory::container($result);
 

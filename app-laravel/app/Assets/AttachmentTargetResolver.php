@@ -13,13 +13,11 @@ use InvalidArgumentException;
  * (source_id + source_system_id, software_system_id + source_container_id)
  * so the row converges with whatever a live source sync creates or already created.
  *
- * The optional url/description/metadata arguments enrich a row only when this
- * import is the one that creates it, so an "ops-first" row (imported before any
- * live source sync has ever seen the project/repo) is born with the same
- * description, web links and SourceContextFacts a sync would have written,
- * instead of a bare name-only stub. They are never applied to a row that
- * already exists: a live source sync remains the authoritative writer, so its
- * values are preserved and never overwritten by a later import.
+ * The optional url/description/metadata arguments are applied only when this
+ * import creates the row, so an import that first sees a project/repo populates
+ * the same description, web links and SourceContextFacts a source sync produces.
+ * They are never applied to an existing row: the source sync is the
+ * authoritative writer, and its values are preserved.
  */
 final class AttachmentTargetResolver
 {

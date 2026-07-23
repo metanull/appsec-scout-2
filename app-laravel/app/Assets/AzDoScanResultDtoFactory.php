@@ -18,14 +18,14 @@ use App\Sources\Dto\SystemDto;
  * a live source sync uses.
  *
  * Reusing AzDoNormalizer here — rather than re-deriving web URLs, branch
- * normalization and SourceContextFacts keys by hand — guarantees an ops-first
- * SoftwareSystem/SecurityContainer is described identically to how a sync would
- * describe it, so the two flows converge on byte-for-byte the same metadata.
+ * normalization and SourceContextFacts keys by hand — describes the
+ * SoftwareSystem/SecurityContainer identically to a source sync, so both flows
+ * converge on byte-for-byte the same metadata.
  *
- * The scan writes the repository's remote (clone) URL under the historical
- * `webUrl` key and its browser URL under `repositoryWebUrl`; both are mapped to
- * the AzDoRepository fields the normalizer expects. A missing field is treated
- * as absent (null), never as an empty string, so no blank facts are stored.
+ * The scan writes the repository's remote (clone) URL under the `webUrl` key and
+ * its browser URL under `repositoryWebUrl`; both are mapped to the AzDoRepository
+ * fields the normalizer expects. A missing field is treated as absent (null),
+ * never as an empty string, so no blank facts are stored.
  */
 final class AzDoScanResultDtoFactory
 {

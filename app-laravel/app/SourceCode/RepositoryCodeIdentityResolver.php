@@ -44,9 +44,9 @@ final class RepositoryCodeIdentityResolver
 
     /**
      * The container's own, mapping-independent code identity — non-null only when
-     * the container carries its own browse URL and provider (i.e. it came from a
-     * code-native Source such as AzDO). Callers use this to tell whether a
-     * RepositoryMapping would add anything or merely restate what the row knows.
+     * the container carries its own browse URL and provider (i.e. it comes from a
+     * code-native Source such as AzDO). Callers use it to tell whether a container
+     * resolves to code on its own, without any RepositoryMapping.
      */
     public function containerIdentity(?SecurityContainer $container): ?RepositoryCodeIdentity
     {
