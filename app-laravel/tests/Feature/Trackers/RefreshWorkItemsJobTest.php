@@ -1,10 +1,10 @@
 <?php
 
 use App\Audit\AuditLog;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
+use App\Sync\SystemIntegrationRuntime;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;

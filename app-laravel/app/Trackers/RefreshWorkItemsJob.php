@@ -3,8 +3,8 @@
 namespace App\Trackers;
 
 use App\Integrations\IntegrationSettingsRepository;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\WorkItemLink;
+use App\Sync\SystemIntegrationRuntime;
 use App\Trackers\Contracts\Tracker;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;

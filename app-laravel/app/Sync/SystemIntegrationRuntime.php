@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Integrations;
+namespace App\Sync;
 
 use App\Credentials\Vault;
 use App\SourceControl\Contracts\SourceControlProvider;

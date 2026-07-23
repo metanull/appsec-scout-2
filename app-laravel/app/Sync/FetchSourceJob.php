@@ -6,7 +6,6 @@ use App\Assets\AzDoProjectLinker;
 use App\Assets\StaleRecordSweeper;
 use App\Events\SyncRunFinished;
 use App\Integrations\IntegrationSettingsRepository;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\ErrorLog;
 use App\Models\SyncRun;
 use App\Sources\Contracts\EnrichesFetchedEvents;

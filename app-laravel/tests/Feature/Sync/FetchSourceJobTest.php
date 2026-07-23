@@ -1,6 +1,5 @@
 <?php
 
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -17,6 +16,7 @@ use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
 use App\Sync\FetchSourceJob;
+use App\Sync\SystemIntegrationRuntime;
 use App\Sync\Upserter;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
