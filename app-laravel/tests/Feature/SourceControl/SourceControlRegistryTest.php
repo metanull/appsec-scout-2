@@ -1,42 +1,19 @@
 <?php
 
-use App\Integrations\IntegrationSettingsRepository;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\Registry;
 use App\SourceControl\ValueObjects\TestResult;
 use Tests\Fakes\FakeSourceControlProvider;
 
-it('returns enabled source control providers from registry', function () {
+it('returns every registered source control provider from the registry', function () {
     $fake = new FakeSourceControlProvider;
 
     $this->app->bind('appsec-scout.source-control.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.source-control.fake'], 'appsec-scout.source-control');
 
-    app(IntegrationSettingsRepository::class)->update('source_control', 'fake-repos', [
-        'enabled' => true,
-        'fetch_interval_minutes' => 30,
-    ]);
+    $registry = new Registry($this->app);
 
-    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
-
-    expect($registry->enabled())->toHaveCount(1)
-        ->and($registry->enabled()[0]->id())->toBe('fake-repos');
-});
-
-it('excludes disabled source control providers', function () {
-    $fake = new FakeSourceControlProvider;
-
-    $this->app->bind('appsec-scout.source-control.fake', fn () => $fake);
-    $this->app->tag(['appsec-scout.source-control.fake'], 'appsec-scout.source-control');
-
-    app(IntegrationSettingsRepository::class)->update('source_control', 'fake-repos', [
-        'enabled' => false,
-        'fetch_interval_minutes' => 30,
-    ]);
-
-    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
-
-    expect($registry->enabled())->toBeEmpty();
+    expect(collect($registry->all())->map->id()->all())->toContain('fake-repos');
 });
 
 it('finds source control provider by id', function () {
@@ -45,7 +22,7 @@ it('finds source control provider by id', function () {
     $this->app->bind('appsec-scout.source-control.fake', fn () => $fake);
     $this->app->tag(['appsec-scout.source-control.fake'], 'appsec-scout.source-control');
 
-    $registry = new Registry($this->app, app(IntegrationSettingsRepository::class));
+    $registry = new Registry($this->app);
 
     expect($registry->find('fake-repos'))->toBe($fake)
         ->and($registry->find('nonexistent'))->toBeNull();

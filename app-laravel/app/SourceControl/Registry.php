@@ -2,7 +2,6 @@
 
 namespace App\SourceControl;
 
-use App\Integrations\IntegrationSettingsRepository;
 use App\SourceControl\Contracts\SourceControlProvider;
 use Illuminate\Contracts\Container\Container;
 
@@ -11,12 +10,8 @@ final class Registry
     /** @var list<SourceControlProvider>|null */
     private ?array $resolvedAll = null;
 
-    /** @var list<SourceControlProvider>|null */
-    private ?array $resolvedEnabled = null;
-
     public function __construct(
         private readonly Container $container,
-        private readonly IntegrationSettingsRepository $settings,
     ) {}
 
     /**
@@ -36,23 +31,6 @@ final class Registry
         }
 
         return $this->resolvedAll;
-    }
-
-    /**
-     * @return list<SourceControlProvider>
-     */
-    public function enabled(): array
-    {
-        if ($this->resolvedEnabled !== null) {
-            return $this->resolvedEnabled;
-        }
-
-        $this->resolvedEnabled = array_values(array_filter(
-            $this->all(),
-            fn (SourceControlProvider $provider): bool => $this->settings->isEnabled('source_control', $provider->id()),
-        ));
-
-        return $this->resolvedEnabled;
     }
 
     public function find(string $id): ?SourceControlProvider

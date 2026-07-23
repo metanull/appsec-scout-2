@@ -2,7 +2,6 @@
 
 use App\Credentials\Vault;
 use App\Filament\Pages\ProfileIntegrationsPage;
-use App\Integrations\IntegrationSettingsRepository;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
@@ -41,11 +40,11 @@ it('keeps profile integrations page route available for guidance links', functio
     expect(ProfileIntegrationsPage::getUrl())->toContain('/profile/integrations');
 });
 
-it('lists registered trackers for operator work item forms even when system scheduling is disabled', function () {
+it('lists registered trackers for operator work item forms', function () {
     $user = User::factory()->create();
     Auth::login($user);
 
-    bindFakeTrackerForWorkItemForms(enabled: false);
+    bindFakeTrackerForWorkItemForms();
 
     $options = app(WorkItemFormOptions::class)->trackerOptions();
 
@@ -241,15 +240,10 @@ it('applies no finding default when mappings exist on two trackers', function ()
     expect($tracker->getDefaultState())->toBeNull();
 });
 
-function bindFakeTrackerForWorkItemForms(bool $enabled = true): void
+function bindFakeTrackerForWorkItemForms(): void
 {
     app()->bind('appsec-scout.tracker.fake', fn () => new FakeTracker);
     app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
-
-    app(IntegrationSettingsRepository::class)->update('tracker', 'fake-tracker', [
-        'enabled' => $enabled,
-        'fetch_interval_minutes' => 30,
-    ]);
 
     app()->forgetInstance(TrackerRegistry::class);
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Integrations;
+namespace App\Triage;
 
 use App\Credentials\CredentialField;
 use App\Credentials\Vault;

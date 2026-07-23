@@ -64,8 +64,6 @@ it('is safe to re-run: already-resolved events are skipped', function () {
 
 function bindRecomputeFakeSource(FakeSource $source): FakeSource
 {
-    config(['integration_settings.fake.enabled' => true]);
-
     app()->bind('appsec-scout.source.fake', fn () => $source);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
     app()->forgetInstance(SourceRegistry::class);

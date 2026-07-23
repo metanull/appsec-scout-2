@@ -1,5 +1,6 @@
 <?php
 
+use App\Credentials\Vault;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
 use App\Models\SecurityEvent;
@@ -13,6 +14,8 @@ use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
+    // Reconciliation only discovers projects for trackers whose credentials are configured.
+    app(Vault::class)->set('fake-tracker.token', null, 'fake-token');
 });
 
 it('shows per-event reconciliation action to plan users but hides it for readers', function () {

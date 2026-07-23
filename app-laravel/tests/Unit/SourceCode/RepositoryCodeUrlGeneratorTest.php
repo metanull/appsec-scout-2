@@ -166,6 +166,78 @@ class RepositoryCodeUrlGeneratorTest extends TestCase
         );
     }
 
+    public function test_builds_bitbucket_file_url_from_a_browse_identity(): void
+    {
+        $generator = new RepositoryCodeUrlGenerator;
+
+        $identity = new RepositoryCodeIdentity(
+            providerType: RepositoryProviderType::Bitbucket,
+            repositoryBrowseUrl: 'https://bitbucket.org/appsec-scout/consultation-api',
+            defaultBranch: 'main',
+        );
+
+        $this->assertSame(
+            'https://bitbucket.org/appsec-scout/consultation-api',
+            $generator->repositoryUrlFor($identity),
+        );
+
+        $url = $generator->fileUrlFor($identity, new CodeLocation(
+            filePath: 'src/App/appsettings.json',
+            startLine: 55,
+            endLine: 60,
+        ));
+
+        $this->assertSame(
+            'https://bitbucket.org/appsec-scout/consultation-api/src/main/src/App/appsettings.json#lines-55:60',
+            $url,
+        );
+        $this->assertTrue(SourceLinkHelper::isSafeUrl($url));
+    }
+
+    public function test_generates_bitbucket_repository_and_file_urls(): void
+    {
+        $generator = new RepositoryCodeUrlGenerator;
+        $mapping = $this->makeBitbucketMapping();
+
+        $this->assertSame('https://bitbucket.org/appsec-scout/platform-api', $generator->repositoryUrl($mapping));
+
+        $location = new CodeLocation(
+            filePath: 'src/Example.php',
+            startLine: 10,
+            branch: 'feature/navigation',
+        );
+
+        $url = $generator->fileUrl($mapping, $location);
+
+        $this->assertSame(
+            'https://bitbucket.org/appsec-scout/platform-api/src/feature%2Fnavigation/packages/core/src/Example.php#lines-10',
+            $url,
+        );
+        $this->assertTrue(SourceLinkHelper::isSafeUrl($url));
+    }
+
+    public function test_prefers_commit_sha_over_branch_for_bitbucket_urls(): void
+    {
+        $generator = new RepositoryCodeUrlGenerator;
+        $mapping = $this->makeBitbucketMapping();
+
+        $location = new CodeLocation(
+            filePath: 'src/Example.php',
+            startLine: 42,
+            commitSha: 'abc123def456',
+            branch: 'feature/navigation',
+        );
+
+        $this->assertSame(
+            'https://bitbucket.org/appsec-scout/platform-api/src/abc123def456/packages/core/src/Example.php#lines-42',
+            $generator->fileUrl($mapping, $location),
+        );
+        $this->assertSame(
+            'https://bitbucket.org/appsec-scout/platform-api/commits/abc123def456',
+            $generator->commitUrl($mapping, $location),
+        );
+    }
+
     public function test_returns_null_for_missing_path_or_traversal_segments(): void
     {
         $generator = new RepositoryCodeUrlGenerator;
@@ -230,6 +302,25 @@ class RepositoryCodeUrlGeneratorTest extends TestCase
             ->withProvider($provider)
             ->create([
                 'repository_name' => 'platform/api',
+                'default_branch' => $defaultBranch,
+                'path_prefix' => 'packages/core',
+            ]);
+
+        $mapping->setRelation('repositoryProvider', $provider);
+
+        return $mapping;
+    }
+
+    private function makeBitbucketMapping(?string $defaultBranch = 'main'): RepositoryMapping
+    {
+        $provider = RepositoryProvider::factory()->bitbucket()->create();
+        $system = SoftwareSystem::factory()->create();
+
+        $mapping = RepositoryMapping::factory()
+            ->forSystem($system)
+            ->withProvider($provider)
+            ->create([
+                'repository_name' => 'platform-api',
                 'default_branch' => $defaultBranch,
                 'path_prefix' => 'packages/core',
             ]);

@@ -1,6 +1,5 @@
 <?php
 
-use App\Filament\Pages\IntegrationSettingsPage;
 use App\Filament\Pages\OperationsPage;
 use App\Filament\Pages\PendingSyncPage;
 use App\Filament\Pages\ProfileIntegrationsPage;
@@ -56,10 +55,6 @@ it('sets navigation sort 21 and label System Credentials for the System credenti
         ->and(SystemCredentialsPage::getNavigationLabel())->toBe('System Credentials');
 });
 
-it('sets navigation sort 22 for the Integrations page', function () {
-    expect(IntegrationSettingsPage::getNavigationSort())->toBe(22);
-});
-
 it('sets navigation sort 23 and label Repository Providers for the Repository providers resource', function () {
     expect(RepositoryProviderResource::getNavigationSort())->toBe(23)
         ->and(RepositoryProviderResource::getNavigationLabel())->toBe('Repository Providers');
@@ -103,11 +98,10 @@ it('orders the Reader group as Alerts, Local Findings, Dependencies, Software As
     expect($sorts)->toBe(collect($sorts)->sort()->values()->all());
 });
 
-it('orders the Admin group as Operations, System Credentials, Integrations, Repository Providers, Errors, Audit Log, Users', function () {
+it('orders the Admin group as Operations, System Credentials, Repository Providers, Errors, Audit Log, Users', function () {
     $sorts = [
         OperationsPage::getNavigationSort(),
         SystemCredentialsPage::getNavigationSort(),
-        IntegrationSettingsPage::getNavigationSort(),
         RepositoryProviderResource::getNavigationSort(),
         ErrorLogResource::getNavigationSort(),
         AuditLogResource::getNavigationSort(),

@@ -146,15 +146,13 @@ it('queues supported operational actions and records audit rows', function () {
         ->test(OperationsPage::class)
         ->set('selectedSourceId', 'fake')
         ->set('selectedTrackerId', 'fake-tracker')
-        ->call('dispatchDueIntegrationsNow')
         ->call('dispatchSelectedSource')
         ->call('dispatchSelectedTracker');
 
     Bus::assertDispatched(FetchSourceJob::class);
     Bus::assertDispatched(RefreshWorkItemsJob::class);
 
-    expect(AuditLog::query()->where('action', 'operations.dispatch_due_integrations')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
+    expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
 });
 
@@ -205,7 +203,6 @@ it('header actions render for admin', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->assertActionExists('dispatchDueIntegrations')
         ->assertActionExists('fetchSource')
         ->assertActionExists('refreshTracker')
         ->assertActionExists('syncInventory');
@@ -282,23 +279,6 @@ it('colors the inventory sync stat as success when the last run found something'
     $stat = $method->invoke(new OperationsHealthStatsWidget);
 
     expect($stat->getColor())->toBe('success');
-});
-
-it('warns and does not dispatch inventory sync when no inventory-capable provider is enabled', function () {
-    Bus::fake();
-
-    config(['integration_settings.fake.enabled' => false]);
-    app()->forgetInstance(SourceRegistry::class);
-
-    $admin = operationsAdmin();
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->call('dispatchSyncInventory')
-        ->assertNotified('No enabled Source or Source Control provider can supply inventory. Enable one in Integration Settings first.');
-
-    Bus::assertNotDispatched(SyncInventoryJob::class);
-    expect(AuditLog::query()->where('action', 'operations.sync_inventory')->exists())->toBeFalse();
 });
 
 it('sync users can trigger global reconciliation action', function () {
@@ -399,12 +379,6 @@ it('header action dispatches tracker by form data', function () {
 
 function bindFakeOperationsIntegrations(): void
 {
-    config([
-        'integration_settings.fake.enabled' => true,
-        'integration_settings.fake.interval_minutes' => 1,
-        'integration_settings.fake-tracker.enabled' => false,
-    ]);
-
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 

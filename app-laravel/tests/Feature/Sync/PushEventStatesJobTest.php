@@ -3,7 +3,6 @@
 use App\Audit\AuditLog;
 use App\Audit\Recorder;
 use App\Credentials\Vault;
-use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\ErrorLog;
@@ -16,6 +15,7 @@ use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sync\PendingSyncResolver;
 use App\Sync\PushEventStatesJob;
+use App\Triage\OperatorIntegrationRuntime;
 use Tests\Fakes\FakeSource;
 
 it('pushes pending state successfully and clears the dirty state', function () {
@@ -262,8 +262,6 @@ it('stops retrying automatically after the third failure', function () {
 
 function bindFakePushSource(FakeSource $source): FakeSource
 {
-    config(['integration_settings.fake.enabled' => true]);
-
     app()->bind('appsec-scout.source.fake', fn () => $source);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
     app()->forgetInstance(SourceRegistry::class);

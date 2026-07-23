@@ -1,7 +1,6 @@
 <?php
 
 use App\Credentials\Vault;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\RepositoryMapping;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
@@ -9,11 +8,12 @@ use App\Sources\AzDo\AzDoSource;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 use App\Sync\FetchSourceJob;
+use App\Sync\SystemIntegrationRuntime;
 use App\Sync\Upserter;
 use Tests\Fakes\FakeSource;
 
 it('automatically links azdo systems to a software asset and creates repository mappings during a regular sync', function () {
-    app(Vault::class)->set('azdo.organization', null, 'testorg');
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
     $source = new class extends FakeSource
     {

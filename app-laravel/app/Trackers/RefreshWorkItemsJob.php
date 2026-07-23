@@ -2,9 +2,8 @@
 
 namespace App\Trackers;
 
-use App\Integrations\IntegrationSettingsRepository;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\WorkItemLink;
+use App\Sync\SystemIntegrationRuntime;
 use App\Trackers\Contracts\Tracker;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -28,10 +27,7 @@ final class RefreshWorkItemsJob implements ShouldBeUnique, ShouldQueue
     public function handle(
         SystemIntegrationRuntime $runtime,
         WorkItemRefreshService $service,
-        ?IntegrationSettingsRepository $settings = null,
     ): void {
-        $settings ??= app(IntegrationSettingsRepository::class);
-
         $trackerIds = $this->trackerId !== null
             ? collect([$this->trackerId])
             : WorkItemLink::query()
@@ -50,22 +46,13 @@ final class RefreshWorkItemsJob implements ShouldBeUnique, ShouldQueue
 
             if ($tracker === null) {
                 if ($this->trackerId === $trackerId) {
-                    $settings->markSyncResult('tracker', $trackerId, false, 'Tracker is not registered.');
-
                     throw new RuntimeException("Tracker {$trackerId} is not registered.");
                 }
 
                 continue;
             }
 
-            try {
-                $runtime->runTracker($trackerId, fn (Tracker $tracker) => $service->refreshTracker($trackerId, $tracker));
-                $settings->markSyncResult('tracker', $trackerId, true);
-            } catch (\Throwable $exception) {
-                $settings->markSyncResult('tracker', $trackerId, false, $exception->getMessage());
-
-                throw $exception;
-            }
+            $runtime->runTracker($trackerId, fn (Tracker $tracker) => $service->refreshTracker($trackerId, $tracker));
         }
     }
 }

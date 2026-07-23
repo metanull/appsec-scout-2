@@ -3,7 +3,6 @@
 namespace App\Assets;
 
 use App\Audit\Recorder;
-use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\LocalFinding;
 use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
@@ -12,6 +11,7 @@ use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Support\MarkdownTruncation;
 use App\Trackers\TrackerProjectLinker;
+use App\Triage\OperatorIntegrationRuntime;
 use Illuminate\Database\DatabaseManager;
 
 final class LocalFindingWorkItemService

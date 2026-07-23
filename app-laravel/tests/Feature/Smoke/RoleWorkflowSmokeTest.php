@@ -2,18 +2,14 @@
 
 use App\Audit\AuditLog;
 use App\Audit\Recorder;
-use App\Filament\Pages\IntegrationSettingsPage;
-use App\Filament\Pages\OperationsPage;
 use App\Filament\Pages\PendingSyncPage;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SoftwareSystemResource;
 use App\Filament\Resources\UserResource;
-use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
-use App\Models\IntegrationSetting;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
@@ -27,11 +23,11 @@ use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Registry;
 use App\Trackers\WorkItemService;
 use App\Triage\CommentManager;
+use App\Triage\OperatorIntegrationRuntime;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use App\Users\UserAdminService;
 use Database\Seeders\RolePermissionSeeder;
-use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
 use Tests\Fakes\FakeTracker;
 
@@ -161,47 +157,16 @@ it('covers the admin workflow and integration operations actions', function () {
     app(UserAdminService::class)->disable($created, $admin);
     app(UserAdminService::class)->enable($created, $admin);
 
-    IntegrationSetting::query()->updateOrCreate(
-        ['integration_kind' => 'source', 'integration_id' => 'fake'],
-        ['enabled' => false, 'fetch_interval_minutes' => 30],
-    );
-
-    $record = IntegrationSetting::query()
-        ->where('integration_kind', 'source')
-        ->where('integration_id', 'fake')
-        ->firstOrFail();
-
-    Livewire::actingAs($admin)
-        ->test(IntegrationSettingsPage::class)
-        ->callTableAction('editSettings', $record, data: [
-            'enabled' => true,
-            'fetch_interval_minutes' => 5,
-        ])
-        ->callTableAction('testConnection', $record);
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->call('dispatchDueIntegrationsNow');
-
     expect(AuditLog::query()->where('action', 'user.bootstrap_admin')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'user.created')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'user.roles_changed')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'user.two_factor_reset')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'user.disabled')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'user.enabled')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'integration.settings_updated')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'integration.connection_tested')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'operations.dispatch_due_integrations')->exists())->toBeTrue();
+        ->and(AuditLog::query()->where('action', 'user.enabled')->exists())->toBeTrue();
 });
 
 function bindSmokeIntegrations(): void
 {
-    config([
-        'integration_settings.fake.enabled' => true,
-        'integration_settings.fake.interval_minutes' => 1,
-        'integration_settings.fake-tracker.enabled' => true,
-    ]);
-
     bindSmokeSource(new FakeSource);
     bindSmokeTracker(new FakeTracker);
 }

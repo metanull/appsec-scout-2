@@ -245,10 +245,7 @@ final class RepositoryMappingService
         $normalizedRepositoryName = $this->encodePath($repositoryName);
         $providerType = RepositoryProviderType::from((string) $provider->getRawOriginal('provider_type'));
 
-        return match ($providerType) {
-            RepositoryProviderType::AzureRepos => $normalizedBaseUrl . '/_git/' . $normalizedRepositoryName,
-            RepositoryProviderType::GitHub => $normalizedBaseUrl . '/' . $normalizedRepositoryName,
-        };
+        return RepositoryCodeUrlGenerator::browseUrl($providerType, $normalizedBaseUrl, $normalizedRepositoryName);
     }
 
     private function encodePath(string $path): string

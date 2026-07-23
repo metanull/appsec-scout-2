@@ -3,11 +3,11 @@
 namespace App\Trackers;
 
 use App\Audit\Recorder;
-use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
+use App\Triage\OperatorIntegrationRuntime;
 use Illuminate\Database\DatabaseManager;
 
 final class WorkItemService

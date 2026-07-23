@@ -39,6 +39,17 @@ final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
         ];
     }
 
+    /**
+     * The Azure DevOps organization configured for repository/code access,
+     * distinct from the alert-ingestion Source credential.
+     */
+    public function organization(): ?string
+    {
+        $organization = $this->vault->get('azdo-repos.organization', null);
+
+        return is_string($organization) && $organization !== '' ? $organization : null;
+    }
+
     public function testConnection(): TestResult
     {
         try {

@@ -2,7 +2,6 @@
 
 namespace App\Assets;
 
-use App\Credentials\Vault;
 use App\Models\Enums\RepositoryProviderType;
 use App\Models\RepositoryProvider;
 use App\Models\SecurityContainer;
@@ -10,6 +9,7 @@ use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\SourceCode\RepositoryCodeIdentityResolver;
 use App\SourceCode\RepositoryMappingService;
+use App\SourceControl\AzDo\AzDoRepos;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Context\SourceContextFacts;
 use Illuminate\Validation\ValidationException;
@@ -34,7 +34,7 @@ final class AzDoProjectLinker
     public function __construct(
         private readonly SoftwareAssetService $softwareAssets,
         private readonly RepositoryMappingService $repositoryMappings,
-        private readonly Vault $vault,
+        private readonly AzDoRepos $azdoRepos,
         private readonly RepositoryCodeIdentityResolver $identityResolver,
     ) {}
 
@@ -74,9 +74,11 @@ final class AzDoProjectLinker
             return;
         }
 
-        $organization = $this->vault->get('azdo.organization', null);
+        // Repo linking uses the Source Control organization (azdo-repos.*),
+        // distinct from the alert-ingestion Source credential (azdo.*).
+        $organization = $this->azdoRepos->organization();
 
-        if (! is_string($organization) || $organization === '') {
+        if ($organization === null) {
             return;
         }
 

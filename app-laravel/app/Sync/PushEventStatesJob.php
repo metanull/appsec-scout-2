@@ -3,11 +3,11 @@
 namespace App\Sync;
 
 use App\Audit\Recorder;
-use App\Integrations\OperatorIntegrationRuntime;
 use App\Models\ErrorLog;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
 use App\Sources\Contracts\Source;
+use App\Triage\OperatorIntegrationRuntime;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;

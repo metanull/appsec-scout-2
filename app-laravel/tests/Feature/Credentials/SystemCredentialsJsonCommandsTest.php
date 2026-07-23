@@ -111,11 +111,6 @@ it('fails import when json structure is invalid', function () {
 
 function bindFakeCredentialIntegrationsForJsonCommands(): void
 {
-    config([
-        'integration_settings.fake.enabled' => true,
-        'integration_settings.fake-tracker.enabled' => true,
-    ]);
-
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 

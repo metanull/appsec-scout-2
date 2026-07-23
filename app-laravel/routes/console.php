@@ -14,7 +14,6 @@ use App\Assets\StaticAnalysis\PendingStaticAnalysisScanImporter;
 use App\Assets\StaticAnalysis\StaticAnalysisScanStatusReporter;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
-use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\Attachment;
@@ -40,14 +39,6 @@ use Illuminate\Support\Str;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
-
-Artisan::command('integrations:dispatch-due', function (DispatchDueIntegrations $dispatcher): int {
-    $count = $dispatcher->dispatchDue();
-
-    $this->info(sprintf('Dispatched %d due integration job(s).', $count));
-
-    return self::SUCCESS;
-})->purpose('Dispatch due source fetch and tracker refresh jobs from database-backed integration settings');
 
 Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin} {--if-missing}', function (UserAdminService $users): int {
     $email = (string) $this->option('email');
@@ -938,6 +929,5 @@ Artisan::command('events:recompute-pending-sync', function (SourceRegistry $sour
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
-Schedule::command('integrations:dispatch-due')->everyMinute()->withoutOverlapping()->name('integrations:dispatch-due');
 Schedule::command('sbom:import-pending-scans')->everyMinute()->withoutOverlapping()->name('sbom:import-pending-scans');
 Schedule::command('staticanalysis:import-pending-scans')->everyMinute()->withoutOverlapping()->name('staticanalysis:import-pending-scans');

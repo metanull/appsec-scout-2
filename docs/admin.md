@@ -76,23 +76,15 @@ ASoC credentials require a regional base URL in addition to `keyId` and `keySecr
 
 ## Integrations
 
-Use `Admin -> Integrations` to manage every known Source, Tracker, and Source Control provider,
-including ones that are currently disabled.
+Integrations are not scheduled and have no enable/disable or interval settings. Every registered
+Source, Tracker, and Source Control provider is always available; you sync them on demand.
 
-Per integration you can:
+- Configure their credentials on `Admin -> System Credentials` (system-wide) or
+  `Profile -> Integrations` (your own personal override). Both pages also run a connection test,
+  always with the credential being edited.
+- Trigger a Source fetch or Tracker refresh from `Admin -> Operations` (below).
 
-- Enable or disable it.
-- Set the polling interval in minutes.
-- Run a connection test.
-- Inspect the last sync timestamp and status.
-
-Important behavior:
-
-- Scheduler decisions are database-backed and applied on the next minutely dispatcher tick — no
-  scheduler restart is needed after changing enablement or interval values.
-- Connection tests always run with the system credential.
-- Source Control rows show the same enable/interval fields, but nothing reads them: Source Control
-  never runs on a schedule (see [docs/concepts/integration.md](concepts/integration.md#source-control-is-not-scheduled)).
+See [docs/concepts/integration.md](concepts/integration.md) for the full trigger model.
 
 ## Operations
 
@@ -108,11 +100,10 @@ The page shows:
 
 Actions:
 
-- Dispatch due integrations.
 - Dispatch one source fetch, or one tracker refresh.
 - Reconcile all tracker links (`ReconcileAllJob`, sweeps every alert for missing work-item links).
 - Sync inventory (`SyncInventoryJob`, syncs `SoftwareSystem`/`SecurityContainer` rows from every
-  enabled Source and Source Control provider that supports it).
+  registered Source and Source Control provider that supports it).
 - Prune audit logs, prune error logs.
 - Retry a failed job, or forget it.
 

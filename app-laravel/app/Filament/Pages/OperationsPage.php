@@ -9,14 +9,11 @@ use App\Filament\Widgets\RecentFailedJobsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
 use App\Filament\Widgets\SbomScanStatusWidget;
 use App\Filament\Widgets\StaticAnalysisScanStatusWidget;
-use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
-use App\SourceControl\Contracts\EnumeratesInventory;
-use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Sync\SyncInventoryJob;
@@ -88,12 +85,6 @@ class OperationsPage extends Page
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('dispatchDueIntegrations')
-                ->label('Dispatch due integrations')
-                ->icon('heroicon-o-play')
-                ->requiresConfirmation()
-                ->action(fn () => $this->dispatchDueIntegrationsNow()),
-
             Action::make('fetchSource')
                 ->label('Fetch source')
                 ->icon('heroicon-o-arrow-down-tray')
@@ -165,7 +156,6 @@ class OperationsPage extends Page
     public function scheduleEntries(): array
     {
         return [
-            ['id' => 'integrations:dispatch-due', 'cadence' => 'Every minute'],
             ['id' => 'prune-audit-logs', 'cadence' => 'Daily'],
             ['id' => 'prune-error-logs', 'cadence' => 'Daily'],
         ];
@@ -193,15 +183,6 @@ class OperationsPage extends Page
         }
 
         return $options;
-    }
-
-    public function dispatchDueIntegrationsNow(): void
-    {
-        $count = app(DispatchDueIntegrations::class)->dispatchDue();
-
-        app(Recorder::class)->recordAdminAction('operations.dispatch_due_integrations', ['count' => $count]);
-
-        Notification::make()->title("Queued {$count} due integration job(s)")->success()->send();
     }
 
     public function dispatchSelectedSource(string $override = ''): void
@@ -281,15 +262,6 @@ class OperationsPage extends Page
     {
         Gate::authorize('admin.queue');
 
-        if ($this->inventoryCapableProviderCount() === 0) {
-            Notification::make()
-                ->title('No enabled Source or Source Control provider can supply inventory. Enable one in Integration Settings first.')
-                ->warning()
-                ->send();
-
-            return;
-        }
-
         if ($this->isSyncInventoryQueued()) {
             Notification::make()->title('Inventory sync is already queued or running.')->info()->send();
 
@@ -300,16 +272,6 @@ class OperationsPage extends Page
         app(Recorder::class)->recordAdminAction('operations.sync_inventory');
 
         Notification::make()->title('Inventory sync started. You will see updated Systems/Containers when the job completes.')->success()->send();
-    }
-
-    private function inventoryCapableProviderCount(): int
-    {
-        $sourceControlCount = count(array_filter(
-            app(SourceControlRegistry::class)->enabled(),
-            fn ($provider): bool => $provider instanceof EnumeratesInventory,
-        ));
-
-        return count(app(SourceRegistry::class)->enabled()) + $sourceControlCount;
     }
 
     private function isSyncInventoryQueued(): bool

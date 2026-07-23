@@ -11,7 +11,9 @@ use App\Models\SoftwareSystem;
 use App\Sources\AzDo\AzDoNormalizer;
 
 beforeEach(function () {
-    app(Vault::class)->set('azdo.organization', null, 'testorg');
+    // Repo linking resolves the organization from the Source Control credential
+    // (azdo-repos.*), not the alert-ingestion Source credential (azdo.*).
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 });
 
 it('creates and links a software asset for an unlinked azdo software system', function () {
@@ -79,6 +81,27 @@ it('creates a project-scoped repository mapping for an azdo repository container
     $provider = RepositoryProvider::query()->findOrFail($mapping?->repository_provider_id);
     expect($provider->getRawOriginal('provider_type'))->toBe(RepositoryProviderType::AzureRepos->value)
         ->and($provider->base_url)->toBe('https://dev.azure.com/testorg/TelCodes');
+});
+
+it('does not backfill a repository mapping when only the Source credential organization is present', function () {
+    // The alert-ingestion Source credential (azdo.*) is intentionally no longer
+    // sufficient for repo linking: without the Source Control organization
+    // (azdo-repos.*) no mapping is created.
+    app(Vault::class)->set('azdo-repos.organization', null, '');
+    app(Vault::class)->set('azdo.organization', null, 'testorg');
+
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => AzDoNormalizer::SOURCE_ID,
+        'name' => 'TelCodes',
+    ]);
+    $container = SecurityContainer::factory()->forSystem($system)->create([
+        'name' => 'tinc-front',
+        'kind' => 'repository',
+    ]);
+
+    app(AzDoProjectLinker::class)->ensureRepositoryMapping($container);
+
+    expect(RepositoryMapping::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(0);
 });
 
 it('does not backfill a repository mapping when the container already carries its own code identity', function () {

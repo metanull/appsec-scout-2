@@ -8,6 +8,21 @@ use App\Models\RepositoryProvider;
 
 final class RepositoryCodeUrlGenerator
 {
+    /**
+     * The shared repository browse-URL formatter — the single place that maps a
+     * provider type + base URL + already-encoded repository name to the repo root
+     * URL. Callers that persist or preview the URL (RepositoryMappingService,
+     * RepositoryMappingsRelationManager) funnel through here so every provider
+     * type is handled in exactly one place.
+     */
+    public static function browseUrl(RepositoryProviderType $providerType, string $baseUrl, string $encodedRepositoryName): string
+    {
+        return match ($providerType) {
+            RepositoryProviderType::AzureRepos => $baseUrl . '/_git/' . $encodedRepositoryName,
+            RepositoryProviderType::GitHub, RepositoryProviderType::Bitbucket => $baseUrl . '/' . $encodedRepositoryName,
+        };
+    }
+
     // ---------------------------------------------------------------------
     // Identity-based API (the single source of truth for URL formatting).
     // ---------------------------------------------------------------------
@@ -31,6 +46,7 @@ final class RepositoryCodeUrlGenerator
         $url = match ($identity->providerType) {
             RepositoryProviderType::GitHub => $browseUrl . '/blob/' . rawurlencode($ref) . '/' . $fullPath,
             RepositoryProviderType::AzureRepos => $browseUrl . '?path=/' . $fullPath . '&version=' . rawurlencode($this->azureVersionRef($location->commitSha, $ref)),
+            RepositoryProviderType::Bitbucket => $browseUrl . '/src/' . rawurlencode($ref) . '/' . $fullPath,
         };
 
         if ($location->startLine === null) {
@@ -43,6 +59,7 @@ final class RepositoryCodeUrlGenerator
                 . '&line=' . $location->startLine
                 . ($location->endLine !== null && $location->endLine !== $location->startLine ? '&lineEnd=' . $location->endLine : '')
                 . '&lineStartColumn=1&lineEndColumn=1',
+            RepositoryProviderType::Bitbucket => $url . '#lines-' . $location->startLine . ($location->endLine !== null && $location->endLine !== $location->startLine ? ':' . $location->endLine : ''),
         };
     }
 
@@ -55,6 +72,7 @@ final class RepositoryCodeUrlGenerator
         return match ($identity->providerType) {
             RepositoryProviderType::GitHub => $identity->repositoryBrowseUrl . '/commit/' . rawurlencode($location->commitSha),
             RepositoryProviderType::AzureRepos => $identity->repositoryBrowseUrl . '/commit/' . rawurlencode($location->commitSha),
+            RepositoryProviderType::Bitbucket => $identity->repositoryBrowseUrl . '/commits/' . rawurlencode($location->commitSha),
         };
     }
 
@@ -81,10 +99,7 @@ final class RepositoryCodeUrlGenerator
             return null;
         }
 
-        $browseUrl = match ($providerType) {
-            RepositoryProviderType::GitHub => $baseUrl . '/' . $repositoryName,
-            RepositoryProviderType::AzureRepos => $baseUrl . '/_git/' . $repositoryName,
-        };
+        $browseUrl = self::browseUrl($providerType, $baseUrl, $repositoryName);
 
         return new RepositoryCodeIdentity(
             providerType: $providerType,

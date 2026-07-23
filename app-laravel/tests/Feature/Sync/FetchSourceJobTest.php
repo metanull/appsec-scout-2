@@ -1,6 +1,5 @@
 <?php
 
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -17,6 +16,7 @@ use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
 use App\Sync\FetchSourceJob;
+use App\Sync\SystemIntegrationRuntime;
 use App\Sync\Upserter;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -24,8 +24,6 @@ use Illuminate\Support\Facades\Queue;
 use Tests\Fakes\FakeSource;
 
 it('syncs systems containers events and preserves dirty/local metadata', function () {
-    config(['integration_settings.fake.enabled' => true]);
-
     $source = (new FakeSource)
         ->withSystems(new SystemDto('sys-001', 'Payments API', null, null, [
             'tracker.github.repository' => 'acme/payments',
@@ -86,8 +84,6 @@ it('syncs systems containers events and preserves dirty/local metadata', functio
 });
 
 it('links events to containers when the event only carries the source container id', function () {
-    config(['integration_settings.fake.enabled' => true]);
-
     $source = (new FakeSource)
         ->withSystems(new SystemDto('sys-001', 'Payments API'))
         ->withContainers('sys-001', new ContainerDto('repo-001', 'Backend Repo', 'sys-001', 'repository'))
@@ -113,8 +109,6 @@ it('links events to containers when the event only carries the source container 
 });
 
 it('writes failure sync run when source throws', function () {
-    config(['integration_settings.broken.enabled' => true]);
-
     $brokenSource = new class implements Source
     {
         public function id(): string
@@ -249,7 +243,6 @@ it('dispatches enrichment jobs returned by a source that implements QueuesEnrich
             new EventDto(sourceEventId: 'evt-b', sourceSystemId: 'sys-001', title: 'Alert B', severity: EventSeverity::Medium, state: EventState::Open, type: EventType::Vulnerability),
         );
 
-    config(['integration_settings.fake.enabled' => true]);
     $this->app->bind('appsec-scout.source.fake', fn () => $enrichingSource);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 
@@ -264,8 +257,6 @@ it('dispatches enrichment jobs returned by a source that implements QueuesEnrich
 });
 
 it('marks a system and its containers removed when they disappear from a re-fetch, and un-marks them on reappearance', function () {
-    config(['integration_settings.fake.enabled' => true]);
-
     $source = (new FakeSource)
         ->withSystems(
             new SystemDto('sys-001', 'Payments API'),
@@ -308,8 +299,6 @@ it('marks a system and its containers removed when they disappear from a re-fetc
 });
 
 it('does not sweep any system when a mid-pass exception aborts the fetch', function () {
-    config(['integration_settings.broken-mid-pass.enabled' => true]);
-
     $existingSystem = SoftwareSystem::factory()->create([
         'source_id' => 'broken-mid-pass',
         'source_system_id' => 'sys-existing',

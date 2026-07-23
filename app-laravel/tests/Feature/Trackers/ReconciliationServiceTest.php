@@ -1,5 +1,6 @@
 <?php
 
+use App\Credentials\Vault;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
@@ -13,6 +14,8 @@ use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
+    // Reconciliation only discovers projects for trackers whose credentials are configured.
+    app(Vault::class)->set('fake-tracker.token', null, 'fake-token');
 });
 
 it('creates link for matching reconciliation candidate in scoped project', function () {

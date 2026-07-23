@@ -7,6 +7,7 @@ use App\Events\SyncRunFinished;
 use App\Listeners\BustDashboardCache;
 use App\Models\User;
 use App\SourceControl\AzDo\AzDoRepos;
+use App\SourceControl\Bitbucket\BitbucketRepos;
 use App\SourceControl\GitHub\GitHubRepos;
 use App\Sources\Asoc\AsocSource;
 use App\Sources\AzDo\AzDoSource;
@@ -32,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(JiraTracker::class);
         $this->app->singleton(AzDoRepos::class);
         $this->app->singleton(GitHubRepos::class);
+        $this->app->singleton(BitbucketRepos::class);
 
         $this->app->alias(AzDoSource::class, 'appsec-scout.source.azdo');
         $this->app->alias(AsocSource::class, 'appsec-scout.source.asoc');
@@ -40,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->alias(JiraTracker::class, 'appsec-scout.tracker.jira');
         $this->app->alias(AzDoRepos::class, 'appsec-scout.source-control.azdo-repos');
         $this->app->alias(GitHubRepos::class, 'appsec-scout.source-control.github-repos');
+        $this->app->alias(BitbucketRepos::class, 'appsec-scout.source-control.bitbucket-repos');
 
         $this->app->tag([
             AzDoSource::class,
@@ -55,6 +58,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->tag([
             AzDoRepos::class,
             GitHubRepos::class,
+            BitbucketRepos::class,
         ], 'appsec-scout.source-control');
     }
 

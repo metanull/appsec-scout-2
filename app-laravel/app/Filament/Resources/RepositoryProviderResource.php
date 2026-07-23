@@ -176,6 +176,7 @@ class RepositoryProviderResource extends Resource
         return match ($type) {
             RepositoryProviderType::AzureRepos => 'Azure Repos',
             RepositoryProviderType::GitHub => 'GitHub',
+            RepositoryProviderType::Bitbucket => 'Bitbucket',
         };
     }
 }

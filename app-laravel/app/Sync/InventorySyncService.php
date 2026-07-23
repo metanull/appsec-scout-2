@@ -4,7 +4,6 @@ namespace App\Sync;
 
 use App\Assets\AzDoProjectLinker;
 use App\Assets\StaleRecordSweeper;
-use App\Integrations\SystemIntegrationRuntime;
 use App\SourceControl\Contracts\EnumeratesInventory;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\Registry as SourceControlRegistry;
@@ -55,8 +54,14 @@ final class InventorySyncService
         // filtered-out project/repo as removed, so only sweep on a genuinely full pass.
         $shouldSweep = $projectFilter === null && $repoFilter === null;
 
-        foreach ($this->sources->enabled() as $source) {
+        foreach ($this->sources->all() as $source) {
             if ($onlyId !== null && $source->id() !== $onlyId) {
+                continue;
+            }
+
+            // Only sync integrations that are actually configured — a full sweep must not
+            // hard-fail on a registered-but-uncredentialed Source.
+            if (! $this->runtime->hasRequiredSystemCredentials($source->credentialFields())) {
                 continue;
             }
 
@@ -77,12 +82,16 @@ final class InventorySyncService
             });
         }
 
-        foreach ($this->sourceControls->enabled() as $provider) {
+        foreach ($this->sourceControls->all() as $provider) {
             if (! $provider instanceof EnumeratesInventory) {
                 continue;
             }
 
             if ($onlyId !== null && $provider->id() !== $onlyId) {
+                continue;
+            }
+
+            if (! $this->runtime->hasRequiredSystemCredentials($provider->credentialFields())) {
                 continue;
             }
 

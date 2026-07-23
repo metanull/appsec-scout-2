@@ -23,6 +23,13 @@ function azdoFakeSource(): FakeSource
 
 beforeEach(function () {
     app(Vault::class)->set('azdo.organization', null, 'testorg');
+    // Inventory sync only runs configured integrations. The command binds a FakeSource
+    // (id 'azdo') whose credential field is fake.apiKey, so that is what must be seeded
+    // for the gate to run it.
+    app(Vault::class)->set('fake.apiKey', null, 'fake-key');
+    // Repository auto-linking resolves the organization from the Source Control
+    // credential (azdo-repos.*), so it must be seeded for mappings to be created.
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 });
 
 it('syncs every azdo project and repo into assets, systems, containers, and mappings', function () {
@@ -34,7 +41,6 @@ it('syncs every azdo project and repo into assets, systems, containers, and mapp
         ->withContainers('proj-1', new ContainerDto('repo-1', 'TelCodes', 'proj-1', 'repository'))
         ->withContainers('proj-2', new ContainerDto('repo-2', 'helpers', 'proj-2', 'repository'));
 
-    config(['integration_settings.azdo.enabled' => true]);
     $this->app->bind(AzDoSource::class, fn () => $source);
 
     $this->artisan('assets:sync-azdo-projects')
@@ -58,7 +64,6 @@ it('applies project and repository filters', function () {
         ->withContainers('proj-1', new ContainerDto('repo-1', 'TelCodes', 'proj-1', 'repository'))
         ->withContainers('proj-2', new ContainerDto('repo-2', 'helpers', 'proj-2', 'repository'));
 
-    config(['integration_settings.azdo.enabled' => true]);
     $this->app->bind(AzDoSource::class, fn () => $source);
 
     $this->artisan('assets:sync-azdo-projects', ['--project-filter' => '^TelCodes$'])
@@ -71,7 +76,6 @@ it('applies project and repository filters', function () {
 it('accepts an explicit --pat override instead of the stored system credential', function () {
     $source = azdoFakeSource()->withSystems(new SystemDto('proj-1', 'TelCodes'));
 
-    config(['integration_settings.azdo.enabled' => true]);
     $this->app->bind(AzDoSource::class, fn () => $source);
 
     $this->artisan('assets:sync-azdo-projects', ['--pat' => 'explicit-pat'])
@@ -90,7 +94,6 @@ it('leaves an already-linked software system alone and reports zero new assets',
 
     $source = azdoFakeSource()->withSystems(new SystemDto('proj-1', 'TelCodes'));
 
-    config(['integration_settings.azdo.enabled' => true]);
     $this->app->bind(AzDoSource::class, fn () => $source);
 
     $this->artisan('assets:sync-azdo-projects')

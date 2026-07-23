@@ -240,11 +240,6 @@ it('renders system credentials page even when an existing credential is unreadab
 
 function bindFakeCredentialIntegrations(): void
 {
-    config([
-        'integration_settings.fake.enabled' => true,
-        'integration_settings.fake-tracker.enabled' => true,
-    ]);
-
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);
     app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
 
@@ -257,10 +252,6 @@ function bindFakeCredentialIntegrations(): void
 
 function bindFakeMultiFieldSourceIntegration(): void
 {
-    config([
-        'integration_settings.fake-multi.enabled' => true,
-    ]);
-
     app()->bind('appsec-scout.source.fake-multi', fn () => new FakeMultiFieldSource);
     app()->tag(['appsec-scout.source.fake-multi'], 'appsec-scout.source');
 

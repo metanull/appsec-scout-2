@@ -1,5 +1,6 @@
 <?php
 
+use App\Credentials\Vault;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Sources\Dto\ContainerDto;
@@ -8,6 +9,12 @@ use App\Sync\InventorySyncService;
 use Tests\Fakes\FakeInventorySourceControlProvider;
 use Tests\Fakes\FakeSource;
 
+beforeEach(function () {
+    // Inventory sync only runs configured integrations; seed the fakes' system credentials.
+    app(Vault::class)->set('fake.apiKey', null, 'fake-key');
+    app(Vault::class)->set('fake-inventory-repos.token', null, 'fake-token');
+});
+
 it('syncs systems and containers from an enabled Source', function () {
     $source = (new FakeSource)
         ->withSystems(new SystemDto('sys-1', 'Payments API'))
@@ -15,7 +22,6 @@ it('syncs systems and containers from an enabled Source', function () {
 
     $this->app->bind('appsec-scout.source.fake', fn () => $source);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
-    config(['integration_settings.fake.enabled' => true]);
 
     $counts = app(InventorySyncService::class)->sync();
 
@@ -32,7 +38,6 @@ it('syncs projects and repositories from an enabled Source Control provider impl
 
     $this->app->bind('appsec-scout.source-control.fake-inventory', fn () => $provider);
     $this->app->tag(['appsec-scout.source-control.fake-inventory'], 'appsec-scout.source-control');
-    config(['integration_settings.fake-inventory-repos.enabled' => true]);
 
     $counts = app(InventorySyncService::class)->sync();
 
@@ -50,10 +55,6 @@ it('scopes sync to a single id, ignoring other enabled sources and providers', f
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
     $this->app->bind('appsec-scout.source-control.fake-inventory', fn () => $provider);
     $this->app->tag(['appsec-scout.source-control.fake-inventory'], 'appsec-scout.source-control');
-    config([
-        'integration_settings.fake.enabled' => true,
-        'integration_settings.fake-inventory-repos.enabled' => true,
-    ]);
 
     $counts = app(InventorySyncService::class)->sync('fake');
 
@@ -70,7 +71,6 @@ it('sweeps a system no longer returned by a full, unfiltered sync', function () 
 
     $this->app->bind('appsec-scout.source.fake', fn () => $source);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
-    config(['integration_settings.fake.enabled' => true]);
 
     app(InventorySyncService::class)->sync();
 
@@ -91,7 +91,6 @@ it('does not sweep when a project filter narrows the sync to less than everythin
 
     $this->app->bind('appsec-scout.source.fake', fn () => $source);
     $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
-    config(['integration_settings.fake.enabled' => true]);
 
     app(InventorySyncService::class)->sync();
 
@@ -106,7 +105,6 @@ it('does not sweep when a project filter narrows the sync to less than everythin
 it('ignores a Source Control provider that does not implement EnumeratesInventory', function () {
     // GitHubRepos implements only SourceControlProvider, not EnumeratesInventory (Story A left it
     // unimplemented) — enabling it must not attempt to call a repo-listing method it doesn't have.
-    config(['integration_settings.github-repos.enabled' => true]);
 
     $counts = app(InventorySyncService::class)->sync();
 

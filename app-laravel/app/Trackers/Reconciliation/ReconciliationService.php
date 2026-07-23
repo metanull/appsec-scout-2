@@ -3,18 +3,18 @@
 namespace App\Trackers\Reconciliation;
 
 use App\Audit\Recorder;
-use App\Integrations\OperatorIntegrationRuntime;
-use App\Integrations\SystemIntegrationRuntime;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
 use App\Models\WorkItemLink;
+use App\Sync\SystemIntegrationRuntime;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\TrackerProjectLinker;
+use App\Triage\OperatorIntegrationRuntime;
 use Illuminate\Database\DatabaseManager;
 
 final class ReconciliationService
@@ -216,7 +216,7 @@ final class ReconciliationService
         $seen = [];
         $merged = [];
 
-        foreach ([...$linkedPairs, ...$this->allEnabledTrackerProjectPairs()] as $pair) {
+        foreach ([...$linkedPairs, ...$this->allTrackerProjectPairs()] as $pair) {
             $key = "{$pair['tracker_id']}\0{$pair['project_key']}";
 
             if (isset($seen[$key])) {
@@ -231,11 +231,17 @@ final class ReconciliationService
     }
 
     /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
-    private function allEnabledTrackerProjectPairs(): array
+    private function allTrackerProjectPairs(): array
     {
         $pairs = [];
 
-        foreach ($this->trackers->enabled() as $tracker) {
+        foreach ($this->trackers->all() as $tracker) {
+            // Discovery covers configured trackers only — a registered-but-uncredentialed
+            // tracker cannot list projects and must not abort the whole reconciliation.
+            if (! $this->systemRuntime->hasRequiredSystemCredentials($tracker->credentialFields())) {
+                continue;
+            }
+
             /** @var list<ProjectDto> $projects */
             $projects = $this->systemRuntime->runTracker(
                 $tracker->id(),

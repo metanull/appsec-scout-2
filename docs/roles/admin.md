@@ -20,7 +20,6 @@ role has.
 
 - `Admin -> Users`
 - `Admin -> System Credentials`
-- `Admin -> Integrations`
 - `Admin -> Operations`
 - `Admin -> Audit Log`
 - `Admin -> Errors`
