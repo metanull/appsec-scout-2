@@ -40,4 +40,13 @@ class RepositoryProviderFactory extends Factory
             'base_url' => 'https://github.com/appsec-scout',
         ]);
     }
+
+    public function bitbucket(): static
+    {
+        return $this->state([
+            'provider_type' => RepositoryProviderType::Bitbucket,
+            'name' => $this->faker->company() . ' Bitbucket',
+            'base_url' => 'https://bitbucket.org/appsec-scout',
+        ]);
+    }
 }
