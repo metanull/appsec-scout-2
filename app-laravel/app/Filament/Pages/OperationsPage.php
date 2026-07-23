@@ -9,7 +9,6 @@ use App\Filament\Widgets\RecentFailedJobsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
 use App\Filament\Widgets\SbomScanStatusWidget;
 use App\Filament\Widgets\StaticAnalysisScanStatusWidget;
-use App\Integrations\DispatchDueIntegrations;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\SyncRun;
@@ -88,12 +87,6 @@ class OperationsPage extends Page
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('dispatchDueIntegrations')
-                ->label('Dispatch due integrations')
-                ->icon('heroicon-o-play')
-                ->requiresConfirmation()
-                ->action(fn () => $this->dispatchDueIntegrationsNow()),
-
             Action::make('fetchSource')
                 ->label('Fetch source')
                 ->icon('heroicon-o-arrow-down-tray')
@@ -165,7 +158,6 @@ class OperationsPage extends Page
     public function scheduleEntries(): array
     {
         return [
-            ['id' => 'integrations:dispatch-due', 'cadence' => 'Every minute'],
             ['id' => 'prune-audit-logs', 'cadence' => 'Daily'],
             ['id' => 'prune-error-logs', 'cadence' => 'Daily'],
         ];
@@ -193,15 +185,6 @@ class OperationsPage extends Page
         }
 
         return $options;
-    }
-
-    public function dispatchDueIntegrationsNow(): void
-    {
-        $count = app(DispatchDueIntegrations::class)->dispatchDue();
-
-        app(Recorder::class)->recordAdminAction('operations.dispatch_due_integrations', ['count' => $count]);
-
-        Notification::make()->title("Queued {$count} due integration job(s)")->success()->send();
     }
 
     public function dispatchSelectedSource(string $override = ''): void

@@ -3,7 +3,6 @@
 use App\Audit\AuditLog;
 use App\Credentials\Credential;
 use App\Filament\Pages\IntegrationSettingsPage;
-use App\Integrations\DispatchDueIntegrations;
 use App\Integrations\IntegrationSettingsRepository;
 use App\Models\IntegrationSetting;
 use App\Models\User;
@@ -15,7 +14,6 @@ use App\Sync\FetchSourceJob;
 use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry as TrackerRegistry;
 use Database\Seeders\RolePermissionSeeder;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
@@ -41,31 +39,6 @@ it('exposes source control providers alongside sources and trackers', function (
     expect(collect($sourceControls->all())->map->id()->all())->toContain('fake-repos')
         ->and(collect($sourceControls->all())->map->id()->all())->toContain('azdo-repos')
         ->and(collect($sourceControls->all())->map->id()->all())->toContain('github-repos');
-});
-
-it('dispatches only due integrations from database-backed settings', function () {
-    Cache::flush();
-
-    IntegrationSetting::query()->updateOrCreate(
-        ['integration_kind' => 'source', 'integration_id' => 'fake'],
-        [
-            'enabled' => true,
-            'fetch_interval_minutes' => 5,
-            'last_synced_at' => now()->subMinutes(10),
-        ],
-    );
-    IntegrationSetting::query()->updateOrCreate(
-        ['integration_kind' => 'tracker', 'integration_id' => 'fake-tracker'],
-        [
-            'enabled' => true,
-            'fetch_interval_minutes' => 30,
-            'last_synced_at' => now()->subMinutes(5),
-        ],
-    );
-
-    $count = app(DispatchDueIntegrations::class)->dispatchDue();
-
-    expect($count)->toBe(1);
 });
 
 it('uses system credentials for background credential resolution', function () {

@@ -146,15 +146,13 @@ it('queues supported operational actions and records audit rows', function () {
         ->test(OperationsPage::class)
         ->set('selectedSourceId', 'fake')
         ->set('selectedTrackerId', 'fake-tracker')
-        ->call('dispatchDueIntegrationsNow')
         ->call('dispatchSelectedSource')
         ->call('dispatchSelectedTracker');
 
     Bus::assertDispatched(FetchSourceJob::class);
     Bus::assertDispatched(RefreshWorkItemsJob::class);
 
-    expect(AuditLog::query()->where('action', 'operations.dispatch_due_integrations')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
+    expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
 });
 
@@ -205,7 +203,6 @@ it('header actions render for admin', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->assertActionExists('dispatchDueIntegrations')
         ->assertActionExists('fetchSource')
         ->assertActionExists('refreshTracker')
         ->assertActionExists('syncInventory');

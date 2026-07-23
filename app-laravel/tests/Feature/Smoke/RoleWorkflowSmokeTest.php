@@ -3,7 +3,6 @@
 use App\Audit\AuditLog;
 use App\Audit\Recorder;
 use App\Filament\Pages\IntegrationSettingsPage;
-use App\Filament\Pages\OperationsPage;
 use App\Filament\Pages\PendingSyncPage;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
@@ -179,10 +178,6 @@ it('covers the admin workflow and integration operations actions', function () {
         ])
         ->callTableAction('testConnection', $record);
 
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->call('dispatchDueIntegrationsNow');
-
     expect(AuditLog::query()->where('action', 'user.bootstrap_admin')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'user.created')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'user.roles_changed')->exists())->toBeTrue()
@@ -190,8 +185,7 @@ it('covers the admin workflow and integration operations actions', function () {
         ->and(AuditLog::query()->where('action', 'user.disabled')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'user.enabled')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'integration.settings_updated')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'integration.connection_tested')->exists())->toBeTrue()
-        ->and(AuditLog::query()->where('action', 'operations.dispatch_due_integrations')->exists())->toBeTrue();
+        ->and(AuditLog::query()->where('action', 'integration.connection_tested')->exists())->toBeTrue();
 });
 
 function bindSmokeIntegrations(): void

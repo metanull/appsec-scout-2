@@ -20,7 +20,7 @@ use Throwable;
  * Imports Roslynator/SpotBugs SARIF reports from an in-progress or finished
  * `invoke-ops.ps1 -StaticAnalysis` run as soon as each repository's line lands in
  * run.jsonl, instead of waiting for the whole (multi-hour) scan to finish. Scheduled
- * every minute alongside integrations:dispatch-due; invoke-ops.ps1 also calls the
+ * to run every minute; invoke-ops.ps1 also calls the
  * `staticanalysis:import-pending-scans` command once directly right after the scan
  * container exits, to flush anything the last scheduled tick hasn't picked up yet.
  *
