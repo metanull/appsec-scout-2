@@ -3,12 +3,13 @@
 namespace App\SecurityEvents;
 
 use App\Models\CuratedLink;
-use App\Models\RepositoryMapping;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\WorkItemLink;
 use App\SourceCode\CodeLocation;
+use App\SourceCode\RepositoryCodeIdentity;
+use App\SourceCode\RepositoryCodeIdentityResolver;
 use App\SourceCode\RepositoryCodeUrlGenerator;
 
 /**
@@ -20,18 +21,8 @@ use App\SourceCode\RepositoryCodeUrlGenerator;
  */
 final class EventLinkCatalog
 {
-    private const KIND_SOURCE = 'source';
-
-    private const KIND_CODE = 'code';
-
-    private const KIND_REMEDIATION = 'remediation';
-
-    private const KIND_STANDARD = 'standard';
-
-    private const KIND_TRACKER = 'tracker';
-
     public function __construct(
-        private readonly RepositoryMappingResolver $repositoryMappingResolver,
+        private readonly RepositoryCodeIdentityResolver $repositoryCodeIdentityResolver,
         private readonly RepositoryCodeUrlGenerator $repositoryCodeUrlGenerator,
     ) {}
 
@@ -43,53 +34,19 @@ final class EventLinkCatalog
      */
     public function build(SecurityEvent $event): array
     {
-        $links = [];
-        $seen = [];
+        $collector = new LinkCollector;
 
-        $add = function (string $label, ?string $url, string $kind, int $priority = 0) use (&$links, &$seen): void {
-            if ($url === null || $url === '') {
-                return;
-            }
-
-            if (! SourceLinkHelper::isSafeUrl($url)) {
-                return;
-            }
-
-            if (isset($seen[$url])) {
-                if ($priority <= $seen[$url]['priority']) {
-                    return;
-                }
-
-                $links[$seen[$url]['index']] = [
-                    'label' => $label,
-                    'url' => $url,
-                    'kind' => $kind,
-                    'external' => true,
-                ];
-                $seen[$url]['priority'] = $priority;
-
-                return;
-            }
-
-            $seen[$url] = [
-                'priority' => $priority,
-                'index' => count($links),
-            ];
-            $links[] = [
-                'label' => $label,
-                'url' => $url,
-                'kind' => $kind,
-                'external' => true,
-            ];
+        $add = static function (string $label, ?string $url, string $kind, int $priority = 0) use ($collector): void {
+            $collector->add($label, $url, $kind, $priority);
         };
 
         // Source alert URL
-        $add('Source alert', $event->url, self::KIND_SOURCE, 3);
+        $add('Source alert', $event->url, LinkCollector::KIND_SOURCE, 3);
 
         // Source system URL
         $system = $event->relationLoaded('softwareSystem') ? $event->getRelation('softwareSystem') : null;
         if ($system instanceof SoftwareSystem && is_string($system->url)) {
-            $add('System', $system->url, self::KIND_SOURCE, 1);
+            $add('System', $system->url, LinkCollector::KIND_SOURCE, 1);
 
             $this->addCuratedLinks($system->relationLoaded('curatedLinks') ? $system->getRelation('curatedLinks') : null, $add, 1);
         }
@@ -97,13 +54,13 @@ final class EventLinkCatalog
         // Container URL
         $container = $event->relationLoaded('container') ? $event->getRelation('container') : null;
         if ($container instanceof SecurityContainer && is_string($container->url)) {
-            $add('Repository', $container->url, self::KIND_SOURCE, 2);
+            $add('Repository', $container->url, LinkCollector::KIND_SOURCE, 2);
 
             $this->addCuratedLinks($container->relationLoaded('curatedLinks') ? $container->getRelation('curatedLinks') : null, $add, 2);
         }
 
         // Version control / source file URL
-        $add('Source file', $event->version_control_url, self::KIND_CODE, 3);
+        $add('Source file', $event->version_control_url, LinkCollector::KIND_CODE, 3);
 
         $this->addRepositoryLinks($event, $add);
 
@@ -122,14 +79,14 @@ final class EventLinkCatalog
                 /** @var WorkItemLink $link */
                 if (is_string($link->work_item_url) && $link->work_item_url !== '') {
                     $label = trim(sprintf('%s: %s', $link->tracker_id, $link->work_item_title ?? $link->work_item_id));
-                    $add($label, $link->work_item_url, self::KIND_TRACKER, 0);
+                    $add($label, $link->work_item_url, LinkCollector::KIND_TRACKER, 0);
                 }
             }
         }
 
         $this->addCuratedLinks($event->relationLoaded('curatedLinks') ? $event->getRelation('curatedLinks') : null, $add, 3);
 
-        return $links;
+        return $collector->all();
     }
 
     /**
@@ -171,28 +128,28 @@ final class EventLinkCatalog
         // CVE in metadata (e.g. from AzDO dependency or ASoC)
         if (isset($metadata['cve']) && is_string($metadata['cve'])) {
             $cveUrl = SourceLinkHelper::cveLinkUrl($metadata['cve']);
-            $add('CVE: ' . strtoupper($metadata['cve']), $cveUrl, self::KIND_STANDARD);
+            $add('CVE: ' . strtoupper($metadata['cve']), $cveUrl, LinkCollector::KIND_STANDARD);
         }
 
         // CWE in metadata
         if (isset($metadata['cwe'])) {
             $cweUrl = SourceLinkHelper::cweLinkUrl($metadata['cwe']);
-            $add('CWE: ' . $metadata['cwe'], $cweUrl, self::KIND_STANDARD);
+            $add('CWE: ' . $metadata['cwe'], $cweUrl, LinkCollector::KIND_STANDARD);
         }
 
         // Rule help URI from AzDO tools
         if (isset($metadata['ruleHelpUri']) && is_string($metadata['ruleHelpUri'])) {
-            $add('Rule documentation', $metadata['ruleHelpUri'], self::KIND_REMEDIATION);
+            $add('Rule documentation', $metadata['ruleHelpUri'], LinkCollector::KIND_REMEDIATION);
         }
 
         // ASoC article URL
         if (isset($metadata['articleUrl']) && is_string($metadata['articleUrl'])) {
-            $add('Issue article', $metadata['articleUrl'], self::KIND_REMEDIATION);
+            $add('Issue article', $metadata['articleUrl'], LinkCollector::KIND_REMEDIATION);
         }
 
         // Detectify details page (deduplicated with metadata.links iteration above)
         if (isset($metadata['detailsPage']) && is_string($metadata['detailsPage'])) {
-            $add('Details page', $metadata['detailsPage'], self::KIND_SOURCE);
+            $add('Details page', $metadata['detailsPage'], LinkCollector::KIND_SOURCE);
         }
     }
 
@@ -201,14 +158,18 @@ final class EventLinkCatalog
      */
     private function addRepositoryLinks(SecurityEvent $event, callable $add): void
     {
-        $mapping = $this->repositoryMappingResolver->resolve($event);
+        $event->loadMissing([
+            'container.repositoryMappings.repositoryProvider',
+            'softwareSystem.repositoryMappings.repositoryProvider',
+        ]);
 
-        if (! $mapping instanceof RepositoryMapping) {
+        $identity = $this->repositoryCodeIdentityResolver->resolve($event->container, $event->softwareSystem);
+
+        if (! $identity instanceof RepositoryCodeIdentity) {
             return;
         }
 
-        $repositoryUrl = $this->repositoryCodeUrlGenerator->repositoryUrl($mapping);
-        $add('Repository', $repositoryUrl, self::KIND_CODE, 3);
+        $add('Repository', $this->repositoryCodeUrlGenerator->repositoryUrlFor($identity), LinkCollector::KIND_CODE, 3);
 
         $filePath = $event->file_path;
 
@@ -224,8 +185,8 @@ final class EventLinkCatalog
             commitSha: is_string($event->commit_sha) ? $event->commit_sha : null,
         );
 
-        $fileUrl = $this->repositoryCodeUrlGenerator->fileUrl($mapping, $location);
-        $add('Source file', $fileUrl, self::KIND_CODE, 3);
+        $fileUrl = $this->repositoryCodeUrlGenerator->fileUrlFor($identity, $location);
+        $add('Source file', $fileUrl, LinkCollector::KIND_CODE, 3);
     }
 
     private function inferKindFromLabel(string $label): string
@@ -233,26 +194,26 @@ final class EventLinkCatalog
         $lower = strtolower($label);
 
         if (str_contains($lower, 'cve') || str_contains($lower, 'nvd') || str_contains($lower, 'cwe') || str_contains($lower, 'mitre')) {
-            return self::KIND_STANDARD;
+            return LinkCollector::KIND_STANDARD;
         }
 
         if (str_contains($lower, 'source') || str_contains($lower, 'article') || str_contains($lower, 'portal') || str_contains($lower, 'details')) {
-            return self::KIND_SOURCE;
+            return LinkCollector::KIND_SOURCE;
         }
 
         if (str_contains($lower, 'rule') || str_contains($lower, 'remediat') || str_contains($lower, 'doc')) {
-            return self::KIND_REMEDIATION;
+            return LinkCollector::KIND_REMEDIATION;
         }
 
         if (str_contains($lower, 'repo') || str_contains($lower, 'file') || str_contains($lower, 'code') || str_contains($lower, 'scan')) {
-            return self::KIND_CODE;
+            return LinkCollector::KIND_CODE;
         }
 
         if (str_contains($lower, 'jira') || str_contains($lower, 'issue') || str_contains($lower, 'ticket') || str_contains($lower, 'work item')) {
-            return self::KIND_TRACKER;
+            return LinkCollector::KIND_TRACKER;
         }
 
-        return self::KIND_SOURCE;
+        return LinkCollector::KIND_SOURCE;
     }
 
     /**
@@ -260,13 +221,6 @@ final class EventLinkCatalog
      */
     public static function kindLabel(string $kind): string
     {
-        return match ($kind) {
-            self::KIND_SOURCE => 'Source',
-            self::KIND_CODE => 'Code',
-            self::KIND_REMEDIATION => 'Remediation',
-            self::KIND_STANDARD => 'Standards',
-            self::KIND_TRACKER => 'Tracker',
-            default => 'Other',
-        };
+        return LinkCollector::kindLabel($kind);
     }
 }

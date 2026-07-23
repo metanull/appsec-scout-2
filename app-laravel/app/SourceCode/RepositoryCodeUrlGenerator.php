@@ -8,60 +8,36 @@ use App\Models\RepositoryProvider;
 
 final class RepositoryCodeUrlGenerator
 {
-    public function repositoryUrl(RepositoryMapping $mapping): ?string
+    // ---------------------------------------------------------------------
+    // Identity-based API (the single source of truth for URL formatting).
+    // ---------------------------------------------------------------------
+
+    public function repositoryUrlFor(RepositoryCodeIdentity $identity): string
     {
-        $provider = $mapping->repositoryProvider;
-
-        if (! $provider instanceof RepositoryProvider) {
-            return null;
-        }
-
-        $providerType = $this->providerType($provider);
-        if ($providerType === null) {
-            return null;
-        }
-
-        $baseUrl = $this->baseUrl($provider);
-        $repositoryName = $this->normalizeRelativePath($mapping->repository_name);
-
-        if ($baseUrl === null || $repositoryName === null) {
-            return null;
-        }
-
-        return match ($providerType) {
-            RepositoryProviderType::GitHub => $baseUrl . '/' . $repositoryName,
-            RepositoryProviderType::AzureRepos => $baseUrl . '/_git/' . $repositoryName,
-        };
+        return $identity->repositoryBrowseUrl;
     }
 
-    public function fileUrl(RepositoryMapping $mapping, CodeLocation $location): ?string
+    public function fileUrlFor(RepositoryCodeIdentity $identity, CodeLocation $location): ?string
     {
-        $provider = $mapping->repositoryProvider;
+        $fullPath = $this->joinPaths($identity->pathPrefix, $location->filePath);
+        $ref = $this->resolveRef($identity->defaultBranch, $location->branch, $location->commitSha);
 
-        if (! $provider instanceof RepositoryProvider) {
+        if ($fullPath === null || $ref === null) {
             return null;
         }
 
-        $providerType = $this->providerType($provider);
-        $baseUrl = $this->baseUrl($provider);
-        $repositoryName = $this->normalizeRelativePath($mapping->repository_name);
-        $fullPath = $this->joinPaths($mapping->path_prefix, $location->filePath);
-        $ref = $this->resolveRef($mapping->default_branch, $location->branch, $location->commitSha);
+        $browseUrl = $identity->repositoryBrowseUrl;
 
-        if ($providerType === null || $baseUrl === null || $repositoryName === null || $fullPath === null || $ref === null) {
-            return null;
-        }
-
-        $url = match ($providerType) {
-            RepositoryProviderType::GitHub => $baseUrl . '/' . $repositoryName . '/blob/' . rawurlencode($ref) . '/' . $fullPath,
-            RepositoryProviderType::AzureRepos => $baseUrl . '/_git/' . $repositoryName . '?path=/' . $fullPath . '&version=' . rawurlencode($this->azureVersionRef($location->commitSha, $ref)),
+        $url = match ($identity->providerType) {
+            RepositoryProviderType::GitHub => $browseUrl . '/blob/' . rawurlencode($ref) . '/' . $fullPath,
+            RepositoryProviderType::AzureRepos => $browseUrl . '?path=/' . $fullPath . '&version=' . rawurlencode($this->azureVersionRef($location->commitSha, $ref)),
         };
 
         if ($location->startLine === null) {
             return $url;
         }
 
-        return match ($providerType) {
+        return match ($identity->providerType) {
             RepositoryProviderType::GitHub => $url . '#L' . $location->startLine . ($location->endLine !== null && $location->endLine !== $location->startLine ? '-L' . $location->endLine : ''),
             RepositoryProviderType::AzureRepos => $url
                 . '&line=' . $location->startLine
@@ -70,12 +46,27 @@ final class RepositoryCodeUrlGenerator
         };
     }
 
-    public function commitUrl(RepositoryMapping $mapping, CodeLocation $location): ?string
+    public function commitUrlFor(RepositoryCodeIdentity $identity, CodeLocation $location): ?string
     {
         if ($location->commitSha === null || $location->commitSha === '') {
             return null;
         }
 
+        return match ($identity->providerType) {
+            RepositoryProviderType::GitHub => $identity->repositoryBrowseUrl . '/commit/' . rawurlencode($location->commitSha),
+            RepositoryProviderType::AzureRepos => $identity->repositoryBrowseUrl . '/commit/' . rawurlencode($location->commitSha),
+        };
+    }
+
+    // ---------------------------------------------------------------------
+    // RepositoryMapping adapters — an operator override expressed as a
+    // provider + repository name (+ optional monorepo prefix). Kept so the
+    // mapping stays a first-class way to describe a repository, but they now
+    // funnel through the identity API above.
+    // ---------------------------------------------------------------------
+
+    public function identityFromMapping(RepositoryMapping $mapping): ?RepositoryCodeIdentity
+    {
         $provider = $mapping->repositoryProvider;
 
         if (! $provider instanceof RepositoryProvider) {
@@ -90,11 +81,43 @@ final class RepositoryCodeUrlGenerator
             return null;
         }
 
-        return match ($providerType) {
-            RepositoryProviderType::GitHub => $baseUrl . '/' . $repositoryName . '/commit/' . rawurlencode($location->commitSha),
-            RepositoryProviderType::AzureRepos => $baseUrl . '/_git/' . $repositoryName . '/commit/' . rawurlencode($location->commitSha),
+        $browseUrl = match ($providerType) {
+            RepositoryProviderType::GitHub => $baseUrl . '/' . $repositoryName,
+            RepositoryProviderType::AzureRepos => $baseUrl . '/_git/' . $repositoryName,
         };
+
+        return new RepositoryCodeIdentity(
+            providerType: $providerType,
+            repositoryBrowseUrl: $browseUrl,
+            defaultBranch: is_string($mapping->default_branch) ? $mapping->default_branch : null,
+            pathPrefix: is_string($mapping->path_prefix) ? $mapping->path_prefix : null,
+        );
     }
+
+    public function repositoryUrl(RepositoryMapping $mapping): ?string
+    {
+        $identity = $this->identityFromMapping($mapping);
+
+        return $identity !== null ? $this->repositoryUrlFor($identity) : null;
+    }
+
+    public function fileUrl(RepositoryMapping $mapping, CodeLocation $location): ?string
+    {
+        $identity = $this->identityFromMapping($mapping);
+
+        return $identity !== null ? $this->fileUrlFor($identity, $location) : null;
+    }
+
+    public function commitUrl(RepositoryMapping $mapping, CodeLocation $location): ?string
+    {
+        $identity = $this->identityFromMapping($mapping);
+
+        return $identity !== null ? $this->commitUrlFor($identity, $location) : null;
+    }
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
 
     private function providerType(RepositoryProvider $provider): ?RepositoryProviderType
     {
