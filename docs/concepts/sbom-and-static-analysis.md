@@ -89,8 +89,14 @@ scan scripts do directly:
   only newly-appended lines are processed — safe to run every minute against a file that's still
   growing.
 - Each report line is matched back to the `SoftwareSystem`/`SecurityContainer` it belongs to (by
-  the AzDO project/repository ID recorded when the org was first synced as a Source) and stored
-  as an `Attachment`.
+  the AzDO project/repository ID, the same natural key the `azdo` Source upserts on) and stored
+  as an `Attachment`. When a scan reaches a project/repository that no live Source sync has seen
+  yet, the row is *created* here rather than matched — and because each `run.jsonl` line now also
+  carries the project description/URL and the repository web URL, remote URL and default branch
+  (all read from the very same Azure DevOps API responses the Source reads), that "ops-first" row
+  is born with the same `url`, `description` and `SourceContextFacts` a sync would have written,
+  instead of a bare name-only stub waiting for a later sync to backfill it. Rows that already
+  exist are never overwritten — the live Source stays the authoritative writer.
 - `-SkipUpload` drops a marker file in the run directory that both the scan scripts and these
   import commands recognize, opting that run out of upload entirely — useful for a dry run.
 

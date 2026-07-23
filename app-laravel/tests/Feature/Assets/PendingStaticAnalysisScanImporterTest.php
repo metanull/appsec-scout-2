@@ -34,7 +34,11 @@ function writeStaticAnalysisResultLine(array $overrides = []): string
         'repository' => 'payments-api',
         'projectId' => 'project-guid-1',
         'repositoryId' => 'repo-guid-1',
-        'webUrl' => 'https://dev.azure.com/org/Payments/_git/payments-api',
+        'webUrl' => 'https://org@dev.azure.com/org/Payments/_git/payments-api',
+        'repositoryWebUrl' => 'https://dev.azure.com/org/Payments/_git/payments-api',
+        'defaultBranch' => 'refs/heads/main',
+        'projectDescription' => 'Payments platform services',
+        'projectUrl' => 'https://dev.azure.com/org/_apis/projects/project-guid-1',
         'cloned' => true,
         'solutions' => [],
         'dotnetAnalysisGenerated' => true,
@@ -65,6 +69,68 @@ it('imports newly landed reports and advances the per-run cursor', function () {
         ->and(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container?->id)->where('kind', 'code-quality-dotnet')->count())->toBe(1);
 
     expect(trim(File::get($cursorPath . '/20260101T000000Z.processed')))->toBe('1');
+
+    tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
+});
+
+it('enriches an ops-first system and container with the same facts a source sync writes', function () {
+    [$importPath, $cursorPath] = setUpStaticAnalysisTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.dotnet.sarif', '{"runs":[]}');
+    File::put($runDir . '/run.jsonl', writeStaticAnalysisResultLine() . "\n");
+
+    app(PendingStaticAnalysisScanImporter::class)->importPending();
+
+    $system = SoftwareSystem::query()->where('source_id', 'azdo')->where('source_system_id', 'project-guid-1')->firstOrFail();
+    expect($system->description)->toBe('Payments platform services')
+        ->and($system->url)->toBe('https://dev.azure.com/org/project-guid-1')
+        ->and(\App\Sources\Context\SourceContextFacts::getString($system->metadata ?? [], \App\Sources\Context\SourceContextFacts::AZDO_PROJECT_WEB_URL))->toBe('https://dev.azure.com/org/project-guid-1');
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-guid-1')->firstOrFail();
+    expect($container->url)->toBe('https://dev.azure.com/org/Payments/_git/payments-api')
+        ->and(\App\Sources\Context\SourceContextFacts::getString($container->metadata ?? [], \App\Sources\Context\SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL))->toBe('https://org@dev.azure.com/org/Payments/_git/payments-api')
+        ->and(\App\Sources\Context\SourceContextFacts::getString($container->metadata ?? [], \App\Sources\Context\SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('main')
+        ->and(\App\Sources\Context\SourceContextFacts::getString($container->metadata ?? [], \App\Sources\Context\SourceContextFacts::SOURCE_PROVIDER))->toBe('azure-repos');
+
+    tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
+});
+
+it('never overwrites an already-existing source-synced system or container', function () {
+    [$importPath, $cursorPath] = setUpStaticAnalysisTestDirectories();
+
+    $system = SoftwareSystem::query()->create([
+        'source_id' => 'azdo',
+        'source_system_id' => 'project-guid-1',
+        'name' => 'Synced Payments',
+        'description' => 'Authored by the live sync',
+        'url' => 'https://sync.example/project',
+        'metadata' => ['sync' => true],
+    ]);
+    $container = SecurityContainer::query()->create([
+        'software_system_id' => $system->id,
+        'source_container_id' => 'repo-guid-1',
+        'name' => 'synced-repo',
+        'kind' => 'repository',
+        'url' => 'https://sync.example/repo',
+        'metadata' => ['code' => ['default_branch' => 'develop']],
+    ]);
+
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.dotnet.sarif', '{"runs":[]}');
+    File::put($runDir . '/run.jsonl', writeStaticAnalysisResultLine() . "\n");
+
+    app(PendingStaticAnalysisScanImporter::class)->importPending();
+
+    expect($system->fresh())
+        ->name->toBe('Synced Payments')
+        ->description->toBe('Authored by the live sync')
+        ->url->toBe('https://sync.example/project');
+    expect($container->fresh()->url)->toBe('https://sync.example/repo')
+        ->and(\App\Sources\Context\SourceContextFacts::getString($container->fresh()->metadata ?? [], \App\Sources\Context\SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('develop');
+
+    expect(Attachment::query()->where('owner_id', $container->id)->where('kind', 'code-quality-dotnet')->count())->toBe(1);
 
     tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
 });

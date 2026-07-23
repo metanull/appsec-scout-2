@@ -6,6 +6,7 @@ namespace App\Assets\StaticAnalysis;
 
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
+use App\Assets\AzDoScanResultDtoFactory;
 use App\Models\ErrorLog;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Filesystem\Filesystem;
@@ -210,8 +211,29 @@ final class PendingStaticAnalysisScanImporter
         $project = (string) ($result['project'] ?? '');
         $repository = (string) ($result['repository'] ?? '');
 
-        $owner = $this->resolver->resolveSystem(AzDoNormalizer::SOURCE_ID, $projectId, $project);
-        $owner = $this->resolver->resolveContainer($owner, $repositoryId, $repository, 'repository');
+        // Normalize through the exact same path a live AzDO source sync uses, so an
+        // ops-first row (created here before any sync has seen the project/repo) is
+        // born with the identical description, web URLs and SourceContextFacts a sync
+        // would have written — enrichment the resolver applies on create only.
+        $system = AzDoScanResultDtoFactory::system($result);
+        $container = AzDoScanResultDtoFactory::container($result);
+
+        $owner = $this->resolver->resolveSystem(
+            AzDoNormalizer::SOURCE_ID,
+            $projectId,
+            $project,
+            url: $system->url,
+            description: $system->description,
+            metadata: $system->metadata ?? [],
+        );
+        $owner = $this->resolver->resolveContainer(
+            $owner,
+            $repositoryId,
+            $repository,
+            'repository',
+            url: $container->url,
+            metadata: $container->metadata ?? [],
+        );
 
         $this->attachments->attachTo(
             owner: $owner,

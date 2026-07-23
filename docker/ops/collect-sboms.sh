@@ -148,6 +148,7 @@ azdo_get_all() {
 
 process_repo() {
     local project_name="$1" repo_name="$2" remote_url="$3" project_id="$4" repo_id="$5"
+    local repo_web_url="$6" default_branch="$7" project_description="$8" project_url="$9"
     local workdir
     workdir=$(mktemp -d)
     trap 'rm -rf "$workdir"' RETURN
@@ -210,6 +211,10 @@ process_repo() {
         --arg projectId "$project_id" \
         --arg repositoryId "$repo_id" \
         --arg webUrl "$remote_url" \
+        --arg repositoryWebUrl "$repo_web_url" \
+        --arg defaultBranch "$default_branch" \
+        --arg projectDescription "$project_description" \
+        --arg projectUrl "$project_url" \
         --argjson cloned "$clone_ok" \
         --argjson solutions "$solutions_json" \
         --argjson sbomGenerated "$trivy_ok" \
@@ -219,7 +224,9 @@ process_repo() {
         --argjson secretsGenerated "$secret_ok" \
         --arg secretsPath "$([ "$secret_ok" = true ] && echo "$safe_project/${safe_repo}.secrets.sarif.json" || echo "")" \
         '{project: $project, repository: $repository, projectId: $projectId, repositoryId: $repositoryId,
-          webUrl: $webUrl, cloned: $cloned, solutions: $solutions,
+          webUrl: $webUrl, repositoryWebUrl: $repositoryWebUrl, defaultBranch: $defaultBranch,
+          projectDescription: $projectDescription, projectUrl: $projectUrl,
+          cloned: $cloned, solutions: $solutions,
           sbomGenerated: $sbomGenerated, sbomPath: $sbomPath,
           vulnerabilitiesGenerated: $vulnerabilitiesGenerated, vulnerabilitiesPath: $vulnerabilitiesPath,
           secretsGenerated: $secretsGenerated, secretsPath: $secretsPath}' \
@@ -233,6 +240,10 @@ repo_count=0
 while IFS= read -r project; do
     project_name=$(jq -r '.name' <<<"$project")
     project_id=$(jq -r '.id' <<<"$project")
+    # description/url come straight off the same projects response the AzDO source
+    # sync reads; appsec-scout derives the project's browser URL from the API url.
+    project_description=$(jq -r '.description // ""' <<<"$project")
+    project_url=$(jq -r '.url // ""' <<<"$project")
     if [ -n "$PROJECT_FILTER" ] && ! grep -Eq "$PROJECT_FILTER" <<<"$project_name"; then
         continue
     fi
@@ -244,6 +255,11 @@ while IFS= read -r project; do
         repo_id=$(jq -r '.id' <<<"$repo")
         is_disabled=$(jq -r '.isDisabled' <<<"$repo")
         remote_url=$(jq -r '.remoteUrl' <<<"$repo")
+        # webUrl is the browser URL, defaultBranch the repo's default ref — both are
+        # on the same repositories response the AzDO source sync reads, so appsec-scout
+        # can link an ops-first repository row exactly as a sync would.
+        repo_web_url=$(jq -r '.webUrl // ""' <<<"$repo")
+        default_branch=$(jq -r '.defaultBranch // ""' <<<"$repo")
         if [ "$is_disabled" = "true" ]; then
             echo "  Skipping disabled repository: $repo_name"
             continue
@@ -258,7 +274,8 @@ while IFS= read -r project; do
         fi
         repo_count=$((repo_count + 1))
         echo "  Repository: $repo_name"
-        process_repo "$project_name" "$repo_name" "$remote_url" "$project_id" "$repo_id"
+        process_repo "$project_name" "$repo_name" "$remote_url" "$project_id" "$repo_id" \
+            "$repo_web_url" "$default_branch" "$project_description" "$project_url"
     done < <(azdo_get_all "https://dev.azure.com/${AZDO_ORG}/${project_id}/_apis/git/repositories?api-version=${API_VERSION}")
 done < <(azdo_get_all "https://dev.azure.com/${AZDO_ORG}/_apis/projects?api-version=${API_VERSION}")
 
