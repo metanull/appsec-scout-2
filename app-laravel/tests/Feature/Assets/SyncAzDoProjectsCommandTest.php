@@ -23,6 +23,9 @@ function azdoFakeSource(): FakeSource
 
 beforeEach(function () {
     app(Vault::class)->set('azdo.organization', null, 'testorg');
+    // Repository auto-linking resolves the organization from the Source Control
+    // credential (azdo-repos.*), so it must be seeded for mappings to be created.
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 });
 
 it('syncs every azdo project and repo into assets, systems, containers, and mappings', function () {

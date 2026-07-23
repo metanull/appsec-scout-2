@@ -13,7 +13,7 @@ use App\Sync\Upserter;
 use Tests\Fakes\FakeSource;
 
 it('automatically links azdo systems to a software asset and creates repository mappings during a regular sync', function () {
-    app(Vault::class)->set('azdo.organization', null, 'testorg');
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
     $source = new class extends FakeSource
     {
