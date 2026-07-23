@@ -1,5 +1,6 @@
 <?php
 
+use App\Credentials\Vault;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Sources\Dto\ContainerDto;
@@ -7,6 +8,12 @@ use App\Sources\Dto\SystemDto;
 use App\Sync\InventorySyncService;
 use Tests\Fakes\FakeInventorySourceControlProvider;
 use Tests\Fakes\FakeSource;
+
+beforeEach(function () {
+    // Inventory sync only runs configured integrations; seed the fakes' system credentials.
+    app(Vault::class)->set('fake.apiKey', null, 'fake-key');
+    app(Vault::class)->set('fake-inventory-repos.token', null, 'fake-token');
+});
 
 it('syncs systems and containers from an enabled Source', function () {
     $source = (new FakeSource)

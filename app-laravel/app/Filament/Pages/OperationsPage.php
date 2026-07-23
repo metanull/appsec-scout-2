@@ -14,8 +14,6 @@ use App\Jobs\PruneErrorLogs;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
-use App\SourceControl\Contracts\EnumeratesInventory;
-use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Sync\SyncInventoryJob;
@@ -264,15 +262,6 @@ class OperationsPage extends Page
     {
         Gate::authorize('admin.queue');
 
-        if ($this->inventoryCapableProviderCount() === 0) {
-            Notification::make()
-                ->title('No enabled Source or Source Control provider can supply inventory. Enable one in Integration Settings first.')
-                ->warning()
-                ->send();
-
-            return;
-        }
-
         if ($this->isSyncInventoryQueued()) {
             Notification::make()->title('Inventory sync is already queued or running.')->info()->send();
 
@@ -283,16 +272,6 @@ class OperationsPage extends Page
         app(Recorder::class)->recordAdminAction('operations.sync_inventory');
 
         Notification::make()->title('Inventory sync started. You will see updated Systems/Containers when the job completes.')->success()->send();
-    }
-
-    private function inventoryCapableProviderCount(): int
-    {
-        $sourceControlCount = count(array_filter(
-            app(SourceControlRegistry::class)->all(),
-            fn ($provider): bool => $provider instanceof EnumeratesInventory,
-        ));
-
-        return count(app(SourceRegistry::class)->all()) + $sourceControlCount;
     }
 
     private function isSyncInventoryQueued(): bool

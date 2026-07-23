@@ -236,6 +236,12 @@ final class ReconciliationService
         $pairs = [];
 
         foreach ($this->trackers->all() as $tracker) {
+            // Discovery covers configured trackers only — a registered-but-uncredentialed
+            // tracker cannot list projects and must not abort the whole reconciliation.
+            if (! $this->systemRuntime->hasRequiredSystemCredentials($tracker->credentialFields())) {
+                continue;
+            }
+
             /** @var list<ProjectDto> $projects */
             $projects = $this->systemRuntime->runTracker(
                 $tracker->id(),

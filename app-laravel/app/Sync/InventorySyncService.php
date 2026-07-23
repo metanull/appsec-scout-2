@@ -59,6 +59,12 @@ final class InventorySyncService
                 continue;
             }
 
+            // Only sync integrations that are actually configured — a full sweep must not
+            // hard-fail on a registered-but-uncredentialed Source.
+            if (! $this->runtime->hasRequiredSystemCredentials($source->credentialFields())) {
+                continue;
+            }
+
             $this->runtime->runSource($source->id(), function (Source $resolvedSource) use ($projectFilter, $repoFilter, $shouldSweep, &$counts): void {
                 $touched = $this->syncOne(
                     $resolvedSource->id(),
@@ -82,6 +88,10 @@ final class InventorySyncService
             }
 
             if ($onlyId !== null && $provider->id() !== $onlyId) {
+                continue;
+            }
+
+            if (! $this->runtime->hasRequiredSystemCredentials($provider->credentialFields())) {
                 continue;
             }
 

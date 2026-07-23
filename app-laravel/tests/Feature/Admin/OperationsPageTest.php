@@ -281,22 +281,6 @@ it('colors the inventory sync stat as success when the last run found something'
     expect($stat->getColor())->toBe('success');
 });
 
-it('warns and does not dispatch inventory sync when no inventory-capable provider is enabled', function () {
-    Bus::fake();
-
-    app()->forgetInstance(SourceRegistry::class);
-
-    $admin = operationsAdmin();
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->call('dispatchSyncInventory')
-        ->assertNotified('No enabled Source or Source Control provider can supply inventory. Enable one in Integration Settings first.');
-
-    Bus::assertNotDispatched(SyncInventoryJob::class);
-    expect(AuditLog::query()->where('action', 'operations.sync_inventory')->exists())->toBeFalse();
-});
-
 it('sync users can trigger global reconciliation action', function () {
     Bus::fake();
 

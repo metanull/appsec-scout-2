@@ -1,5 +1,6 @@
 <?php
 
+use App\Credentials\Vault;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -24,6 +25,10 @@ function bindFakeWorkItemTracker(FakeTracker $tracker): FakeTracker
 {
     app()->bind('appsec-scout.tracker.fake', fn () => $tracker);
     app()->tag(['appsec-scout.tracker.fake'], 'appsec-scout.tracker');
+
+    // Configure the fake tracker's system credential so it counts as a set-up integration —
+    // reconciliation only discovers projects for trackers whose credentials are configured.
+    app(Vault::class)->set('fake-tracker.token', null, 'fake-token');
 
     app()->forgetInstance(Registry::class);
 

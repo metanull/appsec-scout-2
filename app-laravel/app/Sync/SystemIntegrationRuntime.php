@@ -2,6 +2,7 @@
 
 namespace App\Sync;
 
+use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\Registry as SourceControlRegistry;
@@ -18,6 +19,34 @@ final class SystemIntegrationRuntime
         private readonly SourceControlRegistry $sourceControls,
         private readonly Vault $vault,
     ) {}
+
+    /**
+     * Whether every required credential field for an integration has a non-empty
+     * system credential configured. Used to scope system-credentialed sweeps
+     * (full inventory sync, reconciliation project discovery) to the integrations
+     * an operator has actually set up, instead of hard-failing on a registered but
+     * unconfigured Source/Tracker/Source Control provider.
+     *
+     * @param  iterable<CredentialField>  $credentialFields
+     */
+    public function hasRequiredSystemCredentials(iterable $credentialFields): bool
+    {
+        return $this->vault->runAsOwner(null, function () use ($credentialFields): bool {
+            foreach ($credentialFields as $field) {
+                if (! $field->required) {
+                    continue;
+                }
+
+                $value = $this->vault->get($field->key, null);
+
+                if (! is_string($value) || trim($value) === '') {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }
 
     public function source(string $sourceId): ?Source
     {
