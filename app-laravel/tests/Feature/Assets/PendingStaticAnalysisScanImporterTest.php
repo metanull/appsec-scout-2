@@ -5,6 +5,7 @@ use App\Models\Attachment;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
+use App\Sources\Context\SourceContextFacts;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -85,13 +86,13 @@ it('enriches an ops-first system and container with the same facts a source sync
     $system = SoftwareSystem::query()->where('source_id', 'azdo')->where('source_system_id', 'project-guid-1')->firstOrFail();
     expect($system->description)->toBe('Payments platform services')
         ->and($system->url)->toBe('https://dev.azure.com/org/project-guid-1')
-        ->and(\App\Sources\Context\SourceContextFacts::getString($system->metadata ?? [], \App\Sources\Context\SourceContextFacts::AZDO_PROJECT_WEB_URL))->toBe('https://dev.azure.com/org/project-guid-1');
+        ->and(SourceContextFacts::getString($system->metadata ?? [], SourceContextFacts::AZDO_PROJECT_WEB_URL))->toBe('https://dev.azure.com/org/project-guid-1');
 
     $container = SecurityContainer::query()->where('source_container_id', 'repo-guid-1')->firstOrFail();
     expect($container->url)->toBe('https://dev.azure.com/org/Payments/_git/payments-api')
-        ->and(\App\Sources\Context\SourceContextFacts::getString($container->metadata ?? [], \App\Sources\Context\SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL))->toBe('https://org@dev.azure.com/org/Payments/_git/payments-api')
-        ->and(\App\Sources\Context\SourceContextFacts::getString($container->metadata ?? [], \App\Sources\Context\SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('main')
-        ->and(\App\Sources\Context\SourceContextFacts::getString($container->metadata ?? [], \App\Sources\Context\SourceContextFacts::SOURCE_PROVIDER))->toBe('azure-repos');
+        ->and(SourceContextFacts::getString($container->metadata ?? [], SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL))->toBe('https://org@dev.azure.com/org/Payments/_git/payments-api')
+        ->and(SourceContextFacts::getString($container->metadata ?? [], SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('main')
+        ->and(SourceContextFacts::getString($container->metadata ?? [], SourceContextFacts::SOURCE_PROVIDER))->toBe('azure-repos');
 
     tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
 });
@@ -128,7 +129,7 @@ it('never overwrites an already-existing source-synced system or container', fun
         ->description->toBe('Authored by the live sync')
         ->url->toBe('https://sync.example/project');
     expect($container->fresh()->url)->toBe('https://sync.example/repo')
-        ->and(\App\Sources\Context\SourceContextFacts::getString($container->fresh()->metadata ?? [], \App\Sources\Context\SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('develop');
+        ->and(SourceContextFacts::getString($container->fresh()->metadata ?? [], SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('develop');
 
     expect(Attachment::query()->where('owner_id', $container->id)->where('kind', 'code-quality-dotnet')->count())->toBe(1);
 

@@ -1,9 +1,9 @@
 <?php
 
+use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
-use App\Models\Enums\EventState;
 use App\SecurityEvents\LocalFindingLinkCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
