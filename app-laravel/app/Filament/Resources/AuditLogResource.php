@@ -100,9 +100,9 @@ class AuditLogResource extends Resource
             Section::make('Payload')
                 ->collapsible()
                 ->schema([
-                    CodeEntry::make('_payload_redacted')
+                    CodeEntry::make('_payload')
                         ->label('')
-                        ->state(fn (AuditLog $record): array => self::redactPayload($record))
+                        ->state(fn (AuditLog $record): array => is_array($record->payload_json) ? $record->payload_json : [])
                         ->grammar(Grammar::Json)
                         ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                         ->copyable()
@@ -220,64 +220,5 @@ class AuditLogResource extends Resource
         }
 
         return SecurityEventResource::getUrl('view', ['record' => $record->subject_id]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private static function redactPayload(AuditLog $record): array
-    {
-        $payload = $record->payload_json;
-
-        if (! is_array($payload)) {
-            return [];
-        }
-
-        return self::redactArray($payload);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    private static function redactArray(array $data): array
-    {
-        $result = [];
-
-        foreach ($data as $key => $value) {
-            if (is_array($value)) {
-                $result[$key] = self::redactArray($value);
-            } elseif (is_scalar($value) && self::isSensitiveKey((string) $key)) {
-                $result[$key] = '[redacted]';
-            } elseif (is_string($value)) {
-                $result[$key] = self::redactString($value);
-            } else {
-                $result[$key] = $value;
-            }
-        }
-
-        return $result;
-    }
-
-    private static function redactString(string $value): string
-    {
-        return (string) preg_replace(
-            '/((token|secret|password|api[_-]?key|pat|authorization)[^=:\"]*[=:\"]\s*)([^\s\",}]+)/i',
-            '$1[redacted]',
-            $value,
-        );
-    }
-
-    private static function isSensitiveKey(string $key): bool
-    {
-        $normalized = strtolower($key);
-
-        return str_contains($normalized, 'token')
-            || str_contains($normalized, 'secret')
-            || str_contains($normalized, 'password')
-            || str_contains($normalized, 'api_key')
-            || str_contains($normalized, 'apikey')
-            || str_contains($normalized, 'pat')
-            || str_contains($normalized, 'authorization');
     }
 }

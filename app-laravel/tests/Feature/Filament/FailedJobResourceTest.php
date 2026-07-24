@@ -113,7 +113,7 @@ it('table retry and forget actions work and record the same audit actions as bef
         ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
 });
 
-it('renders the failed job view page with redacted exception and payload', function () {
+it('renders the failed job view page with the exception and payload shown in full', function () {
     $admin = failedJobAdmin();
 
     $uuid = (string) str()->uuid();
@@ -131,9 +131,9 @@ it('renders the failed job view page with redacted exception and payload', funct
     $this->actingAs($admin)
         ->get(FailedJobResource::getUrl('view', ['record' => $record]))
         ->assertOk()
-        ->assertSeeText('[redacted]')
-        ->assertDontSee('my-secret-exception-value')
-        ->assertDontSee('my-secret');
+        ->assertDontSee('[redacted]')
+        ->assertSeeText('my-secret-exception-value')
+        ->assertSeeText('my-secret');
 });
 
 it('denies the view page to a user without admin.queue', function () {
@@ -163,10 +163,10 @@ it('summarizes a failed job exception for a truncated database column error', fu
         ->toBe('Database value exceeded security_events.version_control_url. Run migrations, then retry or forget this failed job.');
 });
 
-it('redacts sensitive keys in the failed job payload', function () {
+it('renders the failed job payload in full without masking', function () {
     $payload = json_encode(['job' => 'Example', 'token' => 'secret-token'], JSON_THROW_ON_ERROR);
 
     expect(FailedJobResource::payloadFull($payload))
-        ->not->toContain('secret-token')
-        ->toContain('[redacted]');
+        ->toContain('secret-token')
+        ->not->toContain('[redacted]');
 });

@@ -1191,43 +1191,9 @@ class SecurityEventResource extends Resource
                 'fingerprint' => $record->fingerprint,
                 'synced_at' => $syncedAt instanceof \DateTimeInterface ? $syncedAt->format('c') : null,
             ],
-            'metadata' => is_array($metadata) ? self::redactArray($metadata) : null,
-            'source_data' => is_array($sourceData) ? self::redactArray($sourceData) : null,
+            'metadata' => is_array($metadata) ? $metadata : null,
+            'source_data' => is_array($sourceData) ? $sourceData : null,
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    private static function redactArray(array $data): array
-    {
-        $result = [];
-
-        foreach ($data as $key => $value) {
-            if (is_array($value)) {
-                $result[$key] = self::redactArray($value);
-            } elseif (self::isSensitiveKey((string) $key)) {
-                $result[$key] = '***REDACTED***';
-            } else {
-                $result[$key] = $value;
-            }
-        }
-
-        return $result;
-    }
-
-    private static function isSensitiveKey(string $key): bool
-    {
-        $lower = strtolower($key);
-
-        foreach (['token', 'secret', 'password', 'passwd', 'key', 'pat', 'authorization', 'credential', 'private'] as $sensitive) {
-            if (str_contains($lower, $sensitive)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static function renderRemediation(SecurityEvent $record): string

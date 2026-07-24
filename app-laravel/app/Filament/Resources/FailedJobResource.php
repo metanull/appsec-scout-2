@@ -80,7 +80,7 @@ class FailedJobResource extends Resource
                 ->schema([
                     TextEntry::make('_exception')
                         ->label('')
-                        ->state(fn (FailedJob $record): string => self::redactString($record->exception))
+                        ->state(fn (FailedJob $record): string => $record->exception)
                         ->fontFamily('mono')
                         ->columnSpanFull(),
                 ]),
@@ -193,10 +193,10 @@ class FailedJobResource extends Resource
         $decoded = json_decode($payload, true);
 
         if (is_array($decoded)) {
-            return json_encode(self::redactArray($decoded), JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '[payload unavailable]';
+            return json_encode($decoded, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '[payload unavailable]';
         }
 
-        return self::redactString($payload);
+        return $payload;
     }
 
     public static function jobName(string $payload): string
@@ -228,7 +228,7 @@ class FailedJobResource extends Resource
                 : 'Database value exceeded a column size. Run migrations, then retry or forget this failed job.';
         }
 
-        return Str::limit(self::redactString($exception), 1000);
+        return Str::limit($exception, 1000);
     }
 
     public static function sourceOrTracker(string $payload): string
@@ -258,54 +258,5 @@ class FailedJobResource extends Resource
         }
 
         return '';
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return array<string, mixed>
-     */
-    private static function redactArray(array $payload): array
-    {
-        $redacted = [];
-
-        foreach ($payload as $key => $value) {
-            if (is_array($value)) {
-                $redacted[$key] = self::redactArray($value);
-
-                continue;
-            }
-
-            if (is_scalar($value) && self::isSensitiveKey((string) $key)) {
-                $redacted[$key] = '[redacted]';
-
-                continue;
-            }
-
-            $redacted[$key] = is_string($value) ? self::redactString($value) : $value;
-        }
-
-        return $redacted;
-    }
-
-    private static function redactString(string $value): string
-    {
-        return (string) preg_replace(
-            '/((token|secret|password|api[_-]?key|pat|authorization)[^=:\"]*[=:\"]\s*)([^\s\",}]+)/i',
-            '$1[redacted]',
-            $value,
-        );
-    }
-
-    private static function isSensitiveKey(string $key): bool
-    {
-        $normalized = strtolower($key);
-
-        return str_contains($normalized, 'token')
-            || str_contains($normalized, 'secret')
-            || str_contains($normalized, 'password')
-            || str_contains($normalized, 'api_key')
-            || str_contains($normalized, 'apikey')
-            || str_contains($normalized, 'pat')
-            || str_contains($normalized, 'authorization');
     }
 }

@@ -154,7 +154,7 @@ it('renders the raw evidence section expanded with the formatted payload', funct
         ->assertSeeText('source_event_id');
 });
 
-it('redacts sensitive keys from raw evidence payload', function () {
+it('shows the raw evidence payload in full without masking', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -169,14 +169,13 @@ it('redacts sensitive keys from raw evidence payload', function () {
         ],
     ]);
 
-    // The Raw Evidence section must render the redacted marker for sensitive keys
-    // and the non-sensitive description value.
-    // Note: Livewire serialises the model state into a hidden page snapshot,
-    // so we cannot assert the raw value is absent from the full HTML.
+    // The Raw Evidence section is the finding content an operator triages, so it
+    // renders verbatim — masking here would hide the very data the tool exists to surface.
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSeeText('***REDACTED***')
+        ->assertDontSee('***REDACTED***')
+        ->assertSeeText('super-secret-value')
         ->assertSeeText('visible value');
 });
 
