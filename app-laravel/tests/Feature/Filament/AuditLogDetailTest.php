@@ -34,7 +34,7 @@ it('renders the audit log detail infolist for a user with admin.audit', function
         ->assertSee('Payload');
 });
 
-it('redacts sensitive keys in the audit log payload section', function () {
+it('shows the audit log payload section in full without masking', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -54,6 +54,7 @@ it('redacts sensitive keys in the audit log payload section', function () {
     $this->actingAs($user)
         ->get(AuditLogResource::getUrl('view', ['record' => $log]))
         ->assertOk()
-        ->assertSeeText('[redacted]')
+        ->assertDontSee('[redacted]')
+        ->assertSeeText('super-secret-value')
         ->assertSeeText('visible value');
 });

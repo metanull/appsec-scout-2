@@ -152,26 +152,28 @@ it('view page returns null subject link when SecurityEvent is missing', function
     expect($page->getSubjectUrl())->toBeNull();
 });
 
-it('view page redacts sensitive payload keys', function () {
-    AuditLog::query()->create([
+it('view page shows the audit payload verbatim, including keys the old heuristic mismatched', function () {
+    $admin = auditAdmin();
+
+    $log = AuditLog::query()->create([
         'actor_kind' => 'system',
-        'action' => 'test.redact',
+        'action' => 'test.payload',
         'subject_type' => null,
         'subject_id' => null,
-        'payload_json' => ['token' => 'super-secret', 'action' => 'dispatch'],
+        // 'file_path' was previously masked because 'path' contains the 'pat' substring;
+        // it must now render intact alongside every other value.
+        'payload_json' => ['file_path' => '/etc/app/config', 'token' => 'shown-in-full', 'action' => 'dispatch'],
         'user_id' => null,
         'ip' => null,
     ]);
 
-    $record = AuditLog::query()->first();
-    $page = new ViewAuditLog;
-    $page->record = $record;
-
-    $rendered = $page->getRedactedPayload();
-
-    expect($rendered)->not->toContain('super-secret')
-        ->and($rendered)->toContain('[redacted]')
-        ->and($rendered)->toContain('dispatch');
+    $this->actingAs($admin)
+        ->get(AuditLogResource::getUrl('view', ['record' => $log]))
+        ->assertOk()
+        ->assertDontSee('[redacted]')
+        ->assertSeeText('/etc/app/config')
+        ->assertSeeText('shown-in-full')
+        ->assertSeeText('dispatch');
 });
 
 it('filters audit log rows by a created_at date range', function () {
