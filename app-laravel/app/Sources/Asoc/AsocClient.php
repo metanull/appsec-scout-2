@@ -53,7 +53,7 @@ final class AsocClient
         $query = [];
 
         if ($since !== null) {
-            $query['$filter'] = "LastUpdated ge '" . $since->format(\DateTimeInterface::ATOM) . "'";
+            $query['$filter'] = 'LastUpdated ge ' . $since->format(\DateTimeInterface::ATOM);
         }
 
         return $this->fetchAllPages("api/v4/Issues/Application/{$appId}", $pageSize, $query);
