@@ -92,9 +92,12 @@ it('adds modified since filter when listing issues incrementally', function () {
 
     $uri = (string) $history[1]['request']->getUri();
 
-    expect($uri)->toContain('%24filter=LastUpdated')
-        ->and($uri)->toContain('ge')
-        ->and($uri)->toContain('%27');
+    // LastUpdated is an Edm.DateTimeOffset property: its OData v4 literal must be
+    // unquoted. Wrapping it in single quotes (%27) makes it a string literal and
+    // triggers ODATA_QUERY_ERROR upstream.
+    expect($uri)->toContain('%24filter=LastUpdated%20ge%20')
+        ->and($uri)->toContain('2026-02-01T00%3A00%3A00%2B00%3A00')
+        ->and($uri)->not->toContain('%27');
 });
 
 it('honors proxy options from outbound http factory', function () {
