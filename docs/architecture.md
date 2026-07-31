@@ -195,6 +195,8 @@ clear error.
   host-triggered SBOM/static-analysis pipeline and the Dependency-Track integration.
 - [docs/install.md](install.md), [docs/operations.md](operations.md), [docs/security.md](security.md)
   — install, day-2 operations, and security posture.
+- [docs/deployment-azure.md](deployment-azure.md) — proposed Azure deployment track, run in parallel
+  with the local Docker track described here.
 
 ## Out of Scope
 
