@@ -74,74 +74,71 @@ This whole pipeline depends on ops and app being **bind-mount siblings on the sa
 — which is exactly the case that breaks once `appsec-scout` runs in Azure and `invoke-ops.ps1`
 keeps running on the admin's own machine as you described.
 
-**Revised recommendation.** An earlier draft of this document proposed bolting a second,
-synchronous HTTP ingestion path onto the existing file-based one, kept purely additive so local
-Docker would be untouched. On reassessment that does not hold up as the more robust design:
+**Governing assumption, settled after several revisions of this section**: the operator runs
+`invoke-ops.ps1` with **their own** AzDO/GitHub credentials — entered via `-Credential` or their own
+`docker/ops/.env`, exactly as already supported today — never appsec-scout's own system vault
+credentials. That single decision removes the need for anything resembling a shared secrets broker,
+a scoped system API token, or moving scan execution into server-orchestrated jobs: nothing needs to
+carry a *vault* secret across the host boundary, because the operator's AzDO/GitHub credential was
+never in the vault to begin with. What's left is a much smaller, concrete list of changes.
 
-- Every other externally-triggered, potentially-slow operation in this app already goes through a
-  queued Job (`FetchSourceJob`, `RefreshWorkItemsJob`, `PushEventStatesJob`, `ReconcileAllJob`,
-  `SyncInventoryJob`). Parsing and ingesting a report inline inside an HTTP controller — the
-  original proposal — breaks that pattern, risks request timeouts on large SBOM/SARIF files, and
-  forfeits the queue's existing retry/backoff (`--tries=3 --timeout=1800`) that every comparable
-  operation already gets for free.
-- Keeping the proven file-cursor pipeline for local Docker *and* adding a structurally different
-  HTTP pipeline for Azure means two ingestion code paths and two test suites doing the same
-  conceptual job, with a standing risk of behavioral drift between them — the kind of duplicated,
-  half-parallel implementation this codebase's own reliability conventions steer away from
-  elsewhere. A single mechanism both tracks use is simpler to reason about, and only needs testing
-  once.
-- The naive "one POST per finished repository, ingest inline" design has no idempotency guarantee:
-  a client-side timeout on a retried request could double-ingest a report. The local file-cursor
-  pipeline gets "never import twice" for free from sequential line counts; an HTTP pipeline needs
-  that guarantee designed in explicitly, not assumed.
+**Design**:
 
-**Revised design** — one authenticated, queue-backed HTTP pipeline, used by both tracks:
-
-- Add `laravel/sanctum` (flagged per CLAUDE.md's "no new dependencies without explicit approval"
-  rule) for scoped API tokens.
-
-  **Token issuance is not the same problem as `dependencytrack.apiKey`, and cannot reuse
-  `Get-SystemVaultCredential` for the remote case.** `dependencytrack.apiKey` is provisioned by
-  `dependencytrack-bootstrap` calling Dependency-Track's admin API over the *internal Compose
-  network*, at deploy time — an intra-stack call between two containers on the same host.
-  `Get-SystemVaultCredential` similarly only works because it runs
-  `docker compose exec -T app php artisan credentials:system:get ...` — host-level Docker access
-  into the running `app` container, which requires `invoke-ops.ps1` and `app` to be on the same
-  Docker host in the same Compose project. Neither shape survives once `app` runs in Azure and
-  `invoke-ops.ps1` runs on the admin's own machine: there is no local `app` service to `exec` into.
-  Worse, if the operator's machine also happens to have a *local* stack running (the default,
-  no-profile-needed `docker compose up`) while `-RemoteUrl`/`APPSEC_SCOUT_URL` points at Azure,
-  blindly reusing `Get-SystemVaultCredential` would silently fetch the **local** instance's token
-  and use it against the **Azure** instance — a wrong-vault credential mismatch, not a clean
-  failure.
-
-  Instead, add a Filament "Operations API Tokens" screen (`Admin -> System Credentials`, alongside
-  the existing Source/Tracker/Source-Control credentials) where an Admin explicitly generates a
-  Sanctum personal access token scoped to `ops.remote-upload`, shown once (standard Sanctum PAT
-  UX), with an `AuditLog` row recorded for issuance and revocation like every other write action in
-  this app. The operator supplies that token to `invoke-ops.ps1` the same way `-Credential` already
-  works for the GitHub/AzDO PATs — an explicit `-ApiToken` parameter, falling back to
-  `OPS_UPLOAD_TOKEN` in `docker/ops/.env`. The existing `Get-SystemVaultCredential`
-  vault-auto-fetch shortcut stays available as a **local-only** convenience — attempted only when
-  the upload target is the default local Compose service name — and is skipped entirely (not
-  attempted, not silently misfired) whenever a non-default/remote target is configured, so the
-  wrong-vault case above cannot happen.
+- **`invoke-ops.ps1` needs an explicit destination.** Today it has no concept of a remote target at
+  all. Add an `-AppSecScoutUrl` parameter (falling back to an `APPSEC_SCOUT_URL` entry in
+  `docker/ops/.env`), defaulting to the local Compose service name `http://app:8080` so today's
+  local behavior is unchanged when it's omitted.
+- **AzDO/GitHub credential input needs no new mechanism** — `-Credential` (or `docker/ops/.env`)
+  already lets the operator supply their own PAT, fully independent of the vault, exactly as today.
+  The one real bug to fix: `Get-SystemVaultCredential` (the existing convenience fetch, which shells
+  `docker compose exec -T app php artisan credentials:system:get ...` into a **same-host** `app`
+  container) must only be attempted when `-AppSecScoutUrl` is unset or equals the local default.
+  Left unguarded, it doesn't just fail to work remotely — if the operator's machine also happens to
+  have a local stack running (the default, no-profile-needed `docker compose up`) while targeting
+  Azure, it would silently fetch the **local** instance's credential and use it against the **Azure**
+  instance. Skip the fetch outright for any non-default target and require `-Credential`/env
+  explicitly, failing fast with a clear error if it's missing — no silent fallback.
+- **Trivy** (`-SbomScan` only — static analysis doesn't use Trivy): `TRIVY_SERVER_URL` is already
+  overridable via env, so pointing at an Azure-hosted Trivy needs no script change. The shared
+  Trivy auth token isn't a personal or vault credential at all — it's one bearer token for the whole
+  shared `trivy-server` instance, the same shape as an internal service API key rather than
+  anything tied to an individual operator. Today it's delivered only via the `trivy_token` Docker
+  volume populated by `trivy-token-init` in the same Compose stack, which a remote `ops` container
+  can't reach. Add a `TRIVY_TOKEN` env/`-TrivyToken` param override so `collect-sboms.sh` can accept
+  it directly (preferred over the volume file when set) — the whoever-administers-Azure side
+  distributes this one shared token to each operator out of band, once, the same way any other
+  shared-service credential would be shared; no broker, no per-operator scoping needed, since it was
+  never a per-operator secret.
+- **Uploading results to the Azure-hosted appsec-scout is authentication as the operator, not a
+  system credential.** Add `laravel/sanctum` (flagged per CLAUDE.md's "no new dependencies without
+  explicit approval" rule) so an operator can self-issue a **personal** access token from
+  `Profile -> Integrations`, scoped to an "upload scan results" ability. This is not a new concept —
+  it's the same **user-triggered** credential-resolution flow this app already documents elsewhere
+  (e.g. the per-alert "Find existing work items" action resolving the signed-in operator's own
+  credential), applied to this use case. Authorization is an ordinary permission check against that
+  user's existing role (no new broker, no system-level allow-list to maintain), and every uploaded
+  report is attributable to that specific user in the audit log — a genuine improvement over
+  anonymous system-credentialed uploads. `invoke-ops.ps1` supplies it via `-ApiToken`
+  (or `docker/ops/.env`), exactly like `-Credential` already works for the GitHub/AzDO PATs.
 - New routes, e.g. `POST /api/ops/sbom-scans/{repository}` and
-  `POST /api/ops/static-analysis-scans/{repository}`, `auth:sanctum` plus a dedicated
-  `ops.remote-upload` permission (not `admin.queue`). Each request carries the same per-repository
-  metadata a `run.jsonl` line carries today (project/repo identity, URLs, `solutions[]`, which
-  report kinds were generated) as JSON, plus the generated report files as multipart attachments —
-  one POST per repository, preserving today's "see results as they land, survive a mid-scan
-  interruption" behavior.
+  `POST /api/ops/static-analysis-scans/{repository}`, `auth:sanctum`. Each request carries the same
+  per-repository metadata a `run.jsonl` line carries today (project/repo identity, URLs,
+  `solutions[]`, which report kinds were generated) as JSON, plus the generated report files as
+  multipart attachments — one POST per repository, preserving today's "see results as they land,
+  survive a mid-scan interruption" behavior.
 - The controller does **no parsing**. It validates the payload, stores the raw report file(s)
   immediately to the configured filesystem disk (`local` today, Azure Blob once gap #3 below lands),
   writes one row to a new DB-backed ledger table (e.g. `scan_report_uploads`, unique on
-  `(run_id, repository_id, kind)` so a retried POST is a safe no-op instead of a duplicate import),
-  and dispatches a queued `ImportScanReportJob` that runs the exact same parse-and-ingest logic
-  `PendingSbomScanImporter`'s per-report loop uses today, via the existing
-  `AttachmentTargetResolver`/`AttachmentService`. Returns `202 Accepted` immediately. A DB/queue
-  outage surfaces as a `5xx`, not a silently-accepted-then-lost request, so `invoke-ops.ps1` knows
-  to retry with backoff instead of treating the repository as uploaded.
+  `(run_id, repository_id, kind)` so a retried POST is a safe no-op instead of a duplicate import,
+  and recording the uploading user's id), and dispatches a queued `ImportScanReportJob` that runs the
+  exact same parse-and-ingest logic `PendingSbomScanImporter`'s per-report loop uses today, via the
+  existing `AttachmentTargetResolver`/`AttachmentService`. This mirrors how every other
+  externally-triggered, potentially-slow operation in this app already works
+  (`FetchSourceJob`, `RefreshWorkItemsJob`, `ReconcileAllJob`, `SyncInventoryJob`) rather than parsing
+  inline inside the HTTP request, which would risk timeouts on large SBOM/SARIF files and forfeit the
+  queue's existing retry/backoff (`--tries=3 --timeout=1800`). Returns `202 Accepted` immediately; a
+  DB/queue outage surfaces as a `5xx`, not a silently-accepted-then-lost request, so `invoke-ops.ps1`
+  knows to retry with backoff instead of treating the repository as uploaded.
 - `SbomScanStatusReporter`/the Operations page switch from reading `run.jsonl`/`summary.json`/
   cursor-file mtimes to querying the `scan_report_uploads` ledger — more accurate counts and
   timestamps, and it removes the `app` container's dependency on the SBOM/static-analysis host
@@ -152,10 +149,9 @@ Docker would be untouched. On reassessment that does not hold up as the more rob
   client-side concern independent of how finished results get uploaded.
 - `invoke-ops.ps1`'s `Invoke-SbomUpload`/`Invoke-StaticAnalysisUpload` no longer call
   `docker compose exec app php artisan sbom:import-pending-scans`; instead, as each repository
-  finishes, its result is POSTed to `${APPSEC_SCOUT_URL:-http://app:8080}` — defaulting to the local
-  Compose service name (reachable from the `ops` container over the default Compose network even
-  when started with `--no-deps`), overridable to an Azure URL for the remote case. Local and remote
-  become the same code path with a different URL, not two designs.
+  finishes, its result is POSTed to `-AppSecScoutUrl`. Local and remote become the same code path
+  with a different URL and a different (locally auto-fetched vs. explicitly supplied) credential,
+  not two designs.
 - `sbom:import-pending-scans`/`staticanalysis:import-pending-scans`, `PendingSbomScanImporter`/
   `PendingStaticAnalysisScanImporter`, their scheduler entries, and their existing tests
   (`tests/Feature/Assets/PendingSbomScanImporterTest.php`, `SbomImportPendingScansCommandTest.php`,
@@ -165,10 +161,28 @@ Docker would be untouched. On reassessment that does not hold up as the more rob
   PHP `upload_max_filesize`/`post_max_size` need explicit, generous limits, since files never had to
   pass through an HTTP request body under the old pipeline.
 
-This is a larger change than the original additive proposal — it touches the local Docker track's
-ingestion mechanism too, not only Azure's. That's an intentional trade: one mechanism that's correct
-on both tracks beats a proven local mechanism plus a second, less battle-tested one bolted on for
-Azure alone.
+**What this rules out, and why.** Two earlier ideas for this section don't survive the governing
+assumption above and are deliberately not part of the design:
+
+- *A scoped system "vault broker" API*, letting `invoke-ops.ps1` fetch specific allow-listed vault
+  keys remotely with a narrowly-scoped token. This solves "how does a remote operator safely reuse
+  appsec-scout's own system credentials" — a problem that doesn't exist once the operator uses their
+  own, separately-managed credentials instead. It would also have been weaker than it sounds: an
+  admin running these tools needs to actually use every key it could grant, so scoping "which secrets
+  can this token read" doesn't meaningfully reduce exposure in practice.
+- *Moving `-SbomScan`/`-StaticAnalysis` execution into Azure-orchestrated jobs* (Container Apps
+  Jobs/AKS Jobs), triggered from the Operations page instead of run locally. This was a sound answer
+  to the same "avoid shipping vault secrets to a remote host" problem — dispatching a job that
+  resolves the credential server-side removes the need to ship it anywhere — but it conflicts with
+  wanting to keep running these tools locally, on the operator's own machine, which is the actual
+  requirement. With the operator's credentials already disconnected from the vault, there is no
+  vault secret trying to leave the server in the first place, so this heavier restructuring isn't
+  needed to solve the problem it would have solved.
+
+This is a larger change than a purely additive proposal would be — it touches the local Docker
+track's ingestion mechanism too, not only Azure's. That's an intentional trade: one mechanism that's
+correct on both tracks beats a proven local mechanism plus a second, less battle-tested one bolted on
+for Azure alone.
 
 ### 3. Attachment/file storage is local disk
 
@@ -271,12 +285,14 @@ alongside local Docker") with independent child stories, roughly in this order:
 1. Externalize `APP_KEY`/secret bootstrap so it can be supplied instead of generated (gap #1) —
    unblocks everything else; without it no Azure deployment is safe to run twice.
 2. Replace the file-based SBOM/static-analysis pipeline with the unified, queue-backed HTTP
-   ingestion pipeline (gap #2: Sanctum tokens, `scan_report_uploads` ledger, `ImportScanReportJob`,
-   the new controller/routes, and the matching `invoke-ops.ps1`/`collect-sboms.sh`/
-   `collect-static-analysis.sh` changes). This is deliberately sequenced early and independent of
-   any Terraform work — it stands on its own merits for the local track, is fully buildable and
-   testable against local Docker alone, and Azure only ever needs to point the same client at a
-   different URL once the rest of the infrastructure exists.
+   ingestion pipeline (gap #2: `-AppSecScoutUrl` on `invoke-ops.ps1`, personal Sanctum tokens issued
+   from `Profile -> Integrations`, the `scan_report_uploads` ledger, `ImportScanReportJob`, the new
+   controller/routes, and the matching `invoke-ops.ps1`/`collect-sboms.sh`/
+   `collect-static-analysis.sh` changes — including the `TRIVY_TOKEN` override and gating
+   `Get-SystemVaultCredential` on the resolved target). This is deliberately sequenced early and
+   independent of any Terraform work — it stands on its own merits for the local track, is fully
+   buildable and testable against local Docker alone, and Azure only ever needs to point the same
+   client at a different URL once the rest of the infrastructure exists.
 3. Terraform: networking + Key Vault + ACR (foundation, no further app changes required).
 4. Terraform: Azure Database for MySQL + Azure Cache for Redis.
 5. Add Azure Blob Storage disk for attachments (gap #3) + Terraform storage account module.
