@@ -57,49 +57,95 @@ Vault → Container Apps secret reference / managed identity), never generated b
 Gate the existing generate-and-persist block behind an explicit flag (e.g. skip it whenever
 `APP_KEY` is already present in the environment) so the local Docker flow is untouched.
 
-### 2. SBOM/Static-Analysis upload path assumes ops and app share a Docker host (the "not sure how yet" question)
+### 2. SBOM/Static-Analysis ingestion needs a single, queue-backed pipeline, not two
 
 Today, `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` runs the `ops` container, writes reports to
 `SBOM_OUTPUT_DIR`/`STATIC_ANALYSIS_OUTPUT_DIR` on the **host**, and that same host directory is
 bind-mounted read-only into the `app` container (`docker-compose.yml`) as
-`/var/www/html/sbom-import` / `/var/www/html/static-analysis-import`. `PendingSbomScanImporter`/
-`PendingStaticAnalysisScanImporter` then read `run.jsonl` plus the referenced report files straight
-off that mount, on a per-minute scheduler tick, tracking progress with a cursor file
-(`config/sbom.php` / `config/static_analysis.php`).
+`/var/www/html/sbom-import` / `/var/www/html/static-analysis-import`. A per-minute scheduled
+Artisan command (`sbom:import-pending-scans` / `staticanalysis:import-pending-scans`, backed by
+`PendingSbomScanImporter`/`PendingStaticAnalysisScanImporter`) polls that mount, reading `run.jsonl`
+plus the referenced report files and tracking progress with a `.processed` cursor file per run so
+nothing is imported twice. `SbomScanStatusReporter` — the data behind the "Admin -> Operations" scan
+status panel — derives its picture entirely from those same files: `run.jsonl`/`summary.json`
+contents and the cursor files' mtimes.
 
 This whole pipeline depends on ops and app being **bind-mount siblings on the same host filesystem**
 — which is exactly the case that breaks once `appsec-scout` runs in Azure and `invoke-ops.ps1`
-keeps running on the admin's own machine as you described. There is no shared filesystem to mount
-across that boundary.
+keeps running on the admin's own machine as you described.
 
-**Recommendation**: add a new, authenticated HTTP ingestion path, additive to the existing one
-(local Docker keeps using the bind-mount pipeline unchanged; it is simpler and has no network
-dependency, so there's no reason to force it through HTTP too):
+**Revised recommendation.** An earlier draft of this document proposed bolting a second,
+synchronous HTTP ingestion path onto the existing file-based one, kept purely additive so local
+Docker would be untouched. On reassessment that does not hold up as the more robust design:
 
-- Add `laravel/sanctum` (first-party Laravel package — flagging per CLAUDE.md's "no new
-  dependencies without explicit approval" rule) for scoped API tokens, issued from a new
-  `Admin -> System Credentials`-style screen ("Operations API Tokens"), distinct from human login
-  and from the existing Source/Tracker/Source-Control credentials.
-- Add a new route, e.g. `POST /api/ops/sbom-scans` and `POST /api/ops/static-analysis-scans`,
-  `auth:sanctum` + a dedicated ability/permission (not `admin.queue` — a narrower
-  `ops.remote-upload` permission), accepting the same per-repository payload
-  `collect-sboms.sh`/`collect-static-analysis.sh` already produce (the report files plus the
-  `run.jsonl` line describing them).
-- The controller calls straight into the existing `AttachmentTargetResolver` +
-  `AttachmentService` (the same services `PendingSbomScanImporter` and the
-  `assets:import-attachment` Artisan command already use) rather than writing into a directory for
-  a cursor-based importer to pick up later — there's no multi-host filesystem to poll, so the
-  cursor/polling design doesn't need to be reinvented over HTTP, it can ingest synchronously per
-  request.
-- `invoke-ops.ps1` gains a new mode (e.g. `-RemoteUrl`/`-ApiToken`, or reads them from
-  `docker/ops/.env`) that, when set, POSTs each finished repository's reports to that endpoint
-  instead of (or in addition to — see below) writing to the local bind mount. When unset, behavior
-  is identical to today.
-- Because SBOM/static-analysis scans can run for hours and land results incrementally
-  (`docker/ops/collect-sboms.sh` writes `run.jsonl` per repository as it finishes), the remote
-  upload should also be incremental — one POST per finished repository, not one bundle at the end
-  — to preserve the existing "see results as they land, survive a mid-scan interruption" behavior
-  documented in `invoke-ops.ps1`'s own help text.
+- Every other externally-triggered, potentially-slow operation in this app already goes through a
+  queued Job (`FetchSourceJob`, `RefreshWorkItemsJob`, `PushEventStatesJob`, `ReconcileAllJob`,
+  `SyncInventoryJob`). Parsing and ingesting a report inline inside an HTTP controller — the
+  original proposal — breaks that pattern, risks request timeouts on large SBOM/SARIF files, and
+  forfeits the queue's existing retry/backoff (`--tries=3 --timeout=1800`) that every comparable
+  operation already gets for free.
+- Keeping the proven file-cursor pipeline for local Docker *and* adding a structurally different
+  HTTP pipeline for Azure means two ingestion code paths and two test suites doing the same
+  conceptual job, with a standing risk of behavioral drift between them — the kind of duplicated,
+  half-parallel implementation this codebase's own reliability conventions steer away from
+  elsewhere. A single mechanism both tracks use is simpler to reason about, and only needs testing
+  once.
+- The naive "one POST per finished repository, ingest inline" design has no idempotency guarantee:
+  a client-side timeout on a retried request could double-ingest a report. The local file-cursor
+  pipeline gets "never import twice" for free from sequential line counts; an HTTP pipeline needs
+  that guarantee designed in explicitly, not assumed.
+
+**Revised design** — one authenticated, queue-backed HTTP pipeline, used by both tracks:
+
+- Add `laravel/sanctum` (flagged per CLAUDE.md's "no new dependencies without explicit approval"
+  rule) for scoped API tokens. Bootstrap one automatically per install — the same pattern
+  `dependencytrack.apiKey` already uses — and store it in the credential vault as a new system
+  credential (e.g. `ops-upload.token`), so `invoke-ops.ps1` fetches it the same way it already
+  fetches `github-repos.token`/`azdo-repos.pat` via `Get-SystemVaultCredential`. No new manual step
+  for the operator on either track.
+- New routes, e.g. `POST /api/ops/sbom-scans/{repository}` and
+  `POST /api/ops/static-analysis-scans/{repository}`, `auth:sanctum` plus a dedicated
+  `ops.remote-upload` permission (not `admin.queue`). Each request carries the same per-repository
+  metadata a `run.jsonl` line carries today (project/repo identity, URLs, `solutions[]`, which
+  report kinds were generated) as JSON, plus the generated report files as multipart attachments —
+  one POST per repository, preserving today's "see results as they land, survive a mid-scan
+  interruption" behavior.
+- The controller does **no parsing**. It validates the payload, stores the raw report file(s)
+  immediately to the configured filesystem disk (`local` today, Azure Blob once gap #3 below lands),
+  writes one row to a new DB-backed ledger table (e.g. `scan_report_uploads`, unique on
+  `(run_id, repository_id, kind)` so a retried POST is a safe no-op instead of a duplicate import),
+  and dispatches a queued `ImportScanReportJob` that runs the exact same parse-and-ingest logic
+  `PendingSbomScanImporter`'s per-report loop uses today, via the existing
+  `AttachmentTargetResolver`/`AttachmentService`. Returns `202 Accepted` immediately. A DB/queue
+  outage surfaces as a `5xx`, not a silently-accepted-then-lost request, so `invoke-ops.ps1` knows
+  to retry with backoff instead of treating the repository as uploaded.
+- `SbomScanStatusReporter`/the Operations page switch from reading `run.jsonl`/`summary.json`/
+  cursor-file mtimes to querying the `scan_report_uploads` ledger — more accurate counts and
+  timestamps, and it removes the `app` container's dependency on the SBOM/static-analysis host
+  mounts entirely.
+- `docker-compose.yml`'s `SBOM_OUTPUT_DIR`/`STATIC_ANALYSIS_OUTPUT_DIR` bind mounts into **`app`**
+  are removed. The `ops` container keeps its own local output directory unchanged — that's what
+  `-Resume` reads on the client side to decide what still needs (re)scanning, a purely local,
+  client-side concern independent of how finished results get uploaded.
+- `invoke-ops.ps1`'s `Invoke-SbomUpload`/`Invoke-StaticAnalysisUpload` no longer call
+  `docker compose exec app php artisan sbom:import-pending-scans`; instead, as each repository
+  finishes, its result is POSTed to `${APPSEC_SCOUT_URL:-http://app:8080}` — defaulting to the local
+  Compose service name (reachable from the `ops` container over the default Compose network even
+  when started with `--no-deps`), overridable to an Azure URL for the remote case. Local and remote
+  become the same code path with a different URL, not two designs.
+- `sbom:import-pending-scans`/`staticanalysis:import-pending-scans`, `PendingSbomScanImporter`/
+  `PendingStaticAnalysisScanImporter`, their scheduler entries, and their existing tests
+  (`tests/Feature/Assets/PendingSbomScanImporterTest.php`, `SbomImportPendingScansCommandTest.php`,
+  and the static-analysis equivalents) are retired, replaced by the controller/job pair and their
+  own tests.
+- Operationally: size the upload path for real SBOM/SARIF files — nginx `client_max_body_size` and
+  PHP `upload_max_filesize`/`post_max_size` need explicit, generous limits, since files never had to
+  pass through an HTTP request body under the old pipeline.
+
+This is a larger change than the original additive proposal — it touches the local Docker track's
+ingestion mechanism too, not only Azure's. That's an intentional trade: one mechanism that's correct
+on both tracks beats a proven local mechanism plus a second, less battle-tested one bolted on for
+Azure alone.
 
 ### 3. Attachment/file storage is local disk
 
@@ -143,10 +189,12 @@ from Azure Key Vault and injected as Container Apps secret references / managed-
 access — never committed, never baked into the image, never passed as plain Terraform variables in
 source control.
 
-## Proposed Repository Layout (additive only)
+## Proposed Repository Layout
 
-Nothing under `/scripts`, `/docker`, `docker-compose.yml`, or `docs/install.md` needs to change for
-this — the Azure track is new, parallel material:
+Most of this is new, additive material under `/infra`; `/scripts` and `docs/install.md` are
+untouched. The one exception is `docker-compose.yml` and `docker/ops/*.sh`, which change as part of
+gap #2 above (removing the SBOM/static-analysis bind mounts into `app` in favor of the unified HTTP
+pipeline) — worth doing for the local track on its own merits, not only in service of Azure:
 
 ```
 /infra/azure/
@@ -199,20 +247,29 @@ alongside local Docker") with independent child stories, roughly in this order:
 
 1. Externalize `APP_KEY`/secret bootstrap so it can be supplied instead of generated (gap #1) —
    unblocks everything else; without it no Azure deployment is safe to run twice.
-2. Terraform: networking + Key Vault + ACR (foundation, no app changes required).
-3. Terraform: Azure Database for MySQL + Azure Cache for Redis.
-4. Add Azure Blob Storage disk for attachments (gap #3) + Terraform storage account module.
-5. Split web/queue/scheduler workloads for the Azure track (gap #4).
-6. Terraform: Container Apps environment running appsec-scout against the above.
-7. Terraform: Dependency-Track + Trivy on Azure (Postgres Flexible Server + persistent storage).
-8. Azure DevOps pipelines: image build/push, plan/apply, deploy.
-9. Add the authenticated remote SBOM/static-analysis upload endpoint + Sanctum tokens (gap #2) and
-   the matching `invoke-ops.ps1` remote-upload mode — this is the piece that lets an admin keep
-   running `invoke-ops.ps1` locally against an Azure-hosted appsec-scout.
-10. Update `docs/install.md`/`docs/operations.md` to cross-reference the new track; flip this
+2. Replace the file-based SBOM/static-analysis pipeline with the unified, queue-backed HTTP
+   ingestion pipeline (gap #2: Sanctum tokens, `scan_report_uploads` ledger, `ImportScanReportJob`,
+   the new controller/routes, and the matching `invoke-ops.ps1`/`collect-sboms.sh`/
+   `collect-static-analysis.sh` changes). This is deliberately sequenced early and independent of
+   any Terraform work — it stands on its own merits for the local track, is fully buildable and
+   testable against local Docker alone, and Azure only ever needs to point the same client at a
+   different URL once the rest of the infrastructure exists.
+3. Terraform: networking + Key Vault + ACR (foundation, no further app changes required).
+4. Terraform: Azure Database for MySQL + Azure Cache for Redis.
+5. Add Azure Blob Storage disk for attachments (gap #3) + Terraform storage account module.
+6. Split web/queue/scheduler workloads for the Azure track (gap #4).
+7. Terraform: Container Apps environment running appsec-scout against the above.
+8. Terraform: Dependency-Track + Trivy on Azure (Postgres Flexible Server + persistent storage).
+9. Azure DevOps pipelines: image build/push, plan/apply, deploy.
+10. Point `invoke-ops.ps1`'s upload target at the deployed Azure URL and document the operator
+    flow — small, once stories 2 and 9 both exist.
+11. Update `docs/install.md`/`docs/operations.md` to cross-reference the new track; flip this
     document's status banner to "implemented" and split it per the existing docs/ conventions.
 
-Story 1 and story 9 are the two changes that touch application code paths used by both tracks
-(entrypoint bootstrap, and the ops upload flow); everything else is new, isolated infrastructure or
-new isolated code paths gated by environment, so the local Docker experience in
-[docs/install.md](install.md) keeps working exactly as documented throughout.
+Stories 1 and 2 are the two changes that touch application code paths used by both tracks
+(entrypoint bootstrap, and scan ingestion) — story 2 in particular is worth doing early since it
+improves the local track in its own right and only needs a URL change to work against Azure once
+the rest of the infrastructure exists. Stories 3–9 are new, isolated infrastructure or new isolated
+code paths gated by environment, so the local Docker experience in
+[docs/install.md](install.md) keeps working exactly as documented throughout, aside from the
+deliberate ingestion-pipeline change in story 2.
