@@ -98,11 +98,34 @@ Docker would be untouched. On reassessment that does not hold up as the more rob
 **Revised design** — one authenticated, queue-backed HTTP pipeline, used by both tracks:
 
 - Add `laravel/sanctum` (flagged per CLAUDE.md's "no new dependencies without explicit approval"
-  rule) for scoped API tokens. Bootstrap one automatically per install — the same pattern
-  `dependencytrack.apiKey` already uses — and store it in the credential vault as a new system
-  credential (e.g. `ops-upload.token`), so `invoke-ops.ps1` fetches it the same way it already
-  fetches `github-repos.token`/`azdo-repos.pat` via `Get-SystemVaultCredential`. No new manual step
-  for the operator on either track.
+  rule) for scoped API tokens.
+
+  **Token issuance is not the same problem as `dependencytrack.apiKey`, and cannot reuse
+  `Get-SystemVaultCredential` for the remote case.** `dependencytrack.apiKey` is provisioned by
+  `dependencytrack-bootstrap` calling Dependency-Track's admin API over the *internal Compose
+  network*, at deploy time — an intra-stack call between two containers on the same host.
+  `Get-SystemVaultCredential` similarly only works because it runs
+  `docker compose exec -T app php artisan credentials:system:get ...` — host-level Docker access
+  into the running `app` container, which requires `invoke-ops.ps1` and `app` to be on the same
+  Docker host in the same Compose project. Neither shape survives once `app` runs in Azure and
+  `invoke-ops.ps1` runs on the admin's own machine: there is no local `app` service to `exec` into.
+  Worse, if the operator's machine also happens to have a *local* stack running (the default,
+  no-profile-needed `docker compose up`) while `-RemoteUrl`/`APPSEC_SCOUT_URL` points at Azure,
+  blindly reusing `Get-SystemVaultCredential` would silently fetch the **local** instance's token
+  and use it against the **Azure** instance — a wrong-vault credential mismatch, not a clean
+  failure.
+
+  Instead, add a Filament "Operations API Tokens" screen (`Admin -> System Credentials`, alongside
+  the existing Source/Tracker/Source-Control credentials) where an Admin explicitly generates a
+  Sanctum personal access token scoped to `ops.remote-upload`, shown once (standard Sanctum PAT
+  UX), with an `AuditLog` row recorded for issuance and revocation like every other write action in
+  this app. The operator supplies that token to `invoke-ops.ps1` the same way `-Credential` already
+  works for the GitHub/AzDO PATs — an explicit `-ApiToken` parameter, falling back to
+  `OPS_UPLOAD_TOKEN` in `docker/ops/.env`. The existing `Get-SystemVaultCredential`
+  vault-auto-fetch shortcut stays available as a **local-only** convenience — attempted only when
+  the upload target is the default local Compose service name — and is skipped entirely (not
+  attempted, not silently misfired) whenever a non-default/remote target is configured, so the
+  wrong-vault case above cannot happen.
 - New routes, e.g. `POST /api/ops/sbom-scans/{repository}` and
   `POST /api/ops/static-analysis-scans/{repository}`, `auth:sanctum` plus a dedicated
   `ops.remote-upload` permission (not `admin.queue`). Each request carries the same per-repository
