@@ -4,8 +4,10 @@ use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Models\ErrorLog;
+use App\Models\RepositoryCollectionRun;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Sync\SyncInventoryJob;
@@ -375,6 +377,65 @@ it('header action dispatches tracker by form data', function () {
         ->call('dispatchSelectedTracker');
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
+});
+
+it('header actions include collect repositories for admin', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertActionExists('collectRepositories');
+});
+
+it('admin users can trigger the collect repositories action', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchCollectRepositories');
+
+    Bus::assertDispatched(DispatchRepositoryCollectionRunsJob::class);
+
+    expect(AuditLog::query()->where('action', 'operations.collect_repositories')->exists())->toBeTrue();
+});
+
+it('does not dispatch repository collection when a run is already in progress', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now(),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchCollectRepositories');
+
+    Bus::assertNotDispatched(DispatchRepositoryCollectionRunsJob::class);
+});
+
+it('shows recent repository collection runs on the operations page', function () {
+    $admin = operationsAdmin();
+
+    RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['repositories_considered' => 4, 'repositories_failed' => 1],
+        'error_message' => null,
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Recent Repository Collection Runs')
+        ->assertSee('azdo-repos');
 });
 
 function bindFakeOperationsIntegrations(): void
