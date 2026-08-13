@@ -121,16 +121,22 @@ final class CollectRepositoryJob implements ShouldQueue
                 return;
             }
 
-            $counts = (array) $run->counts_json;
-            $counts['repositories_completed'] = (int) ($counts['repositories_completed'] ?? 0) + 1;
+            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int} $storedCounts */
+            $storedCounts = (array) $run->counts_json;
 
-            if ($failed) {
-                $counts['repositories_failed'] = (int) ($counts['repositories_failed'] ?? 0) + 1;
-            }
+            $considered = (int) ($storedCounts['repositories_considered'] ?? 0);
+            $completed = (int) ($storedCounts['repositories_completed'] ?? 0) + 1;
+            $failedCount = (int) ($storedCounts['repositories_failed'] ?? 0) + ($failed ? 1 : 0);
 
-            $update = ['counts_json' => $counts];
+            $update = [
+                'counts_json' => [
+                    'repositories_considered' => $considered,
+                    'repositories_completed' => $completed,
+                    'repositories_failed' => $failedCount,
+                ],
+            ];
 
-            if ($counts['repositories_completed'] >= (int) ($counts['repositories_considered'] ?? 0)) {
+            if ($completed >= $considered) {
                 $update['status'] = 'success';
                 $update['finished_at'] = now();
             }
