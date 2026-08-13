@@ -73,6 +73,10 @@ final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
     public function fetchRepositories(SystemDto $project): iterable
     {
         foreach ($this->getClient()->listRepositories($project->sourceSystemId) as $repo) {
+            if ($repo->isDisabled) {
+                continue;
+            }
+
             $dto = AzDoNormalizer::toContainer($repo);
 
             yield new ContainerDto(
