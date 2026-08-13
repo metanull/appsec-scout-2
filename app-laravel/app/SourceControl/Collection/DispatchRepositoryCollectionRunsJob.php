@@ -8,7 +8,6 @@ use App\SourceControl\Contracts\EnumeratesInventory;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\Sources\Context\SourceContextFacts;
 use App\Sync\SystemIntegrationRuntime;
-use Illuminate\Bus\Batch;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -76,64 +75,54 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                 return;
             }
 
+            // Set before dispatch so every CollectRepositoryJob's own
+            // completion bookkeeping (see recordCompletion() on that class)
+            // knows the target count to compare against — the run finishes
+            // itself once repositories_completed reaches this number. This
+            // is deliberately not driven by Illuminate\Bus\Batch's own
+            // then()/catch()/finally() callbacks: empirically, under the
+            // `sync` queue connection, batched jobs run (their Attachments
+            // are created) but the batch's own pending_jobs bookkeeping is
+            // never decremented and those callbacks never fire — a
+            // dependency this run-completion mechanism cannot afford.
+            $run->update([
+                'counts_json' => [
+                    'repositories_considered' => count($targets),
+                    'repositories_completed' => 0,
+                    'repositories_failed' => 0,
+                ],
+            ]);
+
             $batchName = 'repository-collection:' . $run->id;
 
             try {
                 $batch = Bus::batch(array_map(
-                    fn (RepositoryCollectionTarget $target): CollectRepositoryJob => new CollectRepositoryJob($target),
+                    fn (RepositoryCollectionTarget $target): CollectRepositoryJob => new CollectRepositoryJob($target, $run->id),
                     $targets,
                 ))
                     ->name($batchName)
                     ->onQueue('repository-collection')
                     ->allowFailures()
-                    // then() only fires when every job in the batch succeeds with
-                    // zero failures — not what "the sweep completed" means here,
-                    // since allowFailures() means one repository's clone/scan
-                    // failure is expected and must not fail the whole run (see the
-                    // epic's Cross-cutting constraints). finally() fires once the
-                    // batch is done regardless of individual job outcomes, so the
-                    // run's own status only reflects whether the sweep itself
-                    // completed — repositories_failed carries the per-repository
-                    // failure count separately. finally() runs once a worker
-                    // (the isolated collector container, consuming the
-                    // repository-collection queue) has processed every job in
-                    // the batch — this handle() method returns long before that,
-                    // since dispatching only pushes the jobs.
-                    ->finally(function (Batch $batch) use ($run): void {
-                        $this->finishRunFromBatch($run, $batch->totalJobs, $batch->failedJobs);
-                    })
                     ->dispatch();
 
                 $run->update(['batch_id' => $batch->id]);
             } catch (Throwable $e) {
-                $run->update([
-                    'status' => 'failure',
-                    'finished_at' => now(),
-                    'error_message' => $e->getMessage(),
-                ]);
+                // The `sync` queue connection re-throws after a job's own
+                // failed() hook already ran (see CollectRepositoryJob::
+                // recordCompletion()) — if every repository was already
+                // accounted for before this exception propagated here, the
+                // run has already correctly finished; do not overwrite it.
+                $run->refresh();
+
+                if ($run->status === 'running') {
+                    $run->update([
+                        'status' => 'failure',
+                        'finished_at' => now(),
+                        'error_message' => $e->getMessage(),
+                    ]);
+                }
             }
         });
-    }
-
-    /**
-     * Marks the run "success" — allowFailures() means the sweep itself
-     * completing is what "success" means here, regardless of how many
-     * individual repositories failed; that count is carried separately in
-     * counts_json.repositories_failed. A "failure" run status is reserved
-     * for the sweep never completing at all (missing credential, or the
-     * batch failing to dispatch in the first place — see the two other
-     * call sites in handle()).
-     */
-    private function finishRunFromBatch(RepositoryCollectionRun $run, int $totalJobs, int $failedJobs): void
-    {
-        $run->update([
-            'status' => 'success',
-            'finished_at' => now(),
-            'counts_json' => [
-                'repositories_considered' => $totalJobs,
-                'repositories_failed' => $failedJobs,
-            ],
-        ]);
     }
 
     /** @return list<RepositoryCollectionTarget> */

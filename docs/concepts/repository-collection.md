@@ -102,11 +102,20 @@ Each sweep is tracked as an `App\Models\RepositoryCollectionRun` row (`repositor
 table) — `source_control_id`, `status` (`running`/`success`/`failure`), `started_at`/`finished_at`,
 `counts_json`, `error_message` — mirroring `SyncRun`'s shape, plus a `batch_id` column holding the
 `Illuminate\Bus\Batch` UUID (`job_batches` table) so the run row and its underlying batch of
-`CollectRepositoryJob`s can be cross-referenced. The batch's `finally()` callback updates the run
-once every dispatched job has finished, regardless of individual job outcomes — deliberately not
-`then()`, which only fires when every job succeeds with zero failures. `allowFailures()` means one
-repository's clone or scan failure never stops the rest of the sweep or the run's own `success`
-status — it only shows up as a non-zero `repositories_failed` count in `counts_json`.
+`CollectRepositoryJob`s can be cross-referenced for introspection.
+
+Completion is **not** driven by `Illuminate\Bus\Batch`'s own `then()`/`catch()`/`finally()`
+callbacks: `job_batches.pending_jobs` was found not to decrement reliably for this workload, so
+the run would never leave `running`. Instead, `DispatchRepositoryCollectionRunsJob` seeds
+`counts_json.repositories_considered` before dispatching, and each `CollectRepositoryJob` records
+its own completion directly against the run row — on success at the end of `handle()`; on failure
+only from `failed()`, Laravel's queue hook called exactly once after every retry attempt (`tries`)
+is exhausted, never per attempt — under a row lock (`lockForUpdate()`) so concurrent
+`collector` workers finishing at the same moment never lose an increment to a race. Once
+`repositories_completed` reaches `repositories_considered`, the job that got there last marks the
+run `success` and stamps `finished_at`. `allowFailures()` on the batch means one repository's
+clone or scan failure never stops the rest of the sweep or the run's own `success` status — it
+only shows up as a non-zero `repositories_failed` count in `counts_json`.
 
 Visible on `Admin -> Operations` via a "Recent repository collection runs" widget and a read-only
 `RepositoryCollectionRunResource` drill-down (list/view only, no create) — the same pattern

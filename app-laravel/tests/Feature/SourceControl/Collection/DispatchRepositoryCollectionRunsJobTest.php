@@ -1,7 +1,6 @@
 <?php
 
 use App\Credentials\Vault;
-use App\Models\Attachment;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\SourceControl\AzDo\AzDoRepos;
@@ -12,7 +11,6 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
@@ -84,21 +82,12 @@ it('enumerates every non-disabled repository and completes the run as success', 
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
 
-    // Temporary diagnostics: confirm whether the batched jobs actually ran
-    // under QUEUE_CONNECTION=sync and, if so, why finally() hasn't updated
-    // the run yet.
-    dump([
-        'run_status' => $run?->status,
-        'job_batches' => DB::table('job_batches')->get()->toArray(),
-        'attachments' => Attachment::query()->count(),
-        'queue_default_connection' => config('queue.default'),
-    ]);
-
     expect($run)->not->toBeNull()
         ->and($run->source_control_id)->toBe('azdo-repos')
         ->and($run->status)->toBe('success')
         ->and($run->batch_id)->not->toBeNull()
         ->and($run->counts_json['repositories_considered'])->toBe(2)
+        ->and($run->counts_json['repositories_completed'])->toBe(2)
         ->and($run->counts_json['repositories_failed'])->toBe(0);
 });
 

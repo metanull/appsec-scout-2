@@ -6,12 +6,27 @@ use App\Assets\AttachmentTargetResolver;
 use App\Credentials\Vault;
 use App\Models\Attachment;
 use App\Models\ErrorLog;
+use App\Models\RepositoryCollectionRun;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\SourceControl\Collection\CollectRepositoryJob;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+
+function repositoryCollectionRunForJobTest(int $considered = 1): RepositoryCollectionRun
+{
+    return RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now(),
+        'status' => 'running',
+        'counts_json' => [
+            'repositories_considered' => $considered,
+            'repositories_completed' => 0,
+            'repositories_failed' => 0,
+        ],
+    ]);
+}
 
 function repositoryCollectionTarget(array $overrides = []): RepositoryCollectionTarget
 {
@@ -85,8 +100,9 @@ afterEach(function () {
 
 it('clones a repository, runs three Trivy scans, and attaches every report', function () {
     fakeCollectorProcesses();
+    $run = repositoryCollectionRunForJobTest();
 
-    (new CollectRepositoryJob(repositoryCollectionTarget()))
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
         ->handle(...collectRepositoryJobDependencies());
 
     $system = SoftwareSystem::query()->where('source_id', 'azdo')->where('source_system_id', 'project-001')->first();
@@ -103,6 +119,12 @@ it('clones a repository, runs three Trivy scans, and attaches every report', fun
             AttachmentIngestionService::KIND_SECRETS,
             AttachmentIngestionService::KIND_VULNERABILITIES,
         ]);
+
+    // The only repository considered by this run just completed successfully.
+    $run->refresh();
+    expect($run->status)->toBe('success')
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_failed'])->toBe(0);
 });
 
 it('attaches results to the same rows a live AzDO sync already created, not a duplicate', function () {
@@ -118,8 +140,9 @@ it('attaches results to the same rows a live AzDO sync already created, not a du
     ]);
 
     fakeCollectorProcesses();
+    $run = repositoryCollectionRunForJobTest();
 
-    (new CollectRepositoryJob(repositoryCollectionTarget()))
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
         ->handle(...collectRepositoryJobDependencies());
 
     expect(SoftwareSystem::query()->where('source_id', 'azdo')->where('source_system_id', 'project-001')->count())->toBe(1)
@@ -142,12 +165,20 @@ it('throws when git clone fails', function () {
         return Process::result(exitCode: 0);
     });
 
-    $job = new CollectRepositoryJob(repositoryCollectionTarget());
+    $run = repositoryCollectionRunForJobTest();
+    $job = new CollectRepositoryJob(repositoryCollectionTarget(), $run->id);
 
     expect(fn () => $job->handle(...collectRepositoryJobDependencies()))
         ->toThrow(RuntimeException::class);
 
     expect(Attachment::query()->count())->toBe(0);
+
+    // failed() (Laravel's queue failure hook, called only after retries are
+    // exhausted) is what records completion for a thrown exception — calling
+    // handle() directly, as this test does, never reaches it, so the run
+    // correctly stays "running" here rather than being marked complete.
+    $run->refresh();
+    expect($run->status)->toBe('running');
 });
 
 it('does not let one failing Trivy scan prevent the other two from attaching', function () {
@@ -164,7 +195,9 @@ it('does not let one failing Trivy scan prevent the other two from attaching', f
         return Process::result(exitCode: 0);
     });
 
-    (new CollectRepositoryJob(repositoryCollectionTarget()))
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
         ->handle(...collectRepositoryJobDependencies());
 
     expect(Attachment::query()->count())->toBe(2)

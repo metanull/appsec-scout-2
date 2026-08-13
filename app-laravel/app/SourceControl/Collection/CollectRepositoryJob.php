@@ -8,12 +8,14 @@ use App\Assets\AttachmentTargetResolver;
 use App\Assets\AzDoScanResultDtoFactory;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
+use App\Models\RepositoryCollectionRun;
 use App\Models\SecurityContainer;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -52,6 +54,7 @@ final class CollectRepositoryJob implements ShouldQueue
 
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
+        public readonly int $repositoryCollectionRunId,
     ) {}
 
     public function handle(
@@ -78,6 +81,62 @@ final class CollectRepositoryJob implements ShouldQueue
         } finally {
             File::deleteDirectory($scratchRoot);
         }
+
+        // Only reached on success — a thrown exception above skips this and
+        // lets Laravel's own retry mechanism (tries=3) decide whether to
+        // attempt this repository again; failed() below records completion
+        // exactly once, only after retries are exhausted.
+        $this->recordCompletion(failed: false);
+    }
+
+    /**
+     * Laravel's queue failure hook — called exactly once, only after every
+     * retry attempt (tries=3) has been exhausted, never per-attempt. This
+     * (not a try/finally inside handle()) is why completion is recorded
+     * here rather than around the whole handle() body: a transient failure
+     * that's about to retry must not count as this repository being "done"
+     * yet.
+     */
+    public function failed(Throwable $exception): void
+    {
+        $this->recordCompletion(failed: true);
+    }
+
+    /**
+     * Marks this one repository as done against its parent
+     * RepositoryCollectionRun, under a row lock so concurrent
+     * CollectRepositoryJob instances (multiple collector workers finishing
+     * at the same time) never lose an increment to a race. Once every
+     * dispatched repository has been accounted for, finishes the run —
+     * this is the run's only completion mechanism; it does not depend on
+     * Illuminate\Bus\Batch's own then()/catch()/finally() callbacks, whose
+     * pending_jobs bookkeeping was found not to fire reliably.
+     */
+    private function recordCompletion(bool $failed): void
+    {
+        DB::transaction(function () use ($failed): void {
+            $run = RepositoryCollectionRun::query()->lockForUpdate()->find($this->repositoryCollectionRunId);
+
+            if (! $run instanceof RepositoryCollectionRun || $run->status !== 'running') {
+                return;
+            }
+
+            $counts = (array) $run->counts_json;
+            $counts['repositories_completed'] = (int) ($counts['repositories_completed'] ?? 0) + 1;
+
+            if ($failed) {
+                $counts['repositories_failed'] = (int) ($counts['repositories_failed'] ?? 0) + 1;
+            }
+
+            $update = ['counts_json' => $counts];
+
+            if ($counts['repositories_completed'] >= (int) ($counts['repositories_considered'] ?? 0)) {
+                $update['status'] = 'success';
+                $update['finished_at'] = now();
+            }
+
+            $run->update($update);
+        });
     }
 
     private function cloneRepository(string $pat, string $homeDir, string $workDir): void
