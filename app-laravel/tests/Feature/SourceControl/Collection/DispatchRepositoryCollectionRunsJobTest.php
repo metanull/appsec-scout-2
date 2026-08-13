@@ -82,6 +82,16 @@ it('enumerates every non-disabled repository and completes the run as success', 
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
 
+    // Temporary diagnostics: confirm whether the batched jobs actually ran
+    // under QUEUE_CONNECTION=sync and, if so, why finally() hasn't updated
+    // the run yet.
+    dump([
+        'run_status' => $run?->status,
+        'job_batches' => \Illuminate\Support\Facades\DB::table('job_batches')->get()->toArray(),
+        'attachments' => \App\Models\Attachment::query()->count(),
+        'queue_default_connection' => config('queue.default'),
+    ]);
+
     expect($run)->not->toBeNull()
         ->and($run->source_control_id)->toBe('azdo-repos')
         ->and($run->status)->toBe('success')

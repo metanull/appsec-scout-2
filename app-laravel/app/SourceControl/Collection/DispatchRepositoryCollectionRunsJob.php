@@ -14,7 +14,6 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
@@ -80,7 +79,7 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
             $batchName = 'repository-collection:' . $run->id;
 
             try {
-                Bus::batch(array_map(
+                $batch = Bus::batch(array_map(
                     fn (RepositoryCollectionTarget $target): CollectRepositoryJob => new CollectRepositoryJob($target),
                     $targets,
                 ))
@@ -95,57 +94,23 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                     // batch is done regardless of individual job outcomes, so the
                     // run's own status only reflects whether the sweep itself
                     // completed — repositories_failed carries the per-repository
-                    // failure count separately.
+                    // failure count separately. finally() runs once a worker
+                    // (the isolated collector container, consuming the
+                    // repository-collection queue) has processed every job in
+                    // the batch — this handle() method returns long before that,
+                    // since dispatching only pushes the jobs.
                     ->finally(function (Batch $batch) use ($run): void {
                         $this->finishRunFromBatch($run, $batch->totalJobs, $batch->failedJobs);
                     })
                     ->dispatch();
-            } catch (Throwable) {
-                // The `sync` queue connection (used in tests, and optionally
-                // elsewhere) re-throws after recording a job's own failure,
-                // unlike a real worker process, which never lets a job's
-                // exception escape its own processing loop — allowFailures()
-                // still protects the batch's bookkeeping, it just doesn't
-                // stop dispatch() itself from throwing here. The batch row
-                // is already created (job_batches, looked up by $batchName
-                // below) before any job runs, so recovery continues there
-                // rather than via this exception.
-            }
 
-            $storedBatch = DB::table('job_batches')->where('name', $batchName)->first();
-
-            if ($storedBatch === null) {
-                $run->refresh();
-
-                if ($run->status === 'running') {
-                    $run->update([
-                        'status' => 'failure',
-                        'finished_at' => now(),
-                        'error_message' => 'The repository-collection batch could not be dispatched.',
-                    ]);
-                }
-
-                return;
-            }
-
-            // Set unconditionally: update() only ever touches the batch_id
-            // column here, so this is safe to run whether or not finally()
-            // already finished the run above.
-            $run->update(['batch_id' => $storedBatch->id]);
-
-            $run->refresh();
-
-            if ($run->status === 'running' && (int) $storedBatch->pending_jobs === 0) {
-                // Every job already ran (e.g. the `sync` queue connection
-                // executes each job inline during dispatch()) but finally()
-                // never fired for this batch — finish the run directly from
-                // the batch's own row rather than leaving it stuck
-                // "running" forever. Under a real, async queue connection
-                // pending_jobs is still > 0 here (jobs were only just
-                // pushed), so this branch is skipped and the eventual
-                // worker process's own finally() invocation is what
-                // finishes the run instead.
-                $this->finishRunFromBatch($run, (int) $storedBatch->total_jobs, (int) $storedBatch->failed_jobs);
+                $run->update(['batch_id' => $batch->id]);
+            } catch (Throwable $e) {
+                $run->update([
+                    'status' => 'failure',
+                    'finished_at' => now(),
+                    'error_message' => $e->getMessage(),
+                ]);
             }
         });
     }
