@@ -1,6 +1,7 @@
 <?php
 
 use App\Credentials\Vault;
+use App\Models\Attachment;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\SourceControl\AzDo\AzDoRepos;
@@ -11,6 +12,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
@@ -87,8 +89,8 @@ it('enumerates every non-disabled repository and completes the run as success', 
     // the run yet.
     dump([
         'run_status' => $run?->status,
-        'job_batches' => \Illuminate\Support\Facades\DB::table('job_batches')->get()->toArray(),
-        'attachments' => \App\Models\Attachment::query()->count(),
+        'job_batches' => DB::table('job_batches')->get()->toArray(),
+        'attachments' => Attachment::query()->count(),
         'queue_default_connection' => config('queue.default'),
     ]);
 
