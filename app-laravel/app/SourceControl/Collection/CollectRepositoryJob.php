@@ -10,6 +10,7 @@ use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Sources\AzDo\AzDoNormalizer;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -35,7 +36,7 @@ use Throwable;
  */
 final class CollectRepositoryJob implements ShouldQueue
 {
-    use Dispatchable, Queueable;
+    use Batchable, Dispatchable, Queueable;
 
     public int $tries = 3;
 
