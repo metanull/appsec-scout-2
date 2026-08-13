@@ -19,6 +19,8 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
 
     protected static ?int $sort = 5;
 
+    protected static bool $isLazy = false;
+
     public static function canView(): bool
     {
         return Auth::user()?->can('alerts.view') ?? false;
