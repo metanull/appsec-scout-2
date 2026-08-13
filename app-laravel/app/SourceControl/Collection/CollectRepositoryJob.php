@@ -69,24 +69,31 @@ final class CollectRepositoryJob implements ShouldQueue
             . '/' . (string) Str::uuid();
         $homeDir = $scratchRoot . '/home';
         $workDir = $scratchRoot . '/work';
+        $cloned = false;
 
         try {
-            $this->cloneRepository($pat, $homeDir, $workDir);
+            $cloned = $this->cloneRepository($pat, $homeDir, $workDir);
 
-            $securityContainer = $this->resolveOwner($resolver);
+            if ($cloned) {
+                $securityContainer = $this->resolveOwner($resolver);
 
-            foreach ($this->reportKinds() as $report) {
-                $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $report);
+                foreach ($this->reportKinds() as $report) {
+                    $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $report);
+                }
             }
         } finally {
             File::deleteDirectory($scratchRoot);
         }
 
-        // Only reached on success — a thrown exception above skips this and
-        // lets Laravel's own retry mechanism (tries=3) decide whether to
-        // attempt this repository again; failed() below records completion
-        // exactly once, only after retries are exhausted.
-        $this->recordCompletion(failed: false);
+        // A clone failure is a logged, per-repository outcome (like a Trivy
+        // scan failure below), not a job-level exception: it must not
+        // trigger Laravel's retry mechanism — a "repository not found" or
+        // authentication failure will not succeed on attempt 2 or 3 — and
+        // must not propagate out of dispatch(), which the sync queue
+        // connection (tests, and optionally elsewhere) re-throws through
+        // after already recording it via failed(), aborting the rest of
+        // the batch under that connection specifically.
+        $this->recordCompletion(failed: ! $cloned);
     }
 
     /**
@@ -145,7 +152,7 @@ final class CollectRepositoryJob implements ShouldQueue
         });
     }
 
-    private function cloneRepository(string $pat, string $homeDir, string $workDir): void
+    private function cloneRepository(string $pat, string $homeDir, string $workDir): bool
     {
         File::makeDirectory($homeDir, 0700, true, true);
 
@@ -158,6 +165,8 @@ final class CollectRepositoryJob implements ShouldQueue
         File::put($homeDir . '/.git-credentials', "https://:{$pat}@dev.azure.com\n");
         chmod($homeDir . '/.git-credentials', 0600);
 
+        // Genuinely worth retrying if it fails — a local git/filesystem
+        // setup problem, not a fact about the repository itself.
         Process::env(['HOME' => $homeDir])
             ->timeout(60)
             ->run(['git', 'config', '--global', 'credential.helper', 'store'])
@@ -168,8 +177,12 @@ final class CollectRepositoryJob implements ShouldQueue
             ->run(['git', 'clone', '--quiet', '--depth', '1', '--no-tags', '--shallow-submodules', $this->target->repositoryCloneUrl, $workDir]);
 
         if ($result->failed()) {
-            throw new RuntimeException("git clone failed for repository '{$this->target->repositoryName}': " . $result->errorOutput());
+            $this->logFailure('clone', "git clone failed for repository '{$this->target->repositoryName}': " . $result->errorOutput());
+
+            return false;
         }
+
+        return true;
     }
 
     private function resolveOwner(AttachmentTargetResolver $resolver): SecurityContainer

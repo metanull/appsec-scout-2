@@ -153,7 +153,7 @@ it('attaches results to the same rows a live AzDO sync already created, not a du
     expect(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(3);
 });
 
-it('throws when git clone fails', function () {
+it('logs and records completion as failed when git clone fails, without throwing', function () {
     Process::fake(function ($process) {
         $command = $process->command;
         $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
@@ -168,17 +168,19 @@ it('throws when git clone fails', function () {
     $run = repositoryCollectionRunForJobTest();
     $job = new CollectRepositoryJob(repositoryCollectionTarget(), $run->id);
 
-    expect(fn () => $job->handle(...collectRepositoryJobDependencies()))
-        ->toThrow(RuntimeException::class);
+    // A clone failure is a logged, per-repository outcome — like a Trivy
+    // scan failure — not a job-level exception: it must never trigger
+    // Laravel's retry mechanism, since "repository not found" will not
+    // succeed on attempt 2 or 3.
+    $job->handle(...collectRepositoryJobDependencies());
 
-    expect(Attachment::query()->count())->toBe(0);
+    expect(Attachment::query()->count())->toBe(0)
+        ->and(ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'like', 'git clone failed%')->exists())->toBeTrue();
 
-    // failed() (Laravel's queue failure hook, called only after retries are
-    // exhausted) is what records completion for a thrown exception — calling
-    // handle() directly, as this test does, never reaches it, so the run
-    // correctly stays "running" here rather than being marked complete.
     $run->refresh();
-    expect($run->status)->toBe('running');
+    expect($run->status)->toBe('success')
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 it('does not let one failing Trivy scan prevent the other two from attaching', function () {
