@@ -102,10 +102,11 @@ Each sweep is tracked as an `App\Models\RepositoryCollectionRun` row (`repositor
 table) — `source_control_id`, `status` (`running`/`success`/`failure`), `started_at`/`finished_at`,
 `counts_json`, `error_message` — mirroring `SyncRun`'s shape, plus a `batch_id` column holding the
 `Illuminate\Bus\Batch` UUID (`job_batches` table) so the run row and its underlying batch of
-`CollectRepositoryJob`s can be cross-referenced. The batch's `then()`/`catch()` callbacks update
-the run once every dispatched job has finished; `allowFailures()` means one repository's clone or
-scan failure never stops the rest of the sweep — it only shows up as a non-zero
-`repositories_failed` count.
+`CollectRepositoryJob`s can be cross-referenced. The batch's `finally()` callback updates the run
+once every dispatched job has finished, regardless of individual job outcomes — deliberately not
+`then()`, which only fires when every job succeeds with zero failures. `allowFailures()` means one
+repository's clone or scan failure never stops the rest of the sweep or the run's own `success`
+status — it only shows up as a non-zero `repositories_failed` count in `counts_json`.
 
 Visible on `Admin -> Operations` via a "Recent repository collection runs" widget and a read-only
 `RepositoryCollectionRunResource` drill-down (list/view only, no create) — the same pattern

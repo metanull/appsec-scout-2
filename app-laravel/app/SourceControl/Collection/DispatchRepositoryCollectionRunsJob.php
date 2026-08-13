@@ -87,11 +87,17 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                     ->name($batchName)
                     ->onQueue('repository-collection')
                     ->allowFailures()
-                    ->then(function (Batch $batch) use ($run): void {
+                    // then() only fires when every job in the batch succeeds with
+                    // zero failures — not what "the sweep completed" means here,
+                    // since allowFailures() means one repository's clone/scan
+                    // failure is expected and must not fail the whole run (see the
+                    // epic's Cross-cutting constraints). finally() fires once the
+                    // batch is done regardless of individual job outcomes, so the
+                    // run's own status only reflects whether the sweep itself
+                    // completed — repositories_failed carries the per-repository
+                    // failure count separately.
+                    ->finally(function (Batch $batch) use ($run): void {
                         $this->finishRunFromBatch($run, $batch->totalJobs, $batch->failedJobs);
-                    })
-                    ->catch(function (Batch $batch, Throwable $e) use ($run): void {
-                        $this->finishRunFromBatch($run, $batch->totalJobs, $batch->failedJobs, $e->getMessage());
                     })
                     ->dispatch();
             } catch (Throwable) {
@@ -123,33 +129,41 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
             }
 
             // Set unconditionally: update() only ever touches the batch_id
-            // column here, so this is safe to run whether or not then()/
-            // catch() already finished the run above.
+            // column here, so this is safe to run whether or not finally()
+            // already finished the run above.
             $run->update(['batch_id' => $storedBatch->id]);
 
             $run->refresh();
 
             if ($run->status === 'running' && (int) $storedBatch->pending_jobs === 0) {
                 // Every job already ran (e.g. the `sync` queue connection
-                // executes each job inline during dispatch()) but then()
+                // executes each job inline during dispatch()) but finally()
                 // never fired for this batch — finish the run directly from
                 // the batch's own row rather than leaving it stuck
                 // "running" forever. Under a real, async queue connection
                 // pending_jobs is still > 0 here (jobs were only just
                 // pushed), so this branch is skipped and the eventual
-                // worker process's own then()/catch() invocation is what
+                // worker process's own finally() invocation is what
                 // finishes the run instead.
                 $this->finishRunFromBatch($run, (int) $storedBatch->total_jobs, (int) $storedBatch->failed_jobs);
             }
         });
     }
 
-    private function finishRunFromBatch(RepositoryCollectionRun $run, int $totalJobs, int $failedJobs, ?string $errorMessage = null): void
+    /**
+     * Marks the run "success" — allowFailures() means the sweep itself
+     * completing is what "success" means here, regardless of how many
+     * individual repositories failed; that count is carried separately in
+     * counts_json.repositories_failed. A "failure" run status is reserved
+     * for the sweep never completing at all (missing credential, or the
+     * batch failing to dispatch in the first place — see the two other
+     * call sites in handle()).
+     */
+    private function finishRunFromBatch(RepositoryCollectionRun $run, int $totalJobs, int $failedJobs): void
     {
         $run->update([
-            'status' => $errorMessage === null ? 'success' : 'failure',
+            'status' => 'success',
             'finished_at' => now(),
-            'error_message' => $errorMessage,
             'counts_json' => [
                 'repositories_considered' => $totalJobs,
                 'repositories_failed' => $failedJobs,
