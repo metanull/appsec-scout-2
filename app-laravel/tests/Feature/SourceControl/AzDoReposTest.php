@@ -108,3 +108,20 @@ it('enumerates repositories for a project, filling in the project id as sourceSy
         ->and($repos[0]->sourceSystemId)->toBe('project-001')
         ->and($repos[0]->kind)->toBe('repository');
 });
+
+it('skips disabled repositories when enumerating repositories for a project', function () {
+    $http = new Client(['handler' => new MockHandler([
+        new Response(200, [], azdoReposFixture('repositories-with-disabled.json')),
+    ])]);
+    $advSec = new Client(['handler' => new MockHandler([])]);
+
+    $provider = new AzDoRepos(app(Vault::class));
+    injectAzDoReposClient($provider, new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec));
+
+    $project = new SystemDto(sourceSystemId: 'project-001', name: 'SecurityProject');
+    $repos = iterator_to_array($provider->fetchRepositories($project));
+
+    expect($repos)->toHaveCount(2)
+        ->and(array_map(fn ($r) => $r->sourceContainerId, $repos))->toBe(['repo-001', 'repo-002'])
+        ->and(array_map(fn ($r) => $r->sourceContainerId, $repos))->not->toContain('repo-003');
+});

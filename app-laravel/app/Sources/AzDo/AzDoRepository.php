@@ -13,6 +13,7 @@ final class AzDoRepository
         public readonly ?string $remoteUrl = null,
         public readonly ?string $apiUrl = null,
         public readonly ?string $webUrl = null,
+        public readonly bool $isDisabled = false,
     ) {}
 
     /**
@@ -29,6 +30,7 @@ final class AzDoRepository
             remoteUrl: isset($data['remoteUrl']) ? (string) $data['remoteUrl'] : null,
             apiUrl: isset($data['url']) ? (string) $data['url'] : null,
             webUrl: isset($data['webUrl']) ? (string) $data['webUrl'] : null,
+            isDisabled: (bool) ($data['isDisabled'] ?? false),
         );
     }
 }

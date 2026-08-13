@@ -6,14 +6,17 @@ use App\Audit\Recorder;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentFailedJobsTableWidget;
+use App\Filament\Widgets\RecentRepositoryCollectionRunsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
 use App\Filament\Widgets\SbomScanStatusWidget;
 use App\Filament\Widgets\StaticAnalysisScanStatusWidget;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
+use App\Models\RepositoryCollectionRun;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
+use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Sync\SyncInventoryJob;
@@ -49,6 +52,7 @@ class OperationsPage extends Page
         return [
             OperationsHealthStatsWidget::class,
             RecentSyncRunsTableWidget::class,
+            RecentRepositoryCollectionRunsTableWidget::class,
             RecentErrorsTableWidget::class,
             RecentFailedJobsTableWidget::class,
             SbomScanStatusWidget::class,
@@ -122,6 +126,14 @@ class OperationsPage extends Page
                 ->requiresConfirmation()
                 ->modalDescription('Queue a sync of Systems/Containers from every enabled Source and Source Control provider.')
                 ->action(fn () => $this->dispatchSyncInventory()),
+
+            Action::make('collectRepositories')
+                ->label('Collect repositories')
+                ->icon('heroicon-o-code-bracket-square')
+                ->visible(fn (): bool => Gate::allows('admin.queue'))
+                ->requiresConfirmation()
+                ->modalDescription('Queue an SBOM/vulnerability/secret collection sweep across every Azure DevOps repository the azdo-repos credential can see.')
+                ->action(fn () => $this->dispatchCollectRepositories()),
 
             ActionGroup::make([
                 Action::make('pruneAuditLogs')
@@ -279,6 +291,22 @@ class OperationsPage extends Page
         return DB::table('jobs')
             ->where('payload', 'like', '%SyncInventoryJob%')
             ->exists();
+    }
+
+    public function dispatchCollectRepositories(): void
+    {
+        Gate::authorize('admin.queue');
+
+        if (RepositoryCollectionRun::query()->where('status', 'running')->exists()) {
+            Notification::make()->title('A repository collection run is already in progress.')->info()->send();
+
+            return;
+        }
+
+        DispatchRepositoryCollectionRunsJob::dispatch();
+        app(Recorder::class)->recordAdminAction('operations.collect_repositories');
+
+        Notification::make()->title('Repository collection started. Progress appears in "Recent repository collection runs" below.')->success()->send();
     }
 
     public function pruneAuditLogsNow(): void
