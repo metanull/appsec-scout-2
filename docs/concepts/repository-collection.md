@@ -77,6 +77,19 @@ Results are written **directly**, in-process — reusing `App\Assets\AttachmentT
 file-drop directory, and no per-run cursor file: since `collector` has the same direct database
 access `app` does, there is nothing to hand off to a later, separately-scheduled import command.
 
+**A clone failure is a logged, per-repository outcome, not a thrown exception** — the same
+treatment a single failing `trivy fs` invocation already gets. `collect-sboms.sh`'s own
+`clone_ok=false` is non-fatal for exactly the same reason: a "repository not found" or
+authentication failure will not succeed on a second or third attempt, so retrying it (Laravel's
+`tries` mechanism, which genuine transient failures elsewhere in this job still use) would only
+waste time. Both a failed clone and a failed Trivy scan are recorded via an `ErrorLog` row
+(`channel: 'repository-collection'`) and folded into the repository's own completion — see
+[Run Tracking](#run-tracking) below — rather than into a job-level retry/failure path. This also
+sidesteps a real, observed limitation of the `sync` queue connection (used by this repository's own
+Pest suite): an exception escaping a batched job's `dispatch()` call under that connection
+specifically aborts the rest of the batch's dispatch loop, which would otherwise leave later
+repositories in the same sweep never attempted.
+
 **Do not confuse the two `source_id` values this feature touches.** `InventorySyncService` upserts
 `SoftwareSystem`/`SecurityContainer` rows from the Source Control registry under
 `source_id = 'azdo-repos'` (the provider's own `id()`). `CollectRepositoryJob` instead writes
