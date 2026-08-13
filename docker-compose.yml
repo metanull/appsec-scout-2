@@ -243,6 +243,47 @@ services:
             - --trivy-base-url=${TRIVY_SERVER_URL:-http://trivy-server:4954}
             - --trivy-token-file=/var/lib/trivy-token/token
 
+    # Isolated worker for the in-app repository-collection feature (Admin -> Operations
+    # "Collect repositories"): consumes the repository-collection Redis queue only, never
+    # the app service's own default-queue worker. Lean image (git + Trivy, no nginx/
+    # php-fpm/build toolchain) with its own scratch volume for repository checkouts,
+    # sharing app's persisted .env/APP_KEY (app_storage, read) and mysql/redis/trivy-server
+    # so Credential-encrypted values (e.g. azdo-repos.pat) decrypt identically to app.
+    # No `profiles:` — starts by default, since the feature does not work without it.
+    collector:
+        build:
+            context: .
+            dockerfile: docker/collector/Dockerfile
+            args:
+                HTTP_PROXY: "${HTTP_PROXY:-}"
+                HTTPS_PROXY: "${HTTPS_PROXY:-}"
+                NO_PROXY: "${NO_PROXY:-}"
+        image: appsec-scout-collector:latest
+        depends_on:
+            mysql:
+                condition: service_healthy
+            redis:
+                condition: service_started
+            trivy-server:
+                condition: service_started
+            app:
+                condition: service_healthy
+        volumes:
+            - ./app-laravel:/var/www/html
+            - app_storage:/var/www/html/storage
+            - collector_bootstrap_cache:/var/www/html/bootstrap/cache
+            - collector_workspace:/workspace-scratch
+            - trivy_token:/var/lib/trivy-token:ro
+        environment:
+            HTTP_PROXY: "${HTTP_PROXY:-}"
+            HTTPS_PROXY: "${HTTPS_PROXY:-}"
+            NO_PROXY: "${NO_PROXY:-}"
+            SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
+            SKIP_APP_BOOTSTRAP: "1"
+            TRIVY_SERVER_URL: "${TRIVY_SERVER_URL:-http://trivy-server:4954}"
+        cpus: ${COLLECTOR_CPUS:-2}
+        mem_limit: ${COLLECTOR_MEM_LIMIT:-2g}
+
     node:
         image: node:22-alpine
         working_dir: /app
@@ -305,3 +346,5 @@ volumes:
     dependencytrack_cacerts:
     trivy_token:
     trivy_data:
+    collector_bootstrap_cache:
+    collector_workspace:
