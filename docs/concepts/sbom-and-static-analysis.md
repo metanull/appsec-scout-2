@@ -9,6 +9,15 @@ Don't confuse any of this with the `Admin -> Operations` **Filament page** (cove
 triggering Source/Tracker sync jobs — a completely different thing that happens to share the
 word "operations." Nothing in this document runs from Filament.
 
+## Related: Repository Collection
+
+[docs/concepts/repository-collection.md](repository-collection.md) documents a second,
+**in-app, asynchronous** path to the same kind of output as SbomScan — queued from
+`Admin -> Operations` and run by an isolated `collector` container/queue, rather than
+operator-triggered on a workstation. It does not replace SbomScan (which remains the only way to
+run StaticAnalysis, and a fully valid manual SBOM/vulnerability/secret alternative); the two are
+independent, parallel paths.
+
 ## Trigger and Access
 
 This is entirely **host-side and operator-initiated** — there is no in-app button, no queued

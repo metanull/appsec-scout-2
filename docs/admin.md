@@ -104,6 +104,9 @@ Actions:
 - Reconcile all tracker links (`ReconcileAllJob`, sweeps every alert for missing work-item links).
 - Sync inventory (`SyncInventoryJob`, syncs `SoftwareSystem`/`SecurityContainer` rows from every
   registered Source and Source Control provider that supports it).
+- Collect repositories (`DispatchRepositoryCollectionRunsJob`, queues an SBOM/vulnerability/secret
+  collection sweep across every Azure DevOps repository, run by the isolated `collector`
+  container — see [docs/concepts/repository-collection.md](concepts/repository-collection.md)).
 - Prune audit logs, prune error logs.
 - Retry a failed job, or forget it.
 

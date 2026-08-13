@@ -118,6 +118,7 @@ Actions:
 | Refresh tracker | `admin.queue` or `work-items.sync` | Dispatches `RefreshWorkItemsJob` for one chosen Tracker right now |
 | Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links |
 | Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every registered Source and every Source Control provider that supports it |
+| Collect repositories | `admin.queue` | Dispatches `DispatchRepositoryCollectionRunsJob`, queuing a batched SBOM/vulnerability/secret Trivy scan of every Azure DevOps repository, run by the isolated `collector` container on the `repository-collection` queue |
 | Prune audit logs / Prune error logs | `admin.queue` or `work-items.sync` | Deletes retention-expired rows now |
 | Retry / Forget a failed job | `admin.queue` or `work-items.sync` | Requeues the stored payload, or discards it, per row |
 

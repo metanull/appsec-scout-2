@@ -27,6 +27,11 @@ flowchart LR
         SYNCINV[SyncInventoryJob]
         SBOMIMP[sbom / staticanalysis import]
         DTPUSH[Dependency-Track upload]
+        DISPATCHCOLLECT[DispatchRepositoryCollectionRunsJob]
+    end
+
+    subgraph Collector[Collector container - queue-driven, isolated]
+        COLLECTJOB[CollectRepositoryJob]
     end
 
     subgraph AppDB[MySQL]
@@ -37,6 +42,7 @@ flowchart LR
         SC[software_components]
         LINKS[work_item_links]
         RUNS[sync_runs]
+        RUNS2[repository_collection_runs]
         CREDS[credentials]
         AUD[audit_logs]
         ERR[error_logs]
@@ -70,12 +76,14 @@ flowchart LR
     ASOC --> FETCH
     DET --> FETCH
     AZDOREPOS --> SYNCINV
+    AZDOREPOS --> DISPATCHCOLLECT
     GHREPOS -.->|no EnumeratesInventory yet| SYNCINV
 
     OPSPAGE --> FETCH
     OPSPAGE --> TRACK
     OPSPAGE --> SYNCINV
     OPSPAGE --> RECON
+    OPSPAGE --> DISPATCHCOLLECT
 
     FETCH --> SYS
     FETCH --> CONT
@@ -121,11 +129,19 @@ flowchart LR
     SC --> DTPUSH
     DTPUSH --> DT
 
+    DISPATCHCOLLECT --> RUNS2
+    DISPATCHCOLLECT -->|repository-collection queue| COLLECTJOB
+    COLLECTJOB -->|Trivy scans| TRIVY
+    COLLECTJOB --> LF
+    COLLECTJOB --> SC
+    COLLECTJOB --> RUNS2
+
     CREDS --> FETCH
     CREDS --> TRACK
     CREDS --> PLAN
     CREDS --> PUSH
     CREDS --> SYNCINV
+    CREDS --> COLLECTJOB
 ```
 
 ## Runtime Topology
@@ -144,9 +160,12 @@ The default Compose stack (`docker-compose.yml`, no profile needed) starts these
 | `trivy-token-init` | `appsec-scout:latest` | One-shot: generates the shared token `trivy-server` and `dependencytrack-bootstrap` use to authenticate to each other |
 | `trivy-server` | `aquasec/trivy:latest` | Self-hosted vulnerability database server, used by Dependency-Track's Trivy analyzer and by the SbomScan/StaticAnalysis workflows (see [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md)) |
 | `dependencytrack-bootstrap` | `appsec-scout:latest` | One-shot: provisions a Dependency-Track team, API key, and Trivy analyzer config, storing the API key in the credential vault |
+| `collector` | `appsec-scout-collector:latest` | Isolated worker for in-app repository collection: git + Trivy, consumes only the `repository-collection` queue — see [docs/concepts/repository-collection.md](concepts/repository-collection.md) |
 
 `node` (profile `tools`) and `ops` (profile `ops`) are opt-in and not started by a plain
-`docker compose up` — see [docs/operations.md](operations.md) for when to use them.
+`docker compose up` — see [docs/operations.md](operations.md) for when to use them. `collector`,
+unlike `ops`, has no profile and starts by default alongside `app` — it backs an in-app feature,
+not a manual operator tool.
 
 Inside the `app` container, Supervisor runs `nginx`, `php-fpm`, `php artisan schedule:work`, and
 `php artisan queue:work` (see `docker/supervisord.conf` for the exact flags).
@@ -166,6 +185,9 @@ AppSec Scout is the system of record for operator edits.
 - Tracker refresh updates local work-item metadata only.
 - SbomScan/StaticAnalysis and their import commands are the equivalent read path for Local
   Findings and Dependencies — see [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md).
+- Repository collection (`Admin -> Operations` "Collect repositories") is a second, in-app,
+  asynchronous read path for the same kind of data, scoped to Azure DevOps repositories — see
+  [docs/concepts/repository-collection.md](concepts/repository-collection.md).
 
 ## Credentials
 
@@ -193,6 +215,9 @@ clear error.
   entity hierarchy this architecture populates.
 - [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md) — the
   host-triggered SBOM/static-analysis pipeline and the Dependency-Track integration.
+- [docs/concepts/repository-collection.md](concepts/repository-collection.md) — the in-app,
+  queued, isolated-container SBOM/vulnerability/secret collection path for Azure DevOps
+  repositories.
 - [docs/install.md](install.md), [docs/operations.md](operations.md), [docs/security.md](security.md)
   — install, day-2 operations, and security posture.
 

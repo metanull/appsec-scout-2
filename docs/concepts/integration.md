@@ -15,6 +15,9 @@ Related concepts, documented separately:
 - [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md) — the separate,
   host-side "Ops" scan workflows (not to be confused with the `Admin -> Operations` page
   described below).
+- [docs/concepts/repository-collection.md](repository-collection.md) — the in-app, queued
+  counterpart to SbomScan, triggered from this same `Admin -> Operations` page but dispatching
+  onto a second, dedicated worker/queue rather than the app container's own.
 - [docs/concepts/asset-system-container-alert.md](asset-system-container-alert.md) — the entity
   hierarchy (Software Asset / System / Container / Alert) that everything above ultimately reads
   from and writes to.
@@ -53,6 +56,13 @@ Integration jobs are dispatched on demand from `Admin -> Operations`:
   `EnumeratesInventory` to sync `SoftwareSystem`/`SecurityContainer` rows — see
   [docs/concepts/sources-trackers-source-control.md](sources-trackers-source-control.md#populating-inventory-from-source-control).
   Unlike the other two actions, this one covers Source Control, not just Source/Tracker.
+- **Collect repositories** (`admin.queue`) — dispatches
+  `App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob`, which also walks the AzDO
+  Source Control provider's `EnumeratesInventory` methods, but to clone and scan each repository
+  with Trivy rather than sync inventory metadata. Unlike every other action listed here, the
+  per-repository work runs on a dedicated `repository-collection` queue consumed only by the
+  isolated `collector` container, never the app container's own queue worker — see
+  [docs/concepts/repository-collection.md](repository-collection.md).
 
 Both `FetchSourceJob` and `RefreshWorkItemsJob` are queued jobs, picked up and executed by a
 Supervisor-managed `php artisan queue:work` process on the app's default queue (Redis in normal
