@@ -281,6 +281,7 @@ services:
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
             SKIP_APP_BOOTSTRAP: "1"
             TRIVY_SERVER_URL: "${TRIVY_SERVER_URL:-http://trivy-server:4954}"
+            REPOSITORY_COLLECTION_WORKSPACE: /workspace-scratch
         cpus: ${COLLECTOR_CPUS:-2}
         mem_limit: ${COLLECTOR_MEM_LIMIT:-2g}
 
