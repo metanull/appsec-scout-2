@@ -259,6 +259,11 @@ services:
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
                 NO_PROXY: "${NO_PROXY:-}"
         image: appsec-scout-collector:latest
+        # queue:work's --max-time=3600 below deliberately exits the worker process every
+        # hour (Laravel's documented guard against memory leaks/stale code in long-running
+        # workers) — it relies on an external supervisor to bring it back up. Without this,
+        # the container would exit and stay down permanently once max-time is hit.
+        restart: unless-stopped
         depends_on:
             mysql:
                 condition: service_healthy
@@ -271,6 +276,7 @@ services:
         volumes:
             - ./app-laravel:/var/www/html
             - app_storage:/var/www/html/storage
+            - collector_vendor:/var/www/html/vendor
             - collector_bootstrap_cache:/var/www/html/bootstrap/cache
             - collector_workspace:/workspace-scratch
             - trivy_token:/var/lib/trivy-token:ro
@@ -347,5 +353,6 @@ volumes:
     dependencytrack_cacerts:
     trivy_token:
     trivy_data:
+    collector_vendor:
     collector_bootstrap_cache:
     collector_workspace:
