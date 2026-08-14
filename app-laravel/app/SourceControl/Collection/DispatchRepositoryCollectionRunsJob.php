@@ -52,10 +52,24 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
         $provider = $runtime->sourceControl(self::SOURCE_CONTROL_ID);
 
         if (! $provider instanceof EnumeratesInventory || ! $runtime->hasRequiredSystemCredentials($provider->credentialFields())) {
+            $message = 'Azure DevOps Repos credential is not configured.';
+
             $run->update([
                 'status' => 'failure',
                 'finished_at' => now(),
-                'error_message' => 'Azure DevOps Repos credential is not configured.',
+                'error_message' => $message,
+            ]);
+
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'repository-collection',
+                'message' => $message,
+                'context_json' => [
+                    'run' => $run->id,
+                    'operation' => 'discover',
+                ],
+                'trace' => null,
+                'occurred_at' => now(),
             ]);
 
             return;
@@ -120,6 +134,18 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                         'finished_at' => now(),
                         'error_message' => $e->getMessage(),
                     ]);
+
+                    ErrorLog::query()->create([
+                        'level' => 'error',
+                        'channel' => 'repository-collection',
+                        'message' => $e->getMessage(),
+                        'context_json' => [
+                            'run' => $run->id,
+                            'operation' => 'dispatch',
+                        ],
+                        'trace' => $e->getTraceAsString(),
+                        'occurred_at' => now(),
+                    ]);
                 }
             }
         });
@@ -146,8 +172,11 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                         'message' => 'Repository has no clone URL, skipping.',
                         'context_json' => [
                             'run' => $runId,
-                            'project' => $project->name,
-                            'repository' => $container->name,
+                            'project_id' => $project->sourceSystemId,
+                            'project_name' => $project->name,
+                            'repository_id' => $container->sourceContainerId,
+                            'repository_name' => $container->name,
+                            'operation' => 'discover',
                         ],
                         'trace' => null,
                         'occurred_at' => now(),

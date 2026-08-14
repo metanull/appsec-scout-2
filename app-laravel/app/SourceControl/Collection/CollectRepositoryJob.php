@@ -106,6 +106,15 @@ final class CollectRepositoryJob implements ShouldQueue
      */
     public function failed(Throwable $exception): void
     {
+        ErrorLog::query()->create([
+            'level' => 'error',
+            'channel' => 'repository-collection',
+            'message' => $exception->getMessage(),
+            'context_json' => $this->logContext('job'),
+            'trace' => $exception->getTraceAsString(),
+            'occurred_at' => now(),
+        ]);
+
         $this->recordCompletion(failed: true);
     }
 
@@ -266,7 +275,7 @@ final class CollectRepositoryJob implements ShouldQueue
         try {
             $result = Process::timeout(self::PER_SCAN_TIMEOUT)->run($command);
         } catch (Throwable $e) {
-            $this->logFailure($report['kind'], $e->getMessage());
+            $this->logFailure($report['kind'], $e->getMessage(), $e);
 
             return;
         }
@@ -287,20 +296,29 @@ final class CollectRepositoryJob implements ShouldQueue
         );
     }
 
-    private function logFailure(string $kind, string $message): void
+    private function logFailure(string $operation, string $message, ?Throwable $exception = null): void
     {
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'repository-collection',
             'message' => $message,
-            'context_json' => [
-                'run' => $this->repositoryCollectionRunId,
-                'repository_id' => $this->target->repositoryId,
-                'repository' => $this->target->repositoryName,
-                'kind' => $kind,
-            ],
-            'trace' => null,
+            'context_json' => $this->logContext($operation),
+            'trace' => $exception?->getTraceAsString(),
             'occurred_at' => now(),
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function logContext(string $operation): array
+    {
+        return [
+            'run' => $this->repositoryCollectionRunId,
+            'batch_id' => $this->batch()?->id,
+            'project_id' => $this->target->projectId,
+            'project_name' => $this->target->projectName,
+            'repository_id' => $this->target->repositoryId,
+            'repository_name' => $this->target->repositoryName,
+            'operation' => $operation,
+        ];
     }
 }
