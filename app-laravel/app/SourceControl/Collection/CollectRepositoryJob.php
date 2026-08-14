@@ -17,6 +17,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -62,6 +63,8 @@ final class CollectRepositoryJob implements ShouldQueue
         AttachmentService $attachments,
         Vault $vault,
     ): void {
+        Log::info('Repository collection started.', $this->logContext('start'));
+
         $pat = $vault->get('azdo-repos.pat', null)
             ?? throw new RuntimeException('AzDO Repos PAT not configured.');
 
@@ -94,6 +97,8 @@ final class CollectRepositoryJob implements ShouldQueue
         // after already recording it via failed(), aborting the rest of
         // the batch under that connection specifically.
         $this->recordCompletion(failed: ! $cloned);
+
+        Log::info('Repository collection finished.', $this->logContext('finish', ['cloned' => $cloned]));
     }
 
     /**
@@ -106,11 +111,15 @@ final class CollectRepositoryJob implements ShouldQueue
      */
     public function failed(Throwable $exception): void
     {
+        $context = $this->logContext('job');
+
+        Log::error($exception->getMessage(), $context);
+
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'repository-collection',
             'message' => $exception->getMessage(),
-            'context_json' => $this->logContext('job'),
+            'context_json' => $context,
             'trace' => $exception->getTraceAsString(),
             'occurred_at' => now(),
         ]);
@@ -286,7 +295,7 @@ final class CollectRepositoryJob implements ShouldQueue
             return;
         }
 
-        $attachments->attachTo(
+        $attachment = $attachments->attachTo(
             owner: $securityContainer,
             kind: $report['kind'],
             mime: 'application/octet-stream',
@@ -294,24 +303,36 @@ final class CollectRepositoryJob implements ShouldQueue
             payload: File::get($outputPath),
             createdByCommand: 'repository-collection',
         );
+
+        Log::info('Repository collection report attached.', $this->logContext($report['kind'], [
+            'attachment_id' => $attachment->id,
+            'size_bytes' => $attachment->size_bytes,
+        ]));
     }
 
     private function logFailure(string $operation, string $message, ?Throwable $exception = null): void
     {
+        $context = $this->logContext($operation);
+
+        Log::error($message, $context);
+
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'repository-collection',
             'message' => $message,
-            'context_json' => $this->logContext($operation),
+            'context_json' => $context,
             'trace' => $exception?->getTraceAsString(),
             'occurred_at' => now(),
         ]);
     }
 
-    /** @return array<string, mixed> */
-    private function logContext(string $operation): array
+    /**
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function logContext(string $operation, array $extra = []): array
     {
-        return [
+        return array_merge([
             'run' => $this->repositoryCollectionRunId,
             'batch_id' => $this->batch()?->id,
             'project_id' => $this->target->projectId,
@@ -319,6 +340,6 @@ final class CollectRepositoryJob implements ShouldQueue
             'repository_id' => $this->target->repositoryId,
             'repository_name' => $this->target->repositoryName,
             'operation' => $operation,
-        ];
+        ], $extra);
     }
 }
