@@ -2,6 +2,7 @@
 
 namespace App\SourceControl\Collection;
 
+use App\Audit\Recorder;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\SourceControl\Contracts\EnumeratesInventory;
@@ -41,7 +42,7 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
         return 'repository-collection';
     }
 
-    public function handle(SystemIntegrationRuntime $runtime): void
+    public function handle(SystemIntegrationRuntime $runtime, Recorder $recorder): void
     {
         $run = RepositoryCollectionRun::query()->create([
             'source_control_id' => self::SOURCE_CONTROL_ID,
@@ -78,10 +79,15 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                 'occurred_at' => now(),
             ]);
 
+            $recorder->recordAdminAction('operations.collect_repositories.failed', [
+                'repository_collection_run_id' => $run->id,
+                'reason' => $message,
+            ]);
+
             return;
         }
 
-        $runtime->runSourceControl(self::SOURCE_CONTROL_ID, function (SourceControlProvider $resolvedProvider) use ($run): void {
+        $runtime->runSourceControl(self::SOURCE_CONTROL_ID, function (SourceControlProvider $resolvedProvider) use ($run, $recorder): void {
             /** @var EnumeratesInventory&SourceControlProvider $resolvedProvider */
             $targets = $this->buildTargets($resolvedProvider, $run->id);
 
@@ -94,6 +100,11 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
 
                 Log::info('Repository collection run completed with no repositories to collect.', [
                     'repository_collection_run_id' => $run->id,
+                ]);
+
+                $recorder->recordAdminAction('operations.collect_repositories.completed', [
+                    'repository_collection_run_id' => $run->id,
+                    'repositories_considered' => 0,
                 ]);
 
                 return;
@@ -136,6 +147,12 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                     'batch_id' => $batch->id,
                     'repositories_considered' => count($targets),
                 ]);
+
+                $recorder->recordAdminAction('operations.collect_repositories.dispatched', [
+                    'repository_collection_run_id' => $run->id,
+                    'batch_id' => $batch->id,
+                    'repositories_considered' => count($targets),
+                ]);
             } catch (Throwable $e) {
                 // The `sync` queue connection re-throws after a job's own
                 // failed() hook already ran (see CollectRepositoryJob::
@@ -162,6 +179,11 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                         'context_json' => $context,
                         'trace' => $e->getTraceAsString(),
                         'occurred_at' => now(),
+                    ]);
+
+                    $recorder->recordAdminAction('operations.collect_repositories.failed', [
+                        'repository_collection_run_id' => $run->id,
+                        'reason' => $e->getMessage(),
                     ]);
                 }
             }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Audit\Recorder;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
@@ -78,7 +79,7 @@ it('enumerates every non-disabled repository and completes the run as success', 
         new Response(200, [], '{"value":[]}'),
     ]);
 
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
 
@@ -97,7 +98,7 @@ it('skips a repository with no clone URL metadata and logs it, without failing t
         new Response(200, [], '{"count":1,"value":[{"id":"repo-001","name":"backend-api","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-001","project":{"id":"project-001","name":"SecurityProject"},"webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/backend-api"}]}'),
     ]);
 
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
 
@@ -116,7 +117,7 @@ it('marks the run as failure when the azdo-repos credential is not configured', 
     // pre-flight hasRequiredSystemCredentials() check fails.
     app(Vault::class)->set('azdo-repos.pat', null, '');
 
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
 
@@ -152,7 +153,7 @@ it('completes as partial when one of several repository jobs fails', function ()
         new Response(200, [], dispatcherFixture('repositories.json')),
     ]);
 
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
 
