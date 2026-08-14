@@ -3,36 +3,39 @@
     This script manages the lifecycle of the AppSec Scout application using Docker Compose. It can start the application, rebuild it from scratch, and ensure that it's up and running before opening it in the browser.
 .DESCRIPTION
     The script checks if Docker Compose is available, exports trusted host CA certificates into
-    .docker/certs when present, builds the app image, starts the containers — including
-    Dependency-Track and its bundled Trivy analyzer server, which start with the app by default,
-    not as an opt-in profile — runs database migrations and seeds the database, bootstraps an
-    admin user with known credentials for testing purposes, imports system credentials when
-    present, waits for Dependency-Track's one-shot bootstrap (team/API key/Trivy analyzer
-    provisioning) to finish, and finally opens the application in the browser. Dependency-Track
-    and Trivy require no manual setup: the shared secret between them is generated inside the
-    stack on first start.
+    .docker/certs when present, builds the app and collector images, starts the containers —
+    including Dependency-Track and its bundled Trivy analyzer server, which start with the app
+    by default, not as an opt-in profile — runs database migrations and seeds the database,
+    bootstraps an admin user with known credentials for testing purposes, imports system
+    credentials when present, waits for Dependency-Track's one-shot bootstrap (team/API key/
+    Trivy analyzer provisioning) to finish, and finally opens the application in the browser.
+    Dependency-Track and Trivy require no manual setup: the shared secret between them is
+    generated inside the stack on first start.
 .PARAMETER Rebuild
     If specified, stops and removes existing containers, volumes, and orphans (wiping the
     database and all app state) and re-exports host CA certificates before rebuilding and
     starting the application. Use this for a clean slate, not just to pick up code changes —
-    every run already rebuilds the app image (respecting Docker's layer cache) before starting,
-    so plain `.\appsec-scout.ps1` alone is enough to pick up any source, dependency, or
-    Dockerfile change without losing data.
+    every run already rebuilds the app and collector images (respecting Docker's layer cache)
+    before starting, so plain `.\appsec-scout.ps1` alone is enough to pick up any source,
+    dependency, or Dockerfile change without losing data.
 .PARAMETER Force
-    Skips Docker's build cache for the app image on this run (`--no-cache`). Independent of
-    -Rebuild — use it alone if you suspect a stale cache layer, without wiping any data.
+    Skips Docker's build cache for the app and collector images on this run (`--no-cache`).
+    Independent of -Rebuild — use it alone if you suspect a stale cache layer, without wiping
+    any data.
 .EXAMPLE
     .\appsec-scout.ps1
-    Rebuilds the app image (cache permitting) and starts the application, preserving all data.
+    Rebuilds the app and collector images (cache permitting) and starts the application,
+    preserving all data.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild
     Wipes all containers/volumes/data, re-exports host CA certs, then rebuilds and starts fresh.
 .EXAMPLE
     .\appsec-scout.ps1 -Force
-    Rebuilds the app image from scratch (no cache) and starts the application, preserving all data.
+    Rebuilds the app and collector images from scratch (no cache) and starts the application,
+    preserving all data.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild -Force
-    Wipes all data and rebuilds the app image from scratch before starting.
+    Wipes all data and rebuilds the app and collector images from scratch before starting.
 #>
 [CmdletBinding()]
 param(
@@ -106,12 +109,14 @@ try {
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
     }
 
-    # Always rebuild the app image (Docker's layer cache makes this a fast no-op when
-    # nothing changed) so a plain run never silently starts a stale image after a `git pull`.
+    # Always rebuild the app and collector images (Docker's layer cache makes this a fast
+    # no-op when nothing changed) so a plain run never silently starts a stale image after a
+    # `git pull` — `docker compose up` alone only builds an image the first time it's missing,
+    # it never rebuilds an existing one just because its Dockerfile changed.
     if ($Force.IsPresent -and $Force) {
-        Invoke-Docker compose build app --no-cache
+        Invoke-Docker compose build app collector --no-cache
     } else {
-        Invoke-Docker compose build app
+        Invoke-Docker compose build app collector
     }
 
     Invoke-Docker compose up -d
