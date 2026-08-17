@@ -62,6 +62,7 @@ class RepositoryCollectionRunResource extends Resource
                             ->color(fn (string $state): string => match ($state) {
                                 'success' => 'success',
                                 'failure' => 'danger',
+                                'partial' => 'warning',
                                 default => 'warning',
                             }),
                         TextEntry::make('batch_id')
@@ -109,6 +110,7 @@ class RepositoryCollectionRunResource extends Resource
                     ->color(fn (string $state): string => match ($state) {
                         'success' => 'success',
                         'failure' => 'danger',
+                        'partial' => 'warning',
                         default => 'warning',
                     }),
                 TextColumn::make('started_at')
@@ -132,7 +134,7 @@ class RepositoryCollectionRunResource extends Resource
                 SelectFilter::make('source_control_id')
                     ->options(fn (): array => RepositoryCollectionRun::query()->distinct()->pluck('source_control_id', 'source_control_id')->all()),
                 SelectFilter::make('status')
-                    ->options(['success' => 'Success', 'failure' => 'Failure', 'running' => 'Running']),
+                    ->options(['success' => 'Success', 'partial' => 'Partial', 'failure' => 'Failure', 'running' => 'Running']),
                 ...DateRangeFilters::for('started_at', 'Started from', 'Started until'),
             ])
             ->defaultSort('started_at', 'desc')

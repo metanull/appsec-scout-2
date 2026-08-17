@@ -153,7 +153,7 @@ it('attaches results to the same rows a live AzDO sync already created, not a du
     expect(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(3);
 });
 
-it('logs and records completion as failed when git clone fails, without throwing', function () {
+it('logs and records completion as failure when every repository fails, without throwing', function () {
     Process::fake(function ($process) {
         $command = $process->command;
         $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
@@ -178,8 +178,41 @@ it('logs and records completion as failed when git clone fails, without throwing
         ->and(ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'like', 'git clone failed%')->exists())->toBeTrue();
 
     $run->refresh();
-    expect($run->status)->toBe('success')
+    expect($run->status)->toBe('failure')
         ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
+});
+
+it('records completion as partial when some but not all repositories fail', function () {
+    Process::fake(function ($process) {
+        $command = $process->command;
+        $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            return Process::result(exitCode: 1, errorOutput: 'fatal: repository not found');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = repositoryCollectionRunForJobTest(considered: 2);
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $run->refresh();
+    expect($run->status)->toBe('running')
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
+
+    fakeCollectorProcesses();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(['repositoryId' => 'repo-002']), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $run->refresh();
+    expect($run->status)->toBe('partial')
+        ->and($run->counts_json['repositories_completed'])->toBe(2)
         ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
