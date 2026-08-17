@@ -116,6 +116,9 @@ class ErrorLogResource extends Resource
                             ->numeric(),
                     ])
                     ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
+                        // Larastan's where() stub types $column as model-property<TModel> only,
+                        // with no case for Laravel's own column->jsonKey path syntax.
+                        // @phpstan-ignore argument.type
                         ? $query->where('context_json->run', (int) $data['value'])
                         : $query)
                     ->indicateUsing(fn (array $data): ?string => filled($data['value'] ?? null) ? "Run: {$data['value']}" : null),
