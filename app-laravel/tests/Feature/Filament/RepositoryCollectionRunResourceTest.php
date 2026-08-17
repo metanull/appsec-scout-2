@@ -101,6 +101,28 @@ it('renders the repository collection run view page with its counts', function (
         ->assertSeeText('repositories_considered');
 });
 
+it('formats counts as completed / considered with a failed tally', function () {
+    $run = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'status' => 'running',
+        'counts_json' => ['repositories_considered' => 3, 'repositories_completed' => 2, 'repositories_failed' => 1],
+    ]);
+
+    expect(RepositoryCollectionRunResource::formatCounts($run))->toBe('2 / 3 · 1 failed');
+});
+
+it('formats counts as zeroes when counts_json is empty', function () {
+    $run = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    expect(RepositoryCollectionRunResource::formatCounts($run))->toBe('0 / 0 · 0 failed');
+});
+
 it('denies the view page to a user without admin.queue', function () {
     $reader = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),

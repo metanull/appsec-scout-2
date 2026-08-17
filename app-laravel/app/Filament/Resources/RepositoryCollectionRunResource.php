@@ -146,9 +146,10 @@ class RepositoryCollectionRunResource extends Resource
         $counts = is_array($counts) ? $counts : [];
 
         $considered = (int) ($counts['repositories_considered'] ?? 0);
+        $completed = (int) ($counts['repositories_completed'] ?? 0);
         $failed = (int) ($counts['repositories_failed'] ?? 0);
 
-        return "{$considered} repositor" . ($considered === 1 ? 'y' : 'ies') . " considered, {$failed} failed";
+        return "{$completed} / {$considered} · {$failed} failed";
     }
 
     public static function getPages(): array
