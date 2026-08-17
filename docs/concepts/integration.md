@@ -18,6 +18,8 @@ Related concepts, documented separately:
 - [docs/concepts/repository-collection.md](repository-collection.md) — the in-app, queued
   counterpart to SbomScan, triggered from this same `Admin -> Operations` page but dispatching
   onto a second, dedicated worker/queue rather than the app container's own.
+- [docs/concepts/static-analysis-collection.md](static-analysis-collection.md) — the equivalent
+  in-app, queued counterpart to StaticAnalysis, on its own third dedicated worker/queue.
 - [docs/concepts/asset-system-container-alert.md](asset-system-container-alert.md) — the entity
   hierarchy (Software Asset / System / Container / Alert) that everything above ultimately reads
   from and writes to.
@@ -63,6 +65,13 @@ Integration jobs are dispatched on demand from `Admin -> Operations`:
   per-repository work runs on a dedicated `repository-collection` queue consumed only by the
   isolated `collector` container, never the app container's own queue worker — see
   [docs/concepts/repository-collection.md](repository-collection.md).
+- **Run static analysis** (`admin.queue`) — dispatches
+  `App\SourceControl\Collection\DispatchStaticAnalysisRunsJob`, the same enumeration walk again,
+  but to clone and run Roslynator/SpotBugs against each repository. Its own per-repository work
+  runs on a third dedicated queue, `static-analysis`, consumed only by the isolated
+  `static-analysis-collector` container — never the app container's own worker, and never
+  `repository-collection`'s — see
+  [docs/concepts/static-analysis-collection.md](static-analysis-collection.md).
 
 Both `FetchSourceJob` and `RefreshWorkItemsJob` are queued jobs, picked up and executed by a
 Supervisor-managed `php artisan queue:work` process on the app's default queue (Redis in normal

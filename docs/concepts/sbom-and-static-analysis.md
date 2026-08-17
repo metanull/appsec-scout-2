@@ -14,9 +14,17 @@ word "operations." Nothing in this document runs from Filament.
 [docs/concepts/repository-collection.md](repository-collection.md) documents a second,
 **in-app, asynchronous** path to the same kind of output as SbomScan — queued from
 `Admin -> Operations` and run by an isolated `collector` container/queue, rather than
-operator-triggered on a workstation. It does not replace SbomScan (which remains the only way to
-run StaticAnalysis, and a fully valid manual SBOM/vulnerability/secret alternative); the two are
-independent, parallel paths.
+operator-triggered on a workstation. It does not replace SbomScan, which remains a fully valid
+manual SBOM/vulnerability/secret alternative; the two are independent, parallel paths.
+
+## Related: Static Analysis Collection
+
+[docs/concepts/static-analysis-collection.md](static-analysis-collection.md) documents the
+identical second, in-app, asynchronous path for StaticAnalysis — queued from
+`Admin -> Operations` ("Run static analysis") and run by an isolated `static-analysis-collector`
+container/queue. It does not replace StaticAnalysis, which remains a fully valid manual
+Roslynator/SpotBugs alternative (in particular for `-Resume`/`-ProjectFilter`/`-RepositoryFilter`/
+`-SkipUpload`, none of which the in-app path supports); the two are independent, parallel paths.
 
 ## Trigger and Access
 
