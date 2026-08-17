@@ -99,45 +99,6 @@ it('shows queue failed-job sync-run and error counts', function () {
         ->assertSee('Queued jobs')
         ->assertSee('Recent failed jobs')
         ->assertSee('Sync failed');
-
-    $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
-
-    expect($page->queuedJobCount())->toBe(1)
-        ->and($page->failedJobCount())->toBe(1);
-});
-
-it('counts queued jobs across configured queue names', function () {
-    $admin = operationsAdmin();
-
-    config([
-        'queue.default' => 'database',
-        'queue.connections.database.queue' => 'default,high',
-    ]);
-
-    DB::table('jobs')->delete();
-
-    DB::table('jobs')->insert([
-        [
-            'queue' => 'default',
-            'payload' => '{"job":"Example"}',
-            'attempts' => 0,
-            'reserved_at' => null,
-            'available_at' => now()->timestamp,
-            'created_at' => now()->timestamp,
-        ],
-        [
-            'queue' => 'high',
-            'payload' => '{"job":"Example"}',
-            'attempts' => 0,
-            'reserved_at' => null,
-            'available_at' => now()->timestamp,
-            'created_at' => now()->timestamp,
-        ],
-    ]);
-
-    $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
-
-    expect($page->queuedJobCount())->toBe(2);
 });
 
 it('queues supported operational actions and records audit rows', function () {
@@ -147,10 +108,8 @@ it('queues supported operational actions and records audit rows', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->set('selectedSourceId', 'fake')
-        ->set('selectedTrackerId', 'fake-tracker')
-        ->call('dispatchSelectedSource')
-        ->call('dispatchSelectedTracker');
+        ->callAction('fetchSource', data: ['source_id' => 'fake'])
+        ->callAction('refreshTracker', data: ['tracker_id' => 'fake-tracker']);
 
     Bus::assertDispatched(FetchSourceJob::class);
     Bus::assertDispatched(RefreshWorkItemsJob::class);
@@ -338,8 +297,7 @@ it('header action dispatches source by form data', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->set('selectedSourceId', 'fake')
-        ->call('dispatchSelectedSource');
+        ->callAction('fetchSource', data: ['source_id' => 'fake']);
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue();
 });
@@ -349,8 +307,7 @@ it('header action dispatches tracker by form data', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->set('selectedTrackerId', 'fake-tracker')
-        ->call('dispatchSelectedTracker');
+        ->callAction('refreshTracker', data: ['tracker_id' => 'fake-tracker']);
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
 });

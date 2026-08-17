@@ -33,3 +33,15 @@ it('also counts jobs on the repository-collection queue, which is never in queue
 
     expect(app(QueueRuntimeInspector::class)->queuedCount())->toBe(3);
 });
+
+it('sums every queue name in a comma-separated queue.connections.*.queue config', function () {
+    config([
+        'queue.default' => 'database',
+        'queue.connections.database.queue' => 'default,high',
+    ]);
+
+    insertQueuedJob('default');
+    insertQueuedJob('high');
+
+    expect(app(QueueRuntimeInspector::class)->queuedCount())->toBe(2);
+});
