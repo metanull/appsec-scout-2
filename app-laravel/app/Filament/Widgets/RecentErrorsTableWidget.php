@@ -17,8 +17,6 @@ class RecentErrorsTableWidget extends TableWidget
 
     protected static bool $isLazy = false;
 
-    protected static ?int $sort = 9;
-
     protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool

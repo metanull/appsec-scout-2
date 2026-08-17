@@ -17,8 +17,6 @@ class RecentSyncRunsTableWidget extends TableWidget
 
     protected int|string|array $columnSpan = 'full';
 
-    protected static ?int $sort = 4;
-
     public static function canView(): bool
     {
         return Auth::user()?->can('admin.queue') ?? false;

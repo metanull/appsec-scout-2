@@ -15,8 +15,6 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 {
     protected static bool $isLazy = false;
 
-    protected static ?int $sort = 5;
-
     protected ?string $pollingInterval = '30s';
 
     public static function canView(): bool

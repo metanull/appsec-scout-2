@@ -14,8 +14,6 @@ class StaticAnalysisScanStatusWidget extends TableWidget
 
     protected static bool $isLazy = false;
 
-    protected static ?int $sort = 7;
-
     protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool
