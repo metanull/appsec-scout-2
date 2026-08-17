@@ -11,16 +11,30 @@ use Throwable;
 
 final class QueueRuntimeInspector
 {
+    /**
+     * Consumed only by the isolated `collector` container
+     * (docker/collector/Dockerfile), never by the app container's own
+     * worker - so it never appears in queue.connections.*.queue and must be
+     * counted explicitly.
+     */
+    private const REPOSITORY_COLLECTION_QUEUE = 'repository-collection';
+
     public function queuedCount(): int
     {
         $connectionName = $this->queueConnectionName();
         $total = 0;
 
-        foreach ($this->queueNames() as $queueName) {
+        foreach ($this->allQueueNames() as $queueName) {
             $total += max(0, (int) Queue::connection($connectionName)->size($queueName));
         }
 
         return $total;
+    }
+
+    /** @return list<string> */
+    private function allQueueNames(): array
+    {
+        return array_values(array_unique([...$this->queueNames(), self::REPOSITORY_COLLECTION_QUEUE]));
     }
 
     /**
