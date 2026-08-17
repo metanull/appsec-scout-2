@@ -25,6 +25,9 @@ use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -42,22 +45,41 @@ class OperationsPage extends Page
     protected static ?string $slug = 'admin/operations';
 
     /** @return list<class-string> */
-    public function getWidgets(): array
-    {
-        return [
-            OperationsHealthStatsWidget::class,
-            RecentSyncRunsTableWidget::class,
-            RecentRepositoryCollectionRunsTableWidget::class,
-            RecentErrorsTableWidget::class,
-            RecentFailedJobsTableWidget::class,
-            StaticAnalysisScanStatusWidget::class,
-        ];
-    }
-
-    /** @return list<class-string> */
     public function getHeaderWidgets(): array
     {
-        return $this->getWidgets();
+        return [OperationsHealthStatsWidget::class];
+    }
+
+    /** @return int|array<string, ?int> */
+    public function getHeaderWidgetsColumns(): int|array
+    {
+        return 1;
+    }
+
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([
+            Tabs::make('Operations')
+                ->tabs([
+                    Tab::make('Activity')
+                        ->icon('heroicon-o-arrow-path')
+                        ->schema(fn (): array => $this->getWidgetsSchemaComponents([
+                            RecentSyncRunsTableWidget::class,
+                            RecentRepositoryCollectionRunsTableWidget::class,
+                        ])),
+                    Tab::make('Problems')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->schema(fn (): array => $this->getWidgetsSchemaComponents([
+                            RecentErrorsTableWidget::class,
+                            RecentFailedJobsTableWidget::class,
+                        ])),
+                    Tab::make('Scans')
+                        ->icon('heroicon-o-magnifying-glass')
+                        ->schema(fn (): array => $this->getWidgetsSchemaComponents([
+                            StaticAnalysisScanStatusWidget::class,
+                        ])),
+                ]),
+        ]);
     }
 
     public static function canAccess(): bool
