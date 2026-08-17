@@ -438,6 +438,43 @@ it('shows recent repository collection runs on the operations page', function ()
         ->assertSee('azdo-repos');
 });
 
+it('hides recent sync runs and repository collection runs from a work-items.sync-only user', function () {
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => [],
+        'error_message' => null,
+    ]);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->assertDontSee('Recent Sync Runs')
+        ->assertDontSee('Recent Repository Collection Runs');
+});
+
+it('shows recent sync runs and repository collection runs to an admin.queue user', function () {
+    $admin = operationsAdmin();
+
+    RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => [],
+        'error_message' => null,
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Recent Sync Runs')
+        ->assertSee('Recent Repository Collection Runs');
+});
+
 function bindFakeOperationsIntegrations(): void
 {
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);

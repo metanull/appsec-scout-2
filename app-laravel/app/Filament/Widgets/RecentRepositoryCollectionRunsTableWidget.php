@@ -23,7 +23,7 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
 
     public static function canView(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        return Auth::user()?->can('admin.queue') ?? false;
     }
 
     public function table(Table $table): Table
