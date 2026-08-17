@@ -217,7 +217,18 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      * Every *.sln found is restored, then (regardless of build's own result,
      * matching collect-static-analysis.sh) built and analyzed with
      * Roslynator. Every solution that produces a non-empty SARIF file is
-     * merged into a single code-quality-dotnet Attachment.
+     * merged into a single code-quality-dotnet Attachment. A solution with
+     * zero diagnostics produces no output file at all (Roslynator's own
+     * behavior) — not a failure, just nothing to merge for that solution.
+     *
+     * `--output-format sarif` is required explicitly: Roslynator 0.13.x
+     * defaults to its own XML report format, not SARIF, when the flag is
+     * omitted (regardless of the `--output` file's extension).
+     * `--return-success-on-diagnostics` is required so the process exit code
+     * stays a reliable failure signal — without it, Roslynator exits
+     * non-zero both when diagnostics are found (the common, successful case)
+     * and on a genuine analysis error, making the two indistinguishable by
+     * exit code alone.
      */
     private function analyzeDotnet(
         AttachmentService $attachments,
@@ -256,17 +267,31 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
             $analyzeResult = Process::env($env)
                 ->timeout((int) config('static_analysis_collection.analysis_timeout'))
-                ->run(['roslynator', 'analyze', $slnPath, '--output', $sarifPath, '--severity-level', 'info']);
+                ->run([
+                    'roslynator', 'analyze', $slnPath,
+                    '--output', $sarifPath,
+                    '--output-format', 'sarif',
+                    '--severity-level', 'info',
+                    '--return-success-on-diagnostics',
+                ]);
 
-            if ($analyzeResult->failed() || ! File::exists($sarifPath) || File::size($sarifPath) === 0) {
+            if ($analyzeResult->failed()) {
                 $this->logFailure('dotnet-analyze', $this->tail($analyzeResult->errorOutput() . $analyzeResult->output()), $slnPath);
 
                 continue;
             }
 
-            $decoded = json_decode(File::get($sarifPath), true);
+            // A clean, zero-diagnostic solution produces no output file at all — not
+            // a failure, simply nothing to merge for this solution.
+            if (! File::exists($sarifPath) || File::size($sarifPath) === 0) {
+                continue;
+            }
+
+            $decoded = json_decode($this->stripUtf8Bom(File::get($sarifPath)), true);
 
             if (! is_array($decoded) || ! isset($decoded['runs'][0])) {
+                $this->logFailure('dotnet-analyze', 'Roslynator produced output that could not be parsed as SARIF.', $slnPath);
+
                 continue;
             }
 
@@ -432,6 +457,16 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     private function tail(string $output, int $length = 2000): string
     {
         return mb_strlen($output) > $length ? '…' . mb_substr($output, -$length) : $output;
+    }
+
+    /**
+     * Roslynator's SARIF output is written with a leading UTF-8 byte-order
+     * mark, which json_decode() does not tolerate (it returns null rather
+     * than skipping it). SpotBugs' own SARIF output carries no such BOM.
+     */
+    private function stripUtf8Bom(string $content): string
+    {
+        return str_starts_with($content, "\xEF\xBB\xBF") ? substr($content, 3) : $content;
     }
 
     private function logFailure(string $stage, string $message, ?string $subject = null): void

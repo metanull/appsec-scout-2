@@ -205,8 +205,16 @@ process_repo() {
 
                 local sln_report
                 sln_report="$(mktemp -u "${workdir}/roslynator-XXXXXX.sarif")"
-                if timeout "$ANALYSIS_TIMEOUT" roslynator analyze "$sln" --output "$sln_report" --severity-level info >"$analyze_log" 2>&1 \
-                    && [ -s "$sln_report" ]; then
+                # --output-format sarif is required explicitly: Roslynator 0.13.x defaults
+                # to its own XML report format when the flag is omitted, regardless of the
+                # --output file's extension. --return-success-on-diagnostics is requested
+                # for a cleaner exit status, but this script still gates on the report
+                # file's presence rather than the exit code below: a clean, zero-diagnostic
+                # solution writes no output file at all (exit 0 either way), so the file's
+                # presence — not the exit status — is what actually distinguishes "found
+                # something to report" from "clean" or "failed".
+                timeout "$ANALYSIS_TIMEOUT" roslynator analyze "$sln" --output "$sln_report" --output-format sarif --severity-level info --return-success-on-diagnostics >"$analyze_log" 2>&1
+                if [ -s "$sln_report" ]; then
                     analyzed_ok=true
                     sln_reports+=("$sln_report")
                 fi

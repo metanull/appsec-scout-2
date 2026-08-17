@@ -66,11 +66,19 @@ ARG NO_PROXY
 
 # Tool versions — update these ARGs to pin to newer releases. Kept in lockstep
 # with docker/ops/Dockerfile's own pins for the same tools.
-ARG ROSLYNATOR_VERSION=0.12.0
-ARG SPOTBUGS_VERSION=4.10.2
+#
+# Roslynator.DotNet.Cli (the NuGet package providing the `roslynator` CLI) has
+# its own independent version scheme, separate from the main dotnet/roslynator
+# repo's 4.x tags — do not confuse the two. 0.13.1 is the latest published
+# version (confirmed against NuGet's own API) and is required, not optional:
+# 0.12.0 cannot analyze a solution under .NET 10 SDK at all
+# (System.MissingMethodException from its bundled MSBuild assemblies — see
+# issue #368), so this is a compatibility fix, not just a currency bump.
+ARG ROSLYNATOR_VERSION=0.13.1
+ARG SPOTBUGS_VERSION=4.10.3
 ARG FINDSECBUGS_VERSION=1.14.0
 ARG MAVEN_VERSION=3.9.16
-ARG GRADLE_VERSION=9.6.1
+ARG GRADLE_VERSION=9.7.0
 
 ENV HTTP_PROXY=${HTTP_PROXY} \
     HTTPS_PROXY=${HTTPS_PROXY} \
@@ -171,8 +179,8 @@ RUN wget -q "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-
     && ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
 
 # --- SpotBugs + Find Security Bugs plugin (checksum- and signature-verified) ---
-# SHA256 published at https://github.com/spotbugs/spotbugs/releases/tag/4.10.2
-ARG SPOTBUGS_SHA256=63d7687c35fba12cbc8e55ec2a889a2bbf1b9be299dea91f2b0d351dc285308a
+# SHA256 published at https://github.com/spotbugs/spotbugs/releases/tag/4.10.3
+ARG SPOTBUGS_SHA256=53c03a77da9746ed0c17aae6c0a9419a12ddeb8bf61dd7209a2e417550afd01d
 RUN wget -q \
         "https://github.com/spotbugs/spotbugs/releases/download/${SPOTBUGS_VERSION}/spotbugs-${SPOTBUGS_VERSION}.tgz" \
         -O /tmp/spotbugs.tgz \
