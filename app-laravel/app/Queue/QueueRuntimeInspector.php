@@ -19,6 +19,14 @@ final class QueueRuntimeInspector
      */
     private const REPOSITORY_COLLECTION_QUEUE = 'repository-collection';
 
+    /**
+     * Consumed only by the isolated `static-analysis-collector` container
+     * (docker/static-analysis-collector/Dockerfile), never by the app
+     * container's own worker - the same structural gap
+     * REPOSITORY_COLLECTION_QUEUE exists for, and needs the same fix.
+     */
+    private const STATIC_ANALYSIS_QUEUE = 'static-analysis';
+
     public function queuedCount(): int
     {
         $connectionName = $this->queueConnectionName();
@@ -34,7 +42,7 @@ final class QueueRuntimeInspector
     /** @return list<string> */
     private function allQueueNames(): array
     {
-        return array_values(array_unique([...$this->queueNames(), self::REPOSITORY_COLLECTION_QUEUE]));
+        return array_values(array_unique([...$this->queueNames(), self::REPOSITORY_COLLECTION_QUEUE, self::STATIC_ANALYSIS_QUEUE]));
     }
 
     /**

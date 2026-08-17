@@ -34,6 +34,25 @@ it('also counts jobs on the repository-collection queue, which is never in queue
     expect(app(QueueRuntimeInspector::class)->queuedCount())->toBe(3);
 });
 
+it('also counts jobs on the static-analysis queue, which is never in queue.connections.*.queue', function () {
+    config(['queue.default' => 'database']);
+
+    insertQueuedJob('default');
+    insertQueuedJob('static-analysis');
+    insertQueuedJob('static-analysis');
+
+    expect(app(QueueRuntimeInspector::class)->queuedCount())->toBe(3);
+});
+
+it('counts repository-collection and static-analysis jobs together', function () {
+    config(['queue.default' => 'database']);
+
+    insertQueuedJob('repository-collection');
+    insertQueuedJob('static-analysis');
+
+    expect(app(QueueRuntimeInspector::class)->queuedCount())->toBe(2);
+});
+
 it('sums every queue name in a comma-separated queue.connections.*.queue config', function () {
     config([
         'queue.default' => 'database',
