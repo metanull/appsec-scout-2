@@ -18,6 +18,8 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 
     protected static ?int $sort = 5;
 
+    protected ?string $pollingInterval = '30s';
+
     public static function canView(): bool
     {
         $user = Auth::user();

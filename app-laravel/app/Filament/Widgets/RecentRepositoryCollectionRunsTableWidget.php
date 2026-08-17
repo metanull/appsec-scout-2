@@ -62,7 +62,8 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
             ])
             ->recordUrl(fn (RepositoryCollectionRun $record): string => RepositoryCollectionRunResource::getUrl('view', ['record' => $record]))
             ->defaultSort('started_at', 'desc')
-            ->paginated(false);
+            ->paginated(false)
+            ->poll('30s');
     }
 
     private static function durationSeconds(RepositoryCollectionRun $run): ?int
