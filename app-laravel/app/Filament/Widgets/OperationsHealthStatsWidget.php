@@ -48,7 +48,6 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
         $queued = app(QueueRuntimeInspector::class)->queuedCount();
         $failed = (int) DB::table('failed_jobs')->count();
         $running = (int) SyncRun::query()->where('status', 'running')->count();
-        $scheduled = 3; // Managed schedule entries: dispatch-due, prune-audit, prune-errors
 
         $stats[] = Stat::make('Queued jobs', $queued)
             ->description('Jobs waiting in the queue')
@@ -62,10 +61,6 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
             ->description('Active source sync processes')
             ->color($running > 0 ? 'info' : 'gray')
             ->icon('heroicon-o-arrow-path');
-        $stats[] = Stat::make('Managed schedules', $scheduled)
-            ->description('Registered schedule entries')
-            ->color('gray')
-            ->icon('heroicon-o-clock');
 
         return $stats;
     }

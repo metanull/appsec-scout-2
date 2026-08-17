@@ -319,11 +319,10 @@ it('shows only the reconciliation stat to a work-items.sync-only user', function
         ->assertDontSee('Inventory sync')
         ->assertDontSee('Jobs waiting in the queue')
         ->assertDontSee('Failed jobs needing attention')
-        ->assertDontSee('Active source sync processes')
-        ->assertDontSee('Registered schedule entries');
+        ->assertDontSee('Active source sync processes');
 });
 
-it('shows all six operations health stats to an admin.queue user', function () {
+it('shows all five operations health stats to an admin.queue user', function () {
     $admin = operationsAdmin();
 
     Livewire::actingAs($admin)
@@ -332,8 +331,7 @@ it('shows all six operations health stats to an admin.queue user', function () {
         ->assertSee('Inventory sync')
         ->assertSee('Jobs waiting in the queue')
         ->assertSee('Failed jobs needing attention')
-        ->assertSee('Active source sync processes')
-        ->assertSee('Registered schedule entries');
+        ->assertSee('Active source sync processes');
 });
 
 it('header action dispatches source by form data', function () {
