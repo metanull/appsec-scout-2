@@ -1,5 +1,6 @@
 <?php
 
+use App\Audit\AuditLog;
 use App\Filament\Resources\RepositoryCollectionRunResource;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ListRepositoryCollectionRuns;
 use App\Models\RepositoryCollectionRun;
@@ -79,6 +80,37 @@ it('filters repository collection runs by source control and status', function (
         ->filterTable('status', 'success')
         ->assertCanSeeTableRecords([$success])
         ->assertCanNotSeeTableRecords([$failure]);
+});
+
+it('shows Force-finish only for a running run, and it recovers a wedged one', function () {
+    $admin = repositoryCollectionRunAdmin();
+
+    $finished = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinutes(5),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['repositories_considered' => 1, 'repositories_completed' => 1, 'repositories_failed' => 0],
+    ]);
+
+    $wedged = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subHours(6),
+        'status' => 'running',
+        'counts_json' => ['repositories_considered' => 10, 'repositories_completed' => 3, 'repositories_failed' => 0],
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListRepositoryCollectionRuns::class)
+        ->assertTableActionHidden('forceFinish', $finished)
+        ->assertTableActionVisible('forceFinish', $wedged)
+        ->callTableAction('forceFinish', $wedged);
+
+    $wedged->refresh();
+    expect($wedged->status)->toBe('failure')
+        ->and($wedged->finished_at)->not->toBeNull()
+        ->and($wedged->counts_json['repositories_completed'])->toBe(3)
+        ->and(AuditLog::query()->where('action', 'operations.force_finish_repository_collection_run')->exists())->toBeTrue();
 });
 
 it('renders the repository collection run view page with its counts', function () {

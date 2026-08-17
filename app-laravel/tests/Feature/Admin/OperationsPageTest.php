@@ -2,6 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
+use App\Filament\Resources\RepositoryCollectionRunResource;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
@@ -393,6 +394,27 @@ it('does not dispatch repository collection when a run is already in progress', 
         ->call('dispatchCollectRepositories');
 
     Bus::assertNotDispatched(DispatchRepositoryCollectionRunsJob::class);
+});
+
+it('dispatches repository collection again once a wedged run is force-finished', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    $wedged = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subHours(6),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    RepositoryCollectionRunResource::forceFinishRun($wedged);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchCollectRepositories');
+
+    Bus::assertDispatched(DispatchRepositoryCollectionRunsJob::class);
 });
 
 it('shows recent repository collection runs on the operations page', function () {
