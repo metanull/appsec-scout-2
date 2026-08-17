@@ -154,6 +154,23 @@ class RepositoryCollectionRunResource extends Resource
         return "{$completed} / {$considered} · {$failed} failed";
     }
 
+    /**
+     * URL to the error log, pre-filtered to failures logged against this run
+     * (see ErrorLog::context_json.run, set by CollectRepositoryJob::logFailure()
+     * and DispatchRepositoryCollectionRunsJob::buildTargets()).
+     */
+    public static function failuresUrl(RepositoryCollectionRun $run): string
+    {
+        $params = [
+            'tableFilters' => [
+                'channel' => ['value' => 'repository-collection'],
+                'run' => ['value' => (string) $run->id],
+            ],
+        ];
+
+        return ErrorLogResource::getUrl('index') . '?' . http_build_query($params);
+    }
+
     public static function getPages(): array
     {
         return [

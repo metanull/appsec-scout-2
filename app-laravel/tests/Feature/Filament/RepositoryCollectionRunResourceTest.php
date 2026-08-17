@@ -123,6 +123,50 @@ it('formats counts as zeroes when counts_json is empty', function () {
     expect(RepositoryCollectionRunResource::formatCounts($run))->toBe('0 / 0 · 0 failed');
 });
 
+it('builds a failures URL pre-filtered to the run and the repository-collection channel', function () {
+    $run = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'status' => 'partial',
+        'counts_json' => [],
+    ]);
+
+    $url = RepositoryCollectionRunResource::failuresUrl($run);
+
+    expect($url)->toContain('tableFilters%5Bchannel%5D%5Bvalue%5D=repository-collection')
+        ->and($url)->toContain("tableFilters%5Brun%5D%5Bvalue%5D={$run->id}");
+});
+
+it('shows the View failures action only when the run has failures', function () {
+    $admin = repositoryCollectionRunAdmin();
+
+    $clean = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['repositories_considered' => 2, 'repositories_completed' => 2, 'repositories_failed' => 0],
+    ]);
+
+    $this->actingAs($admin)
+        ->get(RepositoryCollectionRunResource::getUrl('view', ['record' => $clean]))
+        ->assertOk()
+        ->assertDontSee('View failures');
+
+    $partial = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'partial',
+        'counts_json' => ['repositories_considered' => 2, 'repositories_completed' => 2, 'repositories_failed' => 1],
+    ]);
+
+    $this->actingAs($admin)
+        ->get(RepositoryCollectionRunResource::getUrl('view', ['record' => $partial]))
+        ->assertOk()
+        ->assertSee('View failures');
+});
+
 it('denies the view page to a user without admin.queue', function () {
     $reader = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),

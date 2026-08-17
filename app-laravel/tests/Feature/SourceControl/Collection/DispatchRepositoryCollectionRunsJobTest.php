@@ -103,8 +103,12 @@ it('skips a repository with no clone URL metadata and logs it, without failing t
 
     expect($run->status)->toBe('success')
         ->and($run->counts_json['repositories_considered'])->toBe(0)
-        ->and($run->batch_id)->toBeNull()
-        ->and(ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'Repository has no clone URL, skipping.')->exists())->toBeTrue();
+        ->and($run->batch_id)->toBeNull();
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'Repository has no clone URL, skipping.')->first();
+
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->context_json['run'])->toBe($run->id);
 });
 
 it('marks the run as failure when the azdo-repos credential is not configured', function () {

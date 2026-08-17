@@ -174,8 +174,12 @@ it('logs and records completion as failure when every repository fails, without 
     // succeed on attempt 2 or 3.
     $job->handle(...collectRepositoryJobDependencies());
 
-    expect(Attachment::query()->count())->toBe(0)
-        ->and(ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'like', 'git clone failed%')->exists())->toBeTrue();
+    expect(Attachment::query()->count())->toBe(0);
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'like', 'git clone failed%')->first();
+
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->context_json['run'])->toBe($run->id);
 
     $run->refresh();
     expect($run->status)->toBe('failure')

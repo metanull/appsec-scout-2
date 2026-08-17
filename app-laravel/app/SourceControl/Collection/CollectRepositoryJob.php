@@ -294,6 +294,7 @@ final class CollectRepositoryJob implements ShouldQueue
             'channel' => 'repository-collection',
             'message' => $message,
             'context_json' => [
+                'run' => $this->repositoryCollectionRunId,
                 'repository_id' => $this->target->repositoryId,
                 'repository' => $this->target->repositoryName,
                 'kind' => $kind,

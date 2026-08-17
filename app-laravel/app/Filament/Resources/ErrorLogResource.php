@@ -6,14 +6,17 @@ use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
 use App\Filament\Resources\ErrorLogResource\Pages\ViewErrorLog;
 use App\Filament\Support\DateRangeFilters;
 use App\Models\ErrorLog;
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class ErrorLogResource extends Resource
@@ -104,6 +107,18 @@ class ErrorLogResource extends Resource
             ->filters([
                 SelectFilter::make('level')
                     ->options(['ERROR' => 'Error', 'CRITICAL' => 'Critical', 'ALERT' => 'Alert', 'EMERGENCY' => 'Emergency']),
+                SelectFilter::make('channel')
+                    ->options(fn (): array => ErrorLog::query()->distinct()->pluck('channel', 'channel')->all()),
+                Filter::make('run')
+                    ->form([
+                        TextInput::make('value')
+                            ->label('Collection run ID')
+                            ->numeric(),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
+                        ? $query->where('context_json->run', (int) $data['value'])
+                        : $query)
+                    ->indicateUsing(fn (array $data): ?string => filled($data['value'] ?? null) ? "Run: {$data['value']}" : null),
                 ...DateRangeFilters::for('occurred_at'),
             ])
             ->defaultSort('occurred_at', 'desc')
