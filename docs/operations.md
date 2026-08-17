@@ -102,13 +102,13 @@ docker compose exec app php artisan queue:work --once
 `Admin -> Operations` (gated by `admin.queue` or `work-items.sync`) is the main operator surface
 for background activity. It shows:
 
-- Queued job count, failed job count.
+- Queued job count (spanning the app's own queue and the isolated `collector` container's
+  `repository-collection` queue), failed job count.
 - Recent failed jobs with redacted payload previews.
-- Recent sync runs and recent error records.
+- Recent sync runs, recent repository collection runs, and recent error records.
 - Reconciliation and inventory-sync last-run summaries (new links created; systems/containers
   synced).
-- SBOM scan status (most recent SbomScan/StaticAnalysis run per repository).
-- The AppSec Scout schedule entries managed in the container.
+- Static analysis scan status (most recent StaticAnalysis run).
 
 Actions:
 
