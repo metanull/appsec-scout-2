@@ -15,6 +15,8 @@ class RecentSyncRunsTableWidget extends TableWidget
 {
     protected static ?string $heading = 'Recent Sync Runs';
 
+    protected static bool $isLazy = false;
+
     protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool
