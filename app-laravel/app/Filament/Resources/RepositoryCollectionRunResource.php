@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources;
 
+use App\Audit\Recorder;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ListRepositoryCollectionRuns;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ViewRepositoryCollectionRun;
 use App\Filament\Support\DateRangeFilters;
 use App\Models\RepositoryCollectionRun;
+use Filament\Actions\Action;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -62,6 +65,7 @@ class RepositoryCollectionRunResource extends Resource
                             ->color(fn (string $state): string => match ($state) {
                                 'success' => 'success',
                                 'failure' => 'danger',
+                                'partial' => 'warning',
                                 default => 'warning',
                             }),
                         TextEntry::make('batch_id')
@@ -109,6 +113,7 @@ class RepositoryCollectionRunResource extends Resource
                     ->color(fn (string $state): string => match ($state) {
                         'success' => 'success',
                         'failure' => 'danger',
+                        'partial' => 'warning',
                         default => 'warning',
                     }),
                 TextColumn::make('started_at')
@@ -132,8 +137,18 @@ class RepositoryCollectionRunResource extends Resource
                 SelectFilter::make('source_control_id')
                     ->options(fn (): array => RepositoryCollectionRun::query()->distinct()->pluck('source_control_id', 'source_control_id')->all()),
                 SelectFilter::make('status')
-                    ->options(['success' => 'Success', 'failure' => 'Failure', 'running' => 'Running']),
+                    ->options(['success' => 'Success', 'partial' => 'Partial', 'failure' => 'Failure', 'running' => 'Running']),
                 ...DateRangeFilters::for('started_at', 'Started from', 'Started until'),
+            ])
+            ->actions([
+                Action::make('forceFinish')
+                    ->label('Force-finish')
+                    ->icon('heroicon-o-stop-circle')
+                    ->color('danger')
+                    ->visible(fn (RepositoryCollectionRun $record): bool => $record->status === 'running')
+                    ->requiresConfirmation()
+                    ->modalDescription('Marks this run as finished so a new "Collect repositories" sweep can be queued. Any CollectRepositoryJob instances still in flight on the collector are not stopped; they will keep running against this now-closed run but have no further effect on it.')
+                    ->action(fn (RepositoryCollectionRun $record) => static::forceFinishRun($record)),
             ])
             ->defaultSort('started_at', 'desc')
             ->paginated([25, 50, 100])
@@ -146,9 +161,49 @@ class RepositoryCollectionRunResource extends Resource
         $counts = is_array($counts) ? $counts : [];
 
         $considered = (int) ($counts['repositories_considered'] ?? 0);
+        $completed = (int) ($counts['repositories_completed'] ?? 0);
         $failed = (int) ($counts['repositories_failed'] ?? 0);
 
-        return "{$considered} repositor" . ($considered === 1 ? 'y' : 'ies') . " considered, {$failed} failed";
+        return "{$completed} / {$considered} · {$failed} failed";
+    }
+
+    /**
+     * Recovers a run stuck at status "running" - e.g. a collector job died
+     * mid-flight without its failed() hook firing - which otherwise blocks
+     * every future dispatch (see OperationsPage::dispatchCollectRepositories()).
+     * Whatever counts had accumulated are left as-is; only status,
+     * finished_at, and error_message change.
+     */
+    public static function forceFinishRun(RepositoryCollectionRun $record): void
+    {
+        $record->update([
+            'status' => 'failure',
+            'finished_at' => now(),
+            'error_message' => 'Force-finished by an operator: the run did not complete on its own.',
+        ]);
+
+        app(Recorder::class)->recordAdminAction('operations.force_finish_repository_collection_run', [
+            'repository_collection_run_id' => $record->id,
+        ]);
+
+        Notification::make()->title('Run marked as finished')->success()->send();
+    }
+
+    /**
+     * URL to the error log, pre-filtered to failures logged against this run
+     * (see ErrorLog::context_json.run, set by CollectRepositoryJob::logFailure()
+     * and DispatchRepositoryCollectionRunsJob::buildTargets()).
+     */
+    public static function failuresUrl(RepositoryCollectionRun $run): string
+    {
+        $params = [
+            'tableFilters' => [
+                'channel' => ['value' => 'repository-collection'],
+                'run' => ['value' => (string) $run->id],
+            ],
+        ];
+
+        return ErrorLogResource::getUrl('index') . '?' . http_build_query($params);
     }
 
     public static function getPages(): array

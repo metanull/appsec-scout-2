@@ -17,13 +17,11 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
 
     protected int|string|array $columnSpan = 'full';
 
-    protected static ?int $sort = 5;
-
     protected static bool $isLazy = false;
 
     public static function canView(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        return Auth::user()?->can('admin.queue') ?? false;
     }
 
     public function table(Table $table): Table
@@ -62,7 +60,8 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
             ])
             ->recordUrl(fn (RepositoryCollectionRun $record): string => RepositoryCollectionRunResource::getUrl('view', ['record' => $record]))
             ->defaultSort('started_at', 'desc')
-            ->paginated(false);
+            ->paginated(false)
+            ->poll('30s');
     }
 
     private static function durationSeconds(RepositoryCollectionRun $run): ?int

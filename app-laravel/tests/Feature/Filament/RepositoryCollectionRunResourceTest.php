@@ -1,5 +1,6 @@
 <?php
 
+use App\Audit\AuditLog;
 use App\Filament\Resources\RepositoryCollectionRunResource;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ListRepositoryCollectionRuns;
 use App\Models\RepositoryCollectionRun;
@@ -81,6 +82,37 @@ it('filters repository collection runs by source control and status', function (
         ->assertCanNotSeeTableRecords([$failure]);
 });
 
+it('shows Force-finish only for a running run, and it recovers a wedged one', function () {
+    $admin = repositoryCollectionRunAdmin();
+
+    $finished = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinutes(5),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['repositories_considered' => 1, 'repositories_completed' => 1, 'repositories_failed' => 0],
+    ]);
+
+    $wedged = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subHours(6),
+        'status' => 'running',
+        'counts_json' => ['repositories_considered' => 10, 'repositories_completed' => 3, 'repositories_failed' => 0],
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListRepositoryCollectionRuns::class)
+        ->assertTableActionHidden('forceFinish', $finished)
+        ->assertTableActionVisible('forceFinish', $wedged)
+        ->callTableAction('forceFinish', $wedged);
+
+    $wedged->refresh();
+    expect($wedged->status)->toBe('failure')
+        ->and($wedged->finished_at)->not->toBeNull()
+        ->and($wedged->counts_json['repositories_completed'])->toBe(3)
+        ->and(AuditLog::query()->where('action', 'operations.force_finish_repository_collection_run')->exists())->toBeTrue();
+});
+
 it('renders the repository collection run view page with its counts', function () {
     $admin = repositoryCollectionRunAdmin();
 
@@ -99,6 +131,72 @@ it('renders the repository collection run view page with its counts', function (
         ->assertOk()
         ->assertSee('azdo-repos')
         ->assertSeeText('repositories_considered');
+});
+
+it('formats counts as completed / considered with a failed tally', function () {
+    $run = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'status' => 'running',
+        'counts_json' => ['repositories_considered' => 3, 'repositories_completed' => 2, 'repositories_failed' => 1],
+    ]);
+
+    expect(RepositoryCollectionRunResource::formatCounts($run))->toBe('2 / 3 · 1 failed');
+});
+
+it('formats counts as zeroes when counts_json is empty', function () {
+    $run = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    expect(RepositoryCollectionRunResource::formatCounts($run))->toBe('0 / 0 · 0 failed');
+});
+
+it('builds a failures URL pre-filtered to the run and the repository-collection channel', function () {
+    $run = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'status' => 'partial',
+        'counts_json' => [],
+    ]);
+
+    $url = RepositoryCollectionRunResource::failuresUrl($run);
+
+    expect($url)->toContain('tableFilters%5Bchannel%5D%5Bvalue%5D=repository-collection')
+        ->and($url)->toContain("tableFilters%5Brun%5D%5Bvalue%5D={$run->id}");
+});
+
+it('shows the View failures action only when the run has failures', function () {
+    $admin = repositoryCollectionRunAdmin();
+
+    $clean = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['repositories_considered' => 2, 'repositories_completed' => 2, 'repositories_failed' => 0],
+    ]);
+
+    $this->actingAs($admin)
+        ->get(RepositoryCollectionRunResource::getUrl('view', ['record' => $clean]))
+        ->assertOk()
+        ->assertDontSee('View failures');
+
+    $partial = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'partial',
+        'counts_json' => ['repositories_considered' => 2, 'repositories_completed' => 2, 'repositories_failed' => 1],
+    ]);
+
+    $this->actingAs($admin)
+        ->get(RepositoryCollectionRunResource::getUrl('view', ['record' => $partial]))
+        ->assertOk()
+        ->assertSee('View failures');
 });
 
 it('denies the view page to a user without admin.queue', function () {

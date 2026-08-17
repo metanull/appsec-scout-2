@@ -63,7 +63,7 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
 
         $runtime->runSourceControl(self::SOURCE_CONTROL_ID, function (SourceControlProvider $resolvedProvider) use ($run): void {
             /** @var EnumeratesInventory&SourceControlProvider $resolvedProvider */
-            $targets = $this->buildTargets($resolvedProvider);
+            $targets = $this->buildTargets($resolvedProvider, $run->id);
 
             if ($targets === []) {
                 $run->update([
@@ -126,7 +126,7 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
     }
 
     /** @return list<RepositoryCollectionTarget> */
-    private function buildTargets(EnumeratesInventory&SourceControlProvider $provider): array
+    private function buildTargets(EnumeratesInventory&SourceControlProvider $provider, int $runId): array
     {
         $targets = [];
 
@@ -145,6 +145,7 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                         'channel' => 'repository-collection',
                         'message' => 'Repository has no clone URL, skipping.',
                         'context_json' => [
+                            'run' => $runId,
                             'project' => $project->name,
                             'repository' => $container->name,
                         ],

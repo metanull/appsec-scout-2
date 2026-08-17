@@ -102,6 +102,42 @@ it('lists rows that link to the view page', function () {
     expect(ErrorLogResource::getUrl('view', ['record' => $log]))->toBeString();
 });
 
+it('filters error logs by channel', function () {
+    $admin = errorLogAdmin();
+
+    $sync = ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'sync failure', 'trace' => '', 'occurred_at' => now(),
+    ]);
+    $collection = ErrorLog::query()->create([
+        'channel' => 'repository-collection', 'level' => 'ERROR', 'message' => 'collection failure', 'trace' => '', 'occurred_at' => now(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListErrorLogs::class)
+        ->filterTable('channel', 'repository-collection')
+        ->assertCanSeeTableRecords([$collection])
+        ->assertCanNotSeeTableRecords([$sync]);
+});
+
+it('filters error logs by the collection run recorded in their context', function () {
+    $admin = errorLogAdmin();
+
+    $forThisRun = ErrorLog::query()->create([
+        'channel' => 'repository-collection', 'level' => 'ERROR', 'message' => 'this run failed',
+        'context_json' => ['run' => 42, 'repository' => 'backend-api'], 'trace' => '', 'occurred_at' => now(),
+    ]);
+    $forAnotherRun = ErrorLog::query()->create([
+        'channel' => 'repository-collection', 'level' => 'ERROR', 'message' => 'another run failed',
+        'context_json' => ['run' => 99, 'repository' => 'frontend-app'], 'trace' => '', 'occurred_at' => now(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListErrorLogs::class)
+        ->filterTable('run', ['value' => '42'])
+        ->assertCanSeeTableRecords([$forThisRun])
+        ->assertCanNotSeeTableRecords([$forAnotherRun]);
+});
+
 it('filters error logs by an occurred_at date range, including an upper bound', function () {
     $admin = errorLogAdmin();
 

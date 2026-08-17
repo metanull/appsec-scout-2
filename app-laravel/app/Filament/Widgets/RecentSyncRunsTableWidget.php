@@ -15,13 +15,13 @@ class RecentSyncRunsTableWidget extends TableWidget
 {
     protected static ?string $heading = 'Recent Sync Runs';
 
-    protected int|string|array $columnSpan = 'full';
+    protected static bool $isLazy = false;
 
-    protected static ?int $sort = 4;
+    protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool
     {
-        return Auth::user()?->can('alerts.view') ?? false;
+        return Auth::user()?->can('admin.queue') ?? false;
     }
 
     public function table(Table $table): Table

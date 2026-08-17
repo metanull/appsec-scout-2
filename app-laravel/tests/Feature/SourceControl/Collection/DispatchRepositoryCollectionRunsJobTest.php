@@ -103,8 +103,12 @@ it('skips a repository with no clone URL metadata and logs it, without failing t
 
     expect($run->status)->toBe('success')
         ->and($run->counts_json['repositories_considered'])->toBe(0)
-        ->and($run->batch_id)->toBeNull()
-        ->and(ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'Repository has no clone URL, skipping.')->exists())->toBeTrue();
+        ->and($run->batch_id)->toBeNull();
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'Repository has no clone URL, skipping.')->first();
+
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->context_json['run'])->toBe($run->id);
 });
 
 it('marks the run as failure when the azdo-repos credential is not configured', function () {
@@ -121,7 +125,7 @@ it('marks the run as failure when the azdo-repos credential is not configured', 
         ->and($run->batch_id)->toBeNull();
 });
 
-it('completes as success with a non-zero repositories_failed count when one repository job fails', function () {
+it('completes as partial when one of several repository jobs fails', function () {
     Process::fake(function ($process) {
         $command = $process->command;
         $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
@@ -152,7 +156,7 @@ it('completes as success with a non-zero repositories_failed count when one repo
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
 
-    expect($run->status)->toBe('success')
+    expect($run->status)->toBe('partial')
         ->and($run->counts_json['repositories_considered'])->toBe(2)
         ->and($run->counts_json['repositories_failed'])->toBe(1);
 });

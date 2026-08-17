@@ -2,7 +2,6 @@
 
 namespace App\Filament\Widgets;
 
-use App\Models\SyncRun;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
 use Filament\Widgets\StatsOverviewWidget;
@@ -16,7 +15,7 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 {
     protected static bool $isLazy = false;
 
-    protected static ?int $sort = 5;
+    protected ?string $pollingInterval = '30s';
 
     public static function canView(): bool
     {
@@ -45,8 +44,6 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 
         $queued = app(QueueRuntimeInspector::class)->queuedCount();
         $failed = (int) DB::table('failed_jobs')->count();
-        $running = (int) SyncRun::query()->where('status', 'running')->count();
-        $scheduled = 3; // Managed schedule entries: dispatch-due, prune-audit, prune-errors
 
         $stats[] = Stat::make('Queued jobs', $queued)
             ->description('Jobs waiting in the queue')
@@ -56,14 +53,6 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
             ->description('Failed jobs needing attention')
             ->color($failed > 0 ? 'danger' : 'success')
             ->icon('heroicon-o-exclamation-triangle');
-        $stats[] = Stat::make('Running syncs', $running)
-            ->description('Active source sync processes')
-            ->color($running > 0 ? 'info' : 'gray')
-            ->icon('heroicon-o-arrow-path');
-        $stats[] = Stat::make('Managed schedules', $scheduled)
-            ->description('Registered schedule entries')
-            ->color('gray')
-            ->icon('heroicon-o-clock');
 
         return $stats;
     }

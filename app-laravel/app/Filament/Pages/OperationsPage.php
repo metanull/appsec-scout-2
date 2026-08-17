@@ -8,14 +8,11 @@ use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentFailedJobsTableWidget;
 use App\Filament\Widgets\RecentRepositoryCollectionRunsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
-use App\Filament\Widgets\SbomScanStatusWidget;
 use App\Filament\Widgets\StaticAnalysisScanStatusWidget;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\RepositoryCollectionRun;
-use App\Models\SyncRun;
 use App\Models\User;
-use App\Queue\QueueRuntimeInspector;
 use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
@@ -28,9 +25,10 @@ use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Illuminate\Support\Carbon;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -47,28 +45,42 @@ class OperationsPage extends Page
     protected static ?string $slug = 'admin/operations';
 
     /** @return list<class-string> */
-    public function getWidgets(): array
-    {
-        return [
-            OperationsHealthStatsWidget::class,
-            RecentSyncRunsTableWidget::class,
-            RecentRepositoryCollectionRunsTableWidget::class,
-            RecentErrorsTableWidget::class,
-            RecentFailedJobsTableWidget::class,
-            SbomScanStatusWidget::class,
-            StaticAnalysisScanStatusWidget::class,
-        ];
-    }
-
-    /** @return list<class-string> */
     public function getHeaderWidgets(): array
     {
-        return $this->getWidgets();
+        return [OperationsHealthStatsWidget::class];
     }
 
-    public ?string $selectedSourceId = null;
+    /** @return int|array<string, ?int> */
+    public function getHeaderWidgetsColumns(): int|array
+    {
+        return 1;
+    }
 
-    public ?string $selectedTrackerId = null;
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([
+            Tabs::make('Operations')
+                ->tabs([
+                    Tab::make('Activity')
+                        ->icon('heroicon-o-arrow-path')
+                        ->schema(fn (): array => $this->getWidgetsSchemaComponents([
+                            RecentSyncRunsTableWidget::class,
+                            RecentRepositoryCollectionRunsTableWidget::class,
+                        ])),
+                    Tab::make('Problems')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->schema(fn (): array => $this->getWidgetsSchemaComponents([
+                            RecentErrorsTableWidget::class,
+                            RecentFailedJobsTableWidget::class,
+                        ])),
+                    Tab::make('Scans')
+                        ->icon('heroicon-o-magnifying-glass')
+                        ->schema(fn (): array => $this->getWidgetsSchemaComponents([
+                            StaticAnalysisScanStatusWidget::class,
+                        ])),
+                ]),
+        ]);
+    }
 
     public static function canAccess(): bool
     {
@@ -77,12 +89,6 @@ class OperationsPage extends Page
         return $user instanceof User
             ? $user->can('admin.queue') || $user->can('work-items.sync')
             : false;
-    }
-
-    public function mount(): void
-    {
-        $this->selectedSourceId = $this->sourceOptions() !== [] ? array_key_first($this->sourceOptions()) : null;
-        $this->selectedTrackerId = $this->trackerOptions() !== [] ? array_key_first($this->trackerOptions()) : null;
     }
 
     /** @return array<Action|ActionGroup> */
@@ -149,30 +155,6 @@ class OperationsPage extends Page
         ];
     }
 
-    public function queuedJobCount(): int
-    {
-        return app(QueueRuntimeInspector::class)->queuedCount();
-    }
-
-    public function runningSyncCount(): int
-    {
-        return (int) SyncRun::query()->where('status', 'running')->count();
-    }
-
-    public function failedJobCount(): int
-    {
-        return (int) DB::table('failed_jobs')->count();
-    }
-
-    /** @return list<array{id: string, cadence: string}> */
-    public function scheduleEntries(): array
-    {
-        return [
-            ['id' => 'prune-audit-logs', 'cadence' => 'Daily'],
-            ['id' => 'prune-error-logs', 'cadence' => 'Daily'],
-        ];
-    }
-
     /** @return array<string, string> */
     public function sourceOptions(): array
     {
@@ -197,34 +179,30 @@ class OperationsPage extends Page
         return $options;
     }
 
-    public function dispatchSelectedSource(string $override = ''): void
+    public function dispatchSelectedSource(string $sourceId): void
     {
-        $id = $override !== '' ? $override : ($this->selectedSourceId ?? '');
-
-        if ($id === '') {
+        if ($sourceId === '') {
             Notification::make()->title('Select a source first')->warning()->send();
 
             return;
         }
 
-        FetchSourceJob::dispatch($id);
-        app(Recorder::class)->recordAdminAction('operations.dispatch_source_fetch', ['source_id' => $id]);
+        FetchSourceJob::dispatch($sourceId);
+        app(Recorder::class)->recordAdminAction('operations.dispatch_source_fetch', ['source_id' => $sourceId]);
 
         Notification::make()->title('Source fetch queued')->success()->send();
     }
 
-    public function dispatchSelectedTracker(string $override = ''): void
+    public function dispatchSelectedTracker(string $trackerId): void
     {
-        $id = $override !== '' ? $override : ($this->selectedTrackerId ?? '');
-
-        if ($id === '') {
+        if ($trackerId === '') {
             Notification::make()->title('Select a tracker first')->warning()->send();
 
             return;
         }
 
-        RefreshWorkItemsJob::dispatch($id);
-        app(Recorder::class)->recordAdminAction('operations.dispatch_tracker_refresh', ['tracker_id' => $id]);
+        RefreshWorkItemsJob::dispatch($trackerId);
+        app(Recorder::class)->recordAdminAction('operations.dispatch_tracker_refresh', ['tracker_id' => $trackerId]);
 
         Notification::make()->title('Tracker refresh queued')->success()->send();
     }
@@ -243,24 +221,6 @@ class OperationsPage extends Page
         app(Recorder::class)->recordAdminAction('operations.reconcile_work_items');
 
         Notification::make()->title('Reconciliation started. You will see new work item links when the job completes.')->success()->send();
-    }
-
-    public function reconciliationLastRunSummary(): string
-    {
-        $timestampRaw = Cache::get('reconciliation:last_run_at');
-        $linksCreated = (int) Cache::get('reconciliation:last_run_new_links', 0);
-
-        if (! is_string($timestampRaw) || trim($timestampRaw) === '') {
-            return 'Reconciliation has not run successfully yet.';
-        }
-
-        $timestamp = Carbon::parse($timestampRaw);
-
-        return sprintf(
-            'Last run: %s (%d new link(s) created).',
-            $timestamp->toDayDateTimeString(),
-            $linksCreated,
-        );
     }
 
     private function isReconcileAllQueued(): bool

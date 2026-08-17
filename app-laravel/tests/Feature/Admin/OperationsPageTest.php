@@ -2,6 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
+use App\Filament\Resources\RepositoryCollectionRunResource;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
@@ -98,45 +99,6 @@ it('shows queue failed-job sync-run and error counts', function () {
         ->assertSee('Queued jobs')
         ->assertSee('Recent failed jobs')
         ->assertSee('Sync failed');
-
-    $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
-
-    expect($page->queuedJobCount())->toBe(1)
-        ->and($page->failedJobCount())->toBe(1);
-});
-
-it('counts queued jobs across configured queue names', function () {
-    $admin = operationsAdmin();
-
-    config([
-        'queue.default' => 'database',
-        'queue.connections.database.queue' => 'default,high',
-    ]);
-
-    DB::table('jobs')->delete();
-
-    DB::table('jobs')->insert([
-        [
-            'queue' => 'default',
-            'payload' => '{"job":"Example"}',
-            'attempts' => 0,
-            'reserved_at' => null,
-            'available_at' => now()->timestamp,
-            'created_at' => now()->timestamp,
-        ],
-        [
-            'queue' => 'high',
-            'payload' => '{"job":"Example"}',
-            'attempts' => 0,
-            'reserved_at' => null,
-            'available_at' => now()->timestamp,
-            'created_at' => now()->timestamp,
-        ],
-    ]);
-
-    $page = Livewire::actingAs($admin)->test(OperationsPage::class)->instance();
-
-    expect($page->queuedJobCount())->toBe(2);
 });
 
 it('queues supported operational actions and records audit rows', function () {
@@ -146,37 +108,14 @@ it('queues supported operational actions and records audit rows', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->set('selectedSourceId', 'fake')
-        ->set('selectedTrackerId', 'fake-tracker')
-        ->call('dispatchSelectedSource')
-        ->call('dispatchSelectedTracker');
+        ->callAction('fetchSource', data: ['source_id' => 'fake'])
+        ->callAction('refreshTracker', data: ['tracker_id' => 'fake-tracker']);
 
     Bus::assertDispatched(FetchSourceJob::class);
     Bus::assertDispatched(RefreshWorkItemsJob::class);
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
-});
-
-it('shows sbom scan status on the operations page', function () {
-    $admin = operationsAdmin();
-
-    $importPath = sys_get_temp_dir() . '/sbom-status-page-test-' . uniqid();
-    $cursorPath = sys_get_temp_dir() . '/sbom-status-page-cursor-test-' . uniqid();
-    File::ensureDirectoryExists($importPath . '/20260101T000000Z');
-    File::put(
-        $importPath . '/20260101T000000Z/run.jsonl',
-        json_encode(['project' => 'Payments', 'repository' => 'payments-api'], JSON_THROW_ON_ERROR) . "\n",
-    );
-    config(['sbom.import_path' => $importPath, 'sbom.cursor_path' => $cursorPath]);
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->assertSee('SBOM scan status')
-        ->assertSee('20260101T000000Z');
-
-    File::deleteDirectory($importPath);
-    File::deleteDirectory($cursorPath);
 });
 
 it('shows static analysis scan status on the operations page', function () {
@@ -339,12 +278,10 @@ it('shows only the reconciliation stat to a work-items.sync-only user', function
         ->assertSee('Reconciliation')
         ->assertDontSee('Inventory sync')
         ->assertDontSee('Jobs waiting in the queue')
-        ->assertDontSee('Failed jobs needing attention')
-        ->assertDontSee('Active source sync processes')
-        ->assertDontSee('Registered schedule entries');
+        ->assertDontSee('Failed jobs needing attention');
 });
 
-it('shows all six operations health stats to an admin.queue user', function () {
+it('shows all four operations health stats to an admin.queue user', function () {
     $admin = operationsAdmin();
 
     Livewire::actingAs($admin)
@@ -352,9 +289,7 @@ it('shows all six operations health stats to an admin.queue user', function () {
         ->assertSee('Reconciliation')
         ->assertSee('Inventory sync')
         ->assertSee('Jobs waiting in the queue')
-        ->assertSee('Failed jobs needing attention')
-        ->assertSee('Active source sync processes')
-        ->assertSee('Registered schedule entries');
+        ->assertSee('Failed jobs needing attention');
 });
 
 it('header action dispatches source by form data', function () {
@@ -362,8 +297,7 @@ it('header action dispatches source by form data', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->set('selectedSourceId', 'fake')
-        ->call('dispatchSelectedSource');
+        ->callAction('fetchSource', data: ['source_id' => 'fake']);
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue();
 });
@@ -373,8 +307,7 @@ it('header action dispatches tracker by form data', function () {
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
-        ->set('selectedTrackerId', 'fake-tracker')
-        ->call('dispatchSelectedTracker');
+        ->callAction('refreshTracker', data: ['tracker_id' => 'fake-tracker']);
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
 });
@@ -420,6 +353,27 @@ it('does not dispatch repository collection when a run is already in progress', 
     Bus::assertNotDispatched(DispatchRepositoryCollectionRunsJob::class);
 });
 
+it('dispatches repository collection again once a wedged run is force-finished', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    $wedged = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subHours(6),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    RepositoryCollectionRunResource::forceFinishRun($wedged);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchCollectRepositories');
+
+    Bus::assertDispatched(DispatchRepositoryCollectionRunsJob::class);
+});
+
 it('shows recent repository collection runs on the operations page', function () {
     $admin = operationsAdmin();
 
@@ -436,6 +390,43 @@ it('shows recent repository collection runs on the operations page', function ()
         ->test(OperationsPage::class)
         ->assertSee('Recent Repository Collection Runs')
         ->assertSee('azdo-repos');
+});
+
+it('hides recent sync runs and repository collection runs from a work-items.sync-only user', function () {
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => [],
+        'error_message' => null,
+    ]);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->assertDontSee('Recent Sync Runs')
+        ->assertDontSee('Recent Repository Collection Runs');
+});
+
+it('shows recent sync runs and repository collection runs to an admin.queue user', function () {
+    $admin = operationsAdmin();
+
+    RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => [],
+        'error_message' => null,
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Recent Sync Runs')
+        ->assertSee('Recent Repository Collection Runs');
 });
 
 function bindFakeOperationsIntegrations(): void

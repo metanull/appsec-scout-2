@@ -144,7 +144,11 @@ final class CollectRepositoryJob implements ShouldQueue
             ];
 
             if ($completed >= $considered) {
-                $update['status'] = 'success';
+                $update['status'] = match (true) {
+                    $failedCount === 0 => 'success',
+                    $failedCount >= $considered => 'failure',
+                    default => 'partial',
+                };
                 $update['finished_at'] = now();
             }
 
@@ -290,6 +294,7 @@ final class CollectRepositoryJob implements ShouldQueue
             'channel' => 'repository-collection',
             'message' => $message,
             'context_json' => [
+                'run' => $this->repositoryCollectionRunId,
                 'repository_id' => $this->target->repositoryId,
                 'repository' => $this->target->repositoryName,
                 'kind' => $kind,
