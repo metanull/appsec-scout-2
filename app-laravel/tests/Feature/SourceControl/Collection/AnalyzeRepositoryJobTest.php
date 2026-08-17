@@ -14,7 +14,10 @@ use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
-const ROSLYNATOR_SARIF_FIXTURE = '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Roslynator"}},"results":[]}]}';
+// Leading UTF-8 BOM matches Roslynator's real --output-format sarif output exactly
+// (confirmed against the actual 0.13.1 binary) — every test using this fixture also
+// exercises AnalyzeRepositoryJob::stripUtf8Bom(), which json_decode() requires.
+const ROSLYNATOR_SARIF_FIXTURE = "\xEF\xBB\xBF" . '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Roslynator"}},"results":[]}]}';
 
 const SPOTBUGS_SARIF_FIXTURE = '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"SpotBugs"}},"results":[]}]}';
 
@@ -134,6 +137,20 @@ it('clones a repository and attaches both a dotnet and a java report', function 
     expect($run->status)->toBe('success')
         ->and($run->counts_json['repositories_completed'])->toBe(1)
         ->and($run->counts_json['repositories_failed'])->toBe(0);
+
+    // Both flags are required for correct behavior against the real Roslynator
+    // 0.13.x binary (see AnalyzeRepositoryJob::analyzeDotnet()'s own docblock) -
+    // silently dropping either one would reintroduce a real, previously-shipped
+    // bug (XML output SarifFindingParser can't read, and an unreliable exit
+    // code), not just a style regression.
+    Process::assertRan(function ($process) {
+        $parts = commandParts($process->command);
+
+        return ($parts[0] ?? null) === 'roslynator'
+            && in_array('--output-format', $parts, true)
+            && $parts[array_search('--output-format', $parts, true) + 1] === 'sarif'
+            && in_array('--return-success-on-diagnostics', $parts, true);
+    });
 });
 
 it('converges onto the same rows a live AzDO sync already created, not a duplicate', function () {
@@ -199,6 +216,65 @@ it('produces only a dotnet attachment for a repository with no Java build files'
         ->handle(...analyzeRepositoryJobDependencies());
 
     expect(Attachment::query()->pluck('kind')->all())->toBe([AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET]);
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
+it('treats a clean .sln (zero diagnostics, no output file, exit 0) as success, not a failure', function () {
+    // Matches Roslynator's real, observed behavior: a clean solution produces
+    // no SARIF file at all and exits 0 — the fake below deliberately writes
+    // nothing for `roslynator`, mirroring that exact case.
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['App.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(Attachment::query()->count())->toBe(0)
+        ->and(ErrorLog::query()->where('channel', 'static-analysis')->count())->toBe(0);
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
+it('logs a dotnet-analyze failure only when roslynator both fails and produces no output', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['App.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            return Process::result(exitCode: 1, errorOutput: 'fatal: could not load MSBuild workspace');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(Attachment::query()->count())->toBe(0);
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'dotnet-analyze')->first();
+    expect($errorLog)->not->toBeNull();
 
     $run->refresh();
     expect($run->status)->toBe('success');
