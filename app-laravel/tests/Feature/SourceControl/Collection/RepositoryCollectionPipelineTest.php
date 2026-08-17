@@ -1,5 +1,6 @@
 <?php
 
+use App\Audit\Recorder;
 use App\Credentials\Vault;
 use App\Models\Attachment;
 use App\Models\LocalFinding;
@@ -97,7 +98,7 @@ afterEach(function () {
 it('produces SoftwareComponent and LocalFinding rows through the existing, unmodified ingestion pipeline', function () {
     bindPipelineAzDoRepos();
 
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     $run = RepositoryCollectionRun::query()->latest('id')->first();
     expect($run->status)->toBe('success');
@@ -122,10 +123,10 @@ it('produces SoftwareComponent and LocalFinding rows through the existing, unmod
 
 it('does not create a duplicate SoftwareSystem/SecurityContainer when the same repository is swept twice', function () {
     bindPipelineAzDoRepos();
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     bindPipelineAzDoRepos();
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     expect(SoftwareSystem::query()->where('source_id', 'azdo')->where('source_system_id', 'project-001')->count())->toBe(1);
 
@@ -147,7 +148,7 @@ it('never overwrites a SoftwareSystem/SecurityContainer already created by a liv
     ]);
 
     bindPipelineAzDoRepos();
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     $system->refresh();
     $container->refresh();

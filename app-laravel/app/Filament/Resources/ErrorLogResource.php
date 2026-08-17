@@ -7,6 +7,7 @@ use App\Filament\Resources\ErrorLogResource\Pages\ViewErrorLog;
 use App\Filament\Support\DateRangeFilters;
 use App\Models\ErrorLog;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
@@ -18,6 +19,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Phiki\Grammar\Grammar;
 
 class ErrorLogResource extends Resource
 {
@@ -74,6 +76,18 @@ class ErrorLogResource extends Resource
                     ]),
                 ]),
 
+            Section::make('Context')
+                ->collapsible()
+                ->schema([
+                    CodeEntry::make('_context')
+                        ->label('')
+                        ->state(fn (ErrorLog $record): array => is_array($record->context_json) ? $record->context_json : [])
+                        ->grammar(Grammar::Json)
+                        ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                        ->copyable()
+                        ->columnSpanFull(),
+                ]),
+
             Section::make('Trace')
                 ->collapsible()
                 ->schema([
@@ -99,6 +113,13 @@ class ErrorLogResource extends Resource
                 }),
                 TextColumn::make('channel'),
                 TextColumn::make('message')->searchable()->wrap(),
+                TextColumn::make('context_json')
+                    ->label('Context')
+                    ->formatStateUsing(fn (mixed $state): string => json_encode($state, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '')
+                    ->wrap()
+                    ->limit(120)
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('trace')
                     ->limit(500)
                     ->wrap()

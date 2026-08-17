@@ -2,6 +2,7 @@
 
 namespace App\SourceControl\Collection;
 
+use App\Audit\Recorder;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\SourceControl\Contracts\EnumeratesInventory;
@@ -13,6 +14,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -40,7 +42,7 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
         return 'repository-collection';
     }
 
-    public function handle(SystemIntegrationRuntime $runtime): void
+    public function handle(SystemIntegrationRuntime $runtime, Recorder $recorder): void
     {
         $run = RepositoryCollectionRun::query()->create([
             'source_control_id' => self::SOURCE_CONTROL_ID,
@@ -49,19 +51,43 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
             'counts_json' => [],
         ]);
 
+        Log::info('Repository collection run started.', [
+            'repository_collection_run_id' => $run->id,
+            'source_control_id' => self::SOURCE_CONTROL_ID,
+        ]);
+
         $provider = $runtime->sourceControl(self::SOURCE_CONTROL_ID);
 
         if (! $provider instanceof EnumeratesInventory || ! $runtime->hasRequiredSystemCredentials($provider->credentialFields())) {
+            $message = 'Azure DevOps Repos credential is not configured.';
+            $context = ['run' => $run->id, 'operation' => 'discover'];
+
             $run->update([
                 'status' => 'failure',
                 'finished_at' => now(),
-                'error_message' => 'Azure DevOps Repos credential is not configured.',
+                'error_message' => $message,
+            ]);
+
+            Log::error($message, $context);
+
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'repository-collection',
+                'message' => $message,
+                'context_json' => $context,
+                'trace' => null,
+                'occurred_at' => now(),
+            ]);
+
+            $recorder->recordAdminAction('operations.collect_repositories.failed', [
+                'repository_collection_run_id' => $run->id,
+                'reason' => $message,
             ]);
 
             return;
         }
 
-        $runtime->runSourceControl(self::SOURCE_CONTROL_ID, function (SourceControlProvider $resolvedProvider) use ($run): void {
+        $runtime->runSourceControl(self::SOURCE_CONTROL_ID, function (SourceControlProvider $resolvedProvider) use ($run, $recorder): void {
             /** @var EnumeratesInventory&SourceControlProvider $resolvedProvider */
             $targets = $this->buildTargets($resolvedProvider, $run->id);
 
@@ -70,6 +96,15 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                     'status' => 'success',
                     'finished_at' => now(),
                     'counts_json' => ['repositories_considered' => 0],
+                ]);
+
+                Log::info('Repository collection run completed with no repositories to collect.', [
+                    'repository_collection_run_id' => $run->id,
+                ]);
+
+                $recorder->recordAdminAction('operations.collect_repositories.completed', [
+                    'repository_collection_run_id' => $run->id,
+                    'repositories_considered' => 0,
                 ]);
 
                 return;
@@ -106,6 +141,18 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                     ->dispatch();
 
                 $run->update(['batch_id' => $batch->id]);
+
+                Log::info('Repository collection batch dispatched.', [
+                    'repository_collection_run_id' => $run->id,
+                    'batch_id' => $batch->id,
+                    'repositories_considered' => count($targets),
+                ]);
+
+                $recorder->recordAdminAction('operations.collect_repositories.dispatched', [
+                    'repository_collection_run_id' => $run->id,
+                    'batch_id' => $batch->id,
+                    'repositories_considered' => count($targets),
+                ]);
             } catch (Throwable $e) {
                 // The `sync` queue connection re-throws after a job's own
                 // failed() hook already ran (see CollectRepositoryJob::
@@ -115,10 +162,28 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                 $run->refresh();
 
                 if ($run->status === 'running') {
+                    $context = ['run' => $run->id, 'operation' => 'dispatch'];
+
                     $run->update([
                         'status' => 'failure',
                         'finished_at' => now(),
                         'error_message' => $e->getMessage(),
+                    ]);
+
+                    Log::error($e->getMessage(), $context);
+
+                    ErrorLog::query()->create([
+                        'level' => 'error',
+                        'channel' => 'repository-collection',
+                        'message' => $e->getMessage(),
+                        'context_json' => $context,
+                        'trace' => $e->getTraceAsString(),
+                        'occurred_at' => now(),
+                    ]);
+
+                    $recorder->recordAdminAction('operations.collect_repositories.failed', [
+                        'repository_collection_run_id' => $run->id,
+                        'reason' => $e->getMessage(),
                     ]);
                 }
             }
@@ -140,15 +205,23 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                 $cloneUrl = SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL);
 
                 if ($cloneUrl === null) {
+                    $message = 'Repository has no clone URL, skipping.';
+                    $context = [
+                        'run' => $runId,
+                        'project_id' => $project->sourceSystemId,
+                        'project_name' => $project->name,
+                        'repository_id' => $container->sourceContainerId,
+                        'repository_name' => $container->name,
+                        'operation' => 'discover',
+                    ];
+
+                    Log::error($message, $context);
+
                     ErrorLog::query()->create([
                         'level' => 'error',
                         'channel' => 'repository-collection',
-                        'message' => 'Repository has no clone URL, skipping.',
-                        'context_json' => [
-                            'run' => $runId,
-                            'project' => $project->name,
-                            'repository' => $container->name,
-                        ],
+                        'message' => $message,
+                        'context_json' => $context,
                         'trace' => null,
                         'occurred_at' => now(),
                     ]);

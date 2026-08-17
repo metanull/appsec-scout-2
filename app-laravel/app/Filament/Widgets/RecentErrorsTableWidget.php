@@ -48,6 +48,12 @@ class RecentErrorsTableWidget extends TableWidget
                     ->wrap()
                     ->grow()
                     ->placeholder('-'),
+                TextColumn::make('context_json')
+                    ->label('Context')
+                    ->formatStateUsing(fn (mixed $state): string => is_array($state) ? (json_encode($state, JSON_UNESCAPED_SLASHES) ?: '') : '')
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder('-'),
                 TextColumn::make('occurred_at')
                     ->label('Occurred')
                     ->since()

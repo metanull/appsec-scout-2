@@ -288,6 +288,13 @@ services:
             SKIP_APP_BOOTSTRAP: "1"
             TRIVY_SERVER_URL: "${TRIVY_SERVER_URL:-http://trivy-server:4954}"
             REPOSITORY_COLLECTION_WORKSPACE: /workspace-scratch
+            # Overrides the shared .env's LOG_STACK/LOG_LEVEL for this container only (env vars set
+            # here take precedence over the .env file phpdotenv loads from the app_storage volume) —
+            # adds Laravel's built-in `stderr` channel so collector activity is visible via
+            # `docker compose logs collector` / Docker Desktop, without changing the `app` container's
+            # own logging.
+            LOG_STACK: "${COLLECTOR_LOG_STACK:-single,stderr}"
+            LOG_LEVEL: "${COLLECTOR_LOG_LEVEL:-info}"
         cpus: ${COLLECTOR_CPUS:-2}
         mem_limit: ${COLLECTOR_MEM_LIMIT:-2g}
 

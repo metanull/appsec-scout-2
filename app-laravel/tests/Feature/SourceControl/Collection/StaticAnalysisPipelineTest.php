@@ -1,5 +1,6 @@
 <?php
 
+use App\Audit\Recorder;
 use App\Credentials\Vault;
 use App\Models\Attachment;
 use App\Models\LocalFinding;
@@ -163,7 +164,7 @@ it('produces LocalFinding rows through the existing, unmodified ingestion pipeli
 
 it('converges onto the same SecurityContainer as a repository-collection sweep of the same repository', function () {
     bindStaticAnalysisPipelineAzDoRepos();
-    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class));
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
 
     bindStaticAnalysisPipelineAzDoRepos();
     (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));

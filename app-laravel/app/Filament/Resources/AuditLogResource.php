@@ -6,6 +6,7 @@ use App\Audit\AuditLog;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
 use App\Filament\Support\DateRangeFilters;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use Filament\Infolists\Components\CodeEntry;
@@ -209,16 +210,14 @@ class AuditLogResource extends Resource
             return null;
         }
 
-        $normalized = class_basename($subjectType);
-
-        if ($normalized !== 'SecurityEvent') {
-            return null;
-        }
-
-        if (! SecurityEvent::where('id', $record->subject_id)->exists()) {
-            return null;
-        }
-
-        return SecurityEventResource::getUrl('view', ['record' => $record->subject_id]);
+        return match (class_basename($subjectType)) {
+            'SecurityEvent' => SecurityEvent::where('id', $record->subject_id)->exists()
+                ? SecurityEventResource::getUrl('view', ['record' => $record->subject_id])
+                : null,
+            'SecurityContainer' => SecurityContainer::where('id', $record->subject_id)->exists()
+                ? SecurityContainerResource::getUrl('view', ['record' => $record->subject_id])
+                : null,
+            default => null,
+        };
     }
 }

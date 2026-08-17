@@ -129,4 +129,5 @@ RUN dos2unix /usr/local/bin/entrypoint.sh && \
     chmod +x /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["php", "artisan", "queue:work", "--queue=repository-collection", "--tries=3", "--timeout=1800", "--max-time=3600"]
+# -v: full exception traces on job failure go to stdout, not just a one-line summary.
+CMD ["php", "artisan", "queue:work", "--queue=repository-collection", "--tries=3", "--timeout=1800", "--max-time=3600", "-v"]
