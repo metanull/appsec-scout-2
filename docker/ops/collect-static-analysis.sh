@@ -1,28 +1,33 @@
 #!/bin/bash
-# Runs static analysis (Roslynator for .NET, SpotBugs + Find Security Bugs for Java) for
-# every non-disabled Git repository across every project in an Azure DevOps organization,
-# emitting SARIF reports.
+# Runs static analysis (Roslynator for .NET, SpotBugs + Find Security Bugs for Java, Opengrep
+# for C#/Java/JavaScript/TypeScript source) for every non-disabled Git repository across every
+# project in an Azure DevOps organization, emitting SARIF reports.
 #
 # For .NET repos, each *.sln found is restored and built first (Roslynator needs resolved
 # package references) and analyzed individually; results are merged into one SARIF file per
 # repo. For Java repos, the topmost pom.xml/build.gradle[.kts] is built with the repo's own
 # wrapper if present (mvnw/gradlew), else the system Maven/Gradle install; every directory
 # that ends up containing compiled .class files is then analyzed together in one SpotBugs
-# run. Build failures are non-fatal — the corresponding report is simply not generated for
-# that repo, same as collect-sboms.sh already treats dotnet restore/build failures. The
-# stdout/stderr of every restore/build/analyze invocation is still captured to a log file
-# under <project>/<repo>.logs/ in the run directory (paths recorded in run.jsonl) so a
+# run. Opengrep needs no build step at all — it runs directly against the cloned source tree
+# using the vendored, version-pinned ruleset at /opt/opengrep-rules, and its SARIF report is
+# written even when it carries zero results (unlike the other two ecosystems' own
+# zero-diagnostics case), so a later reimport can still resolve previously reported findings
+# that no longer occur. Build failures are non-fatal — the corresponding report is simply not
+# generated for that repo, same as collect-sboms.sh already treats dotnet restore/build
+# failures. The stdout/stderr of every restore/build/analyze invocation is still captured to a
+# log file under <project>/<repo>.logs/ in the run directory (paths recorded in run.jsonl) so a
 # failure can be diagnosed after the fact without re-running anything.
 #
 # Required environment: AZDO_ORG, AZDO_PAT
 # Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
-#   STATIC_ANALYSIS_TYPES (comma-separated subset of dotnet,java; default: both),
+#   STATIC_ANALYSIS_TYPES (comma-separated subset of dotnet,java,opengrep; default: all three),
 #   DOTNET_RESTORE_TIMEOUT / DOTNET_BUILD_TIMEOUT (seconds, default 600/900),
 #   JAVA_BUILD_TIMEOUT (seconds, default 900), ANALYSIS_TIMEOUT (per Roslynator/SpotBugs
-#   invocation, default 900), RESUME_FROM (comma-separated list of previous run directory
-#   names, relative to OUTPUT_DIR — see collect-sboms.sh for the exact semantics; set via
-#   invoke-ops.ps1 -StaticAnalysis -Resume), AZDO_SKIP_IMPORT (drops a .skip-import marker,
-#   same as the SBOM scan — set via invoke-ops.ps1 -StaticAnalysis -SkipUpload)
+#   invocation, default 900), OPENGREP_TIMEOUT (per Opengrep invocation, default 900),
+#   RESUME_FROM (comma-separated list of previous run directory names, relative to OUTPUT_DIR —
+#   see collect-sboms.sh for the exact semantics; set via invoke-ops.ps1 -StaticAnalysis
+#   -Resume), AZDO_SKIP_IMPORT (drops a .skip-import marker, same as the SBOM scan — set via
+#   invoke-ops.ps1 -StaticAnalysis -SkipUpload)
 set -uo pipefail
 
 : "${AZDO_ORG:?AZDO_ORG must be set}"
@@ -36,7 +41,8 @@ DOTNET_RESTORE_TIMEOUT="${DOTNET_RESTORE_TIMEOUT:-600}"
 DOTNET_BUILD_TIMEOUT="${DOTNET_BUILD_TIMEOUT:-900}"
 JAVA_BUILD_TIMEOUT="${JAVA_BUILD_TIMEOUT:-900}"
 ANALYSIS_TIMEOUT="${ANALYSIS_TIMEOUT:-900}"
-SCAN_TYPES=" ${STATIC_ANALYSIS_TYPES:-dotnet,java} "
+OPENGREP_TIMEOUT="${OPENGREP_TIMEOUT:-900}"
+SCAN_TYPES=" ${STATIC_ANALYSIS_TYPES:-dotnet,java,opengrep} "
 SCAN_TYPES="${SCAN_TYPES//,/ }"
 FINDSECBUGS_JAR=$(find /opt/spotbugs-plugins -maxdepth 1 -iname 'findsecbugs-plugin-*.jar' 2>/dev/null | head -1)
 
@@ -169,13 +175,14 @@ process_repo() {
     workdir=$(mktemp -d)
     trap 'rm -rf "$workdir"' RETURN
 
-    local safe_project safe_repo out_dir dotnet_path java_path
+    local safe_project safe_repo out_dir dotnet_path java_path opengrep_path
     safe_project=$(sanitize "$project_name")
     safe_repo=$(sanitize "$repo_name")
     out_dir="$RUN_DIR/$safe_project"
     mkdir -p "$out_dir"
     dotnet_path="$out_dir/${safe_repo}.dotnet.sarif"
     java_path="$out_dir/${safe_repo}.java.sarif"
+    opengrep_path="$out_dir/${safe_repo}.opengrep.sarif"
 
     local clone_ok=false
     if git clone --quiet --depth 1 --no-tags --shallow-submodules "$remote_url" "$workdir" >/dev/null 2>&1; then
@@ -278,6 +285,22 @@ process_repo() {
         fi
     fi
 
+    local opengrep_ok=false
+    local opengrep_analyze_log=""
+    if [ "$clone_ok" = true ] && scan_enabled opengrep; then
+        local logs_dir="$out_dir/${safe_repo}.logs"
+        mkdir -p "$logs_dir"
+        opengrep_analyze_log="$safe_project/${safe_repo}.logs/opengrep.analyze.log"
+        # Unlike Roslynator/SpotBugs above, a clean, zero-finding scan still writes a report
+        # file (Opengrep's own behavior) — gated on the file's presence, not its size, so a
+        # later reimport can still resolve previously reported opengrep findings that no
+        # longer occur.
+        if timeout "$OPENGREP_TIMEOUT" opengrep scan --quiet --sarif --output "$opengrep_path" -f /opt/opengrep-rules "$workdir" >"$logs_dir/opengrep.analyze.log" 2>&1 \
+            && [ -f "$opengrep_path" ]; then
+            opengrep_ok=true
+        fi
+    fi
+
     jq -nc \
         --arg project "$project_name" \
         --arg repository "$repo_name" \
@@ -296,13 +319,18 @@ process_repo() {
         --arg javaAnalysisPath "$([ "$java_ok" = true ] && echo "$safe_project/${safe_repo}.java.sarif" || echo "")" \
         --argjson javaBuildLogs "$java_build_logs_json" \
         --arg javaAnalysisLog "$java_analyze_log" \
+        --argjson opengrepAnalysisGenerated "$opengrep_ok" \
+        --arg opengrepAnalysisPath "$([ "$opengrep_ok" = true ] && echo "$safe_project/${safe_repo}.opengrep.sarif" || echo "")" \
+        --arg opengrepAnalysisLog "$opengrep_analyze_log" \
         '{project: $project, repository: $repository, projectId: $projectId, repositoryId: $repositoryId,
           webUrl: $webUrl, repositoryWebUrl: $repositoryWebUrl, defaultBranch: $defaultBranch,
           projectDescription: $projectDescription, projectUrl: $projectUrl,
           cloned: $cloned, solutions: $solutions,
           dotnetAnalysisGenerated: $dotnetAnalysisGenerated, dotnetAnalysisPath: $dotnetAnalysisPath,
           javaAnalysisGenerated: $javaAnalysisGenerated, javaAnalysisPath: $javaAnalysisPath,
-          javaBuildLogs: $javaBuildLogs, javaAnalysisLog: $javaAnalysisLog}' \
+          javaBuildLogs: $javaBuildLogs, javaAnalysisLog: $javaAnalysisLog,
+          opengrepAnalysisGenerated: $opengrepAnalysisGenerated, opengrepAnalysisPath: $opengrepAnalysisPath,
+          opengrepAnalysisLog: $opengrepAnalysisLog}' \
         >> "$RESULTS_FILE"
 }
 
@@ -369,6 +397,7 @@ jq -s \
         repositoriesCloneFailed: (map(select(.cloned == false)) | length),
         dotnetReportsGenerated: (map(select(.dotnetAnalysisGenerated == true)) | length),
         javaReportsGenerated: (map(select(.javaAnalysisGenerated == true)) | length),
+        opengrepReportsGenerated: (map(select(.opengrepAnalysisGenerated == true)) | length),
         solutionsRestored: (map(.solutions[]? | select(.restore == true)) | length),
         solutionsBuilt: (map(.solutions[]? | select(.build == true)) | length),
         solutionsAnalyzed: (map(.solutions[]? | select(.analyzed == true)) | length),

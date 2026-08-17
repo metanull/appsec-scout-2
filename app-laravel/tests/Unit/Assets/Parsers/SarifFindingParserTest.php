@@ -103,6 +103,23 @@ it('returns null severity when neither a Severity field nor a recognized level i
         ->and($findings[0]->severity)->toBeNull();
 });
 
+it('derives severity from level for an Opengrep result with no Trivy-style Severity field', function () {
+    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-sample.json'));
+
+    expect($findings)->toHaveCount(2);
+
+    expect($findings[0]->ruleId)->toBe('javascript.express.security.audit.xss.direct-response-write.direct-response-write')
+        ->and($findings[0]->severity)->toBe('HIGH')
+        ->and($findings[0]->filePath)->toBe('src/routes/search.js')
+        ->and($findings[0]->startLine)->toBe(18)
+        ->and($findings[0]->packageName)->toBeNull();
+
+    expect($findings[1]->ruleId)->toBe('typescript.lang.security.audit.unsafe-child-process.unsafe-child-process')
+        ->and($findings[1]->severity)->toBe('MEDIUM')
+        ->and($findings[1]->filePath)->toBe('src/services/backup.ts')
+        ->and($findings[1]->startLine)->toBe(34);
+});
+
 it('parses findings from every run, not just the first', function () {
     $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('roslynator-multi-run-sample.json'));
 

@@ -54,4 +54,19 @@ return [
 
     'findsecbugs_plugin_dir' => env('STATIC_ANALYSIS_FINDSECBUGS_PLUGIN_DIR', '/opt/spotbugs-plugins'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Opengrep rules
+    |--------------------------------------------------------------------------
+    |
+    | Directory AnalyzeRepositoryJob passes to `opengrep scan -f` — vendored,
+    | version-pinned rules (csharp/java/javascript/typescript) baked into
+    | docker/static-analysis-collector/Dockerfile.
+    |
+    */
+
+    'opengrep_rules_dir' => env('STATIC_ANALYSIS_OPENGREP_RULES_DIR', '/opt/opengrep-rules'),
+
+    'opengrep_timeout' => (int) env('STATIC_ANALYSIS_OPENGREP_TIMEOUT', 900),
+
 ];

@@ -23,8 +23,9 @@ manual SBOM/vulnerability/secret alternative; the two are independent, parallel 
 identical second, in-app, asynchronous path for StaticAnalysis — queued from
 `Admin -> Operations` ("Run static analysis") and run by an isolated `static-analysis-collector`
 container/queue. It does not replace StaticAnalysis, which remains a fully valid manual
-Roslynator/SpotBugs alternative (in particular for `-Resume`/`-ProjectFilter`/`-RepositoryFilter`/
-`-SkipUpload`, none of which the in-app path supports); the two are independent, parallel paths.
+Roslynator/SpotBugs/Opengrep alternative (in particular for `-Resume`/`-ProjectFilter`/
+`-RepositoryFilter`/`-SkipUpload`, none of which the in-app path supports); the two are
+independent, parallel paths.
 
 ## Trigger and Access
 
@@ -75,6 +76,12 @@ a Docker volume by `trivy-token-init` — no manual setup).
 Same enumerate/clone/delete skeleton as SbomScan, but runs source-code analyzers instead of
 Trivy:
 
+- **Opengrep**: runs directly against the cloned source tree, no build required — unlike the
+  other two ecosystems below. `opengrep scan --sarif` is run once per repo against the vendored,
+  version-pinned csharp/java/javascript/typescript ruleset (`/opt/opengrep-rules`), and its
+  report is written even when it carries zero results, so a later report file's presence alone
+  (not its size) is what gates upload — the same "clean scan still produces a file" behavior
+  Roslynator does *not* have (see below).
 - **.NET**: every `*.sln` found anywhere in the repo is restored, built, and analyzed
   individually with Roslynator (`--severity-level info`); each solution's SARIF output is merged
   into one file for the repo.
@@ -83,10 +90,11 @@ Trivy:
   (otherwise the image's Maven/Gradle), and every directory that ends up with compiled `.class`
   files is analyzed together in one SpotBugs + Find Security Bugs run.
 
-Both ecosystems always run (gated only by which report types are enabled) — a repository
-containing both .NET and Java code gets both reports. A failed restore/build for either
-ecosystem is non-fatal: analysis is simply skipped for that ecosystem on that repo, and the
-failure is captured in a log file alongside the run's other output rather than aborting the scan.
+All three ecosystems always run (gated only by which report types are enabled via
+`STATIC_ANALYSIS_TYPES`) — a repository containing .NET, Java, and JavaScript/TypeScript code
+gets all three reports. A failed restore/build/scan for any ecosystem is non-fatal: analysis is
+simply skipped for that ecosystem on that repo, and the failure is captured in a log file
+alongside the run's other output rather than aborting the scan.
 
 ## Output, Resume, and Upload
 
@@ -123,11 +131,13 @@ Every `Attachment`, regardless of where it came from, fires an event that a queu
 | Attachment kind | Parser | Resulting model | Matches the user-facing term |
 | --- | --- | --- | --- |
 | `sbom` | `CycloneDxSbomParser` | `SoftwareComponent` (upserted by package URL) | **Dependencies** |
-| `vulnerabilities` / `secrets` / `code-quality-dotnet` / `code-quality-java` | `SarifFindingParser` | `LocalFinding` (upserted by kind + rule + file + line) | **Local Findings** |
+| `vulnerabilities` / `secrets` / `code-quality-dotnet` / `code-quality-java` / `code-quality-opengrep` | `SarifFindingParser` | `LocalFinding` (upserted by kind + rule + file + line) | **Local Findings** |
 
 The SARIF parser has to work around Trivy encoding package/severity metadata as free-text
 `"Key: Value"` lines inside `message.text` (SARIF has no first-class package concept), while
-Roslynator/SpotBugs instead rely on the standard SARIF `level` field. After parsing,
+Roslynator/SpotBugs/Opengrep instead rely on the standard SARIF `level` field — Opengrep's own
+SARIF output required no parser changes at all, since it already carries `ruleId`, a rules index,
+`message.text`, physical locations, and `level` in the same shape Roslynator/SpotBugs use. After parsing,
 `SecurityEventCorrelator` attempts to link each new Local Finding back to an existing Security
 Alert, where one already exists for the same underlying issue.
 

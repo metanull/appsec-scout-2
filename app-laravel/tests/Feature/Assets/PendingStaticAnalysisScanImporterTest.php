@@ -158,6 +158,32 @@ it('imports both dotnet and java reports for the same repository line', function
     tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
 });
 
+it('imports dotnet, java, and opengrep reports for the same repository line', function () {
+    [$importPath, $cursorPath] = setUpStaticAnalysisTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.dotnet.sarif', '{"runs":[]}');
+    File::put($runDir . '/Payments/payments-api.java.sarif', '{"runs":[]}');
+    File::put($runDir . '/Payments/payments-api.opengrep.sarif', '{"runs":[]}');
+    File::put($runDir . '/run.jsonl', writeStaticAnalysisResultLine([
+        'javaAnalysisGenerated' => true,
+        'javaAnalysisPath' => 'Payments/payments-api.java.sarif',
+        'opengrepAnalysisGenerated' => true,
+        'opengrepAnalysisPath' => 'Payments/payments-api.opengrep.sarif',
+    ]) . "\n");
+
+    $stats = app(PendingStaticAnalysisScanImporter::class)->importPending();
+
+    expect($stats)->toBe(['runsSeen' => 1, 'linesImported' => 1, 'reportsImported' => 3, 'reportsFailed' => 0, 'aborted' => false]);
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-guid-1')->firstOrFail();
+    expect(Attachment::query()->where('owner_id', $container->id)->where('kind', 'code-quality-dotnet')->count())->toBe(1)
+        ->and(Attachment::query()->where('owner_id', $container->id)->where('kind', 'code-quality-java')->count())->toBe(1)
+        ->and(Attachment::query()->where('owner_id', $container->id)->where('kind', 'code-quality-opengrep')->count())->toBe(1);
+
+    tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
+});
+
 it('does not reimport lines already covered by the cursor', function () {
     [$importPath, $cursorPath] = setUpStaticAnalysisTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';

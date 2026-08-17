@@ -1,0 +1,55 @@
+{
+    "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "opengrep",
+                    "rules": [
+                        {
+                            "id": "javascript.express.security.audit.xss.direct-response-write.direct-response-write",
+                            "shortDescription": { "text": "User input flows into an Express response without encoding" },
+                            "fullDescription": { "text": "Detected user input flowing into a raw response write, which can lead to a cross-site scripting (XSS) vulnerability." },
+                            "helpUri": "https://opengrep.dev/r/javascript.express.security.audit.xss.direct-response-write"
+                        },
+                        {
+                            "id": "typescript.lang.security.audit.unsafe-child-process.unsafe-child-process",
+                            "shortDescription": { "text": "Detected non-static child process command" },
+                            "fullDescription": { "text": "A dynamic command is passed to a child process call, which can allow an attacker to run arbitrary code if the command is derived from user input." },
+                            "helpUri": "https://opengrep.dev/r/typescript.lang.security.audit.unsafe-child-process"
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "javascript.express.security.audit.xss.direct-response-write.direct-response-write",
+                    "level": "error",
+                    "message": { "text": "User input flows into `res.send()` without encoding — review this for XSS." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/routes/search.js" },
+                                "region": { "startLine": 18, "endLine": 18 }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "ruleId": "typescript.lang.security.audit.unsafe-child-process.unsafe-child-process",
+                    "level": "warning",
+                    "message": { "text": "Command passed to `exec()` is not a static string — review for command injection." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/services/backup.ts" },
+                                "region": { "startLine": 34, "endLine": 34 }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

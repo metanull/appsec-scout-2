@@ -144,7 +144,7 @@ class OperationsPage extends Page
                 ->icon('heroicon-o-magnifying-glass-circle')
                 ->visible(fn (): bool => Gate::allows('admin.queue'))
                 ->requiresConfirmation()
-                ->modalDescription('Queue a static analysis sweep (Roslynator for .NET, SpotBugs + Find Security Bugs for Java) across every Azure DevOps repository the azdo-repos credential can see.')
+                ->modalDescription('Queue a static analysis sweep (Roslynator for .NET, SpotBugs + Find Security Bugs for Java, Opengrep for C#/Java/JavaScript/TypeScript sources) across every Azure DevOps repository the azdo-repos credential can see.')
                 ->action(fn () => $this->dispatchRunStaticAnalysis()),
 
             ActionGroup::make([

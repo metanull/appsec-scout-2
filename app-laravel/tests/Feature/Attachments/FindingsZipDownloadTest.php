@@ -33,13 +33,14 @@ it('zips both vulnerability and secret attachments for a single container', func
     @unlink($path);
 });
 
-it('zips code-quality attachments for both dotnet and java kinds alongside vulnerabilities and secrets', function () {
+it('zips code-quality attachments for dotnet, java, and opengrep kinds alongside vulnerabilities and secrets', function () {
     $container = SecurityContainer::factory()->create(['name' => 'payments-api']);
 
     app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"vuln":true}');
     app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"secret":true}');
     app(AttachmentService::class)->attachTo($container, 'code-quality-dotnet', 'application/json', 'dotnet.json', '{"runs":[]}');
     app(AttachmentService::class)->attachTo($container, 'code-quality-java', 'application/json', 'java.json', '{"runs":[]}');
+    app(AttachmentService::class)->attachTo($container, 'code-quality-opengrep', 'application/json', 'opengrep.json', '{"runs":[]}');
 
     $path = app(FindingsZipBuilder::class)->build($container);
 
@@ -48,9 +49,10 @@ it('zips code-quality attachments for both dotnet and java kinds alongside vulne
     $zip = new ZipArchive;
     $zip->open($path);
 
-    expect($zip->numFiles)->toBe(4)
+    expect($zip->numFiles)->toBe(5)
         ->and($zip->locateName('payments-api-code-quality-dotnet.sarif'))->not()->toBeFalse()
-        ->and($zip->locateName('payments-api-code-quality-java.sarif'))->not()->toBeFalse();
+        ->and($zip->locateName('payments-api-code-quality-java.sarif'))->not()->toBeFalse()
+        ->and($zip->locateName('payments-api-code-quality-opengrep.sarif'))->not()->toBeFalse();
 
     $zip->close();
     @unlink($path);

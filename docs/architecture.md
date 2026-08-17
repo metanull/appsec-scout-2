@@ -175,7 +175,7 @@ The default Compose stack (`docker-compose.yml`, no profile needed) starts these
 | `trivy-server` | `aquasec/trivy:latest` | Self-hosted vulnerability database server, used by Dependency-Track's Trivy analyzer and by the SbomScan/StaticAnalysis workflows (see [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md)) |
 | `dependencytrack-bootstrap` | `appsec-scout:latest` | One-shot: provisions a Dependency-Track team, API key, and Trivy analyzer config, storing the API key in the credential vault |
 | `collector` | `appsec-scout-collector:latest` | Isolated worker for in-app repository collection: git + Trivy, consumes only the `repository-collection` queue — see [docs/concepts/repository-collection.md](concepts/repository-collection.md) |
-| `static-analysis-collector` | `appsec-scout-static-analysis-collector:latest` | Isolated worker for in-app static analysis: git + .NET/Roslynator + Java/Maven/Gradle/SpotBugs+FindSecBugs, consumes only the `static-analysis` queue — see [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md) |
+| `static-analysis-collector` | `appsec-scout-static-analysis-collector:latest` | Isolated worker for in-app static analysis: git + .NET/Roslynator + Java/Maven/Gradle/SpotBugs+FindSecBugs + Opengrep, consumes only the `static-analysis` queue — see [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md) |
 
 `node` (profile `tools`) and `ops` (profile `ops`) are opt-in and not started by a plain
 `docker compose up` — see [docs/operations.md](operations.md) for when to use them. `collector`
@@ -204,8 +204,8 @@ AppSec Scout is the system of record for operator edits.
   asynchronous read path for the same kind of data, scoped to Azure DevOps repositories — see
   [docs/concepts/repository-collection.md](concepts/repository-collection.md).
 - Static analysis collection (`Admin -> Operations` "Run static analysis") is the equivalent
-  second, in-app, asynchronous read path for Roslynator/SpotBugs code-quality findings — see
-  [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md).
+  second, in-app, asynchronous read path for Roslynator/SpotBugs/Opengrep code-quality findings —
+  see [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md).
 
 ## Credentials
 
@@ -237,8 +237,8 @@ clear error.
   queued, isolated-container SBOM/vulnerability/secret collection path for Azure DevOps
   repositories.
 - [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md) — the
-  in-app, queued, isolated-container Roslynator/SpotBugs static analysis path for Azure DevOps
-  repositories.
+  in-app, queued, isolated-container Roslynator/SpotBugs/Opengrep static analysis path for Azure
+  DevOps repositories.
 - [docs/install.md](install.md), [docs/operations.md](operations.md), [docs/security.md](security.md)
   — install, day-2 operations, and security posture.
 

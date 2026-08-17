@@ -33,6 +33,7 @@ final class PendingStaticAnalysisScanImporter
     private const REPORT_KINDS = [
         ['generated' => 'dotnetAnalysisGenerated', 'path' => 'dotnetAnalysisPath', 'kind' => 'code-quality-dotnet'],
         ['generated' => 'javaAnalysisGenerated', 'path' => 'javaAnalysisPath', 'kind' => 'code-quality-java'],
+        ['generated' => 'opengrepAnalysisGenerated', 'path' => 'opengrepAnalysisPath', 'kind' => 'code-quality-opengrep'],
     ];
 
     public function __construct(

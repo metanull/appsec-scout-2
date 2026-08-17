@@ -118,6 +118,12 @@ function fakeStaticAnalysisPipelineProcesses(): void
             return Process::result(exitCode: 0);
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(staticAnalysisPipelineArgAfter($parts, '--output'), staticAnalysisPipelineFixture('StaticAnalysis/opengrep-sample.json'));
+
+            return Process::result(exitCode: 0);
+        }
+
         return Process::result(exitCode: 0);
     });
 }
@@ -153,13 +159,16 @@ it('produces LocalFinding rows through the existing, unmodified ingestion pipeli
     expect($container)->not->toBeNull();
 
     $attachments = Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->get();
-    expect($attachments)->toHaveCount(2);
+    expect($attachments)->toHaveCount(3);
 
     // The fixture Roslynator SARIF payload carries one CA2100 result.
     expect(LocalFinding::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->where('kind', LocalFinding::KIND_CODE_QUALITY)->where('rule_id', 'CA2100')->exists())->toBeTrue();
 
     // The fixture SpotBugs SARIF payload carries one SQL_INJECTION_JDBC result.
     expect(LocalFinding::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->where('kind', LocalFinding::KIND_CODE_QUALITY)->where('rule_id', 'SQL_INJECTION_JDBC')->exists())->toBeTrue();
+
+    // The fixture Opengrep SARIF payload carries two results.
+    expect(LocalFinding::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->where('kind', LocalFinding::KIND_CODE_QUALITY)->where('rule_id', 'javascript.express.security.audit.xss.direct-response-write.direct-response-write')->exists())->toBeTrue();
 });
 
 it('converges onto the same SecurityContainer as a repository-collection sweep of the same repository', function () {
@@ -179,7 +188,7 @@ it('converges onto the same SecurityContainer as a repository-collection sweep o
 
     $kinds = Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->pluck('kind')->sort()->values()->all();
 
-    expect($kinds)->toBe(['code-quality-dotnet', 'code-quality-java', 'sbom', 'secrets', 'vulnerabilities']);
+    expect($kinds)->toBe(['code-quality-dotnet', 'code-quality-java', 'code-quality-opengrep', 'sbom', 'secrets', 'vulnerabilities']);
 
     expect(RepositoryCollectionRun::query()->latest('id')->first()->status)->toBe('success');
     expect(StaticAnalysisRun::query()->latest('id')->first()->status)->toBe('success');
@@ -208,6 +217,10 @@ it('reaches partial when one repository fails to clone but the ecosystems of ano
 
         if (($parts[0] ?? null) === 'spotbugs') {
             File::put(staticAnalysisPipelineArgAfter($parts, '-output'), staticAnalysisPipelineFixture('StaticAnalysis/spotbugs-sample.json'));
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(staticAnalysisPipelineArgAfter($parts, '--output'), staticAnalysisPipelineFixture('StaticAnalysis/opengrep-sample.json'));
         }
 
         return Process::result(exitCode: 0);
@@ -239,7 +252,7 @@ it('reaches partial when one repository fails to clone but the ecosystems of ano
     $system = SoftwareSystem::query()->where('source_id', 'azdo')->where('source_system_id', 'project-001')->first();
     $container = SecurityContainer::query()->where('software_system_id', $system->id)->where('source_container_id', 'repo-001')->first();
 
-    expect(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(2);
+    expect(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(3);
 });
 
 it('never overwrites a SoftwareSystem/SecurityContainer already created by a live AzDO sync', function () {
@@ -265,5 +278,5 @@ it('never overwrites a SoftwareSystem/SecurityContainer already created by a liv
         ->and($system->description)->toBe('Live-synced description')
         ->and($container->name)->toBe('Live-synced repo name');
 
-    expect(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(2);
+    expect(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(3);
 });
