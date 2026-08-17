@@ -291,6 +291,48 @@ services:
         cpus: ${COLLECTOR_CPUS:-2}
         mem_limit: ${COLLECTOR_MEM_LIMIT:-2g}
 
+    # Isolated worker for the in-app static-analysis feature (Admin -> Operations
+    # "Run static analysis"): consumes the static-analysis Redis queue only — separate
+    # from collector's own repository-collection queue, since a compile-then-analyze job
+    # runs far longer than a Trivy filesystem scan and must never starve or be starved by
+    # it. Carries the .NET/Java/Roslynator/SpotBugs+FindSecBugs toolchain docker/collector
+    # deliberately excludes; no Trivy (never called here) and no trivy-server dependency.
+    # mem_limit defaults higher than collector's: compiling a real .sln/Maven/Gradle
+    # project needs materially more memory than a trivy fs scan. No `profiles:` — starts
+    # by default, since the feature does not work without it.
+    static-analysis-collector:
+        build:
+            context: .
+            dockerfile: docker/static-analysis-collector/Dockerfile
+            args:
+                HTTP_PROXY: "${HTTP_PROXY:-}"
+                HTTPS_PROXY: "${HTTPS_PROXY:-}"
+                NO_PROXY: "${NO_PROXY:-}"
+        image: appsec-scout-static-analysis-collector:latest
+        restart: unless-stopped
+        depends_on:
+            mysql:
+                condition: service_healthy
+            redis:
+                condition: service_started
+            app:
+                condition: service_healthy
+        volumes:
+            - ./app-laravel:/var/www/html
+            - app_storage:/var/www/html/storage
+            - static_analysis_collector_vendor:/var/www/html/vendor
+            - static_analysis_collector_bootstrap_cache:/var/www/html/bootstrap/cache
+            - static_analysis_collector_workspace:/workspace-scratch
+        environment:
+            HTTP_PROXY: "${HTTP_PROXY:-}"
+            HTTPS_PROXY: "${HTTPS_PROXY:-}"
+            NO_PROXY: "${NO_PROXY:-}"
+            SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
+            SKIP_APP_BOOTSTRAP: "1"
+            STATIC_ANALYSIS_COLLECTION_WORKSPACE: /workspace-scratch
+        cpus: ${STATIC_ANALYSIS_COLLECTOR_CPUS:-2}
+        mem_limit: ${STATIC_ANALYSIS_COLLECTOR_MEM_LIMIT:-4g}
+
     node:
         image: node:22-alpine
         working_dir: /app
@@ -356,3 +398,6 @@ volumes:
     collector_vendor:
     collector_bootstrap_cache:
     collector_workspace:
+    static_analysis_collector_vendor:
+    static_analysis_collector_bootstrap_cache:
+    static_analysis_collector_workspace:

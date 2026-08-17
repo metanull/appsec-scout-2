@@ -7,13 +7,15 @@ use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentFailedJobsTableWidget;
 use App\Filament\Widgets\RecentRepositoryCollectionRunsTableWidget;
+use App\Filament\Widgets\RecentStaticAnalysisRunsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
-use App\Filament\Widgets\StaticAnalysisScanStatusWidget;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Models\RepositoryCollectionRun;
+use App\Models\StaticAnalysisRun;
 use App\Models\User;
 use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
+use App\SourceControl\Collection\DispatchStaticAnalysisRunsJob;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Sync\SyncInventoryJob;
@@ -66,17 +68,13 @@ class OperationsPage extends Page
                         ->schema(fn (): array => $this->getWidgetsSchemaComponents([
                             RecentSyncRunsTableWidget::class,
                             RecentRepositoryCollectionRunsTableWidget::class,
+                            RecentStaticAnalysisRunsTableWidget::class,
                         ])),
                     Tab::make('Problems')
                         ->icon('heroicon-o-exclamation-triangle')
                         ->schema(fn (): array => $this->getWidgetsSchemaComponents([
                             RecentErrorsTableWidget::class,
                             RecentFailedJobsTableWidget::class,
-                        ])),
-                    Tab::make('Scans')
-                        ->icon('heroicon-o-magnifying-glass')
-                        ->schema(fn (): array => $this->getWidgetsSchemaComponents([
-                            StaticAnalysisScanStatusWidget::class,
                         ])),
                 ]),
         ]);
@@ -140,6 +138,14 @@ class OperationsPage extends Page
                 ->requiresConfirmation()
                 ->modalDescription('Queue an SBOM/vulnerability/secret collection sweep across every Azure DevOps repository the azdo-repos credential can see.')
                 ->action(fn () => $this->dispatchCollectRepositories()),
+
+            Action::make('runStaticAnalysis')
+                ->label('Run static analysis')
+                ->icon('heroicon-o-magnifying-glass-circle')
+                ->visible(fn (): bool => Gate::allows('admin.queue'))
+                ->requiresConfirmation()
+                ->modalDescription('Queue a static analysis sweep (Roslynator for .NET, SpotBugs + Find Security Bugs for Java) across every Azure DevOps repository the azdo-repos credential can see.')
+                ->action(fn () => $this->dispatchRunStaticAnalysis()),
 
             ActionGroup::make([
                 Action::make('pruneAuditLogs')
@@ -267,6 +273,22 @@ class OperationsPage extends Page
         app(Recorder::class)->recordAdminAction('operations.collect_repositories');
 
         Notification::make()->title('Repository collection started. Progress appears in "Recent repository collection runs" below.')->success()->send();
+    }
+
+    public function dispatchRunStaticAnalysis(): void
+    {
+        Gate::authorize('admin.queue');
+
+        if (StaticAnalysisRun::query()->where('status', 'running')->exists()) {
+            Notification::make()->title('A static analysis run is already in progress.')->info()->send();
+
+            return;
+        }
+
+        DispatchStaticAnalysisRunsJob::dispatch();
+        app(Recorder::class)->recordAdminAction('operations.run_static_analysis');
+
+        Notification::make()->title('Static analysis started. Progress appears in "Recent static analysis runs" below.')->success()->send();
     }
 
     public function pruneAuditLogsNow(): void

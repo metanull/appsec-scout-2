@@ -28,10 +28,15 @@ flowchart LR
         SBOMIMP[sbom / staticanalysis import]
         DTPUSH[Dependency-Track upload]
         DISPATCHCOLLECT[DispatchRepositoryCollectionRunsJob]
+        DISPATCHANALYZE[DispatchStaticAnalysisRunsJob]
     end
 
     subgraph Collector[Collector container - queue-driven, isolated]
         COLLECTJOB[CollectRepositoryJob]
+    end
+
+    subgraph StaticAnalysisCollector[Static analysis collector container - queue-driven, isolated]
+        ANALYZEJOB[AnalyzeRepositoryJob]
     end
 
     subgraph AppDB[MySQL]
@@ -43,6 +48,7 @@ flowchart LR
         LINKS[work_item_links]
         RUNS[sync_runs]
         RUNS2[repository_collection_runs]
+        RUNS3[static_analysis_runs]
         CREDS[credentials]
         AUD[audit_logs]
         ERR[error_logs]
@@ -77,6 +83,7 @@ flowchart LR
     DET --> FETCH
     AZDOREPOS --> SYNCINV
     AZDOREPOS --> DISPATCHCOLLECT
+    AZDOREPOS --> DISPATCHANALYZE
     GHREPOS -.->|no EnumeratesInventory yet| SYNCINV
 
     OPSPAGE --> FETCH
@@ -84,6 +91,7 @@ flowchart LR
     OPSPAGE --> SYNCINV
     OPSPAGE --> RECON
     OPSPAGE --> DISPATCHCOLLECT
+    OPSPAGE --> DISPATCHANALYZE
 
     FETCH --> SYS
     FETCH --> CONT
@@ -136,12 +144,18 @@ flowchart LR
     COLLECTJOB --> SC
     COLLECTJOB --> RUNS2
 
+    DISPATCHANALYZE --> RUNS3
+    DISPATCHANALYZE -->|static-analysis queue| ANALYZEJOB
+    ANALYZEJOB --> LF
+    ANALYZEJOB --> RUNS3
+
     CREDS --> FETCH
     CREDS --> TRACK
     CREDS --> PLAN
     CREDS --> PUSH
     CREDS --> SYNCINV
     CREDS --> COLLECTJOB
+    CREDS --> ANALYZEJOB
 ```
 
 ## Runtime Topology
@@ -161,11 +175,12 @@ The default Compose stack (`docker-compose.yml`, no profile needed) starts these
 | `trivy-server` | `aquasec/trivy:latest` | Self-hosted vulnerability database server, used by Dependency-Track's Trivy analyzer and by the SbomScan/StaticAnalysis workflows (see [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md)) |
 | `dependencytrack-bootstrap` | `appsec-scout:latest` | One-shot: provisions a Dependency-Track team, API key, and Trivy analyzer config, storing the API key in the credential vault |
 | `collector` | `appsec-scout-collector:latest` | Isolated worker for in-app repository collection: git + Trivy, consumes only the `repository-collection` queue — see [docs/concepts/repository-collection.md](concepts/repository-collection.md) |
+| `static-analysis-collector` | `appsec-scout-static-analysis-collector:latest` | Isolated worker for in-app static analysis: git + .NET/Roslynator + Java/Maven/Gradle/SpotBugs+FindSecBugs, consumes only the `static-analysis` queue — see [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md) |
 
 `node` (profile `tools`) and `ops` (profile `ops`) are opt-in and not started by a plain
-`docker compose up` — see [docs/operations.md](operations.md) for when to use them. `collector`,
-unlike `ops`, has no profile and starts by default alongside `app` — it backs an in-app feature,
-not a manual operator tool.
+`docker compose up` — see [docs/operations.md](operations.md) for when to use them. `collector`
+and `static-analysis-collector`, unlike `ops`, have no profile and start by default alongside
+`app` — they back in-app features, not a manual operator tool.
 
 Inside the `app` container, Supervisor runs `nginx`, `php-fpm`, `php artisan schedule:work`, and
 `php artisan queue:work` (see `docker/supervisord.conf` for the exact flags).
@@ -188,6 +203,9 @@ AppSec Scout is the system of record for operator edits.
 - Repository collection (`Admin -> Operations` "Collect repositories") is a second, in-app,
   asynchronous read path for the same kind of data, scoped to Azure DevOps repositories — see
   [docs/concepts/repository-collection.md](concepts/repository-collection.md).
+- Static analysis collection (`Admin -> Operations` "Run static analysis") is the equivalent
+  second, in-app, asynchronous read path for Roslynator/SpotBugs code-quality findings — see
+  [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md).
 
 ## Credentials
 
@@ -217,6 +235,9 @@ clear error.
   host-triggered SBOM/static-analysis pipeline and the Dependency-Track integration.
 - [docs/concepts/repository-collection.md](concepts/repository-collection.md) — the in-app,
   queued, isolated-container SBOM/vulnerability/secret collection path for Azure DevOps
+  repositories.
+- [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md) — the
+  in-app, queued, isolated-container Roslynator/SpotBugs static analysis path for Azure DevOps
   repositories.
 - [docs/install.md](install.md), [docs/operations.md](operations.md), [docs/security.md](security.md)
   — install, day-2 operations, and security posture.

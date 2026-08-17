@@ -3,12 +3,15 @@
 use App\Audit\AuditLog;
 use App\Filament\Pages\OperationsPage;
 use App\Filament\Resources\RepositoryCollectionRunResource;
+use App\Filament\Resources\StaticAnalysisRunResource;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
+use App\Models\StaticAnalysisRun;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
+use App\SourceControl\Collection\DispatchStaticAnalysisRunsJob;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\FetchSourceJob;
 use App\Sync\SyncInventoryJob;
@@ -20,7 +23,6 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
 use Tests\Fakes\FakeTracker;
@@ -116,27 +118,6 @@ it('queues supported operational actions and records audit rows', function () {
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
-});
-
-it('shows static analysis scan status on the operations page', function () {
-    $admin = operationsAdmin();
-
-    $importPath = sys_get_temp_dir() . '/static-analysis-status-page-test-' . uniqid();
-    $cursorPath = sys_get_temp_dir() . '/static-analysis-status-page-cursor-test-' . uniqid();
-    File::ensureDirectoryExists($importPath . '/20260101T000000Z');
-    File::put(
-        $importPath . '/20260101T000000Z/run.jsonl',
-        json_encode(['project' => 'Payments', 'repository' => 'payments-api'], JSON_THROW_ON_ERROR) . "\n",
-    );
-    config(['static_analysis.import_path' => $importPath, 'static_analysis.cursor_path' => $cursorPath]);
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->assertSee('Static analysis scan status')
-        ->assertSee('20260101T000000Z');
-
-    File::deleteDirectory($importPath);
-    File::deleteDirectory($cursorPath);
 });
 
 it('header actions render for admin', function () {
@@ -392,7 +373,87 @@ it('shows recent repository collection runs on the operations page', function ()
         ->assertSee('azdo-repos');
 });
 
-it('hides recent sync runs and repository collection runs from a work-items.sync-only user', function () {
+it('header actions include run static analysis for admin', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertActionExists('runStaticAnalysis');
+});
+
+it('admin users can trigger the run static analysis action', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchRunStaticAnalysis');
+
+    Bus::assertDispatched(DispatchStaticAnalysisRunsJob::class);
+
+    expect(AuditLog::query()->where('action', 'operations.run_static_analysis')->exists())->toBeTrue();
+});
+
+it('does not dispatch static analysis when a run is already in progress', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    StaticAnalysisRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now(),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchRunStaticAnalysis');
+
+    Bus::assertNotDispatched(DispatchStaticAnalysisRunsJob::class);
+});
+
+it('dispatches static analysis again once a wedged run is force-finished', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    $wedged = StaticAnalysisRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subHours(6),
+        'status' => 'running',
+        'counts_json' => [],
+    ]);
+
+    StaticAnalysisRunResource::forceFinishRun($wedged);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchRunStaticAnalysis');
+
+    Bus::assertDispatched(DispatchStaticAnalysisRunsJob::class);
+});
+
+it('shows recent static analysis runs on the operations page', function () {
+    $admin = operationsAdmin();
+
+    StaticAnalysisRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['repositories_considered' => 4, 'repositories_failed' => 1],
+        'error_message' => null,
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Recent Static Analysis Runs')
+        ->assertSee('azdo-repos');
+});
+
+it('hides recent sync runs, repository collection runs, and static analysis runs from a work-items.sync-only user', function () {
     $sync = operationsUser();
     $sync->syncRoles(['Sync']);
 
@@ -405,13 +466,23 @@ it('hides recent sync runs and repository collection runs from a work-items.sync
         'error_message' => null,
     ]);
 
+    StaticAnalysisRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => [],
+        'error_message' => null,
+    ]);
+
     Livewire::actingAs($sync)
         ->test(OperationsPage::class)
         ->assertDontSee('Recent Sync Runs')
-        ->assertDontSee('Recent Repository Collection Runs');
+        ->assertDontSee('Recent Repository Collection Runs')
+        ->assertDontSee('Recent Static Analysis Runs');
 });
 
-it('shows recent sync runs and repository collection runs to an admin.queue user', function () {
+it('shows recent sync runs, repository collection runs, and static analysis runs to an admin.queue user', function () {
     $admin = operationsAdmin();
 
     RepositoryCollectionRun::query()->create([
@@ -423,10 +494,20 @@ it('shows recent sync runs and repository collection runs to an admin.queue user
         'error_message' => null,
     ]);
 
+    StaticAnalysisRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => [],
+        'error_message' => null,
+    ]);
+
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
         ->assertSee('Recent Sync Runs')
-        ->assertSee('Recent Repository Collection Runs');
+        ->assertSee('Recent Repository Collection Runs')
+        ->assertSee('Recent Static Analysis Runs');
 });
 
 function bindFakeOperationsIntegrations(): void

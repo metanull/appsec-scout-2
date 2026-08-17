@@ -102,13 +102,14 @@ docker compose exec app php artisan queue:work --once
 `Admin -> Operations` (gated by `admin.queue` or `work-items.sync`) is the main operator surface
 for background activity. It shows:
 
-- Queued job count (spanning the app's own queue and the isolated `collector` container's
-  `repository-collection` queue), failed job count.
+- Queued job count (spanning the app's own queue, the isolated `collector` container's
+  `repository-collection` queue, and the isolated `static-analysis-collector` container's
+  `static-analysis` queue), failed job count.
 - Recent failed jobs with redacted payload previews.
-- Recent sync runs, recent repository collection runs, and recent error records.
+- Recent sync runs, recent repository collection runs, recent static analysis runs, and recent
+  error records.
 - Reconciliation and inventory-sync last-run summaries (new links created; systems/containers
   synced).
-- Static analysis scan status (most recent StaticAnalysis run).
 
 Actions:
 
@@ -119,6 +120,7 @@ Actions:
 | Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links |
 | Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every registered Source and every Source Control provider that supports it |
 | Collect repositories | `admin.queue` | Dispatches `DispatchRepositoryCollectionRunsJob`, queuing a batched SBOM/vulnerability/secret Trivy scan of every Azure DevOps repository, run by the isolated `collector` container on the `repository-collection` queue |
+| Run static analysis | `admin.queue` | Dispatches `DispatchStaticAnalysisRunsJob`, queuing a batched Roslynator/SpotBugs static analysis sweep of every Azure DevOps repository, run by the isolated `static-analysis-collector` container on the `static-analysis` queue |
 | Prune audit logs / Prune error logs | `admin.queue` or `work-items.sync` | Deletes retention-expired rows now |
 | Retry / Forget a failed job | `admin.queue` or `work-items.sync` | Requeues the stored payload, or discards it, per row |
 

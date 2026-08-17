@@ -42,7 +42,7 @@ it('renders the dashboard for a user with alerts.view', function () {
 it('pins the widget layout to the agreed grouped order', function () {
     $widgets = (new Dashboard)->getWidgets();
 
-    expect($widgets)->toHaveCount(27)
+    expect($widgets)->toHaveCount(26)
         ->and(array_slice($widgets, 0, 4))->toBe([
             AlertsByStateTableWidget::class,
             AlertsByStateChartWidget::class,

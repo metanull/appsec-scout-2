@@ -5,10 +5,14 @@ SbomScan workflow documented in
 [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md). Both produce the same
 kind of output — a CycloneDX SBOM plus vulnerability and secret SARIF, per Azure DevOps
 repository, ingested into the same Local Finding / Dependency pipeline — but neither supersedes
-the other. SbomScan remains the only way to run `-StaticAnalysis` (Roslynator/SpotBugs, out of
-scope here) and remains a fully valid manual alternative for SBOM/vulnerability/secret collection.
-Repository Collection exists so the same kind of sweep can be triggered from `Admin -> Operations`
-and run as a queued job, without an operator needing Docker access on their own workstation.
+the other. SbomScan remains a fully valid manual alternative for SBOM/vulnerability/secret
+collection. `-StaticAnalysis` (Roslynator/SpotBugs, out of scope here) now also has its own
+in-app, asynchronous path — see
+[docs/concepts/static-analysis-collection.md](static-analysis-collection.md) — with the identical
+"second, parallel path, neither supersedes the other" relationship to its own host-triggered
+counterpart. Repository Collection exists so the same kind of sweep can be triggered from
+`Admin -> Operations` and run as a queued job, without an operator needing Docker access on their
+own workstation.
 
 ## Trigger and Access
 
@@ -99,10 +103,15 @@ attachments specifically. Nothing in that pipeline changed to support this featu
 ## Run Tracking
 
 Each sweep is tracked as an `App\Models\RepositoryCollectionRun` row (`repository_collection_runs`
-table) — `source_control_id`, `status` (`running`/`success`/`failure`), `started_at`/`finished_at`,
-`counts_json`, `error_message` — mirroring `SyncRun`'s shape, plus a `batch_id` column holding the
-`Illuminate\Bus\Batch` UUID (`job_batches` table) so the run row and its underlying batch of
-`CollectRepositoryJob`s can be cross-referenced for introspection.
+table) — `source_control_id`, `status` (`running`/`success`/`partial`/`failure`),
+`started_at`/`finished_at`, `counts_json`, `error_message` — mirroring `SyncRun`'s shape, plus a
+`batch_id` column holding the `Illuminate\Bus\Batch` UUID (`job_batches` table) so the run row and
+its underlying batch of `CollectRepositoryJob`s can be cross-referenced for introspection. The
+`partial` value was added via a follow-up migration after the original three-value enum proved
+insufficient (a run where some but not all repositories failed was otherwise indistinguishable
+from a clean success) — the newer `static_analysis_runs` table (see
+[docs/concepts/static-analysis-collection.md](static-analysis-collection.md)) started with all
+four values from its first migration, learning from this.
 
 Completion is **not** driven by `Illuminate\Bus\Batch`'s own `then()`/`catch()`/`finally()`
 callbacks: `job_batches.pending_jobs` was found not to decrement reliably for this workload, so
@@ -127,6 +136,15 @@ See [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md). An
 still reach for `invoke-ops.ps1 -SbomScan` when running outside this Docker Compose stack, or when
 the `.NET` restore/build precision step this feature's v1 does not perform matters for a
 particular repository.
+
+## Related: Static Analysis Collection
+
+See [docs/concepts/static-analysis-collection.md](static-analysis-collection.md) — the equivalent
+in-app, asynchronous path for Roslynator/SpotBugs static analysis, dispatched independently (its
+own `DispatchStaticAnalysisRunsJob`, its own `static-analysis` queue and
+`static-analysis-collector` container) but converging its results onto the same
+`SoftwareSystem`/`SecurityContainer` rows this feature does, under the same `source_id = 'azdo'`
+convention.
 
 ## Related: Inventory Sync
 

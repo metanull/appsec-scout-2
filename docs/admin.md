@@ -107,6 +107,10 @@ Actions:
 - Collect repositories (`DispatchRepositoryCollectionRunsJob`, queues an SBOM/vulnerability/secret
   collection sweep across every Azure DevOps repository, run by the isolated `collector`
   container — see [docs/concepts/repository-collection.md](concepts/repository-collection.md)).
+- Run static analysis (`DispatchStaticAnalysisRunsJob`, queues a Roslynator/SpotBugs static
+  analysis sweep across every Azure DevOps repository, run by the isolated
+  `static-analysis-collector` container — see
+  [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md)).
 - Prune audit logs, prune error logs.
 - Retry a failed job, or forget it.
 
