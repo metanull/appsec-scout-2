@@ -8,7 +8,7 @@ for SBOM/vulnerability/secret collection. None of the three supersedes another. 
 remains a fully valid manual alternative (in particular for `-Resume`/`-ProjectFilter`/
 `-RepositoryFilter`/`-SkipUpload`, none of which this in-app path supports). Repository Collection
 covers different Attachment kinds (`sbom`/`vulnerabilities`/`secrets`, via Trivy) than this feature
-does (`code-quality-dotnet`/`code-quality-java`, via Roslynator/SpotBugs); the two are dispatched,
+does (`code-quality-dotnet`/`code-quality-java`/`code-quality-opengrep`, via Roslynator/SpotBugs/Opengrep); the two are dispatched,
 queued, and run entirely independently of each other, even though both converge their results onto
 the same `SoftwareSystem`/`SecurityContainer` rows for a given repository.
 
@@ -47,9 +47,11 @@ A second, dedicated Docker image/Compose service, `static-analysis-collector`
 (`docker/static-analysis-collector/Dockerfile`), runs `php artisan queue:work
 --queue=static-analysis` as its only process. Unlike `collector` (git + Trivy only), this image
 carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, Roslynator, Eclipse Temurin JDK,
-Maven, Gradle, SpotBugs + Find Security Bugs — copied from `docker/ops/Dockerfile`'s own pinned
-versions, minus that image's interactive-shell-only layers (GitHub CLI, Claude Code, BFG Repo
-Cleaner, global Pest/PHPStan/Pint) and Trivy, which this container never calls. It has its own
+Maven, Gradle, SpotBugs + Find Security Bugs, plus the Opengrep binary and its vendored
+csharp/java/javascript/typescript ruleset (`/opt/opengrep-rules`) — copied from
+`docker/ops/Dockerfile`'s own pinned versions, minus that image's interactive-shell-only layers
+(GitHub CLI, Claude Code, BFG Repo Cleaner, global Pest/PHPStan/Pint) and Trivy, which this
+container never calls. It has its own
 scratch volume (`static_analysis_collector_workspace`, mounted at `/workspace-scratch`), separate
 from `collector`'s own `collector_workspace` — the two containers' disk usage is never shared or
 conflated, even though neither ever collides today. `static-analysis-collector` shares `app`'s
@@ -82,8 +84,14 @@ Compose primitives.
 `AnalyzeRepositoryJob` clones the repository (identical mechanics to `CollectRepositoryJob`'s own
 clone step: `Illuminate\Support\Facades\Process`, PAT supplied through a per-job-scoped
 `.netrc`/`.git-credentials`, never as a process argument or in a shell string), then runs the same
-two-ecosystem analysis `docker/ops/collect-static-analysis.sh` runs today:
+three-ecosystem analysis `docker/ops/collect-static-analysis.sh` runs today:
 
+- **Opengrep**: runs first, unconditionally, against the cloned source tree — no build or
+  language-detection step, unlike the other two ecosystems below. `opengrep scan --quiet --sarif
+  --output <path> -f /opt/opengrep-rules <clone>` is run once per repository against the vendored,
+  version-pinned csharp/java/javascript/typescript ruleset. The resulting SARIF is attached as
+  `code-quality-opengrep` **even when it carries zero results**, so a later `StaleRecordSweeper`
+  pass can still resolve previously reported Opengrep findings that no longer occur.
 - **`.NET`**: every `*.sln` found anywhere in the clone is restored, then — regardless of the
   build's own result — built and analyzed with Roslynator (`--severity-level info`). Every
   solution that produces a non-empty SARIF file has its `runs` merged into a single
@@ -96,9 +104,11 @@ two-ecosystem analysis `docker/ops/collect-static-analysis.sh` runs today:
   Attachment.
 
 A clone failure fails the repository, exactly as it does for `CollectRepositoryJob`. A
-restore/build/analyze failure for one solution or project directory is logged (`ErrorLog`,
-channel `static-analysis`) and non-fatal — a Java-only repository failing its nonexistent `.NET`
-build is not a failure, matching `collect-static-analysis.sh`'s own per-ecosystem independence.
+restore/build/analyze failure for one solution, project directory, or the Opengrep scan itself is
+logged (`ErrorLog`, channel `static-analysis`, stage `opengrep-analyze` for Opengrep) and
+non-fatal — a Java-only repository failing its nonexistent `.NET` build is not a failure, matching
+`collect-static-analysis.sh`'s own per-ecosystem independence, and an Opengrep failure never stops
+the `.NET`/Java steps that follow it.
 
 Results are written **directly**, in-process — reusing `App\Assets\AttachmentTargetResolver` and
 `App\Assets\AzDoScanResultDtoFactory` exactly as `CollectRepositoryJob`/`PendingSbomScanImporter`

@@ -22,6 +22,12 @@ ARG SPOTBUGS_VERSION=4.10.3
 ARG FINDSECBUGS_VERSION=1.14.0
 ARG MAVEN_VERSION=3.9.16
 ARG GRADLE_VERSION=9.7.0
+# Opengrep (https://github.com/opengrep/opengrep) — LGPL-2.1 community fork of Semgrep, a
+# single self-contained static binary, no Python runtime, native SARIF output. Analyzes
+# C#/Java/JavaScript/TypeScript source directly, no build required. Kept in lockstep with
+# docker/static-analysis-collector/Dockerfile's own pins.
+ARG OPENGREP_VERSION=1.27.1
+ARG OPENGREP_RULES_REF=f1d2b562b414783763fd02a6ed2736eaed622efa
 
 ENV HTTP_PROXY=${HTTP_PROXY} \
     HTTPS_PROXY=${HTTPS_PROXY} \
@@ -223,6 +229,33 @@ RUN wget -q \
         --recv-keys CFC10B69382CBCF5387E51484ECE492B63E38ACF \
     && gpg --verify /tmp/findsecbugs.jar.asc "/opt/spotbugs-plugins/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar" \
     && rm /tmp/findsecbugs.jar.asc
+
+# --- Layer 14b: Opengrep binary + rules ---
+# opengrep_manylinux_x86 is the exact asset name opengrep's own install.sh resolves for a
+# glibc-based Linux x86_64 host (as opposed to the musllinux/osx/windows/aarch64 variants
+# also published on the same release). Opengrep publishes cosign signatures (.cert/.sig) for
+# each binary but no plain sha256sums file, so this checksum was computed directly from the
+# binary at OPENGREP_VERSION, downloaded from this exact release URL over HTTPS.
+#
+# Only csharp/java/javascript/typescript are vendored from opengrep-rules — generic/ (secret
+# detection) is deliberately excluded, since Trivy already covers secrets in the
+# repository-collection pipeline.
+ARG OPENGREP_SHA256=58053da76672bbeb5b0a5441021c58338707052e10f81d777140ca879bd491ce
+RUN wget -q \
+        "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
+        -O /usr/local/bin/opengrep \
+    && echo "${OPENGREP_SHA256}  /usr/local/bin/opengrep" | sha256sum -c - \
+    && chmod +x /usr/local/bin/opengrep \
+    && opengrep --version \
+    && wget -q \
+        "https://github.com/opengrep/opengrep-rules/archive/${OPENGREP_RULES_REF}.tar.gz" \
+        -O /tmp/opengrep-rules.tar.gz \
+    && mkdir -p /tmp/opengrep-rules-extract /opt/opengrep-rules \
+    && tar -xzf /tmp/opengrep-rules.tar.gz -C /tmp/opengrep-rules-extract --strip-components=1 \
+    && cp -r /tmp/opengrep-rules-extract/csharp /tmp/opengrep-rules-extract/java \
+        /tmp/opengrep-rules-extract/javascript /tmp/opengrep-rules-extract/typescript \
+        /opt/opengrep-rules/ \
+    && rm -rf /tmp/opengrep-rules.tar.gz /tmp/opengrep-rules-extract
 
 # --- Layer 15: Git config, entrypoint, final user switch ---
 RUN git config --global --add safe.directory /workspace \

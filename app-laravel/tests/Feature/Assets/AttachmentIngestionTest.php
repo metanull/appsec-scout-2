@@ -124,6 +124,25 @@ it('parses a code-quality-java attachment into local findings', function () {
         ->and($finding->file_path)->toBe('src/main/java/com/example/UserDao.java');
 });
 
+it('parses a code-quality-opengrep attachment into local findings', function () {
+    $container = SecurityContainer::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'code-quality-opengrep',
+        'application/json',
+        'opengrep.sarif',
+        staticAnalysisFixture('opengrep-sample.json'),
+    );
+
+    $findings = LocalFinding::query()->where('owner_id', $container->id)->get();
+
+    expect($findings)->toHaveCount(2)
+        ->and($findings->pluck('kind')->unique()->all())->toBe([LocalFinding::KIND_CODE_QUALITY])
+        ->and($findings->firstWhere('rule_id', 'javascript.express.security.audit.xss.direct-response-write.direct-response-write'))->not->toBeNull()
+        ->and($findings->firstWhere('rule_id', 'typescript.lang.security.audit.unsafe-child-process.unsafe-child-process'))->not->toBeNull();
+});
+
 it('does not parse attachments of other kinds', function () {
     $container = SecurityContainer::factory()->create();
 

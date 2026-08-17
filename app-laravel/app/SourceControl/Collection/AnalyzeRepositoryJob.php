@@ -81,6 +81,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             if ($cloned) {
                 $securityContainer = $this->resolveOwner($resolver);
 
+                $this->analyzeOpengrep($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
                 $this->analyzeDotnet($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
                 $this->analyzeJava($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
             }
@@ -210,6 +211,49 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             'repository',
             url: $container->url,
             metadata: $container->metadata ?? [],
+        );
+    }
+
+    /**
+     * Runs Opengrep once per cloned repository against the vendored,
+     * version-pinned ruleset (csharp/java/javascript/typescript) — source-level,
+     * no build required, so unlike analyzeDotnet()/analyzeJava() this always
+     * runs, independent of what the repository actually contains. The SARIF
+     * report is attached even when it carries zero results (unlike the other
+     * two ecosystems' own zero-diagnostics case), so StaleRecordSweeper still
+     * resolves any previously reported opengrep findings that no longer occur.
+     */
+    private function analyzeOpengrep(
+        AttachmentService $attachments,
+        SecurityContainer $container,
+        string $workDir,
+        string $scratchRoot,
+        string $homeDir,
+    ): void {
+        $sarifPath = $scratchRoot . '/opengrep.sarif';
+
+        $result = Process::env(['HOME' => $homeDir])
+            ->timeout((int) config('static_analysis_collection.opengrep_timeout'))
+            ->run([
+                'opengrep', 'scan', '--quiet', '--sarif',
+                '--output', $sarifPath,
+                '-f', (string) config('static_analysis_collection.opengrep_rules_dir'),
+                $workDir,
+            ]);
+
+        if ($result->failed() || ! File::exists($sarifPath)) {
+            $this->logFailure('opengrep-analyze', $this->tail($result->errorOutput() . $result->output()));
+
+            return;
+        }
+
+        $attachments->attachTo(
+            owner: $container,
+            kind: AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP,
+            mime: 'application/octet-stream',
+            name: $this->target->repositoryName . '.opengrep.sarif',
+            payload: File::get($sarifPath),
+            createdByCommand: 'static-analysis',
         );
     }
 

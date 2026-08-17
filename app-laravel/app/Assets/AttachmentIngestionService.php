@@ -28,6 +28,8 @@ final class AttachmentIngestionService
 
     public const KIND_CODE_QUALITY_JAVA = 'code-quality-java';
 
+    public const KIND_CODE_QUALITY_OPENGREP = 'code-quality-opengrep';
+
     public function __construct(
         private readonly CycloneDxSbomParser $sbomParser,
         private readonly SarifFindingParser $sarifParser,
@@ -47,7 +49,7 @@ final class AttachmentIngestionService
             self::KIND_SBOM => $this->ingestSbom($attachment, $owner),
             self::KIND_VULNERABILITIES => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_VULNERABILITY),
             self::KIND_SECRETS => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_SECRET),
-            self::KIND_CODE_QUALITY_DOTNET, self::KIND_CODE_QUALITY_JAVA => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_CODE_QUALITY),
+            self::KIND_CODE_QUALITY_DOTNET, self::KIND_CODE_QUALITY_JAVA, self::KIND_CODE_QUALITY_OPENGREP => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_CODE_QUALITY),
             default => null,
         };
     }

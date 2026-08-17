@@ -16,13 +16,13 @@ use ZipArchive;
 /**
  * Bundles every descendant container's raw vulnerability/secret/static-analysis
  * SARIF attachments for a Container, System, or Asset into a single zip file. A
- * container can have up to four matching attachments (one per report kind), so
+ * container can have up to five matching attachments (one per report kind), so
  * zipping is used at every level rather than a single-file shortcut like
  * SbomZipBuilder uses for containers.
  */
 final class FindingsZipBuilder
 {
-    private const ATTACHMENT_KINDS = ['vulnerabilities', 'secrets', 'code-quality-dotnet', 'code-quality-java'];
+    private const ATTACHMENT_KINDS = ['vulnerabilities', 'secrets', 'code-quality-dotnet', 'code-quality-java', 'code-quality-opengrep'];
 
     public function __construct(private readonly ContainerHierarchyResolver $containers) {}
 

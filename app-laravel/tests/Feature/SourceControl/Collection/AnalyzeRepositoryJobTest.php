@@ -21,6 +21,15 @@ const ROSLYNATOR_SARIF_FIXTURE = "\xEF\xBB\xBF" . '{"$schema":"https://raw.githu
 
 const SPOTBUGS_SARIF_FIXTURE = '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"SpotBugs"}},"results":[]}]}';
 
+// Opengrep runs unconditionally on every cloned repository (no build/detection step, unlike
+// dotnet/java), so every fake below needs to answer it. This zero-result fixture is what a
+// clean scan actually writes (unlike Roslynator, Opengrep still produces a file with zero
+// diagnostics) and is the default response used by every test that isn't specifically
+// exercising Opengrep's own behavior.
+const OPENGREP_SARIF_FIXTURE = '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"opengrep"}},"results":[]}]}';
+
+const OPENGREP_SARIF_WITH_FINDING_FIXTURE = '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"opengrep","rules":[{"id":"javascript.lang.security.detect-eval.detect-eval","shortDescription":{"text":"Detected eval of user input"}}]}},"results":[{"ruleId":"javascript.lang.security.detect-eval.detect-eval","level":"error","message":{"text":"User input flows into eval()."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"src/index.js"},"region":{"startLine":10,"endLine":10}}}]}]}]}';
+
 function staticAnalysisRunForJobTest(int $considered = 1): StaticAnalysisRun
 {
     return StaticAnalysisRun::query()->create([
@@ -111,6 +120,12 @@ it('clones a repository and attaches both a dotnet and a java report', function 
             return Process::result(exitCode: 0);
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
         return Process::result(exitCode: 0);
     });
 
@@ -127,10 +142,11 @@ it('clones a repository and attaches both a dotnet and a java report', function 
 
     $attachments = Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->get();
 
-    expect($attachments)->toHaveCount(2)
+    expect($attachments)->toHaveCount(3)
         ->and($attachments->pluck('kind')->sort()->values()->all())->toBe([
             AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET,
             AttachmentIngestionService::KIND_CODE_QUALITY_JAVA,
+            AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP,
         ]);
 
     $run->refresh();
@@ -178,6 +194,10 @@ it('converges onto the same rows a live AzDO sync already created, not a duplica
             File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
         return Process::result(exitCode: 0);
     });
 
@@ -207,6 +227,10 @@ it('produces only a dotnet attachment for a repository with no Java build files'
             File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
         return Process::result(exitCode: 0);
     });
 
@@ -215,7 +239,10 @@ it('produces only a dotnet attachment for a repository with no Java build files'
     (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
         ->handle(...analyzeRepositoryJobDependencies());
 
-    expect(Attachment::query()->pluck('kind')->all())->toBe([AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET]);
+    // Opengrep always runs too (asserted separately) — scoped here to the
+    // dotnet/java distinction this test is actually about.
+    expect(Attachment::query()->whereIn('kind', [AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET, AttachmentIngestionService::KIND_CODE_QUALITY_JAVA])->pluck('kind')->all())
+        ->toBe([AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET]);
 
     $run->refresh();
     expect($run->status)->toBe('success');
@@ -234,6 +261,10 @@ it('treats a clean .sln (zero diagnostics, no output file, exit 0) as success, n
             return Process::result(exitCode: 0);
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
         return Process::result(exitCode: 0);
     });
 
@@ -242,7 +273,9 @@ it('treats a clean .sln (zero diagnostics, no output file, exit 0) as success, n
     (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
         ->handle(...analyzeRepositoryJobDependencies());
 
-    expect(Attachment::query()->count())->toBe(0)
+    // Opengrep still attaches its own (zero-result) report; only dotnet produced nothing.
+    expect(Attachment::query()->count())->toBe(1)
+        ->and(Attachment::query()->value('kind'))->toBe(AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP)
         ->and(ErrorLog::query()->where('channel', 'static-analysis')->count())->toBe(0);
 
     $run->refresh();
@@ -263,6 +296,10 @@ it('logs a dotnet-analyze failure only when roslynator both fails and produces n
             return Process::result(exitCode: 1, errorOutput: 'fatal: could not load MSBuild workspace');
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
         return Process::result(exitCode: 0);
     });
 
@@ -271,7 +308,9 @@ it('logs a dotnet-analyze failure only when roslynator both fails and produces n
     (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
         ->handle(...analyzeRepositoryJobDependencies());
 
-    expect(Attachment::query()->count())->toBe(0);
+    // Opengrep still attaches its own report; dotnet's failure produced no attachment.
+    expect(Attachment::query()->count())->toBe(1)
+        ->and(Attachment::query()->value('kind'))->toBe(AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP);
 
     $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'dotnet-analyze')->first();
     expect($errorLog)->not->toBeNull();
@@ -294,6 +333,10 @@ it('produces only a java attachment for a repository with no .sln', function () 
             File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
         return Process::result(exitCode: 0);
     });
 
@@ -302,7 +345,10 @@ it('produces only a java attachment for a repository with no .sln', function () 
     (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
         ->handle(...analyzeRepositoryJobDependencies());
 
-    expect(Attachment::query()->pluck('kind')->all())->toBe([AttachmentIngestionService::KIND_CODE_QUALITY_JAVA]);
+    // Opengrep always runs too (asserted separately) — scoped here to the
+    // dotnet/java distinction this test is actually about.
+    expect(Attachment::query()->whereIn('kind', [AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET, AttachmentIngestionService::KIND_CODE_QUALITY_JAVA])->pluck('kind')->all())
+        ->toBe([AttachmentIngestionService::KIND_CODE_QUALITY_JAVA]);
 
     $run->refresh();
     expect($run->status)->toBe('success');
@@ -330,6 +376,10 @@ it('does not let a restore failure on one .sln prevent another from being analyz
 
         if (($parts[0] ?? null) === 'roslynator') {
             File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
         }
 
         return Process::result(exitCode: 0);
@@ -385,6 +435,10 @@ it('does not let a Maven build failure in one directory prevent SpotBugs from an
 
         if (($parts[0] ?? null) === 'spotbugs') {
             File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
         }
 
         return Process::result(exitCode: 0);
@@ -449,6 +503,10 @@ it('deletes the scratch directory whether the run succeeds or fails', function (
             File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
         return Process::result(exitCode: 0);
     });
 
@@ -459,4 +517,124 @@ it('deletes the scratch directory whether the run succeeds or fails', function (
 
     expect($seenScratchRoots)->toHaveCount(1);
     expect(File::isDirectory($seenScratchRoots[0]))->toBeFalse();
+});
+
+it('attaches an opengrep report with findings', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['src/index.js' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_WITH_FINDING_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $attachment = Attachment::query()->where('kind', AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP)->first();
+    expect($attachment)->not->toBeNull()
+        ->and($attachment->name)->toBe('backend-api.opengrep.sarif');
+
+    $sarif = json_decode($attachment->payload, true);
+    expect($sarif['runs'][0]['results'])->toHaveCount(1);
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+
+    Process::assertRan(function ($process) {
+        $parts = commandParts($process->command);
+
+        return ($parts[0] ?? null) === 'opengrep'
+            && ($parts[1] ?? null) === 'scan'
+            && in_array('--sarif', $parts, true)
+            && in_array('-f', $parts, true);
+    });
+});
+
+it('attaches an opengrep report even when the scan finds zero results', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['src/index.js' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    // A zero-result scan is still attached — StaleRecordSweeper needs a complete pass to
+    // resolve any previously reported opengrep findings that no longer occur.
+    expect(Attachment::query()->where('kind', AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP)->count())->toBe(1);
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
+it('logs an opengrep-analyze failure and still runs the dotnet and java analyzers', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $workDir = end($parts);
+            plantClonedFiles($workDir, ['App.sln' => '', 'build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            return Process::result(exitCode: 1, errorOutput: 'opengrep: rule parse error');
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(Attachment::query()->where('kind', AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP)->exists())->toBeFalse()
+        ->and(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe([
+            AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET,
+            AttachmentIngestionService::KIND_CODE_QUALITY_JAVA,
+        ]);
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'opengrep-analyze')->first();
+    expect($errorLog)->not->toBeNull();
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
 });
