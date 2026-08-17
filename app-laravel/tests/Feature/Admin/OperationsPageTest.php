@@ -158,27 +158,6 @@ it('queues supported operational actions and records audit rows', function () {
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
 });
 
-it('shows sbom scan status on the operations page', function () {
-    $admin = operationsAdmin();
-
-    $importPath = sys_get_temp_dir() . '/sbom-status-page-test-' . uniqid();
-    $cursorPath = sys_get_temp_dir() . '/sbom-status-page-cursor-test-' . uniqid();
-    File::ensureDirectoryExists($importPath . '/20260101T000000Z');
-    File::put(
-        $importPath . '/20260101T000000Z/run.jsonl',
-        json_encode(['project' => 'Payments', 'repository' => 'payments-api'], JSON_THROW_ON_ERROR) . "\n",
-    );
-    config(['sbom.import_path' => $importPath, 'sbom.cursor_path' => $cursorPath]);
-
-    Livewire::actingAs($admin)
-        ->test(OperationsPage::class)
-        ->assertSee('SBOM scan status')
-        ->assertSee('20260101T000000Z');
-
-    File::deleteDirectory($importPath);
-    File::deleteDirectory($cursorPath);
-});
-
 it('shows static analysis scan status on the operations page', function () {
     $admin = operationsAdmin();
 

@@ -28,7 +28,6 @@ use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentFailedJobsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
-use App\Filament\Widgets\SbomScanStatusWidget;
 use App\Filament\Widgets\StaticAnalysisScanStatusWidget;
 use Filament\Pages\Dashboard as BaseDashboard;
 
@@ -83,7 +82,6 @@ class Dashboard extends BaseDashboard
 
             RecentSyncRunsTableWidget::class,
             OperationsHealthStatsWidget::class,
-            SbomScanStatusWidget::class,
             StaticAnalysisScanStatusWidget::class,
             RecentFailedJobsTableWidget::class,
             RecentErrorsTableWidget::class,
