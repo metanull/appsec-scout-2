@@ -81,7 +81,9 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             if ($cloned) {
                 $securityContainer = $this->resolveOwner($resolver);
 
-                $this->analyzeOpengrep($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
+                if (config('static_analysis_collection.opengrep_enabled')) {
+                    $this->analyzeOpengrep($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
+                }
                 $this->analyzeDotnet($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
                 $this->analyzeJava($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
             }
@@ -217,11 +219,15 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     /**
      * Runs Opengrep once per cloned repository against the vendored,
      * version-pinned ruleset (csharp/java/javascript/typescript) — source-level,
-     * no build required, so unlike analyzeDotnet()/analyzeJava() this always
-     * runs, independent of what the repository actually contains. The SARIF
-     * report is attached even when it carries zero results (unlike the other
-     * two ecosystems' own zero-diagnostics case), so StaleRecordSweeper still
-     * resolves any previously reported opengrep findings that no longer occur.
+     * no build required, so unlike analyzeDotnet()/analyzeJava() this runs
+     * independent of what the repository actually contains, as long as
+     * `static_analysis_collection.opengrep_enabled` is true (the caller in
+     * handle() skips this method entirely otherwise — e.g. when the image was
+     * built with OPENGREP_ENABLED=false and never installed the binary). The
+     * SARIF report is attached even when it carries zero results (unlike the
+     * other two ecosystems' own zero-diagnostics case), so StaleRecordSweeper
+     * still resolves any previously reported opengrep findings that no longer
+     * occur.
      */
     private function analyzeOpengrep(
         AttachmentService $attachments,

@@ -315,6 +315,7 @@ services:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
                 NO_PROXY: "${NO_PROXY:-}"
+                OPENGREP_ENABLED: "${OPENGREP_ENABLED:-true}"
         image: appsec-scout-static-analysis-collector:latest
         restart: unless-stopped
         depends_on:
@@ -337,6 +338,7 @@ services:
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
             SKIP_APP_BOOTSTRAP: "1"
             STATIC_ANALYSIS_COLLECTION_WORKSPACE: /workspace-scratch
+            STATIC_ANALYSIS_OPENGREP_ENABLED: "${OPENGREP_ENABLED:-true}"
         cpus: ${STATIC_ANALYSIS_COLLECTOR_CPUS:-2}
         mem_limit: ${STATIC_ANALYSIS_COLLECTOR_MEM_LIMIT:-4g}
 
@@ -358,6 +360,7 @@ services:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
                 NO_PROXY: "${NO_PROXY:-}"
+                OPENGREP_ENABLED: "${OPENGREP_ENABLED:-true}"
         image: appsec-scout-ops:latest
         profiles:
             - ops

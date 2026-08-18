@@ -81,7 +81,11 @@ Trivy:
   version-pinned csharp/java/javascript/typescript ruleset (`/opt/opengrep-rules`), and its
   report is written even when it carries zero results, so a later report file's presence alone
   (not its size) is what gates upload — the same "clean scan still produces a file" behavior
-  Roslynator does *not* have (see below).
+  Roslynator does *not* have (see below). Skipped entirely when the image was built with
+  `OPENGREP_ENABLED=false` (e.g. where corporate network/DLP policy blocks fetching the pinned
+  binary from GitHub releases) — `collect-static-analysis.sh` detects the missing binary and
+  drops `opengrep` from the effective scan types on its own, independent of
+  `STATIC_ANALYSIS_TYPES`.
 - **.NET**: every `*.sln` found anywhere in the repo is restored, built, and analyzed
   individually with Roslynator (`--severity-level info`); each solution's SARIF output is merged
   into one file for the repo.
