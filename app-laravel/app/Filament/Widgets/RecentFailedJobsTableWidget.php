@@ -27,7 +27,7 @@ class RecentFailedJobsTableWidget extends TableWidget
     public function table(Table $table): Table
     {
         return $table
-            ->query(fn (): Builder => FailedJob::query()->latest('failed_at')->limit(5))
+            ->query(fn (): Builder => FailedJob::query()->where('failed_at', '>=', now()->subDay())->latest('failed_at')->limit(5))
             ->columns([
                 TextColumn::make('failed_at')
                     ->label('Failed at')
@@ -53,6 +53,6 @@ class RecentFailedJobsTableWidget extends TableWidget
             ])
             ->recordUrl(fn (FailedJob $record): string => FailedJobResource::getUrl('view', ['record' => $record]))
             ->paginated(false)
-            ->emptyStateDescription('No failed jobs recorded.');
+            ->emptyStateDescription('No failed jobs in the last 24 hours.');
     }
 }
