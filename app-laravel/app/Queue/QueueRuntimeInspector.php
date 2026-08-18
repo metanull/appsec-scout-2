@@ -204,14 +204,15 @@ final class QueueRuntimeInspector
             ? $connectionConfig['connection']
             : null;
 
-        return DB::connection($dbConnection)
+        $jobs = DB::connection($dbConnection)
             ->table($table)
             ->whereIn('queue', $this->allQueueNames())
             ->get(['queue', 'payload'])
             ->filter(fn (object $row): bool => is_string($row->payload) && $row->payload !== '')
             ->map(fn (object $row): array => ['queue' => (string) $row->queue, 'payload' => (string) $row->payload])
-            ->values()
             ->all();
+
+        return array_values($jobs);
     }
 
     /**
@@ -265,7 +266,9 @@ final class QueueRuntimeInspector
             ? $connectionConfig['connection']
             : 'default';
 
-        Redis::connection($redisConnection)->lrem("queues:{$queue}", 1, $payload);
+        // phpredis's lRem($key, $value, $count) takes the value before the
+        // count, the reverse of the raw Redis LREM key count value order.
+        Redis::connection($redisConnection)->lrem("queues:{$queue}", $payload, 1);
     }
 
     /** @return list<string> */

@@ -27,8 +27,13 @@ class ListErrorLogs extends ListRecords
         $tabs = ['all' => Tab::make('All')];
 
         foreach (self::CHANNEL_LABELS as $channel => $label) {
+            // Larastan's where() stub types $column as model-property<TModel> only,
+            // and this untemplated Builder param can't be resolved to ErrorLog.
+            // @phpstan-ignore argument.type
+            $modifyQuery = fn (Builder $query): Builder => $query->where('channel', $channel);
+
             $tabs[$channel] = Tab::make($label)
-                ->modifyQueryUsing(fn (Builder $query): Builder => $query->where('channel', $channel))
+                ->modifyQueryUsing($modifyQuery)
                 ->badge(fn (): int => ErrorLog::query()->where('channel', $channel)->count());
         }
 
