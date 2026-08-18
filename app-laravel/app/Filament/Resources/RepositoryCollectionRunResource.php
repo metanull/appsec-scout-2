@@ -198,7 +198,7 @@ class RepositoryCollectionRunResource extends Resource
     {
         $params = [
             'tab' => 'repository-collection',
-            'tableFilters' => [
+            'filters' => [
                 'run' => ['value' => (string) $run->id],
             ],
         ];

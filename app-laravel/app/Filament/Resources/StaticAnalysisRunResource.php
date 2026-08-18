@@ -197,7 +197,7 @@ class StaticAnalysisRunResource extends Resource
     {
         $params = [
             'tab' => 'static-analysis',
-            'tableFilters' => [
+            'filters' => [
                 'run' => ['value' => (string) $run->id],
             ],
         ];

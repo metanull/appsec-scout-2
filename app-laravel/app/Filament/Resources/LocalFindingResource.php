@@ -678,8 +678,9 @@ class LocalFindingResource extends Resource
     /**
      * Build a URL to the local findings list with pre-applied filter state.
      *
-     * The Filament table filter query parameter format (Livewire URL binding) is:
-     *   tableFilters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
+     * The Filament table filter query parameter format (Livewire URL binding, aliased
+     * to `filters` — see Filament\Resources\Pages\ListRecords::$tableFilters) is:
+     *   filters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
      *
      * @param  array<string, list<string>>  $multiSelectFilters  filter name => list of values
      */
@@ -689,7 +690,7 @@ class LocalFindingResource extends Resource
 
         foreach ($multiSelectFilters as $filterName => $values) {
             foreach ($values as $idx => $value) {
-                $params['tableFilters'][$filterName]['values'][$idx] = $value;
+                $params['filters'][$filterName]['values'][$idx] = $value;
             }
         }
 

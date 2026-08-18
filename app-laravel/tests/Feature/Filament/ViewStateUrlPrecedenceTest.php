@@ -38,11 +38,12 @@ it('lets a url filter win over saved view state on the alerts list', function ()
     ]);
 
     // When the request carries table state, restoration is skipped, so the
-    // saved "critical" filter must NOT be applied (the URL's state wins).
+    // saved "critical" filter must NOT be applied — the URL's "high" filter
+    // wins and is actually hydrated onto the table.
     Livewire::actingAs($user)
-        ->withQueryParams(['tableFilters' => ['severity' => ['values' => ['high']]]])
+        ->withQueryParams(['filters' => ['severity' => ['values' => ['high']]]])
         ->test(ListSecurityEvents::class)
-        ->assertNotSet('tableFilters.severity.values', ['critical']);
+        ->assertSet('tableFilters.severity.values', ['high']);
 });
 
 it('restores saved view state on the alerts list when the url carries no table state', function () {
@@ -82,11 +83,12 @@ it('lets a url filter win over saved view state on the local findings list', fun
     ]);
 
     // When the request carries table state, restoration is skipped, so the
-    // saved "resolved" filter must NOT be applied (the URL's state wins).
+    // saved "resolved" filter must NOT be applied — the URL's "open" filter
+    // wins and is actually hydrated onto the table.
     Livewire::actingAs($user)
-        ->withQueryParams(['tableFilters' => ['status' => ['values' => ['open']]]])
+        ->withQueryParams(['filters' => ['status' => ['values' => ['open']]]])
         ->test(ListLocalFindings::class)
-        ->assertNotSet('tableFilters.status.values', ['resolved']);
+        ->assertSet('tableFilters.status.values', ['open']);
 });
 
 it('restores saved view state on the local findings list without url table state', function () {

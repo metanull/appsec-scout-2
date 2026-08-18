@@ -166,7 +166,7 @@ it('builds a failures URL pre-filtered to the run and the static-analysis channe
     $url = StaticAnalysisRunResource::failuresUrl($run);
 
     expect($url)->toContain('tab=static-analysis')
-        ->and($url)->toContain("tableFilters%5Brun%5D%5Bvalue%5D={$run->id}");
+        ->and($url)->toContain("filters%5Brun%5D%5Bvalue%5D={$run->id}");
 });
 
 it('shows the View failures action only when the run has failures', function () {

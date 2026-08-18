@@ -109,7 +109,7 @@ it('filters local findings by work item status including the Unknown sentinel', 
 it('builds a filtered local findings URL with multi-select filter parameters', function () {
     $url = LocalFindingResource::filteredIndexUrl(['work_item_state' => ['Done']]);
 
-    expect($url)->toContain('tableFilters')
+    expect($url)->toContain('filters')
         ->toContain('work_item_state')
         ->toContain('Done');
 });
@@ -128,6 +128,6 @@ it('matches the alerts filtered URL shape on the local findings helper', functio
     $alertUrl = SecurityEventResource::filteredIndexUrl(['severity' => ['critical']]);
     $findingUrl = LocalFindingResource::filteredIndexUrl(['severity' => ['critical']]);
 
-    expect($findingUrl)->toContain('tableFilters')
-        ->and($alertUrl)->toContain('tableFilters');
+    expect($findingUrl)->toContain('filters')
+        ->and($alertUrl)->toContain('filters');
 });

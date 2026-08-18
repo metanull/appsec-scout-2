@@ -18,7 +18,7 @@ beforeEach(function () {
 it('generates a filtered index URL for severity', function () {
     $url = SecurityEventResource::filteredIndexUrl(['severity' => ['critical']]);
 
-    expect($url)->toContain('tableFilters')
+    expect($url)->toContain('filters')
         ->toContain('severity')
         ->toContain('critical');
 });
@@ -26,7 +26,7 @@ it('generates a filtered index URL for severity', function () {
 it('generates a filtered index URL for state', function () {
     $url = SecurityEventResource::filteredIndexUrl(['state' => ['resolved']]);
 
-    expect($url)->toContain('tableFilters')
+    expect($url)->toContain('filters')
         ->toContain('state')
         ->toContain('resolved');
 });

@@ -992,9 +992,10 @@ class SecurityEventResource extends Resource
     /**
      * Build a URL to the alert list with pre-applied filter state.
      *
-     * The Filament table filter query parameter format (Livewire 3 URL binding) is:
-     *   tableFilters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
-     *   tableFilters[{filter_name}][value]=value       (for single-value filters)
+     * The Filament table filter query parameter format (Livewire URL binding, aliased
+     * to `filters` — see Filament\Resources\Pages\ListRecords::$tableFilters) is:
+     *   filters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
+     *   filters[{filter_name}][value]=value       (for single-value filters)
      *
      * @param  array<string, list<string>>  $multiSelectFilters  filter name => list of values
      */
@@ -1004,7 +1005,7 @@ class SecurityEventResource extends Resource
 
         foreach ($multiSelectFilters as $filterName => $values) {
             foreach ($values as $idx => $value) {
-                $params['tableFilters'][$filterName]['values'][$idx] = $value;
+                $params['filters'][$filterName]['values'][$idx] = $value;
             }
         }
 
@@ -1019,7 +1020,7 @@ class SecurityEventResource extends Resource
     public static function workItemFilterUrl(string $trackerId, string $workItemId): string
     {
         $params = [
-            'tableFilters' => [
+            'filters' => [
                 'work_item' => [
                     'tracker_id' => $trackerId,
                     'work_item_id' => $workItemId,

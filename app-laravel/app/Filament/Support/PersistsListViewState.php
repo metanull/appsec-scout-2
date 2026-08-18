@@ -147,7 +147,7 @@ trait PersistsListViewState
     {
         $request = request();
 
-        foreach (['tableFilters', 'tableSearch', 'tableSort', 'tableSortColumn'] as $key) {
+        foreach (['filters', 'search', 'sort'] as $key) {
             $value = $request->query($key);
 
             if (is_array($value) ? $value !== [] : ($value !== null && $value !== '')) {
