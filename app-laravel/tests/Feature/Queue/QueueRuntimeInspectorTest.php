@@ -3,13 +3,25 @@
 use App\Queue\QueueRuntimeInspector;
 use Illuminate\Support\Facades\DB;
 
-function insertQueuedJob(string $queue): void
+function insertQueuedJob(string $queue, ?string $payload = null): void
 {
     DB::table('jobs')->insert([
         'queue' => $queue,
-        'payload' => '{}',
+        'payload' => $payload ?? '{}',
         'attempts' => 0,
         'reserved_at' => null,
+        'available_at' => now()->timestamp,
+        'created_at' => now()->timestamp,
+    ]);
+}
+
+function insertReservedJob(string $queue, ?string $payload = null): void
+{
+    DB::table('jobs')->insert([
+        'queue' => $queue,
+        'payload' => $payload ?? '{}',
+        'attempts' => 1,
+        'reserved_at' => now()->timestamp,
         'available_at' => now()->timestamp,
         'created_at' => now()->timestamp,
     ]);
@@ -103,4 +115,40 @@ it('drops exactly one matching pending job from its queue', function () {
 
     expect($remaining)->toHaveCount(1)
         ->and($remaining[0]['payload'])->toBe('{"displayName":"App\\\\Jobs\\\\Keep"}');
+});
+
+it('does not list a job already reserved by a worker as pending', function () {
+    config(['queue.default' => 'database']);
+
+    insertQueuedJob('default', '{"displayName":"App\\\\Jobs\\\\Pending"}');
+    insertReservedJob('default', '{"displayName":"App\\\\Jobs\\\\Running"}');
+
+    $jobs = app(QueueRuntimeInspector::class)->pendingJobs();
+
+    expect($jobs)->toHaveCount(1)
+        ->and($jobs[0]['payload'])->toBe('{"displayName":"App\\\\Jobs\\\\Pending"}');
+});
+
+it('does not drop a job already reserved by a worker', function () {
+    config(['queue.default' => 'database']);
+
+    insertReservedJob('default', '{"displayName":"App\\\\Jobs\\\\Running"}');
+
+    app(QueueRuntimeInspector::class)->dropPendingJob('default', '{"displayName":"App\\\\Jobs\\\\Running"}');
+
+    expect(DB::table('jobs')->where('payload', '{"displayName":"App\\\\Jobs\\\\Running"}')->exists())->toBeTrue();
+});
+
+it('scopes a drop by queue, leaving an identical payload on another queue intact', function () {
+    config(['queue.default' => 'database']);
+
+    insertQueuedJob('default', '{"displayName":"App\\\\Jobs\\\\Shared"}');
+    insertQueuedJob('repository-collection', '{"displayName":"App\\\\Jobs\\\\Shared"}');
+
+    app(QueueRuntimeInspector::class)->dropPendingJob('default', '{"displayName":"App\\\\Jobs\\\\Shared"}');
+
+    $remaining = app(QueueRuntimeInspector::class)->pendingJobs();
+
+    expect($remaining)->toHaveCount(1)
+        ->and($remaining[0]['queue'])->toBe('repository-collection');
 });

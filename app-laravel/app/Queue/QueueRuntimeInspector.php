@@ -66,10 +66,11 @@ final class QueueRuntimeInspector
     }
 
     /**
-     * Removes exactly one pending job matching the given raw payload from the
-     * given queue. Only affects jobs still pending - a job already reserved
-     * by a worker (moved to `queues:{queue}:reserved` for the redis driver)
-     * is not visible to pendingJobs() and cannot be targeted by this method.
+     * Removes exactly one pending job matching the given queue and raw
+     * payload. Only affects jobs still pending - a job already reserved by a
+     * worker (moved to `queues:{queue}:reserved` for the redis driver, or
+     * carrying a `reserved_at` timestamp for the database driver) is not
+     * visible to pendingJobs() and cannot be targeted by this method.
      */
     public function dropPendingJob(string $queue, string $payload): void
     {
@@ -83,7 +84,7 @@ final class QueueRuntimeInspector
         $driver = (string) ($connectionConfig['driver'] ?? '');
 
         match ($driver) {
-            'database' => $this->dropDatabaseJob($connectionConfig, $payload),
+            'database' => $this->dropDatabaseJob($connectionConfig, $queue, $payload),
             'redis' => $this->dropRedisJob($connectionConfig, $queue, $payload),
             default => throw new RuntimeException("Cannot drop a pending job for queue driver [{$driver}]."),
         };
@@ -207,6 +208,12 @@ final class QueueRuntimeInspector
         $jobs = DB::connection($dbConnection)
             ->table($table)
             ->whereIn('queue', $this->allQueueNames())
+            // A reserved job is already claimed by a worker and executing; it
+            // must not be listed as "pending" or be droppable (see
+            // dropDatabaseJob()) — dropping it would only delete the row
+            // while the worker keeps running, misleadingly appearing to the
+            // operator as if the job had been cancelled.
+            ->whereNull('reserved_at')
             ->get(['queue', 'payload'])
             ->filter(fn (object $row): bool => is_string($row->payload) && $row->payload !== '')
             ->map(fn (object $row): array => ['queue' => (string) $row->queue, 'payload' => (string) $row->payload])
@@ -245,7 +252,7 @@ final class QueueRuntimeInspector
     }
 
     /** @param array<string, mixed> $connectionConfig */
-    private function dropDatabaseJob(array $connectionConfig, string $payload): void
+    private function dropDatabaseJob(array $connectionConfig, string $queue, string $payload): void
     {
         $table = is_string($connectionConfig['table'] ?? null) ? $connectionConfig['table'] : 'jobs';
         $dbConnection = is_string($connectionConfig['connection'] ?? null) && $connectionConfig['connection'] !== ''
@@ -254,7 +261,11 @@ final class QueueRuntimeInspector
 
         DB::connection($dbConnection)
             ->table($table)
+            ->where('queue', $queue)
             ->where('payload', $payload)
+            // Never delete a job a worker has already reserved and is
+            // executing — see the matching guard in databaseJobs().
+            ->whereNull('reserved_at')
             ->limit(1)
             ->delete();
     }

@@ -258,7 +258,7 @@ it('shows only the reconciliation stat to a work-items.sync-only user', function
         ->test(OperationsPage::class)
         ->assertSee('Reconciliation')
         ->assertDontSee('Inventory sync')
-        ->assertDontSee('Jobs waiting in the queue')
+        ->assertDontSee('Jobs queued or currently running')
         ->assertDontSee('Failed jobs needing attention');
 });
 
@@ -269,7 +269,7 @@ it('shows all four operations health stats to an admin.queue user', function () 
         ->test(OperationsPage::class)
         ->assertSee('Reconciliation')
         ->assertSee('Inventory sync')
-        ->assertSee('Jobs waiting in the queue')
+        ->assertSee('Jobs queued or currently running')
         ->assertSee('Failed jobs needing attention');
 });
 
