@@ -16,9 +16,18 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
+/**
+ * Backed by an array data source (QueueRuntimeInspector::pendingJobs()), not
+ * an Eloquent query, since the queue driver (database table or Redis list)
+ * isn't a model — so unlike a resource ListRecords page, this table's
+ * filter/sort state is not persisted in the URL: plain Page +
+ * InteractsWithTable only gets Filament's URL bindings via a query()/
+ * relationship(), neither of which applies here.
+ */
 class PendingJobsPage extends Page implements HasTable
 {
     use InteractsWithTable;
@@ -48,7 +57,7 @@ class PendingJobsPage extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->records(function (?array $filters): array {
+            ->records(function (?array $filters, int|string $page, int|string $recordsPerPage): LengthAwarePaginator {
                 $jobs = app(QueueRuntimeInspector::class)->pendingJobs();
 
                 $queue = $filters['queue']['value'] ?? null;
@@ -59,9 +68,19 @@ class PendingJobsPage extends Page implements HasTable
 
                 $keyName = ArrayRecord::getKeyName();
 
-                return array_map(
+                $records = array_map(
                     fn (array $job): array => [...$job, $keyName => static::jobKey($job['queue'], $job['payload'])],
                     $jobs,
+                );
+
+                $page = (int) $page;
+                $perPage = (int) $recordsPerPage;
+
+                return new LengthAwarePaginator(
+                    array_slice($records, ($page - 1) * $perPage, $perPage),
+                    count($records),
+                    $perPage,
+                    $page,
                 );
             })
             ->columns([
@@ -98,7 +117,8 @@ class PendingJobsPage extends Page implements HasTable
                     ->action(fn (array $record) => self::dropJob($record['queue'], $record['payload'])),
             ])
             ->emptyStateHeading('No jobs pending')
-            ->paginated(false);
+            ->paginated([25, 50, 100])
+            ->poll('30s');
     }
 
     public static function jobKey(string $queue, string $payload): string
