@@ -165,7 +165,7 @@ it('builds a failures URL pre-filtered to the run and the repository-collection 
 
     $url = RepositoryCollectionRunResource::failuresUrl($run);
 
-    expect($url)->toContain('tableFilters%5Bchannel%5D%5Bvalue%5D=repository-collection')
+    expect($url)->toContain('tab=repository-collection')
         ->and($url)->toContain("tableFilters%5Brun%5D%5Bvalue%5D={$run->id}");
 });
 

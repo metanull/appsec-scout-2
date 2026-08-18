@@ -39,6 +39,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Error Log Retention
+    |--------------------------------------------------------------------------
+    |
+    | Number of days to retain error_logs entries. The scheduled PruneErrorLogs
+    | job deletes entries older than this threshold daily.
+    |
+    */
+
+    'error_retain_days' => (int) env('ERROR_LOG_RETAIN_DAYS', 90),
+
+    /*
+    |--------------------------------------------------------------------------
     | Log Channels
     |--------------------------------------------------------------------------
     |

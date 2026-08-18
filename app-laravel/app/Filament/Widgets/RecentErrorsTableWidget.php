@@ -27,7 +27,7 @@ class RecentErrorsTableWidget extends TableWidget
     public function table(Table $table): Table
     {
         return $table
-            ->query(fn (): Builder => ErrorLog::query()->latest('occurred_at')->limit(5))
+            ->query(fn (): Builder => ErrorLog::query()->where('occurred_at', '>=', now()->subDay())->latest('occurred_at')->limit(5))
             ->columns([
                 TextColumn::make('channel')
                     ->label('Channel')
@@ -66,6 +66,6 @@ class RecentErrorsTableWidget extends TableWidget
                     ->url(fn (): string => ErrorLogResource::getUrl('index')),
             ])
             ->paginated(false)
-            ->emptyStateHeading('No recent errors recorded');
+            ->emptyStateHeading('No errors in the last 24 hours');
     }
 }

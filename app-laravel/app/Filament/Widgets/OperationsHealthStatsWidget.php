@@ -2,6 +2,8 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Pages\PendingJobsPage;
+use App\Filament\Resources\FailedJobResource;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
 use Filament\Widgets\StatsOverviewWidget;
@@ -48,11 +50,13 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
         $stats[] = Stat::make('Queued jobs', $queued)
             ->description('Jobs waiting in the queue')
             ->color($queued > 50 ? 'warning' : 'success')
-            ->icon('heroicon-o-queue-list');
+            ->icon('heroicon-o-queue-list')
+            ->url(PendingJobsPage::getUrl());
         $stats[] = Stat::make('Failed jobs', $failed)
             ->description('Failed jobs needing attention')
             ->color($failed > 0 ? 'danger' : 'success')
-            ->icon('heroicon-o-exclamation-triangle');
+            ->icon('heroicon-o-exclamation-triangle')
+            ->url(FailedJobResource::getUrl('index'));
 
         return $stats;
     }

@@ -7,6 +7,7 @@ use App\Trackers\RefreshWorkItemsJob;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
+use RuntimeException;
 use Throwable;
 
 final class QueueRuntimeInspector
@@ -39,8 +40,57 @@ final class QueueRuntimeInspector
         return $total;
     }
 
+    /**
+     * Every pending job payload currently visible across all tracked queues
+     * (the configured queue(s) plus the two hardcoded collector queues),
+     * each tagged with the queue name it came from.
+     *
+     * @return list<array{queue: string, payload: string}>
+     */
+    public function pendingJobs(): array
+    {
+        $connectionName = $this->queueConnectionName();
+        $connectionConfig = config("queue.connections.{$connectionName}");
+
+        if (! is_array($connectionConfig)) {
+            return [];
+        }
+
+        $driver = (string) ($connectionConfig['driver'] ?? '');
+
+        return match ($driver) {
+            'database' => $this->databaseJobs($connectionConfig),
+            'redis' => $this->redisJobs($connectionConfig),
+            default => [],
+        };
+    }
+
+    /**
+     * Removes exactly one pending job matching the given raw payload from the
+     * given queue. Only affects jobs still pending - a job already reserved
+     * by a worker (moved to `queues:{queue}:reserved` for the redis driver)
+     * is not visible to pendingJobs() and cannot be targeted by this method.
+     */
+    public function dropPendingJob(string $queue, string $payload): void
+    {
+        $connectionName = $this->queueConnectionName();
+        $connectionConfig = config("queue.connections.{$connectionName}");
+
+        if (! is_array($connectionConfig)) {
+            throw new RuntimeException("Unknown queue connection [{$connectionName}].");
+        }
+
+        $driver = (string) ($connectionConfig['driver'] ?? '');
+
+        match ($driver) {
+            'database' => $this->dropDatabaseJob($connectionConfig, $payload),
+            'redis' => $this->dropRedisJob($connectionConfig, $queue, $payload),
+            default => throw new RuntimeException("Cannot drop a pending job for queue driver [{$driver}]."),
+        };
+    }
+
     /** @return list<string> */
-    private function allQueueNames(): array
+    public function allQueueNames(): array
     {
         return array_values(array_unique([...$this->queueNames(), self::REPOSITORY_COLLECTION_QUEUE, self::STATIC_ANALYSIS_QUEUE]));
     }
@@ -141,6 +191,84 @@ final class QueueRuntimeInspector
         }
 
         return $payloads;
+    }
+
+    /**
+     * @param  array<string, mixed>  $connectionConfig
+     * @return list<array{queue: string, payload: string}>
+     */
+    private function databaseJobs(array $connectionConfig): array
+    {
+        $table = is_string($connectionConfig['table'] ?? null) ? $connectionConfig['table'] : 'jobs';
+        $dbConnection = is_string($connectionConfig['connection'] ?? null) && $connectionConfig['connection'] !== ''
+            ? $connectionConfig['connection']
+            : null;
+
+        $jobs = DB::connection($dbConnection)
+            ->table($table)
+            ->whereIn('queue', $this->allQueueNames())
+            ->get(['queue', 'payload'])
+            ->filter(fn (object $row): bool => is_string($row->payload) && $row->payload !== '')
+            ->map(fn (object $row): array => ['queue' => (string) $row->queue, 'payload' => (string) $row->payload])
+            ->all();
+
+        return array_values($jobs);
+    }
+
+    /**
+     * @param  array<string, mixed>  $connectionConfig
+     * @return list<array{queue: string, payload: string}>
+     */
+    private function redisJobs(array $connectionConfig): array
+    {
+        $redisConnection = is_string($connectionConfig['connection'] ?? null) && $connectionConfig['connection'] !== ''
+            ? $connectionConfig['connection']
+            : 'default';
+
+        $jobs = [];
+
+        foreach ($this->allQueueNames() as $queueName) {
+            try {
+                $queuePayloads = Redis::connection($redisConnection)->lrange("queues:{$queueName}", 0, -1);
+            } catch (Throwable) {
+                continue;
+            }
+
+            foreach ($queuePayloads as $payload) {
+                if (is_string($payload) && $payload !== '') {
+                    $jobs[] = ['queue' => $queueName, 'payload' => $payload];
+                }
+            }
+        }
+
+        return $jobs;
+    }
+
+    /** @param array<string, mixed> $connectionConfig */
+    private function dropDatabaseJob(array $connectionConfig, string $payload): void
+    {
+        $table = is_string($connectionConfig['table'] ?? null) ? $connectionConfig['table'] : 'jobs';
+        $dbConnection = is_string($connectionConfig['connection'] ?? null) && $connectionConfig['connection'] !== ''
+            ? $connectionConfig['connection']
+            : null;
+
+        DB::connection($dbConnection)
+            ->table($table)
+            ->where('payload', $payload)
+            ->limit(1)
+            ->delete();
+    }
+
+    /** @param array<string, mixed> $connectionConfig */
+    private function dropRedisJob(array $connectionConfig, string $queue, string $payload): void
+    {
+        $redisConnection = is_string($connectionConfig['connection'] ?? null) && $connectionConfig['connection'] !== ''
+            ? $connectionConfig['connection']
+            : 'default';
+
+        // phpredis's lRem($key, $value, $count) takes the value before the
+        // count, the reverse of the raw Redis LREM key count value order.
+        Redis::connection($redisConnection)->lrem("queues:{$queue}", $payload, 1);
     }
 
     /** @return list<string> */

@@ -196,8 +196,8 @@ class StaticAnalysisRunResource extends Resource
     public static function failuresUrl(StaticAnalysisRun $run): string
     {
         $params = [
+            'tab' => 'static-analysis',
             'tableFilters' => [
-                'channel' => ['value' => 'static-analysis'],
                 'run' => ['value' => (string) $run->id],
             ],
         ];
