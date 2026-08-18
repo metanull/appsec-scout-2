@@ -3,6 +3,7 @@
 use App\Audit\AuditLog;
 use App\Filament\Resources\FailedJobResource;
 use App\Filament\Resources\FailedJobResource\Pages\ListFailedJobs;
+use App\Filament\Support\JobPayloadInspector;
 use App\Models\FailedJob;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -159,7 +160,7 @@ it('denies the view page to a user without admin.queue', function () {
 it('summarizes a failed job exception for a truncated database column error', function () {
     $exception = "PDOException: SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'version_control_url' at row 1 insert into `security_events` values secret-token";
 
-    expect(FailedJobResource::exceptionPreview($exception))
+    expect(JobPayloadInspector::exceptionPreview($exception))
         ->toBe('Database value exceeded security_events.version_control_url. Run migrations, then retry or forget this failed job.');
 });
 

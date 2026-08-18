@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\FailedJobResource;
+use App\Filament\Support\JobPayloadInspector;
 use App\Models\FailedJob;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
@@ -36,12 +37,12 @@ class RecentFailedJobsTableWidget extends TableWidget
                     ->badge(),
                 TextColumn::make('job')
                     ->label('Job')
-                    ->getStateUsing(fn (FailedJob $record): string => FailedJobResource::jobName($record->payload))
+                    ->getStateUsing(fn (FailedJob $record): string => JobPayloadInspector::jobName($record->payload))
                     ->formatStateUsing(fn (?string $state): string => $state ?? 'Unknown job')
                     ->wrap(),
                 TextColumn::make('exception_summary')
                     ->label('Exception')
-                    ->getStateUsing(fn (FailedJob $record): string => FailedJobResource::exceptionPreview($record->exception))
+                    ->getStateUsing(fn (FailedJob $record): string => JobPayloadInspector::exceptionPreview($record->exception))
                     ->wrap()
                     ->limit(200),
             ])

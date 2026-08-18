@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Audit\Recorder;
 use App\Filament\Resources\FailedJobResource\Pages\ListFailedJobs;
 use App\Filament\Resources\FailedJobResource\Pages\ViewFailedJob;
+use App\Filament\Support\JobPayloadInspector;
 use App\Models\FailedJob;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
@@ -22,7 +23,6 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Phiki\Grammar\Grammar;
 
 class FailedJobResource extends Resource
@@ -68,10 +68,14 @@ class FailedJobResource extends Resource
                             ->badge(),
                         TextEntry::make('_job')
                             ->label('Job')
-                            ->state(fn (FailedJob $record): string => self::jobName($record->payload)),
+                            ->state(fn (FailedJob $record): string => JobPayloadInspector::jobName($record->payload)),
                         TextEntry::make('_source_tracker')
                             ->label('Source / Tracker')
-                            ->state(fn (FailedJob $record): string => self::sourceOrTracker($record->payload))
+                            ->state(fn (FailedJob $record): string => JobPayloadInspector::sourceOrTracker($record->payload))
+                            ->placeholder('-'),
+                        TextEntry::make('_repository')
+                            ->label('Repository')
+                            ->state(fn (FailedJob $record): ?string => self::repositoryLabel($record->payload))
                             ->placeholder('-'),
                     ]),
                 ]),
@@ -110,19 +114,25 @@ class FailedJobResource extends Resource
                     ->badge(),
                 TextColumn::make('job')
                     ->label('Job')
-                    ->getStateUsing(fn (FailedJob $record): string => self::jobName($record->payload))
+                    ->getStateUsing(fn (FailedJob $record): string => JobPayloadInspector::jobName($record->payload))
                     ->formatStateUsing(fn (?string $state): string => $state ?? 'Unknown job')
                     ->wrap()
                     ->placeholder('Unknown job')
                     ->searchable(query: fn (Builder $query, string $search) => $query->whereRaw('payload LIKE ?', ["%{$search}%"])),
                 TextColumn::make('exception_summary')
                     ->label('Exception')
-                    ->getStateUsing(fn (FailedJob $record): string => self::exceptionPreview($record->exception))
+                    ->getStateUsing(fn (FailedJob $record): string => JobPayloadInspector::exceptionPreview($record->exception))
                     ->wrap()
                     ->limit(200),
                 TextColumn::make('source_tracker')
                     ->label('Source / Tracker')
-                    ->getStateUsing(fn (FailedJob $record): string => self::sourceOrTracker($record->payload)),
+                    ->getStateUsing(fn (FailedJob $record): string => JobPayloadInspector::sourceOrTracker($record->payload))
+                    ->placeholder('-'),
+                TextColumn::make('repository')
+                    ->label('Repository')
+                    ->getStateUsing(fn (FailedJob $record): ?string => self::repositoryLabel($record->payload))
+                    ->placeholder('-')
+                    ->toggleable(),
             ])
             ->filters([
                 SelectFilter::make('queue')
@@ -199,64 +209,10 @@ class FailedJobResource extends Resource
         return $payload;
     }
 
-    public static function jobName(string $payload): string
+    private static function repositoryLabel(string $payload): ?string
     {
-        $decoded = json_decode($payload, true);
+        $target = JobPayloadInspector::repositoryTarget($payload);
 
-        if (! is_array($decoded)) {
-            return 'Unknown job';
-        }
-
-        $displayName = $decoded['displayName'] ?? null;
-
-        if (is_string($displayName) && $displayName !== '') {
-            return $displayName;
-        }
-
-        $commandName = data_get($decoded, 'data.commandName');
-
-        return is_string($commandName) && $commandName !== '' ? $commandName : 'Unknown job';
-    }
-
-    public static function exceptionPreview(string $exception): string
-    {
-        if (str_contains($exception, 'Data too long for column')) {
-            $column = Str::between($exception, "Data too long for column '", "'");
-
-            return $column !== ''
-                ? "Database value exceeded security_events.{$column}. Run migrations, then retry or forget this failed job."
-                : 'Database value exceeded a column size. Run migrations, then retry or forget this failed job.';
-        }
-
-        return Str::limit($exception, 1000);
-    }
-
-    public static function sourceOrTracker(string $payload): string
-    {
-        $decoded = json_decode($payload, true);
-
-        if (! is_array($decoded)) {
-            return '';
-        }
-
-        $sourceId = data_get($decoded, 'data.command.sourceId')
-            ?? data_get($decoded, 'data.command.source_id')
-            ?? data_get($decoded, 'data.sourceId')
-            ?? null;
-
-        if (is_string($sourceId) && $sourceId !== '') {
-            return "source:{$sourceId}";
-        }
-
-        $trackerId = data_get($decoded, 'data.command.trackerId')
-            ?? data_get($decoded, 'data.command.tracker_id')
-            ?? data_get($decoded, 'data.trackerId')
-            ?? null;
-
-        if (is_string($trackerId) && $trackerId !== '') {
-            return "tracker:{$trackerId}";
-        }
-
-        return '';
+        return $target === null ? null : "{$target['project']} / {$target['repository']}";
     }
 }

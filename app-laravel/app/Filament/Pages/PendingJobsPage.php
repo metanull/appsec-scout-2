@@ -3,7 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Audit\Recorder;
-use App\Filament\Resources\FailedJobResource;
+use App\Filament\Support\JobPayloadInspector;
 use App\Queue\QueueRuntimeInspector;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -67,11 +67,15 @@ class PendingJobsPage extends Page implements HasTable
                     ->badge(),
                 TextColumn::make('job')
                     ->label('Job')
-                    ->getStateUsing(fn (array $record): string => FailedJobResource::jobName($record['payload']))
+                    ->getStateUsing(fn (array $record): string => JobPayloadInspector::jobName($record['payload']))
                     ->wrap(),
                 TextColumn::make('source_tracker')
                     ->label('Source / Tracker')
-                    ->getStateUsing(fn (array $record): string => FailedJobResource::sourceOrTracker($record['payload']))
+                    ->getStateUsing(fn (array $record): string => JobPayloadInspector::sourceOrTracker($record['payload']))
+                    ->placeholder('-'),
+                TextColumn::make('repository')
+                    ->label('Repository')
+                    ->getStateUsing(fn (array $record): ?string => self::repositoryLabel($record['payload']))
                     ->placeholder('-'),
             ])
             ->filters([
@@ -108,9 +112,16 @@ class PendingJobsPage extends Page implements HasTable
 
         app(Recorder::class)->recordAdminAction('operations.drop_pending_job', [
             'queue' => $queue,
-            'job' => FailedJobResource::jobName($payload),
+            'job' => JobPayloadInspector::jobName($payload),
         ]);
 
         Notification::make()->title('Job removed from queue')->success()->send();
+    }
+
+    private static function repositoryLabel(string $payload): ?string
+    {
+        $target = JobPayloadInspector::repositoryTarget($payload);
+
+        return $target === null ? null : "{$target['project']} / {$target['repository']}";
     }
 }
