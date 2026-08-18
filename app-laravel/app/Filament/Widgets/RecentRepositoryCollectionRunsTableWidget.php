@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\RepositoryCollectionRunResource;
+use App\Filament\Support\RunCounts;
 use App\Filament\Support\RunStatusBadgeColor;
 use App\Models\RepositoryCollectionRun;
 use Filament\Actions\Action;
@@ -51,7 +52,7 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
                     }),
                 TextColumn::make('counts_json')
                     ->label('Counts')
-                    ->state(fn (RepositoryCollectionRun $record): string => RepositoryCollectionRunResource::formatCounts($record)),
+                    ->state(fn (RepositoryCollectionRun $record): string => RunCounts::format($record->counts_json)),
             ])
             ->headerActions([
                 Action::make('viewAll')

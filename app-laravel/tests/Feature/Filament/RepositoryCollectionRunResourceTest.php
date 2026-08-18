@@ -4,6 +4,7 @@ use App\Audit\AuditLog;
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
 use App\Filament\Resources\RepositoryCollectionRunResource;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ListRepositoryCollectionRuns;
+use App\Filament\Support\RunCounts;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\Models\User;
@@ -135,7 +136,7 @@ it('renders the repository collection run view page with its counts', function (
         ->assertSeeText('repositories_considered');
 });
 
-it('formats counts as completed / considered with a failed tally', function () {
+it('renders counts via the shared RunCounts formatter', function () {
     $run = RepositoryCollectionRun::query()->create([
         'source_control_id' => 'azdo-repos',
         'started_at' => now()->subMinute(),
@@ -143,18 +144,7 @@ it('formats counts as completed / considered with a failed tally', function () {
         'counts_json' => ['repositories_considered' => 3, 'repositories_completed' => 2, 'repositories_failed' => 1],
     ]);
 
-    expect(RepositoryCollectionRunResource::formatCounts($run))->toBe('2 / 3 · 1 failed');
-});
-
-it('formats counts as zeroes when counts_json is empty', function () {
-    $run = RepositoryCollectionRun::query()->create([
-        'source_control_id' => 'azdo-repos',
-        'started_at' => now()->subMinute(),
-        'status' => 'running',
-        'counts_json' => [],
-    ]);
-
-    expect(RepositoryCollectionRunResource::formatCounts($run))->toBe('0 / 0 · 0 failed');
+    expect(RunCounts::format($run->counts_json))->toBe('2 / 3 · 1 failed');
 });
 
 it('builds a failures URL pre-filtered to the run and the repository-collection channel', function () {

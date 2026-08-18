@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\StaticAnalysisRunResource;
+use App\Filament\Support\RunCounts;
 use App\Filament\Support\RunStatusBadgeColor;
 use App\Models\StaticAnalysisRun;
 use Filament\Actions\Action;
@@ -51,7 +52,7 @@ class RecentStaticAnalysisRunsTableWidget extends TableWidget
                     }),
                 TextColumn::make('counts_json')
                     ->label('Counts')
-                    ->state(fn (StaticAnalysisRun $record): string => StaticAnalysisRunResource::formatCounts($record)),
+                    ->state(fn (StaticAnalysisRun $record): string => RunCounts::format($record->counts_json)),
             ])
             ->headerActions([
                 Action::make('viewAll')
