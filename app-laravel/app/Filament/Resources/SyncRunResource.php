@@ -26,9 +26,11 @@ class SyncRunResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-path';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Admin';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static bool $shouldRegisterNavigation = false;
+    protected static ?int $navigationSort = 2;
+
+    protected static ?string $navigationLabel = 'Sync Runs';
 
     public static function canCreate(): bool
     {

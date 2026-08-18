@@ -37,9 +37,7 @@ use Phiki\Grammar\Grammar;
  */
 abstract class CollectionRunResource extends Resource
 {
-    protected static string|\UnitEnum|null $navigationGroup = 'Admin';
-
-    protected static bool $shouldRegisterNavigation = false;
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
     /** The infolist section heading, e.g. "Repository Collection Run". */
     abstract protected static function runLabel(): string;

@@ -214,7 +214,7 @@ enumeration — see below.
 and every enabled Source Control provider implementing `EnumeratesInventory`
 (`fetchProjects()`/`fetchRepositories()`), upserting both through the same
 `SystemContainerUpserter`. It backs the `assets:sync-azdo-projects` Artisan command and the
-"Sync inventory" action on `Admin -> Operations` (gated by `admin.queue`) — see
+"Sync inventory" action on `Operations -> Operations` (gated by `admin.queue`) — see
 [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)
 for the full mechanics, including the mark-and-sweep staleness handling
 (`App\Assets\StaleRecordSweeper`) that runs after a complete, unfiltered pass.

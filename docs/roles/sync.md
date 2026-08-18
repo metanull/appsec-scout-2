@@ -19,7 +19,7 @@ Sync also inherits every Plan-level capability.
   `sources.push-state`).
 - Queue source push jobs for dirty alerts.
 - Observe sync success and failure state in local data.
-- Access `Admin -> Operations` (gated by `admin.queue` **or** `work-items.sync`, and Sync holds
+- Access `Operations -> Operations` (gated by `admin.queue` **or** `work-items.sync`, and Sync holds
   `work-items.sync`): dispatch due integrations, fetch one source, refresh one tracker, reconcile
   all tracker links, prune audit/error logs, and retry/forget failed jobs. The one Operations
   action Sync cannot use is "Sync inventory," gated by `admin.queue` alone.

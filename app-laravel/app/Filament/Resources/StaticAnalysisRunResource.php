@@ -13,6 +13,10 @@ class StaticAnalysisRunResource extends CollectionRunResource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-magnifying-glass-circle';
 
+    protected static ?int $navigationSort = 4;
+
+    protected static ?string $navigationLabel = 'Analysis Runs';
+
     protected static function runLabel(): string
     {
         return 'Static Analysis Run';

@@ -31,9 +31,23 @@ class FailedJobResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-exclamation-circle';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Admin';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static bool $shouldRegisterNavigation = false;
+    protected static ?int $navigationSort = 6;
+
+    protected static ?string $navigationLabel = 'Failed Jobs';
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = DB::table('failed_jobs')->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
+    }
 
     public static function canCreate(): bool
     {

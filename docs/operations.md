@@ -84,7 +84,7 @@ The `app` container runs every application process through Supervisor (`docker/s
 - `php artisan queue:work --tries=3 --timeout=1800 --max-time=3600`
 
 Queue, cache, and session backends are all Redis. Source fetch and Tracker refresh are not
-scheduled: they run only when triggered on demand from `Admin -> Operations` (or the
+scheduled: they run only when triggered on demand from `Operations -> Operations` (or the
 `assets:sync-azdo-projects` CLI command) — see [docs/concepts/integration.md](concepts/integration.md)
 for the full trigger model. The scheduler's minutely entries are limited to the SBOM/static-analysis
 pending-scan importers; log pruning runs daily.
@@ -99,7 +99,7 @@ docker compose exec app php artisan queue:work --once
 
 ## Operations Page
 
-`Admin -> Operations` (gated by `admin.queue` or `work-items.sync`) is the main operator surface
+`Operations -> Operations` (gated by `admin.queue` or `work-items.sync`) is the main operator surface
 for background activity. It shows:
 
 - Queued job count (spanning the app's own queue, the isolated `collector` container's
@@ -129,10 +129,10 @@ Every action writes an audit row.
 ## Failed Jobs
 
 Failed jobs are stored in Laravel's `failed_jobs` table using UUID identifiers. From the
-Operations page, Admin/Sync users can retry a failed job (requeues the stored payload and removes
-the failed row) or forget it (deletes the failed row without retrying). Review the payload preview
-in the page, then check application logs for the full exception context if deeper inspection is
-needed.
+**Operations → Failed Jobs** page (or the "Failed jobs" stat on the Operations page), Admin/Sync
+users can retry a failed job (requeues the stored payload and removes the failed row) or forget it
+(deletes the failed row without retrying). Review the payload preview in the page, then check
+application logs for the full exception context if deeper inspection is needed.
 
 ## Logs And Error Records
 
@@ -156,7 +156,7 @@ Admin operators manage integration credentials from two places:
   test).
 
 Integrations have no enablement or interval settings and are not scheduled — they sync on demand
-from `Admin -> Operations`.
+from `Operations -> Operations`.
 
 There are exactly two credential-resolution flows: system-triggered operations (background jobs,
 Ops-page fetch/refresh actions, `assets:sync-azdo-projects`) resolve the system credential;

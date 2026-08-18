@@ -25,9 +25,11 @@ class PendingJobsPage extends Page implements HasTable
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-queue-list';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Admin';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static bool $shouldRegisterNavigation = false;
+    protected static ?int $navigationSort = 5;
+
+    protected static ?string $navigationLabel = 'Queues';
 
     protected static ?string $slug = 'admin/queues';
 

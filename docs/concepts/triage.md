@@ -132,7 +132,7 @@ operator manually searching:
   searching every configured tracker project, exactly matching what the service itself does when
   invoked without a scope (see
   [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping)).
-- **Whole-database, in the background** — `Admin -> Operations`'s "Reconcile all tracker links"
+- **Whole-database, in the background** — `Operations -> Operations`'s "Reconcile all tracker links"
   action queues `ReconcileAllJob` across every alert. Gated by `admin.queue`/`work-items.sync`.
   This is an Ops-page action, not a Triage one, even though it uses the identical underlying
   matching logic and creates the same kind of `WorkItemLink` row.

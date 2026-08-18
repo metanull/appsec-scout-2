@@ -13,6 +13,10 @@ class RepositoryCollectionRunResource extends CollectionRunResource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-code-bracket-square';
 
+    protected static ?int $navigationSort = 3;
+
+    protected static ?string $navigationLabel = 'Collection Runs';
+
     protected static function runLabel(): string
     {
         return 'Repository Collection Run';

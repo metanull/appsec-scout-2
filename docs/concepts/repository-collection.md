@@ -11,12 +11,12 @@ in-app, asynchronous path — see
 [docs/concepts/static-analysis-collection.md](static-analysis-collection.md) — with the identical
 "second, parallel path, neither supersedes the other" relationship to its own host-triggered
 counterpart. Repository Collection exists so the same kind of sweep can be triggered from
-`Admin -> Operations` and run as a queued job, without an operator needing Docker access on their
+`Operations -> Operations` and run as a queued job, without an operator needing Docker access on their
 own workstation.
 
 ## Trigger and Access
 
-"Collect repositories" on `Admin -> Operations`, gated by `admin.queue`, dispatches
+"Collect repositories" on `Operations -> Operations`, gated by `admin.queue`, dispatches
 `App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob`. Like every other action on
 that page, syncing is triggered explicitly — there is no scheduler entry, matching the "syncing is
 triggered explicitly, never on an automatic schedule" model described in
@@ -126,7 +126,7 @@ run `success` and stamps `finished_at`. `allowFailures()` on the batch means one
 clone or scan failure never stops the rest of the sweep or the run's own `success` status — it
 only shows up as a non-zero `repositories_failed` count in `counts_json`.
 
-Visible on `Admin -> Operations` via a "Recent repository collection runs" widget and a read-only
+Visible on `Operations -> Operations` via a "Recent repository collection runs" widget and a read-only
 `RepositoryCollectionRunResource` drill-down (list/view only, no create) — the same pattern
 `SyncRunResource`/`RecentSyncRunsTableWidget` already establish for `SyncRun`.
 

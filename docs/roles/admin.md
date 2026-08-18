@@ -20,11 +20,12 @@ role has.
 
 - `Admin -> Users`
 - `Admin -> System Credentials`
-- `Admin -> Operations`
 - `Admin -> Audit Log`
 - `Admin -> Errors`
 - `Admin -> Repository Providers` (also reachable by Plan and Sync, via `admin.repository-providers`)
 - `Admin -> Pending Sync` (also reachable by Sync, via `work-items.sync` + `sources.push-state`)
+- `Operations -> Operations`, `Sync Runs`, `Collection Runs`, `Analysis Runs`, `Queues`,
+  `Failed Jobs` (all gated on `admin.queue`)
 - Every Reader-group resource (Alerts, Software Systems, Containers, Software Assets, Dependencies,
   Local Findings), plus every Triage/Plan/Sync capability on them.
 
