@@ -22,8 +22,14 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Enable auto-merge for patch/minor updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+      # Application dependencies (composer, npm) only auto-merge on patch/minor bumps --
+      # majors there can carry real breaking changes and need a human. GitHub Actions
+      # version bumps don't affect application behavior, so majors are safe to include.
+      - name: Enable auto-merge
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.package-ecosystem == 'github-actions'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
