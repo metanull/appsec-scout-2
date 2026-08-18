@@ -2,13 +2,13 @@
 
 use App\Filament\Pages\OperationsPage;
 use App\Filament\Pages\PendingJobsPage;
-use App\Filament\Pages\PendingSyncPage;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Pages\SystemCredentialsPage;
 use App\Filament\Resources\AuditLogResource;
 use App\Filament\Resources\ErrorLogResource;
 use App\Filament\Resources\FailedJobResource;
 use App\Filament\Resources\LocalFindingResource;
+use App\Filament\Resources\PendingSyncResource;
 use App\Filament\Resources\RepositoryCollectionRunResource;
 use App\Filament\Resources\RepositoryProviderResource;
 use App\Filament\Resources\SecurityContainerResource;
@@ -75,8 +75,8 @@ it('sets navigation sort 26 for the Users resource', function () {
     expect(UserResource::getNavigationSort())->toBe(26);
 });
 
-it('sets navigation sort 30 for the Pending Sync page', function () {
-    expect(PendingSyncPage::getNavigationSort())->toBe(30);
+it('sets navigation sort 30 for the Pending Sync resource', function () {
+    expect(PendingSyncResource::getNavigationSort())->toBe(30);
 });
 
 it('pins the Reader, Admin, Operations, Sync navigation group display order', function () {

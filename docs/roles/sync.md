@@ -7,7 +7,7 @@ Sync also inherits every Plan-level capability.
 
 ## Typical Workflow
 
-1. Open `Admin -> Pending Sync`.
+1. Open `Sync -> Pending Sync`.
 2. Review the grouped dirty alerts.
 3. Select one or more alerts that are ready for upstream update.
 4. Trigger push for the selected alerts.
@@ -15,7 +15,7 @@ Sync also inherits every Plan-level capability.
 
 ## What Sync Adds
 
-- View pending sync groups (`Admin -> Pending Sync`, requires both `work-items.sync` and
+- View pending sync groups (`Sync -> Pending Sync`, requires both `work-items.sync` and
   `sources.push-state`).
 - Queue source push jobs for dirty alerts.
 - Observe sync success and failure state in local data.
