@@ -220,6 +220,59 @@ it('records completion as partial when some but not all repositories fail', func
         ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
+it('records the owning system/container on a logged clone failure, and only one row per failure', function () {
+    $system = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001']);
+    $container = SecurityContainer::factory()->create([
+        'software_system_id' => $system->id,
+        'source_container_id' => 'repo-001',
+    ]);
+
+    Process::fake(function ($process) {
+        $command = $process->command;
+        $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            return Process::result(exitCode: 1, errorOutput: 'fatal: repository not found');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $errorLogs = ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'like', 'git clone failed%')->get();
+
+    expect($errorLogs)->toHaveCount(1);
+    expect($errorLogs->first()->software_system_id)->toBe($system->id)
+        ->and($errorLogs->first()->security_container_id)->toBe($container->id);
+});
+
+it('records no owner on a logged failure when the system/container was never resolved', function () {
+    Process::fake(function ($process) {
+        $command = $process->command;
+        $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            return Process::result(exitCode: 1, errorOutput: 'fatal: repository not found');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'like', 'git clone failed%')->firstOrFail();
+
+    expect($errorLog->software_system_id)->toBeNull()
+        ->and($errorLog->security_container_id)->toBeNull();
+});
+
 it('does not let one failing Trivy scan prevent the other two from attaching', function () {
     fakeCollectorProcesses(function (array $parts, ?string $outputPath) {
         if (in_array('secret', $parts, true)) {
@@ -241,4 +294,24 @@ it('does not let one failing Trivy scan prevent the other two from attaching', f
 
     expect(Attachment::query()->count())->toBe(2)
         ->and(ErrorLog::query()->where('channel', 'repository-collection')->count())->toBe(1);
+});
+
+it('records the owning system/container and a single row when the job-level failed() hook fires', function () {
+    $system = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001']);
+    $container = SecurityContainer::factory()->create([
+        'software_system_id' => $system->id,
+        'source_container_id' => 'repo-001',
+    ]);
+
+    $run = repositoryCollectionRunForJobTest();
+    $job = new CollectRepositoryJob(repositoryCollectionTarget(), $run->id);
+
+    $job->failed(new RuntimeException('Every retry attempt exhausted.'));
+
+    $errorLogs = ErrorLog::query()->where('channel', 'repository-collection')->where('message', 'Every retry attempt exhausted.')->get();
+
+    expect($errorLogs)->toHaveCount(1);
+    expect($errorLogs->first()->software_system_id)->toBe($system->id)
+        ->and($errorLogs->first()->security_container_id)->toBe($container->id)
+        ->and($errorLogs->first()->trace)->not->toBeNull();
 });

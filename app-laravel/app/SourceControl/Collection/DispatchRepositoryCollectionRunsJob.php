@@ -2,6 +2,7 @@
 
 namespace App\SourceControl\Collection;
 
+use App\Assets\AzDoOwnerLookup;
 use App\Audit\Recorder;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
@@ -68,7 +69,10 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                 'error_message' => $message,
             ]);
 
-            Log::error($message, $context);
+            // Not Log::error() (the default `stack` channel already includes
+            // the `database` handler at level=error) — that would create a
+            // second, poorer-context ErrorLog row for the same failure.
+            Log::channel('single')->error($message, $context);
 
             ErrorLog::query()->create([
                 'level' => 'error',
@@ -170,7 +174,8 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                         'error_message' => $e->getMessage(),
                     ]);
 
-                    Log::error($e->getMessage(), $context);
+                    // Not Log::error() — see the "credential not configured" branch's identical comment.
+                    Log::channel('single')->error($e->getMessage(), $context);
 
                     ErrorLog::query()->create([
                         'level' => 'error',
@@ -215,11 +220,13 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                         'operation' => 'discover',
                     ];
 
-                    Log::error($message, $context);
+                    // Not Log::error() — see handle()'s identical comment.
+                    Log::channel('single')->error($message, $context);
 
                     ErrorLog::query()->create([
                         'level' => 'error',
                         'channel' => 'repository-collection',
+                        ...app(AzDoOwnerLookup::class)->forAzDoRepository($project->sourceSystemId, $container->sourceContainerId),
                         'message' => $message,
                         'context_json' => $context,
                         'trace' => null,

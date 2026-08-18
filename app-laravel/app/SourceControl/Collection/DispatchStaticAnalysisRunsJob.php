@@ -2,6 +2,7 @@
 
 namespace App\SourceControl\Collection;
 
+use App\Assets\AzDoOwnerLookup;
 use App\Models\ErrorLog;
 use App\Models\StaticAnalysisRun;
 use App\SourceControl\Contracts\EnumeratesInventory;
@@ -138,11 +139,15 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
                     ErrorLog::query()->create([
                         'level' => 'error',
                         'channel' => 'static-analysis',
+                        ...app(AzDoOwnerLookup::class)->forAzDoRepository($project->sourceSystemId, $container->sourceContainerId),
                         'message' => 'Repository has no clone URL, skipping.',
                         'context_json' => [
                             'run' => $runId,
-                            'project' => $project->name,
-                            'repository' => $container->name,
+                            'project_id' => $project->sourceSystemId,
+                            'project_name' => $project->name,
+                            'repository_id' => $container->sourceContainerId,
+                            'repository_name' => $container->name,
+                            'operation' => 'discover',
                         ],
                         'trace' => null,
                         'occurred_at' => now(),

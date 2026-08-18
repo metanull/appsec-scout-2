@@ -52,6 +52,8 @@ final class PendingSyncResolver
             ErrorLog::query()->create([
                 'level' => 'error',
                 'channel' => 'sync',
+                'software_system_id' => $event->software_system_id,
+                'security_container_id' => $event->container_id,
                 'message' => sprintf(
                     'Source "%s" declares canPushStandaloneComment=true, but no mechanism exists to push a standalone comment.',
                     $sourceId,
@@ -110,6 +112,8 @@ final class PendingSyncResolver
         ErrorLog::query()->create([
             'level' => 'warning',
             'channel' => 'sync',
+            'software_system_id' => $event->software_system_id,
+            'security_container_id' => $event->container_id,
             'message' => $note,
             'context_json' => ['event_id' => $event->id, 'source_id' => $sourceId],
             'trace' => null,

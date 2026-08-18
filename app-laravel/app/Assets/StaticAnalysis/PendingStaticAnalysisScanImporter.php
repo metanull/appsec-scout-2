@@ -6,6 +6,7 @@ namespace App\Assets\StaticAnalysis;
 
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
+use App\Assets\AzDoOwnerLookup;
 use App\Assets\AzDoScanResultDtoFactory;
 use App\Models\ErrorLog;
 use App\Sources\AzDo\AzDoNormalizer;
@@ -40,6 +41,7 @@ final class PendingStaticAnalysisScanImporter
         private readonly AttachmentTargetResolver $resolver,
         private readonly AttachmentService $attachments,
         private readonly Filesystem $files,
+        private readonly AzDoOwnerLookup $ownerLookup,
     ) {}
 
     /** @return array{runsSeen: int, linesImported: int, reportsImported: int, reportsFailed: int, aborted: bool} */
@@ -248,15 +250,21 @@ final class PendingStaticAnalysisScanImporter
     /** @param array<string, mixed> $result */
     private function logFailure(string $runName, array $result, string $kind, Throwable $exception): void
     {
+        $projectId = is_string($result['projectId'] ?? null) ? $result['projectId'] : null;
+        $repositoryId = is_string($result['repositoryId'] ?? null) ? $result['repositoryId'] : null;
+
         try {
             ErrorLog::query()->create([
                 'level' => 'error',
                 'channel' => 'static-analysis-import',
+                ...$this->ownerLookup->forAzDoRepository($projectId, $repositoryId),
                 'message' => $exception->getMessage(),
                 'context_json' => [
                     'run' => $runName,
-                    'project' => $result['project'] ?? null,
-                    'repository' => $result['repository'] ?? null,
+                    'project_id' => $projectId,
+                    'project_name' => $result['project'] ?? null,
+                    'repository_id' => $repositoryId,
+                    'repository_name' => $result['repository'] ?? null,
                     'kind' => $kind,
                 ],
                 'trace' => $exception->getTraceAsString(),

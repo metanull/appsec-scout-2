@@ -10,6 +10,8 @@ class ErrorLog extends Model
     protected $fillable = [
         'level',
         'channel',
+        'software_system_id',
+        'security_container_id',
         'message',
         'context_json',
         'trace',
