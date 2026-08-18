@@ -47,10 +47,11 @@ A second, dedicated Docker image/Compose service, `static-analysis-collector`
 (`docker/static-analysis-collector/Dockerfile`), runs `php artisan queue:work
 --queue=static-analysis` as its only process. Unlike `collector` (git + Trivy only), this image
 carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, Roslynator, Eclipse Temurin JDK,
-Maven, Gradle, SpotBugs + Find Security Bugs, plus the Opengrep binary and its vendored
-csharp/java/javascript/typescript ruleset (`/opt/opengrep-rules`) — copied from
-`docker/ops/Dockerfile`'s own pinned versions, minus that image's interactive-shell-only layers
-(GitHub CLI, Claude Code, BFG Repo Cleaner, global Pest/PHPStan/Pint) and Trivy, which this
+Maven, Gradle, SpotBugs + Find Security Bugs, plus — unless built with `OPENGREP_ENABLED=false` —
+the Opengrep binary and its vendored csharp/java/javascript/typescript ruleset
+(`/opt/opengrep-rules`) — copied from `docker/ops/Dockerfile`'s own pinned versions, minus that
+image's interactive-shell-only layers (GitHub CLI, Claude Code, BFG Repo Cleaner, global
+Pest/PHPStan/Pint) and Trivy, which this
 container never calls. It has its own
 scratch volume (`static_analysis_collector_workspace`, mounted at `/workspace-scratch`), separate
 from `collector`'s own `collector_workspace` — the two containers' disk usage is never shared or
@@ -86,12 +87,17 @@ clone step: `Illuminate\Support\Facades\Process`, PAT supplied through a per-job
 `.netrc`/`.git-credentials`, never as a process argument or in a shell string), then runs the same
 three-ecosystem analysis `docker/ops/collect-static-analysis.sh` runs today:
 
-- **Opengrep**: runs first, unconditionally, against the cloned source tree — no build or
-  language-detection step, unlike the other two ecosystems below. `opengrep scan --quiet --sarif
-  --output <path> -f /opt/opengrep-rules <clone>` is run once per repository against the vendored,
-  version-pinned csharp/java/javascript/typescript ruleset. The resulting SARIF is attached as
+- **Opengrep**: runs first, against the cloned source tree — no build or language-detection step,
+  unlike the other two ecosystems below. `opengrep scan --quiet --sarif --output <path> -f
+  /opt/opengrep-rules <clone>` is run once per repository against the vendored, version-pinned
+  csharp/java/javascript/typescript ruleset. The resulting SARIF is attached as
   `code-quality-opengrep` **even when it carries zero results**, so a later `StaleRecordSweeper`
-  pass can still resolve previously reported Opengrep findings that no longer occur.
+  pass can still resolve previously reported Opengrep findings that no longer occur. Gated on
+  `static_analysis_collection.opengrep_enabled` (`STATIC_ANALYSIS_OPENGREP_ENABLED`, default
+  `true`) — set to `false` (matching the image's own `OPENGREP_ENABLED=false` build arg, see
+  [Isolation](#isolation-the-static-analysis-collector-container) above) to skip this step
+  entirely, e.g. where corporate network/DLP policy blocks fetching the pinned Opengrep binary
+  from GitHub releases at build time.
 - **`.NET`**: every `*.sln` found anywhere in the clone is restored, then — regardless of the
   build's own result — built and analyzed with Roslynator (`--severity-level info`). Every
   solution that produces a non-empty SARIF file has its `runs` merged into a single

@@ -591,6 +591,51 @@ it('attaches an opengrep report even when the scan finds zero results', function
     expect($run->status)->toBe('success');
 });
 
+it('never invokes opengrep when disabled by config, but still runs the dotnet and java analyzers', function () {
+    config(['static_analysis_collection.opengrep_enabled' => false]);
+
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $workDir = end($parts);
+            plantClonedFiles($workDir, ['App.sln' => '', 'build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(Attachment::query()->where('kind', AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP)->exists())->toBeFalse()
+        ->and(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe([
+            AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET,
+            AttachmentIngestionService::KIND_CODE_QUALITY_JAVA,
+        ]);
+
+    Process::assertNotRan(fn ($process) => (commandParts($process->command)[0] ?? null) === 'opengrep');
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
 it('logs an opengrep-analyze failure and still runs the dotnet and java analyzers', function () {
     Process::fake(function ($process) {
         $parts = commandParts($process->command);
