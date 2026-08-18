@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\ErrorLogResource;
+use App\Filament\Support\LogLevelBadgeColor;
 use App\Models\ErrorLog;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
@@ -37,11 +38,7 @@ class RecentErrorsTableWidget extends TableWidget
                 TextColumn::make('level')
                     ->label('Level')
                     ->badge()
-                    ->color(fn (ErrorLog $record): string => match ($record->level) {
-                        'emergency', 'alert', 'critical', 'error' => 'danger',
-                        'warning' => 'warning',
-                        default => 'gray',
-                    })
+                    ->color(fn (ErrorLog $record): string => LogLevelBadgeColor::for($record->level))
                     ->placeholder('-'),
                 TextColumn::make('message')
                     ->label('Message')

@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SyncRunResource\Pages\ListSyncRuns;
 use App\Filament\Resources\SyncRunResource\Pages\ViewSyncRun;
 use App\Filament\Support\DateRangeFilters;
+use App\Filament\Support\RunStatusBadgeColor;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\SyncRun;
 use Filament\Infolists\Components\CodeEntry;
@@ -60,11 +61,7 @@ class SyncRunResource extends Resource
                             ->badge(),
                         TextEntry::make('status')
                             ->badge()
-                            ->color(fn (string $state): string => match ($state) {
-                                'success' => 'success',
-                                'failure' => 'danger',
-                                default => 'warning',
-                            }),
+                            ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                         TextEntry::make('started_at')
                             ->label('Started')
                             ->dateTime('d M Y H:i:s')
@@ -104,11 +101,7 @@ class SyncRunResource extends Resource
                     ->badge(),
                 TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'success' => 'success',
-                        'failure' => 'danger',
-                        default => 'warning',
-                    }),
+                    ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                 TextColumn::make('started_at')
                     ->dateTime()
                     ->sortable(),

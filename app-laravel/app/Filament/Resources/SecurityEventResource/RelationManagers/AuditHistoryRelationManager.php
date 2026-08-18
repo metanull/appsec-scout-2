@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SecurityEventResource\RelationManagers;
 
 use App\Audit\AuditLog;
+use App\Filament\Support\ActorKindBadgeColor;
 use Filament\Actions\Action;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -29,12 +30,7 @@ class AuditHistoryRelationManager extends RelationManager
                 TextColumn::make('actor_kind')
                     ->label('Actor')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'user' => 'info',
-                        'job' => 'gray',
-                        'cli' => 'warning',
-                        default => 'secondary',
-                    }),
+                    ->color(fn (string $state): string => ActorKindBadgeColor::for($state)),
                 TextColumn::make('user.name')
                     ->label('User')
                     ->placeholder('—'),

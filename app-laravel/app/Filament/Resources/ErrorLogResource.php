@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
 use App\Filament\Resources\ErrorLogResource\Pages\ViewErrorLog;
 use App\Filament\Support\DateRangeFilters;
+use App\Filament\Support\LogLevelBadgeColor;
 use App\Models\ErrorLog;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\CodeEntry;
@@ -64,11 +65,7 @@ class ErrorLogResource extends Resource
                             ->dateTime('d M Y H:i:s'),
                         TextEntry::make('level')
                             ->badge()
-                            ->color(fn (string $state) => match (strtolower($state)) {
-                                'error', 'critical', 'alert', 'emergency' => 'danger',
-                                'warning' => 'warning',
-                                default => 'secondary',
-                            }),
+                            ->color(fn (string $state): string => LogLevelBadgeColor::for($state)),
                         TextEntry::make('channel'),
                         TextEntry::make('message')
                             ->wrap()
@@ -106,11 +103,7 @@ class ErrorLogResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('occurred_at')->dateTime()->sortable(),
-                TextColumn::make('level')->badge()->color(fn (string $state) => match (strtolower($state)) {
-                    'error', 'critical', 'alert', 'emergency' => 'danger',
-                    'warning' => 'warning',
-                    default => 'secondary',
-                }),
+                TextColumn::make('level')->badge()->color(fn (string $state): string => LogLevelBadgeColor::for($state)),
                 TextColumn::make('channel'),
                 TextColumn::make('message')->searchable()->wrap(),
                 TextColumn::make('context_json')

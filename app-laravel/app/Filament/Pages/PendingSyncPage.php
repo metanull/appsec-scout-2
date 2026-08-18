@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Support\EventSeverityBadgeColor;
+use App\Filament\Support\EventStateBadgeColor;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Sync\PushEventStatesJob;
@@ -78,22 +79,12 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('state')
                     ->label('Current state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->state)) {
-                        'open' => 'danger',
-                        'resolved' => 'success',
-                        'dismissed' => 'gray',
-                        default => 'secondary',
-                    })
+                    ->color(fn (SecurityEvent $record): string => $this->stateBadgeColor($record->state))
                     ->placeholder('-'),
                 TextColumn::make('pending_state')
                     ->label('Pending state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->pending_state)) {
-                        'open' => 'danger',
-                        'resolved' => 'success',
-                        'dismissed' => 'gray',
-                        default => 'secondary',
-                    })
+                    ->color(fn (SecurityEvent $record): string => $this->stateBadgeColor($record->pending_state))
                     ->placeholder('-'),
                 TextColumn::make('severity')
                     ->label('Current severity')
@@ -177,5 +168,17 @@ class PendingSyncPage extends Page implements HasTable
         }
 
         return is_string($state) ? $state : '';
+    }
+
+    /**
+     * `pending_state` is nullable (an event can have a pending severity
+     * change with no pending state change, or vice versa); a null value
+     * must render as neutral, not as EventStateBadgeColor's "open" default.
+     */
+    private function stateBadgeColor(mixed $state): string
+    {
+        $value = $this->enumString($state);
+
+        return $value === '' ? 'secondary' : EventStateBadgeColor::for($value);
     }
 }

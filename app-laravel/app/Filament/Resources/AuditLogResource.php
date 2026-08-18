@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Audit\AuditLog;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
+use App\Filament\Support\ActorKindBadgeColor;
 use App\Filament\Support\DateRangeFilters;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
@@ -60,13 +61,7 @@ class AuditLogResource extends Resource
                         TextEntry::make('actor_kind')
                             ->label('Actor kind')
                             ->badge()
-                            ->color(fn (string $state): string => match ($state) {
-                                'user' => 'info',
-                                'job' => 'gray',
-                                'cli' => 'warning',
-                                'system' => 'secondary',
-                                default => 'secondary',
-                            }),
+                            ->color(fn (string $state): string => ActorKindBadgeColor::for($state)),
                         TextEntry::make('ip')
                             ->label('IP address')
                             ->placeholder('-'),
@@ -122,13 +117,7 @@ class AuditLogResource extends Resource
                     ->sortable(),
                 TextColumn::make('actor_kind')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'user' => 'info',
-                        'job' => 'gray',
-                        'cli' => 'warning',
-                        'system' => 'secondary',
-                        default => 'secondary',
-                    })
+                    ->color(fn (string $state): string => ActorKindBadgeColor::for($state))
                     ->placeholder('-'),
                 TextColumn::make('action')
                     ->searchable()

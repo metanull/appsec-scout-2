@@ -30,3 +30,23 @@ it('renders pending sync page for sync role users', function () {
         ->assertSuccessful()
         ->assertSee('Pending Sync');
 });
+
+it('renders a row whose pending state is null without error', function () {
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Sync']);
+
+    SecurityEvent::factory()->create([
+        'source_id' => 'azdo',
+        'is_dirty' => true,
+        'pending_state' => null,
+        'pending_severity' => EventSeverity::Low,
+    ]);
+
+    $this->actingAs($user)
+        ->get('/sync/pending')
+        ->assertSuccessful();
+});

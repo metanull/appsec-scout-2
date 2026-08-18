@@ -6,6 +6,7 @@ use App\Audit\Recorder;
 use App\Filament\Resources\StaticAnalysisRunResource\Pages\ListStaticAnalysisRuns;
 use App\Filament\Resources\StaticAnalysisRunResource\Pages\ViewStaticAnalysisRun;
 use App\Filament\Support\DateRangeFilters;
+use App\Filament\Support\RunStatusBadgeColor;
 use App\Models\StaticAnalysisRun;
 use Filament\Actions\Action;
 use Filament\Infolists\Components\CodeEntry;
@@ -62,12 +63,7 @@ class StaticAnalysisRunResource extends Resource
                             ->badge(),
                         TextEntry::make('status')
                             ->badge()
-                            ->color(fn (string $state): string => match ($state) {
-                                'success' => 'success',
-                                'failure' => 'danger',
-                                'partial' => 'warning',
-                                default => 'warning',
-                            }),
+                            ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                         TextEntry::make('batch_id')
                             ->label('Batch ID')
                             ->placeholder('-'),
@@ -110,12 +106,7 @@ class StaticAnalysisRunResource extends Resource
                     ->badge(),
                 TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'success' => 'success',
-                        'failure' => 'danger',
-                        'partial' => 'warning',
-                        default => 'warning',
-                    }),
+                    ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                 TextColumn::make('started_at')
                     ->dateTime()
                     ->sortable(),

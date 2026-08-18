@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\RepositoryCollectionRunResource;
+use App\Filament\Support\RunStatusBadgeColor;
 use App\Models\RepositoryCollectionRun;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
@@ -32,7 +33,7 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
                 TextColumn::make('source_control_id')->label('Source Control')->badge(),
                 TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state) => $state === 'success' ? 'success' : ($state === 'failure' ? 'danger' : 'warning')),
+                    ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                 TextColumn::make('started_at')->dateTime(),
                 TextColumn::make('duration')->label('Duration')
                     ->state(function (RepositoryCollectionRun $record): string {
