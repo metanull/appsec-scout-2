@@ -197,8 +197,8 @@ class RepositoryCollectionRunResource extends Resource
     public static function failuresUrl(RepositoryCollectionRun $run): string
     {
         $params = [
+            'tab' => 'repository-collection',
             'tableFilters' => [
-                'channel' => ['value' => 'repository-collection'],
                 'run' => ['value' => (string) $run->id],
             ],
         ];

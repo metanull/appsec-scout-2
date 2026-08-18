@@ -128,8 +128,6 @@ class ErrorLogResource extends Resource
             ->filters([
                 SelectFilter::make('level')
                     ->options(['ERROR' => 'Error', 'CRITICAL' => 'Critical', 'ALERT' => 'Alert', 'EMERGENCY' => 'Emergency']),
-                SelectFilter::make('channel')
-                    ->options(fn (): array => ErrorLog::query()->distinct()->pluck('channel', 'channel')->all()),
                 Filter::make('run')
                     ->form([
                         TextInput::make('value')

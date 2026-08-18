@@ -102,7 +102,7 @@ it('lists rows that link to the view page', function () {
     expect(ErrorLogResource::getUrl('view', ['record' => $log]))->toBeString();
 });
 
-it('filters error logs by channel', function () {
+it('scopes error logs to the selected channel tab', function () {
     $admin = errorLogAdmin();
 
     $sync = ErrorLog::query()->create([
@@ -114,9 +114,48 @@ it('filters error logs by channel', function () {
 
     Livewire::actingAs($admin)
         ->test(ListErrorLogs::class)
-        ->filterTable('channel', 'repository-collection')
+        ->set('activeTab', 'repository-collection')
         ->assertCanSeeTableRecords([$collection])
         ->assertCanNotSeeTableRecords([$sync]);
+});
+
+it('shows every error log under the All tab regardless of channel', function () {
+    $admin = errorLogAdmin();
+
+    $sync = ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'sync failure', 'trace' => '', 'occurred_at' => now(),
+    ]);
+    $collection = ErrorLog::query()->create([
+        'channel' => 'repository-collection', 'level' => 'ERROR', 'message' => 'collection failure', 'trace' => '', 'occurred_at' => now(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListErrorLogs::class)
+        ->set('activeTab', 'all')
+        ->assertCanSeeTableRecords([$sync, $collection]);
+});
+
+it('badges each channel tab with its own error count', function () {
+    $admin = errorLogAdmin();
+
+    ErrorLog::query()->create([
+        'channel' => 'repository-collection', 'level' => 'ERROR', 'message' => 'one', 'trace' => '', 'occurred_at' => now(),
+    ]);
+    ErrorLog::query()->create([
+        'channel' => 'repository-collection', 'level' => 'ERROR', 'message' => 'two', 'trace' => '', 'occurred_at' => now(),
+    ]);
+    ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'three', 'trace' => '', 'occurred_at' => now(),
+    ]);
+
+    $tabs = Livewire::actingAs($admin)
+        ->test(ListErrorLogs::class)
+        ->instance()
+        ->getCachedTabs();
+
+    expect($tabs['repository-collection']->getBadge())->toBe('2')
+        ->and($tabs['sync']->getBadge())->toBe('1')
+        ->and($tabs['static-analysis']->getBadge())->toBe('0');
 });
 
 it('filters error logs by the collection run recorded in their context', function () {
