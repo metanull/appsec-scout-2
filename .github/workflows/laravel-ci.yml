@@ -15,6 +15,8 @@ jobs:
   audit-composer:
     name: Audit - Composer (php)
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.composer_changed == 'true'
 
     steps:
       - uses: actions/checkout@v6
@@ -45,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed_files: ${{ steps.detect.outputs.changed_files }}
+      composer_changed: ${{ steps.detect.outputs.composer_changed }}
 
     steps:
       - uses: actions/checkout@v6
@@ -56,6 +59,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed_files=true" >> $GITHUB_OUTPUT
+            echo "composer_changed=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -65,10 +69,16 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED"
 
-          if echo "$CHANGED" | grep -qE '^app-laravel/(app|routes|config|database|tests|bootstrap)/|^(composer\.json|composer\.lock|phpunit\.xml|artisan)$'; then
+          if echo "$CHANGED" | grep -qE '^app-laravel/(app|routes|config|database|tests|bootstrap)/|^app-laravel/(composer\.json|composer\.lock|phpunit\.xml|artisan)$'; then
             echo "changed_files=true" >> $GITHUB_OUTPUT
           else
             echo "changed_files=false" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$CHANGED" | grep -qE '^app-laravel/composer\.(json|lock)$'; then
+            echo "composer_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "composer_changed=false" >> $GITHUB_OUTPUT
           fi
 
   ci-checks:
@@ -126,21 +136,25 @@ jobs:
       - name: "Check all mandatory checks passed"
         run: |
           changesDetected=${{ needs.detect-changes.outputs.changed_files }}
+          composerChanged=${{ needs.detect-changes.outputs.composer_changed }}
           composerAuditResult=${{ needs.audit-composer.result }}
           ciChecksResult=${{ needs.ci-checks.result }}
-          
-          if [ "$changesDetected" = "true" ]; then
-            if [ "$composerAuditResult" = "success" ] && [ "$ciChecksResult" = "success" ]; then
-              echo "All CI checks passed."
-            else
-              echo "One or more CI checks failed."
-              exit 1
-            fi
-          else
-            if [ "$composerAuditResult" = "success" ]; then
-              echo "No relevant changes detected. Composer audit passed."
-            else
-              echo "No relevant changes detected, but Composer audit failed."
-              exit 1
-            fi
+
+          failed=false
+
+          if [ "$composerChanged" = "true" ] && [ "$composerAuditResult" != "success" ]; then
+            echo "composer.json/composer.lock changed and Composer audit did not pass."
+            failed=true
           fi
+
+          if [ "$changesDetected" = "true" ] && [ "$ciChecksResult" != "success" ]; then
+            echo "Relevant application files changed and Validation did not pass."
+            failed=true
+          fi
+
+          if [ "$failed" = "true" ]; then
+            echo "One or more required checks failed."
+            exit 1
+          fi
+
+          echo "All required checks passed."

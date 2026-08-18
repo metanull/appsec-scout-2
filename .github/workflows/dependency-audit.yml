@@ -1,0 +1,128 @@
+name: Dependency Audit
+
+permissions:
+  contents: read
+  issues: write
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Weekly, Monday 06:00 UTC
+
+  workflow_dispatch:
+
+jobs:
+
+  audit-composer:
+    name: Audit - Composer (php)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: intl, pdo_mysql, bcmath, zip, pcntl
+
+      - name: Install dependencies
+        working-directory: app-laravel
+        run: |
+          composer install --no-interaction --no-scripts --no-progress --prefer-dist
+
+      - name: Audit vulnerabilities
+        working-directory: app-laravel
+        run: |
+          composer audit --format=summary
+
+  audit-npm:
+    name: Audit - npm (js)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: app-laravel
+        run: |
+          npm ci
+
+      - name: Audit vulnerabilities
+        working-directory: app-laravel
+        run: |
+          npm audit --audit-level=high
+
+  report:
+    name: Report findings
+    runs-on: ubuntu-latest
+    needs: [audit-composer, audit-npm]
+    if: always()
+
+    steps:
+      - name: Track or clear findings
+        uses: actions/github-script@v9
+        env:
+          COMPOSER_RESULT: ${{ needs.audit-composer.result }}
+          NPM_RESULT: ${{ needs.audit-npm.result }}
+        with:
+          script: |
+            const label = "dependency-audit";
+            const composerResult = process.env.COMPOSER_RESULT;
+            const npmResult = process.env.NPM_RESULT;
+            const failed = composerResult === "failure" || npmResult === "failure";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: label,
+            });
+
+            if (failed) {
+              const body = [
+                "Scheduled dependency audit found known vulnerabilities in the dependency tree on `main`.",
+                "",
+                `- Composer audit: **${composerResult}**`,
+                `- npm audit: **${npmResult}**`,
+                "",
+                `See the [workflow run](${runUrl}) for details, then run \`composer audit\` / \`npm audit\` locally (inside the container) to identify the affected packages.`,
+              ].join("\n");
+
+              if (existing.length > 0) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existing[0].number,
+                  body,
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: "Scheduled dependency audit found known vulnerabilities",
+                  body,
+                  labels: [label],
+                });
+              }
+            } else if (existing.length > 0) {
+              for (const issue of existing) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `Dependency audit is clean again as of [this run](${runUrl}). Closing.`,
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: "closed",
+                });
+              }
+            }
