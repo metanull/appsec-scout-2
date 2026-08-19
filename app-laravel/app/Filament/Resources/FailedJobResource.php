@@ -5,9 +5,11 @@ namespace App\Filament\Resources;
 use App\Audit\Recorder;
 use App\Filament\Resources\FailedJobResource\Pages\ListFailedJobs;
 use App\Filament\Resources\FailedJobResource\Pages\ViewFailedJob;
+use App\Filament\Support\DateRangeFilters;
 use App\Filament\Support\JobPayloadInspector;
 use App\Models\FailedJob;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -21,6 +23,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Phiki\Grammar\Grammar;
@@ -157,18 +160,58 @@ class FailedJobResource extends Resource
                         $data['job_class'] ?? null,
                         fn (Builder $q, string $v) => $q->whereRaw('payload LIKE ?', ["%{$v}%"]),
                     )),
+                ...DateRangeFilters::for('failed_at'),
             ])
             ->actions([
                 Action::make('retry')
                     ->label('Retry')
                     ->icon('heroicon-o-arrow-uturn-left')
-                    ->action(fn (FailedJob $record) => self::retryFailedJob($record->uuid)),
+                    ->action(fn (FailedJob $record) => self::notifyRetryResult(self::retryFailedJob($record->uuid))),
                 Action::make('forget')
                     ->label('Forget')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->action(fn (FailedJob $record) => self::forgetFailedJob($record->uuid)),
+                    ->action(fn (FailedJob $record) => self::notifyForgetResult(self::forgetFailedJob($record->uuid))),
+            ])
+            ->bulkActions([
+                BulkAction::make('retrySelected')
+                    ->label('Retry selected')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->requiresConfirmation()
+                    ->modalHeading('Retry selected failed jobs')
+                    ->modalDescription('Each selected job is re-queued and removed from the failed jobs list.')
+                    ->action(function (Collection $records): void {
+                        /** @var Collection<int, FailedJob> $records */
+                        $succeeded = 0;
+                        foreach ($records as $record) {
+                            if (self::retryFailedJob($record->uuid)) {
+                                $succeeded++;
+                            }
+                        }
+
+                        self::notifyBulkResult('retried', $succeeded, $records->count());
+                    })
+                    ->deselectRecordsAfterCompletion(),
+                BulkAction::make('forgetSelected')
+                    ->label('Forget selected')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Forget selected failed jobs')
+                    ->modalDescription('Each selected job is permanently removed from the failed jobs list.')
+                    ->action(function (Collection $records): void {
+                        /** @var Collection<int, FailedJob> $records */
+                        $succeeded = 0;
+                        foreach ($records as $record) {
+                            if (self::forgetFailedJob($record->uuid)) {
+                                $succeeded++;
+                            }
+                        }
+
+                        self::notifyBulkResult('forgotten', $succeeded, $records->count());
+                    })
+                    ->deselectRecordsAfterCompletion(),
             ])
             ->defaultSort('failed_at', 'desc')
             ->paginated([25, 50, 100])
@@ -184,15 +227,13 @@ class FailedJobResource extends Resource
         ];
     }
 
-    public static function retryFailedJob(string $failedJobUuid): void
+    public static function retryFailedJob(string $failedJobUuid): bool
     {
         /** @var object{connection: string, payload: string, queue: string}|null $failedJob */
         $failedJob = app('queue.failer')->find($failedJobUuid);
 
         if ($failedJob === null) {
-            Notification::make()->title('Failed job not found')->warning()->send();
-
-            return;
+            return false;
         }
 
         app('queue')->connection($failedJob->connection)->pushRaw($failedJob->payload, $failedJob->queue);
@@ -200,16 +241,44 @@ class FailedJobResource extends Resource
 
         app(Recorder::class)->recordAdminAction('operations.retry_failed_job', ['failed_job_uuid' => $failedJobUuid]);
 
-        Notification::make()->title('Failed job retried')->success()->send();
+        return true;
     }
 
-    public static function forgetFailedJob(string $failedJobUuid): void
+    public static function forgetFailedJob(string $failedJobUuid): bool
     {
-        app('queue.failer')->forget($failedJobUuid);
+        $forgotten = app('queue.failer')->forget($failedJobUuid);
 
-        app(Recorder::class)->recordAdminAction('operations.forget_failed_job', ['failed_job_uuid' => $failedJobUuid]);
+        if ($forgotten) {
+            app(Recorder::class)->recordAdminAction('operations.forget_failed_job', ['failed_job_uuid' => $failedJobUuid]);
+        }
 
-        Notification::make()->title('Failed job removed')->success()->send();
+        return $forgotten;
+    }
+
+    public static function notifyRetryResult(bool $succeeded): void
+    {
+        $succeeded
+            ? Notification::make()->title('Failed job retried')->success()->send()
+            : Notification::make()->title('Failed job not found')->warning()->send();
+    }
+
+    public static function notifyForgetResult(bool $succeeded): void
+    {
+        $succeeded
+            ? Notification::make()->title('Failed job removed')->success()->send()
+            : Notification::make()->title('Failed job not found')->warning()->send();
+    }
+
+    private static function notifyBulkResult(string $verb, int $succeeded, int $total): void
+    {
+        $missing = $total - $succeeded;
+
+        $title = "{$succeeded} job(s) {$verb}";
+        if ($missing > 0) {
+            $title .= ", {$missing} could not be resolved";
+        }
+
+        Notification::make()->title($title)->success()->send();
     }
 
     public static function payloadFull(string $payload): string
