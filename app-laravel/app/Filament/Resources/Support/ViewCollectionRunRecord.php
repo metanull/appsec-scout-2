@@ -25,16 +25,9 @@ abstract class ViewCollectionRunRecord extends ViewRecord
                 ->label('View failures')
                 ->icon('heroicon-o-exclamation-triangle')
                 ->color('danger')
-                ->visible(fn (): bool => $this->failedCount() > 0)
+                ->visible(fn (): bool => $resourceClass::failedCount($this->currentRecord()) > 0)
                 ->url(fn (): string => $resourceClass::failuresUrl($this->currentRecord())),
         ];
-    }
-
-    private function failedCount(): int
-    {
-        $counts = $this->currentRecord()->getAttribute('counts_json');
-
-        return is_array($counts) ? (int) ($counts['repositories_failed'] ?? 0) : 0;
     }
 
     private function currentRecord(): RepositoryCollectionRun|StaticAnalysisRun

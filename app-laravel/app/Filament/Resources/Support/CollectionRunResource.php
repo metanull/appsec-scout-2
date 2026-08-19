@@ -146,14 +146,20 @@ abstract class CollectionRunResource extends Resource
                     ->since()
                     ->sortable()
                     ->placeholder('-'),
+                TextColumn::make('batch_id')
+                    ->label('Batch ID')
+                    ->placeholder('-')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('counts_json')
                     ->label('Counts')
                     ->state(fn (RepositoryCollectionRun|StaticAnalysisRun $record): string => RunCounts::format($record->counts_json))
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
                 TextColumn::make('error_message')
                     ->label('Error')
                     ->wrap()
                     ->placeholder('-')
+                    ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
@@ -164,6 +170,12 @@ abstract class CollectionRunResource extends Resource
                 ...DateRangeFilters::for('started_at', 'Started from', 'Started until'),
             ])
             ->actions([
+                Action::make('viewFailures')
+                    ->label('View failures')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->color('danger')
+                    ->visible(fn (RepositoryCollectionRun|StaticAnalysisRun $record): bool => static::failedCount($record) > 0)
+                    ->url(fn (RepositoryCollectionRun|StaticAnalysisRun $record): string => static::failuresUrl($record)),
                 Action::make('forceFinish')
                     ->label('Force-finish')
                     ->icon('heroicon-o-stop-circle')
@@ -197,6 +209,14 @@ abstract class CollectionRunResource extends Resource
         ]);
 
         Notification::make()->title('Run marked as finished')->success()->send();
+    }
+
+    /** Number of repositories the run failed to process, per counts_json. */
+    public static function failedCount(RepositoryCollectionRun|StaticAnalysisRun $record): int
+    {
+        $counts = $record->getAttribute('counts_json');
+
+        return is_array($counts) ? (int) ($counts['repositories_failed'] ?? 0) : 0;
     }
 
     /**

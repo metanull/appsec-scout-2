@@ -237,6 +237,79 @@ it('following the failures URL actually filters the error log to the run and its
         ->assertCanNotSeeTableRecords([$otherRun, $otherChannel]);
 });
 
+it('shows the counts column by default and keeps it toggleable', function () {
+    $admin = repositoryCollectionRunAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(ListRepositoryCollectionRuns::class)
+        ->assertTableColumnVisible('counts_json');
+});
+
+it('shows a View failures row action on the list only when the run has failures', function () {
+    $admin = repositoryCollectionRunAdmin();
+
+    $clean = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['repositories_considered' => 2, 'repositories_completed' => 2, 'repositories_failed' => 0],
+    ]);
+
+    $partial = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'partial',
+        'counts_json' => ['repositories_considered' => 2, 'repositories_completed' => 1, 'repositories_failed' => 1],
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListRepositoryCollectionRuns::class)
+        ->assertTableActionHidden('viewFailures', $clean)
+        ->assertTableActionVisible('viewFailures', $partial);
+});
+
+it('narrows the list by searching batch_id and error_message', function () {
+    $admin = repositoryCollectionRunAdmin();
+
+    $matching = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'batch_id' => 'batch-alpha-uuid',
+        'started_at' => now()->subMinute(),
+        'status' => 'success',
+        'counts_json' => [],
+    ]);
+
+    $other = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'batch_id' => 'batch-beta-uuid',
+        'started_at' => now()->subMinute(),
+        'status' => 'success',
+        'counts_json' => [],
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListRepositoryCollectionRuns::class)
+        ->searchTable('batch-alpha')
+        ->assertCanSeeTableRecords([$matching])
+        ->assertCanNotSeeTableRecords([$other]);
+
+    $failed = RepositoryCollectionRun::query()->create([
+        'source_control_id' => 'azdo-repos',
+        'started_at' => now()->subMinute(),
+        'status' => 'failure',
+        'counts_json' => [],
+        'error_message' => 'clone timed out for backend-api',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListRepositoryCollectionRuns::class)
+        ->searchTable('timed out')
+        ->assertCanSeeTableRecords([$failed])
+        ->assertCanNotSeeTableRecords([$matching, $other]);
+});
+
 it('denies the view page to a user without admin.queue', function () {
     $reader = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),

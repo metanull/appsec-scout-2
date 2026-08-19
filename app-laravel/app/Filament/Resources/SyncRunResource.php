@@ -8,6 +8,7 @@ use App\Filament\Support\DateRangeFilters;
 use App\Filament\Support\RunStatusBadgeColor;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\SyncRun;
+use Filament\Actions\Action;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -114,12 +115,13 @@ class SyncRunResource extends Resource
                 TextColumn::make('counts_json')
                     ->label('Counts')
                     ->state(fn (SyncRun $record): string => DashboardData::formatCounts($record))
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
                 TextColumn::make('error_message')
                     ->label('Error')
                     ->wrap()
                     ->placeholder('-')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->searchable()
+                    ->toggleable(),
             ])
             ->filters([
                 SelectFilter::make('source_id')
@@ -127,6 +129,20 @@ class SyncRunResource extends Resource
                 SelectFilter::make('status')
                     ->options(['success' => 'Success', 'failure' => 'Failure', 'running' => 'Running']),
                 ...DateRangeFilters::for('started_at', 'Started from', 'Started until'),
+            ])
+            ->actions([
+                Action::make('viewError')
+                    ->label('View error')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->color('danger')
+                    ->modalHeading('Sync run error')
+                    ->infolist([
+                        TextEntry::make('error_message')
+                            ->label('')
+                            ->wrap(),
+                    ])
+                    ->modalSubmitAction(false)
+                    ->visible(fn (SyncRun $record): bool => filled($record->error_message)),
             ])
             ->defaultSort('started_at', 'desc')
             ->paginated([25, 50, 100])

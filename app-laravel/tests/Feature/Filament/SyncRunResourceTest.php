@@ -152,6 +152,54 @@ it('denies the view page to a user without admin.queue', function () {
         ->assertForbidden();
 });
 
+it('shows the counts and error columns by default and keeps them toggleable', function () {
+    $admin = syncRunAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(ListSyncRuns::class)
+        ->assertTableColumnVisible('counts_json')
+        ->assertTableColumnVisible('error_message');
+});
+
+it('narrows the list by searching error_message', function () {
+    $admin = syncRunAdmin();
+
+    $failed = SyncRun::query()->create([
+        'source_id' => 'azdo', 'started_at' => now()->subMinute(), 'finished_at' => now(),
+        'status' => 'failure', 'counts_json' => [], 'error_message' => 'credential expired for azdo',
+    ]);
+
+    $clean = SyncRun::query()->create([
+        'source_id' => 'azdo', 'started_at' => now()->subMinute(), 'finished_at' => now(),
+        'status' => 'success', 'counts_json' => [], 'error_message' => null,
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListSyncRuns::class)
+        ->searchTable('credential expired')
+        ->assertCanSeeTableRecords([$failed])
+        ->assertCanNotSeeTableRecords([$clean]);
+});
+
+it('shows the View error row action only when the run has an error message', function () {
+    $admin = syncRunAdmin();
+
+    $clean = SyncRun::query()->create([
+        'source_id' => 'azdo', 'started_at' => now()->subMinute(), 'finished_at' => now(),
+        'status' => 'success', 'counts_json' => [], 'error_message' => null,
+    ]);
+
+    $failed = SyncRun::query()->create([
+        'source_id' => 'azdo', 'started_at' => now()->subMinute(), 'finished_at' => now(),
+        'status' => 'failure', 'counts_json' => [], 'error_message' => 'credential expired for azdo',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListSyncRuns::class)
+        ->assertTableActionHidden('viewError', $clean)
+        ->assertTableActionVisible('viewError', $failed);
+});
+
 it('filters sync runs by a started_at date range', function () {
     $admin = syncRunAdmin();
 
