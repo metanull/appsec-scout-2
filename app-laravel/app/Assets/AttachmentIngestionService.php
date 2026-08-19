@@ -3,12 +3,15 @@
 namespace App\Assets;
 
 use App\Assets\Parsers\CycloneDxSbomParser;
+use App\Assets\Parsers\ParsedComponent;
 use App\Assets\Parsers\SarifFindingParser;
 use App\Models\Attachment;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
+use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Parses a freshly stored Attachment (SBOM, vulnerabilities, secrets, or
@@ -56,9 +59,84 @@ final class AttachmentIngestionService
 
     private function ingestSbom(Attachment $attachment, SoftwareAsset|SoftwareSystem|SecurityContainer $owner): void
     {
+        $components = $this->sbomParser->parse($attachment->payload);
+
+        DB::transaction(function () use ($attachment, $owner, $components): void {
+            // Only a SecurityContainer owner carries the real (owner_type, owner_id, purl)
+            // unique constraint upsert() needs to detect conflicts — SoftwareSystem/
+            // SoftwareAsset ownership (only reachable via the manual assets:import-attachment
+            // CLI command, one file at a time, never a bulk scan import) scopes instead by
+            // software_system_id/software_asset_id, which carries no matching DB constraint,
+            // so it keeps the original row-by-row path.
+            $touchedIds = $owner instanceof SecurityContainer
+                ? $this->upsertSoftwareComponents($attachment, $owner, $components)
+                : $this->saveSoftwareComponentsSequentially($attachment, $owner, $components);
+
+            // The whole SBOM parsed and every component upserted without throwing, so this is a
+            // complete pass — safe to mark anything not touched this time as no longer present.
+            $this->sweeper->sweepComponents($owner, $touchedIds);
+        });
+    }
+
+    /**
+     * @param  list<ParsedComponent>  $components
+     * @return list<int>
+     */
+    private function upsertSoftwareComponents(Attachment $attachment, SecurityContainer $owner, array $components): array
+    {
+        if ($components === []) {
+            return [];
+        }
+
+        $now = now();
+        $hierarchy = $this->hierarchyColumns($owner);
+
+        $rows = array_map(fn (ParsedComponent $component): array => [
+            'owner_type' => SecurityContainer::class,
+            'owner_id' => $owner->id,
+            'attachment_id' => $attachment->id,
+            'name' => $component->name,
+            'version' => $component->version,
+            'ecosystem' => $component->ecosystem,
+            'purl' => $component->purl,
+            'license' => $component->license,
+            'metadata' => json_encode($component->metadata, JSON_THROW_ON_ERROR),
+            'software_system_id' => $hierarchy['software_system_id'],
+            'software_asset_id' => $hierarchy['software_asset_id'],
+            'first_seen_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $components);
+
+        foreach (array_chunk($rows, 500) as $chunk) {
+            // first_seen_at/created_at are deliberately excluded from the update-columns list
+            // so they are only ever set on insert — first_seen_at must survive re-scans.
+            SoftwareComponent::query()->upsert(
+                $chunk,
+                ['owner_type', 'owner_id', 'purl'],
+                ['attachment_id', 'name', 'version', 'ecosystem', 'license', 'metadata', 'software_system_id', 'software_asset_id', 'last_seen_at', 'updated_at'],
+            );
+        }
+
+        return array_values(SoftwareComponent::query()
+            ->where('owner_type', SecurityContainer::class)
+            ->where('owner_id', $owner->id)
+            ->whereIn('purl', array_column($rows, 'purl'))
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all());
+    }
+
+    /**
+     * @param  list<ParsedComponent>  $components
+     * @return list<int>
+     */
+    private function saveSoftwareComponentsSequentially(Attachment $attachment, SoftwareAsset|SoftwareSystem $owner, array $components): array
+    {
         $touchedIds = [];
 
-        foreach ($this->sbomParser->parse($attachment->payload) as $component) {
+        foreach ($components as $component) {
             $record = $owner->softwareComponents()->firstOrNew(['purl' => $component->purl]);
             $isNew = ! $record->exists;
 
@@ -82,9 +160,7 @@ final class AttachmentIngestionService
             $touchedIds[] = $record->id;
         }
 
-        // The whole SBOM parsed and every component upserted without throwing, so this is a
-        // complete pass — safe to mark anything not touched this time as no longer present.
-        $this->sweeper->sweepComponents($owner, $touchedIds);
+        return $touchedIds;
     }
 
     private function ingestFindings(Attachment $attachment, SoftwareAsset|SoftwareSystem|SecurityContainer $owner, string $kind): void

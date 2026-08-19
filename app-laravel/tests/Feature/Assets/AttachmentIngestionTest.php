@@ -271,6 +271,36 @@ it('marks a software component removed when it disappears from a re-scan, and un
     expect($componentB->fresh()->removed_at)->toBeNull();
 });
 
+it('upserts a large SBOM spanning multiple chunks, and sweeps correctly across the chunk boundary', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+
+    $purls = array_map(fn (int $i): string => "pkg:nuget/Package{$i}@1.0.0", range(1, 700));
+
+    $service->attachTo($container, 'sbom', 'application/json', 'first.json', minimalCycloneDx($purls));
+
+    expect(SoftwareComponent::query()->where('owner_id', $container->id)->count())->toBe(700)
+        ->and(SoftwareComponent::query()->where('owner_id', $container->id)->whereNull('removed_at')->count())->toBe(700)
+        ->and(SoftwareComponent::query()->where('owner_id', $container->id)->whereNull('first_seen_at')->exists())->toBeFalse();
+
+    // Re-attach the exact same 700 components: still 700 rows, none newly removed — proves the
+    // chunked upsert doesn't create duplicates across the 500-row chunk boundary.
+    $service->attachTo($container, 'sbom', 'application/json', 'second.json', minimalCycloneDx($purls));
+
+    expect(SoftwareComponent::query()->where('owner_id', $container->id)->count())->toBe(700)
+        ->and(SoftwareComponent::query()->where('owner_id', $container->id)->whereNull('removed_at')->count())->toBe(700);
+
+    // Re-scan with only the second half present — the missing half spans across where the
+    // first chunk boundary (500) used to be, proving the sweep's touchedIds are correct across
+    // chunks, not just within a single chunk.
+    $secondHalf = array_slice($purls, 500);
+    $service->attachTo($container, 'sbom', 'application/json', 'third.json', minimalCycloneDx($secondHalf));
+
+    expect(SoftwareComponent::query()->where('owner_id', $container->id)->whereNull('removed_at')->count())->toBe(200)
+        ->and(SoftwareComponent::query()->where('owner_id', $container->id)->whereNotNull('removed_at')->count())->toBe(500)
+        ->and(SoftwareComponent::query()->where('owner_id', $container->id)->whereIn('purl', $secondHalf)->whereNull('removed_at')->count())->toBe(200);
+});
+
 it('auto-resolves a local finding that disappears from a re-scan, without overriding a manually-set status', function () {
     $container = SecurityContainer::factory()->create();
     $service = app(AttachmentService::class);
