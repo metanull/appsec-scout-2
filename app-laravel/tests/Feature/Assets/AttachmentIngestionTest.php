@@ -68,6 +68,24 @@ it('parses a vulnerabilities attachment into local findings', function () {
         ->and($finding->attachment)->not()->toBeNull();
 });
 
+it('populates dedup_hash on every ingested finding', function () {
+    $container = SecurityContainer::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'vulnerabilities',
+        'application/json',
+        'vuln.sarif.json',
+        trivyFixture('vuln-sarif-sample.json'),
+    );
+
+    $finding = LocalFinding::query()->where('owner_id', $container->id)->firstOrFail();
+
+    expect($finding->dedup_hash)->toBe(
+        LocalFinding::computeDedupHash($finding->rule_id, $finding->file_path, $finding->start_line),
+    );
+});
+
 it('parses a secrets attachment into local findings', function () {
     $container = SecurityContainer::factory()->create();
 

@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'owner_type', 'owner_id', 'attachment_id',
     'software_system_id', 'software_asset_id',
     'kind', 'rule_id', 'title', 'description', 'severity',
-    'file_path', 'start_line', 'end_line',
+    'file_path', 'start_line', 'end_line', 'dedup_hash',
     'package_name', 'package_version', 'metadata',
     'correlated_security_event_id', 'correlation_method',
     'status', 'overridden_severity',
@@ -99,5 +99,17 @@ class LocalFinding extends Model
     public static function severityColor(?string $severity): string
     {
         return EventSeverityBadgeColor::for($severity === null ? null : strtolower($severity));
+    }
+
+    /**
+     * A short, fixed-width identity hash of a finding's (rule_id, file_path, start_line) —
+     * narrow enough, unlike those columns at full width, to sit in a real composite unique
+     * index alongside owner_type/owner_id/kind (see the local_findings migrations). The
+     * NUL-byte separator avoids ambiguous concatenation collisions between adjacent fields
+     * (e.g. ruleId: 'ab', filePath: 'c' vs ruleId: 'a', filePath: 'bc').
+     */
+    public static function computeDedupHash(string $ruleId, string $filePath, ?int $startLine): string
+    {
+        return sha1($ruleId . "\0" . $filePath . "\0" . ($startLine === null ? '' : (string) $startLine));
     }
 }

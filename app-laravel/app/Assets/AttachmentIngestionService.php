@@ -102,6 +102,7 @@ final class AttachmentIngestionService
 
             $record->fill([
                 'attachment_id' => $attachment->id,
+                'dedup_hash' => LocalFinding::computeDedupHash($finding->ruleId, $finding->filePath, $finding->startLine),
                 'title' => $finding->title,
                 'description' => $finding->description,
                 'severity' => $finding->severity,
