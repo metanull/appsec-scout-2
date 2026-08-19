@@ -301,9 +301,14 @@ class OperationsPage extends Page
 
     public function pruneErrorLogsNow(): void
     {
-        (new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->handle();
-        app(Recorder::class)->recordAdminAction('operations.prune_error_logs');
+        $retainDays = (int) config('logging.error_retain_days', 90);
+        $deleted = (new PruneErrorLogs($retainDays))->handle();
 
-        Notification::make()->title('Error logs pruned')->success()->send();
+        app(Recorder::class)->recordAdminAction('operations.prune_error_logs', [
+            'deleted' => $deleted,
+            'retain_days' => $retainDays,
+        ]);
+
+        Notification::make()->title("{$deleted} error log(s) deleted")->success()->send();
     }
 }

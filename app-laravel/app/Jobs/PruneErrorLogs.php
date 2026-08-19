@@ -13,9 +13,9 @@ class PruneErrorLogs implements ShouldQueue
 
     public function __construct(private readonly int $retainDays = 90) {}
 
-    public function handle(): void
+    public function handle(): int
     {
-        ErrorLog::query()
+        return ErrorLog::query()
             ->where('occurred_at', '<', now()->subDays($this->retainDays))
             ->delete();
     }

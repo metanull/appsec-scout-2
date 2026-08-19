@@ -1,5 +1,6 @@
 <?php
 
+use App\Audit\AuditLog;
 use App\Filament\Resources\ErrorLogResource;
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
 use App\Filament\Resources\SecurityContainerResource;
@@ -9,6 +10,7 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -272,6 +274,41 @@ it('filters error logs by container', function () {
         ->filterTable('security_container_id', $containerA->id)
         ->assertCanSeeTableRecords([$forA])
         ->assertCanNotSeeTableRecords([$forB]);
+});
+
+it('cleans up error logs older than the configured retention window, audits, and notifies', function () {
+    $admin = errorLogAdmin();
+    config(['logging.error_retain_days' => 30]);
+
+    $old = ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'old failure', 'trace' => '', 'occurred_at' => now()->subDays(45),
+    ]);
+    $recent = ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'recent failure', 'trace' => '', 'occurred_at' => now()->subDays(10),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListErrorLogs::class)
+        ->callAction('cleanUpNow')
+        ->assertNotified('1 error log(s) deleted');
+
+    expect(ErrorLog::query()->whereKey($old->id)->exists())->toBeFalse()
+        ->and(ErrorLog::query()->whereKey($recent->id)->exists())->toBeTrue();
+
+    $audit = AuditLog::query()->where('action', 'operations.prune_error_logs')->firstOrFail();
+    expect($audit->payload_json)->toBe(['deleted' => 1, 'retain_days' => 30]);
+});
+
+it('hides the Clean up now action from a user without admin.errors', function () {
+    $reader = errorLogReader();
+
+    DB::table('error_logs')->insert([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'failure', 'trace' => '', 'occurred_at' => now(),
+    ]);
+
+    $this->actingAs($reader)
+        ->get(ErrorLogResource::getUrl('index'))
+        ->assertForbidden();
 });
 
 it('filters error logs by an occurred_at date range, including an upper bound', function () {
