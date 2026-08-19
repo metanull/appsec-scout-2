@@ -82,14 +82,14 @@ it('falls back to unserializing the command to find the tracker id of a RefreshW
     expect(JobPayloadInspector::sourceOrTracker($payload))->toBe('tracker:jira-1');
 });
 
-it('returns an empty string for a payload with neither source nor tracker', function () {
+it('returns null for a payload with neither source nor tracker', function () {
     $payload = json_encode(['data' => ['command' => 'not-relevant']], JSON_THROW_ON_ERROR);
 
-    expect(JobPayloadInspector::sourceOrTracker($payload))->toBe('');
+    expect(JobPayloadInspector::sourceOrTracker($payload))->toBeNull();
 });
 
-it('returns an empty string for a malformed payload', function () {
-    expect(JobPayloadInspector::sourceOrTracker('not json'))->toBe('');
+it('returns null for a malformed payload', function () {
+    expect(JobPayloadInspector::sourceOrTracker('not json'))->toBeNull();
 });
 
 it('extracts the repository target from a serialized CollectRepositoryJob command', function () {

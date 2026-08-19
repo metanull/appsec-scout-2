@@ -33,7 +33,7 @@ class AuditHistoryRelationManager extends RelationManager
                     ->color(fn (string $state): string => ActorKindBadgeColor::for($state)),
                 TextColumn::make('user.name')
                     ->label('User')
-                    ->placeholder('—'),
+                    ->placeholder('-'),
                 TextColumn::make('created_at')
                     ->label('Time')
                     ->dateTime('d M Y H:i')

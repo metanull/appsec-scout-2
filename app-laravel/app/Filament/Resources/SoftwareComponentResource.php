@@ -77,7 +77,7 @@ class SoftwareComponentResource extends Resource
                     TextEntry::make('removed_at')
                         ->label('Removed')
                         ->since()
-                        ->placeholder('No — still present in the latest scan')
+                        ->placeholder('No - still present in the latest scan')
                         ->badge()
                         ->color(fn (SoftwareComponent $record): string => $record->removed_at !== null ? 'danger' : 'success'),
                 ])

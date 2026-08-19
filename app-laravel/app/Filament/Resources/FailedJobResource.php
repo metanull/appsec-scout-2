@@ -85,7 +85,7 @@ class FailedJobResource extends Resource
                             ->badge(),
                         TextEntry::make('_source_tracker')
                             ->label('Source / Tracker')
-                            ->state(fn (FailedJob $record): string => JobPayloadInspector::sourceOrTracker($record->payload))
+                            ->state(fn (FailedJob $record): ?string => JobPayloadInspector::sourceOrTracker($record->payload))
                             ->placeholder('-'),
                         TextEntry::make('_repository')
                             ->label('Repository')
@@ -142,10 +142,11 @@ class FailedJobResource extends Resource
                     ->label('Exception')
                     ->getStateUsing(fn (FailedJob $record): string => JobPayloadInspector::exceptionPreview($record->exception))
                     ->wrap()
-                    ->limit(200),
+                    ->limit(200)
+                    ->placeholder('-'),
                 TextColumn::make('source_tracker')
                     ->label('Source / Tracker')
-                    ->getStateUsing(fn (FailedJob $record): string => JobPayloadInspector::sourceOrTracker($record->payload))
+                    ->getStateUsing(fn (FailedJob $record): ?string => JobPayloadInspector::sourceOrTracker($record->payload))
                     ->placeholder('-'),
                 TextColumn::make('repository')
                     ->label('Repository')

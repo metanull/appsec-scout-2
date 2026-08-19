@@ -173,7 +173,7 @@ class SecurityEventResource extends Resource
                             ->color('warning')
                             ->formatStateUsing(fn (EventState|string|null $state): string => $state
                                 ? str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()
-                                : '—')
+                                : '-')
                             ->placeholder('-'),
                         TextEntry::make('pending_severity')
                             ->label('Pending severity')
@@ -383,17 +383,26 @@ class SecurityEventResource extends Resource
                             SoftwareSystem::select('software_asset_id')->whereColumn('software_systems.id', 'security_events.software_system_id'),
                         ),
                         $direction === 'desc' ? 'desc' : 'asc',
-                    )),
+                    ))
+                    ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem?->softwareAsset
+                        ? SoftwareAssetResource::getUrl('view', ['record' => $record->softwareSystem->softwareAsset])
+                        : null),
                 TextColumn::make('softwareSystem.name')
                     ->label('System')
                     ->placeholder('-')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem
+                        ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
+                        : null),
                 TextColumn::make('container.name')
                     ->label('Container')
                     ->placeholder('-')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->url(fn (SecurityEvent $record): ?string => $record->container
+                        ? SecurityContainerResource::getUrl('view', ['record' => $record->container])
+                        : null),
                 TextColumn::make('severity')
                     ->badge()
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(

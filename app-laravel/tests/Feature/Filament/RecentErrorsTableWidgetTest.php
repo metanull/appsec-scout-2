@@ -32,6 +32,19 @@ it('renders the recent errors widget with a view all action linking to the error
         ->assertTableActionHasUrl('viewAll', ErrorLogResource::getUrl('index'));
 });
 
+it('links each row to the error log view page', function () {
+    $recent = ErrorLog::create([
+        'level' => 'error',
+        'channel' => 'sync',
+        'message' => 'recent error',
+        'occurred_at' => now()->subHours(2),
+    ]);
+
+    Livewire::actingAs(actingAdminForRecentErrorsWidget())
+        ->test(RecentErrorsTableWidget::class)
+        ->assertSee(ErrorLogResource::getUrl('view', ['record' => $recent]), escape: false);
+});
+
 it('only shows errors from the last 24 hours', function () {
     $recent = ErrorLog::create([
         'level' => 'error',

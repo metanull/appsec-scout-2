@@ -111,6 +111,20 @@ it('groups the user row actions into a single action group', function () {
         ->assertTableActionVisible('disableUser', $other);
 });
 
+it('defaults to sorting users by name and links each row to the edit page', function () {
+    $admin = enrolledAdminForUserResource();
+    $admin->update(['name' => 'Middle Admin']);
+    $zebra = User::factory()->create(['name' => 'Zebra User']);
+    $apple = User::factory()->create(['name' => 'Apple User']);
+
+    $component = Livewire::actingAs($admin)
+        ->test(ListUsers::class)
+        ->assertCanSeeTableRecords([$apple, $admin, $zebra], inOrder: true);
+
+    expect($component->instance()->getTable()->getRecordUrl($apple))
+        ->toBe(UserResource::getUrl('edit', ['record' => $apple]));
+});
+
 function enrolledAdminForUserResource(): User
 {
     $user = User::factory()->create([

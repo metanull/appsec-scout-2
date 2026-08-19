@@ -48,7 +48,7 @@ class TrackerProjectLinksRelationManager extends RelationManager
                     ->searchable(),
                 TextColumn::make('project_name')
                     ->label('Project name')
-                    ->placeholder('\u2014'),
+                    ->placeholder('-'),
                 IconColumn::make('is_default')
                     ->label('Default')
                     ->boolean(),
@@ -80,7 +80,8 @@ class TrackerProjectLinksRelationManager extends RelationManager
                         Notification::make()->title('Project link removed')->success()->send();
                     }),
             ])
-            ->emptyStateDescription('No tracker project links yet.');
+            ->emptyStateDescription('No tracker project links yet.')
+            ->paginated([10, 25, 50]);
     }
 
     /** @return array<int, mixed> */

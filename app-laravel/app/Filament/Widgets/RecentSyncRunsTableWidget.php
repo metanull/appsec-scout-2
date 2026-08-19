@@ -61,6 +61,7 @@ class RecentSyncRunsTableWidget extends TableWidget
             ])
             ->recordUrl(fn (SyncRun $record): string => SyncRunResource::getUrl('view', ['record' => $record]))
             ->defaultSort('started_at', 'desc')
-            ->paginated(false);
+            ->paginated(false)
+            ->poll('30s');
     }
 }

@@ -62,6 +62,7 @@ class RecentErrorsTableWidget extends TableWidget
                     ->icon('heroicon-o-arrow-top-right-on-square')
                     ->url(fn (): string => ErrorLogResource::getUrl('index')),
             ])
+            ->recordUrl(fn (ErrorLog $record): string => ErrorLogResource::getUrl('view', ['record' => $record]))
             ->paginated(false)
             ->emptyStateHeading('No errors in the last 24 hours');
     }

@@ -29,6 +29,18 @@ it('sorts containers by their software system name', function () {
         ->assertCanSeeTableRecords([$containerInZeta, $containerInAlpha], inOrder: true);
 });
 
+it('defaults to sorting containers by name', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $zebra = SecurityContainer::factory()->create(['name' => 'zebra-container']);
+    $apple = SecurityContainer::factory()->create(['name' => 'apple-container']);
+
+    Livewire::actingAs($user)
+        ->test(ListSecurityContainers::class)
+        ->assertCanSeeTableRecords([$apple, $zebra], inOrder: true);
+});
+
 it('badge-colors the critical, high, and medium alert count columns', function () {
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);

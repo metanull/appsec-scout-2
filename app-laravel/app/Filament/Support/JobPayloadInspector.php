@@ -57,12 +57,12 @@ final class JobPayloadInspector
      * AnalyzeRepositoryJob, FetchSourceJob, RefreshWorkItemsJob all encode
      * `data.command` as a serialized object, not a JSON map).
      */
-    public static function sourceOrTracker(string $payload): string
+    public static function sourceOrTracker(string $payload): ?string
     {
         $decoded = json_decode($payload, true);
 
         if (! is_array($decoded)) {
-            return '';
+            return null;
         }
 
         $sourceId = data_get($decoded, 'data.command.sourceId')
@@ -93,7 +93,7 @@ final class JobPayloadInspector
             return "tracker:{$command->trackerId}";
         }
 
-        return '';
+        return null;
     }
 
     /**

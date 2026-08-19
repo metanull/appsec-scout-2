@@ -10,7 +10,6 @@ use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 class RecentRepositoryCollectionRunsTableWidget extends TableWidget
@@ -38,7 +37,7 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
                 TextColumn::make('started_at')->dateTime(),
                 TextColumn::make('duration')->label('Duration')
                     ->state(function (RepositoryCollectionRun $record): string {
-                        $duration = self::durationSeconds($record);
+                        $duration = RunCounts::durationSeconds($record);
 
                         if ($duration === null) {
                             return 'n/a';
@@ -64,17 +63,5 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
             ->defaultSort('started_at', 'desc')
             ->paginated(false)
             ->poll('30s');
-    }
-
-    private static function durationSeconds(RepositoryCollectionRun $run): ?int
-    {
-        if ($run->getRawOriginal('started_at') === null || $run->getRawOriginal('finished_at') === null) {
-            return null;
-        }
-
-        $startedAt = Carbon::parse((string) $run->started_at);
-        $finishedAt = Carbon::parse((string) $run->finished_at);
-
-        return abs((int) $finishedAt->diffInSeconds($startedAt));
     }
 }

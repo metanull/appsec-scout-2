@@ -92,7 +92,7 @@ class PendingJobsPage extends Page implements HasTable
                     ->wrap(),
                 TextColumn::make('source_tracker')
                     ->label('Source / Tracker')
-                    ->getStateUsing(fn (array $record): string => JobPayloadInspector::sourceOrTracker($record['payload']))
+                    ->getStateUsing(fn (array $record): ?string => JobPayloadInspector::sourceOrTracker($record['payload']))
                     ->placeholder('-'),
                 TextColumn::make('repository')
                     ->label('Repository')

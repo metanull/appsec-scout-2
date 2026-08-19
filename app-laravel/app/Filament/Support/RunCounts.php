@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
+use App\Models\RepositoryCollectionRun;
+use App\Models\StaticAnalysisRun;
+use Illuminate\Support\Carbon;
+
 /**
  * Formats the `repositories_considered/completed/failed` counts_json shape
  * shared by RepositoryCollectionRun and StaticAnalysisRun.
@@ -24,5 +28,22 @@ final class RunCounts
         $failed = (int) ($counts['repositories_failed'] ?? 0);
 
         return "{$completed} / {$considered} · {$failed} failed";
+    }
+
+    /**
+     * Shared by the same two run models — SyncRun's own duration helper
+     * (DashboardData::durationSeconds()) is intentionally kept separate,
+     * mirroring format()'s SyncRun/counts_json split above.
+     */
+    public static function durationSeconds(RepositoryCollectionRun|StaticAnalysisRun $run): ?int
+    {
+        if ($run->getRawOriginal('started_at') === null || $run->getRawOriginal('finished_at') === null) {
+            return null;
+        }
+
+        $startedAt = Carbon::parse((string) $run->started_at);
+        $finishedAt = Carbon::parse((string) $run->finished_at);
+
+        return abs((int) $finishedAt->diffInSeconds($startedAt));
     }
 }

@@ -28,6 +28,32 @@ it('makes a repository provider row link to the view page, not the edit page', f
     expect($recordUrl)->toBe(RepositoryProviderResource::getUrl('view', ['record' => $provider]));
 });
 
+it('defaults to sorting repository providers by name', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Plan']);
+
+    $zebra = RepositoryProvider::factory()->azureRepos()->create(['name' => 'Zebra']);
+    $apple = RepositoryProvider::factory()->github()->create(['name' => 'Apple']);
+
+    Livewire::actingAs($user)
+        ->test(ListRepositoryProviders::class)
+        ->assertCanSeeTableRecords([$apple, $zebra], inOrder: true);
+});
+
+it('filters repository providers by type', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Plan']);
+
+    $azdo = RepositoryProvider::factory()->azureRepos()->create();
+    $github = RepositoryProvider::factory()->github()->create();
+
+    Livewire::actingAs($user)
+        ->test(ListRepositoryProviders::class)
+        ->filterTable('provider_type', 'azure-repos')
+        ->assertCanSeeTableRecords([$azdo])
+        ->assertCanNotSeeTableRecords([$github]);
+});
+
 it('keeps the edit and delete row actions working after grouping them', function () {
     $provider = RepositoryProvider::factory()->azureRepos()->create([
         'name' => 'Azure Repos',
