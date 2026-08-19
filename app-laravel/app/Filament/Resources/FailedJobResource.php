@@ -59,7 +59,8 @@ class FailedJobResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->can('admin.queue') ?? false;
+        return (auth()->user()?->can('admin.queue') ?? false)
+            || (auth()->user()?->can('work-items.sync') ?? false);
     }
 
     public static function canView(Model $record): bool

@@ -121,7 +121,7 @@ Actions:
 | Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every registered Source and every Source Control provider that supports it |
 | Collect repositories | `admin.queue` | Dispatches `DispatchRepositoryCollectionRunsJob`, queuing a batched SBOM/vulnerability/secret Trivy scan of every Azure DevOps repository, run by the isolated `collector` container on the `repository-collection` queue |
 | Run static analysis | `admin.queue` | Dispatches `DispatchStaticAnalysisRunsJob`, queuing a batched Roslynator/SpotBugs static analysis sweep of every Azure DevOps repository, run by the isolated `static-analysis-collector` container on the `static-analysis` queue |
-| Prune audit logs / Prune error logs | `admin.queue` or `work-items.sync` | Deletes retention-expired rows now |
+| Prune audit logs / Prune error logs / Prune failed jobs | `admin.queue` or `work-items.sync` | Deletes retention-expired rows now |
 | Retry / Forget a failed job | `admin.queue` or `work-items.sync` | Requeues the stored payload, or discards it, per row |
 
 Every action writes an audit row.

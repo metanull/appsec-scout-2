@@ -120,6 +120,58 @@ it('queues supported operational actions and records audit rows', function () {
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
 });
 
+it('lets a work-items.sync user dispatch source fetch and tracker refresh too', function () {
+    Bus::fake();
+
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->callAction('fetchSource', data: ['source_id' => 'fake'])
+        ->callAction('refreshTracker', data: ['tracker_id' => 'fake-tracker']);
+
+    Bus::assertDispatched(FetchSourceJob::class);
+    Bus::assertDispatched(RefreshWorkItemsJob::class);
+});
+
+it('denies a user with neither admin.queue nor work-items.sync from invoking Operations actions directly, bypassing button visibility', function () {
+    Bus::fake();
+
+    $reader = operationsUser();
+    $reader->syncRoles(['Reader']);
+
+    ErrorLog::query()->create([
+        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'seed', 'occurred_at' => now()->subDays(400),
+    ]);
+    AuditLog::query()->create(['actor_kind' => 'system', 'action' => 'seed', 'user_id' => null, 'ip' => null])
+        ->forceFill(['created_at' => now()->subDays(400)])->save();
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(), 'connection' => 'database', 'queue' => 'default',
+        'payload' => '{}', 'exception' => 'boom', 'failed_at' => now()->subDays(400),
+    ]);
+
+    $component = Livewire::actingAs($reader)->test(OperationsPage::class);
+    $component->call('dispatchSelectedSource', 'fake');
+    $component->call('dispatchSelectedTracker', 'fake-tracker');
+    $component->call('dispatchReconcileAll');
+    $component->call('pruneAuditLogsNow');
+    $component->call('pruneErrorLogsNow');
+    $component->call('pruneFailedJobsNow');
+
+    Bus::assertNotDispatched(FetchSourceJob::class);
+    Bus::assertNotDispatched(RefreshWorkItemsJob::class);
+    Bus::assertNotDispatched(ReconcileAllJob::class);
+
+    expect(ErrorLog::count())->toBe(1)
+        ->and(AuditLog::query()->where('action', 'seed')->exists())->toBeTrue()
+        ->and(DB::table('failed_jobs')->count())->toBe(1)
+        ->and(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'operations.prune_audit_logs')->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'operations.prune_error_logs')->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'operations.prune_failed_jobs')->exists())->toBeFalse();
+});
+
 it('header actions render for admin', function () {
     $admin = operationsAdmin();
 

@@ -39,6 +39,18 @@ function failedJobReader(): User
     return $user;
 }
 
+function failedJobSync(): User
+{
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Sync']);
+
+    return $user;
+}
+
 it('grants access to an admin.queue user and denies a reader', function () {
     $admin = failedJobAdmin();
     $this->actingAs($admin);
@@ -47,6 +59,31 @@ it('grants access to an admin.queue user and denies a reader', function () {
     $reader = failedJobReader();
     $this->actingAs($reader);
     expect(FailedJobResource::canViewAny())->toBeFalse();
+});
+
+it('grants access to a work-items.sync user, per docs/roles/sync.md', function () {
+    $sync = failedJobSync();
+    $this->actingAs($sync);
+
+    expect(FailedJobResource::canViewAny())->toBeTrue();
+});
+
+it('lets a work-items.sync user retry and forget failed jobs from the list page', function () {
+    $sync = failedJobSync();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Example"}', 'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($sync)
+        ->test(ListFailedJobs::class)
+        ->callTableAction('retry', $record);
+
+    expect(DB::table('failed_jobs')->where('uuid', $uuid)->exists())->toBeFalse();
 });
 
 it('lists failed jobs with searchable columns for an admin.queue user', function () {
@@ -352,7 +389,7 @@ it('cleans up failed jobs older than the configured retention window, audits, an
     expect($audit->payload_json)->toBe(['deleted' => 1, 'retain_days' => 30]);
 });
 
-it('hides the Clean up now action from a user without admin.queue', function () {
+it('hides the Clean up now action from a user without admin.queue or work-items.sync', function () {
     $reader = failedJobReader();
 
     DB::table('failed_jobs')->insert([
@@ -364,6 +401,24 @@ it('hides the Clean up now action from a user without admin.queue', function () 
     $this->actingAs($reader)
         ->get(FailedJobResource::getUrl('index'))
         ->assertForbidden();
+});
+
+it('lets a work-items.sync user use the Clean up now action too', function () {
+    $sync = failedJobSync();
+    config(['queue.failed.retain_days' => 30]);
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Old"}', 'exception' => 'boom',
+        'failed_at' => now()->subDays(45),
+    ]);
+
+    Livewire::actingAs($sync)
+        ->test(ListFailedJobs::class)
+        ->callAction('cleanUpNow')
+        ->assertNotified('1 failed job(s) deleted');
+
+    expect(DB::table('failed_jobs')->count())->toBe(0);
 });
 
 it('renders the failed job payload in full without masking', function () {

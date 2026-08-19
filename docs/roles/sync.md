@@ -21,8 +21,11 @@ Sync also inherits every Plan-level capability.
 - Observe sync success and failure state in local data.
 - Access `Operations -> Operations` (gated by `admin.queue` **or** `work-items.sync`, and Sync holds
   `work-items.sync`): dispatch due integrations, fetch one source, refresh one tracker, reconcile
-  all tracker links, prune audit/error logs, and retry/forget failed jobs. The one Operations
-  action Sync cannot use is "Sync inventory," gated by `admin.queue` alone.
+  all tracker links, prune audit/error/failed-job logs, and retry/forget failed jobs. The one
+  Operations action Sync cannot use is "Sync inventory," gated by `admin.queue` alone.
+- Access `Operations -> Failed Jobs` directly (also gated by `admin.queue` **or**
+  `work-items.sync`): search, retry, forget, and clean up expired failed jobs — the same
+  actions available for it on the Operations page, but from the dedicated list page.
 - Everything Plan can do: create/link tracker work items (on alerts and on Local Findings), curate
   Software Assets, manage Repository Providers.
 
