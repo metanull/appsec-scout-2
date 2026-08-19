@@ -83,9 +83,6 @@ class FailedJobResource extends Resource
                             ->dateTime('d M Y H:i:s'),
                         TextEntry::make('queue')
                             ->badge(),
-                        TextEntry::make('_job')
-                            ->label('Job')
-                            ->state(fn (FailedJob $record): string => JobPayloadInspector::jobName($record->payload)),
                         TextEntry::make('_source_tracker')
                             ->label('Source / Tracker')
                             ->state(fn (FailedJob $record): string => JobPayloadInspector::sourceOrTracker($record->payload))
@@ -95,6 +92,11 @@ class FailedJobResource extends Resource
                             ->state(fn (FailedJob $record): ?string => self::repositoryLabel($record->payload))
                             ->placeholder('-'),
                     ]),
+                    TextEntry::make('_job')
+                        ->label('Job')
+                        ->state(fn (FailedJob $record): string => JobPayloadInspector::jobName($record->payload))
+                        ->fontFamily('mono')
+                        ->columnSpanFull(),
                 ]),
 
             Section::make('Exception')

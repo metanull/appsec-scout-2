@@ -58,7 +58,7 @@ class SyncRunResource extends Resource
         return $schema->components([
             Section::make('Sync Run')
                 ->schema([
-                    Grid::make(3)->schema([
+                    Grid::make(2)->schema([
                         TextEntry::make('source_id')
                             ->label('Source')
                             ->badge(),
@@ -73,12 +73,12 @@ class SyncRunResource extends Resource
                             ->label('Finished')
                             ->dateTime('d M Y H:i:s')
                             ->placeholder('-'),
-                        TextEntry::make('error_message')
-                            ->label('Error')
-                            ->wrap()
-                            ->placeholder('-')
-                            ->columnSpan(2),
                     ]),
+                    TextEntry::make('error_message')
+                        ->label('Error')
+                        ->wrap()
+                        ->placeholder('-')
+                        ->columnSpanFull(),
                 ]),
 
             Section::make('Counts')

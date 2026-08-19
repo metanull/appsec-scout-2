@@ -89,7 +89,7 @@ abstract class CollectionRunResource extends Resource
         return $schema->components([
             Section::make(static::runLabel())
                 ->schema([
-                    Grid::make(3)->schema([
+                    Grid::make(2)->schema([
                         TextEntry::make('source_control_id')
                             ->label('Source Control')
                             ->badge(),
@@ -107,12 +107,12 @@ abstract class CollectionRunResource extends Resource
                             ->label('Finished')
                             ->dateTime('d M Y H:i:s')
                             ->placeholder('-'),
-                        TextEntry::make('error_message')
-                            ->label('Error')
-                            ->wrap()
-                            ->placeholder('-')
-                            ->columnSpan(2),
                     ]),
+                    TextEntry::make('error_message')
+                        ->label('Error')
+                        ->wrap()
+                        ->placeholder('-')
+                        ->columnSpanFull(),
                 ]),
 
             Section::make('Counts')
