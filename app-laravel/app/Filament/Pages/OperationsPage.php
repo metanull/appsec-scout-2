@@ -11,6 +11,7 @@ use App\Filament\Widgets\RecentStaticAnalysisRunsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
+use App\Jobs\PruneFailedJobs;
 use App\Models\RepositoryCollectionRun;
 use App\Models\StaticAnalysisRun;
 use App\Models\User;
@@ -157,6 +158,11 @@ class OperationsPage extends Page
                     ->label('Prune error logs')
                     ->requiresConfirmation()
                     ->action(fn () => $this->pruneErrorLogsNow()),
+
+                Action::make('pruneFailedJobs')
+                    ->label('Prune failed jobs')
+                    ->requiresConfirmation()
+                    ->action(fn () => $this->pruneFailedJobsNow()),
             ])->label('Maintenance'),
         ];
     }
@@ -293,10 +299,15 @@ class OperationsPage extends Page
 
     public function pruneAuditLogsNow(): void
     {
-        (new PruneAuditLogs((int) config('audit.retain_days', 365)))->handle();
-        app(Recorder::class)->recordAdminAction('operations.prune_audit_logs');
+        $retainDays = (int) config('audit.retain_days', 365);
+        $deleted = (new PruneAuditLogs($retainDays))->handle();
 
-        Notification::make()->title('Audit logs pruned')->success()->send();
+        app(Recorder::class)->recordAdminAction('operations.prune_audit_logs', [
+            'deleted' => $deleted,
+            'retain_days' => $retainDays,
+        ]);
+
+        Notification::make()->title("{$deleted} audit log(s) deleted")->success()->send();
     }
 
     public function pruneErrorLogsNow(): void
@@ -310,5 +321,18 @@ class OperationsPage extends Page
         ]);
 
         Notification::make()->title("{$deleted} error log(s) deleted")->success()->send();
+    }
+
+    public function pruneFailedJobsNow(): void
+    {
+        $retainDays = (int) config('queue.failed.retain_days', 90);
+        $deleted = (new PruneFailedJobs($retainDays))->handle();
+
+        app(Recorder::class)->recordAdminAction('operations.prune_failed_jobs', [
+            'deleted' => $deleted,
+            'retain_days' => $retainDays,
+        ]);
+
+        Notification::make()->title("{$deleted} failed job(s) deleted")->success()->send();
     }
 }

@@ -115,6 +115,31 @@ it('table retry and forget actions work and record the same audit actions as bef
         ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
 });
 
+it('resets the attempts counter before re-pushing a retried job, so an exhausted job actually re-runs', function () {
+    $admin = failedJobAdmin();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => json_encode(['job' => 'Example', 'displayName' => 'ExampleJob', 'attempts' => 3]),
+        'exception' => 'Illuminate\\Queue\\MaxAttemptsExceededException: Example has been attempted too many times.',
+        'failed_at' => now(),
+    ]);
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->callTableAction('retry', $record);
+
+    $pushed = DB::table('jobs')->where('queue', 'default')->first();
+
+    expect($pushed)->not->toBeNull();
+    $payload = json_decode($pushed->payload, true);
+    expect($payload['attempts'])->toBe(0);
+});
+
 it('renders the failed job view page with the exception and payload shown in full', function () {
     $admin = failedJobAdmin();
 
@@ -298,6 +323,47 @@ it('filters failed jobs by a failed_at date range, including an upper bound', fu
         ->filterTable('failed_at_until', ['failed_at_until' => '2026-01-10'])
         ->assertCanSeeTableRecords([$early])
         ->assertCanNotSeeTableRecords([$late]);
+});
+
+it('cleans up failed jobs older than the configured retention window, audits, and notifies', function () {
+    $admin = failedJobAdmin();
+    config(['queue.failed.retain_days' => 30]);
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Old"}', 'exception' => 'boom',
+        'failed_at' => now()->subDays(45),
+    ]);
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Recent"}', 'exception' => 'boom',
+        'failed_at' => now()->subDays(10),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->callAction('cleanUpNow')
+        ->assertNotified('1 failed job(s) deleted');
+
+    expect(DB::table('failed_jobs')->count())->toBe(1)
+        ->and(DB::table('failed_jobs')->first()->payload)->toBe('{"job":"Recent"}');
+
+    $audit = AuditLog::query()->where('action', 'operations.prune_failed_jobs')->firstOrFail();
+    expect($audit->payload_json)->toBe(['deleted' => 1, 'retain_days' => 30]);
+});
+
+it('hides the Clean up now action from a user without admin.queue', function () {
+    $reader = failedJobReader();
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Example"}', 'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+
+    $this->actingAs($reader)
+        ->get(FailedJobResource::getUrl('index'))
+        ->assertForbidden();
 });
 
 it('renders the failed job payload in full without masking', function () {

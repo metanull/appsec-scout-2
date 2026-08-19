@@ -2,21 +2,21 @@
 
 namespace App\Jobs;
 
-use App\Audit\AuditLog;
+use App\Models\FailedJob;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 
-class PruneAuditLogs implements ShouldQueue
+class PruneFailedJobs implements ShouldQueue
 {
     use Dispatchable, Queueable;
 
-    public function __construct(private readonly int $retainDays = 365) {}
+    public function __construct(private readonly int $retainDays = 90) {}
 
     public function handle(): int
     {
-        return AuditLog::query()
-            ->where('created_at', '<', now()->subDays($this->retainDays))
+        return FailedJob::query()
+            ->where('failed_at', '<', now()->subDays($this->retainDays))
             ->delete();
     }
 }

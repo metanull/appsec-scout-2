@@ -248,6 +248,41 @@ it('resolves a SecurityEvent subject to its title and view link', function () {
         ->assertSee(SecurityEventResource::getUrl('view', ['record' => $event]), false);
 });
 
+it('cleans up audit logs older than the configured retention window, audits, and notifies', function () {
+    $admin = auditAdmin();
+    config(['audit.retain_days' => 30]);
+
+    $old = AuditLog::query()->create(['actor_kind' => 'system', 'action' => 'old.action', 'user_id' => null, 'ip' => null]);
+    $old->forceFill(['created_at' => now()->subDays(45)])->save();
+
+    $recent = AuditLog::query()->create(['actor_kind' => 'system', 'action' => 'recent.action', 'user_id' => null, 'ip' => null]);
+    $recent->forceFill(['created_at' => now()->subDays(10)])->save();
+
+    Livewire::actingAs($admin)
+        ->test(ListAuditLogs::class)
+        ->callAction('cleanUpNow')
+        ->assertNotified('1 audit log(s) deleted');
+
+    expect(AuditLog::query()->whereKey($old->id)->exists())->toBeFalse()
+        ->and(AuditLog::query()->whereKey($recent->id)->exists())->toBeTrue();
+
+    $audit = AuditLog::query()->where('action', 'operations.prune_audit_logs')->firstOrFail();
+    expect($audit->payload_json)->toBe(['deleted' => 1, 'retain_days' => 30]);
+});
+
+it('hides the Clean up now action from a user without admin.audit', function () {
+    $reader = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $reader->syncRoles(['Reader']);
+
+    $this->actingAs($reader)
+        ->get(AuditLogResource::getUrl('index'))
+        ->assertForbidden();
+});
+
 it('filters audit log rows by a created_at date range', function () {
     $admin = auditAdmin();
 

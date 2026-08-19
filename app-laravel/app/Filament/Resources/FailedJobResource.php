@@ -239,12 +239,32 @@ class FailedJobResource extends Resource
             return false;
         }
 
-        app('queue')->connection($failedJob->connection)->pushRaw($failedJob->payload, $failedJob->queue);
+        app('queue')->connection($failedJob->connection)->pushRaw(self::resetAttempts($failedJob->payload), $failedJob->queue);
         app('queue.failer')->forget($failedJobUuid);
 
         app(Recorder::class)->recordAdminAction('operations.retry_failed_job', ['failed_job_uuid' => $failedJobUuid]);
 
         return true;
+    }
+
+    /**
+     * A failed job's payload carries the exhausted attempts count it failed
+     * with (Laravel's queue drivers increment `attempts` in the payload
+     * itself). Re-pushing it unchanged makes the worker fail it again on
+     * sight, via the max-attempts guard, without ever re-running the job —
+     * mirrors Laravel's own queue:retry (Illuminate\Queue\Console\RetryCommand::resetAttempts()).
+     */
+    private static function resetAttempts(string $payload): string
+    {
+        $decoded = json_decode($payload, true);
+
+        if (! is_array($decoded)) {
+            return $payload;
+        }
+
+        $decoded['attempts'] = 0;
+
+        return json_encode($decoded) ?: $payload;
     }
 
     public static function forgetFailedJob(string $failedJobUuid): bool

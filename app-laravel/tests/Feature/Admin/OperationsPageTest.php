@@ -510,6 +510,39 @@ it('shows recent sync runs, repository collection runs, and static analysis runs
         ->assertSee('Recent Static Analysis Runs');
 });
 
+it('prunes failed jobs older than the configured retention window, audits, and notifies', function () {
+    $admin = operationsAdmin();
+    config(['queue.failed.retain_days' => 30]);
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Old"}',
+        'exception' => 'boom',
+        'failed_at' => now()->subDays(45),
+    ]);
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Recent"}',
+        'exception' => 'boom',
+        'failed_at' => now()->subDays(10),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('pruneFailedJobsNow')
+        ->assertNotified('1 failed job(s) deleted');
+
+    expect(DB::table('failed_jobs')->count())->toBe(1)
+        ->and(DB::table('failed_jobs')->first()->payload)->toBe('{"job":"Recent"}');
+
+    $audit = AuditLog::query()->where('action', 'operations.prune_failed_jobs')->firstOrFail();
+    expect($audit->payload_json)->toBe(['deleted' => 1, 'retain_days' => 30]);
+});
+
 function bindFakeOperationsIntegrations(): void
 {
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);
