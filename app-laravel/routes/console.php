@@ -18,6 +18,7 @@ use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Jobs\PruneFailedJobs;
 use App\Models\Attachment;
+use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\SourceControl\Registry as SourceControlRegistry;
@@ -34,6 +35,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
 
@@ -927,6 +929,70 @@ Artisan::command('events:recompute-pending-sync', function (SourceRegistry $sour
 
     return self::SUCCESS;
 })->purpose('One-off backfill for events dirtied under the pre-fix logic, where a severity-only or comment-only change could never be pushed and stayed flagged pending sync forever. Leaves a system note + ErrorLog warning on each event it resolves, matching what PushEventStatesJob now does for new changes going forward. Safe to re-run — already-resolved events are no longer dirty and are skipped by the query.');
+
+Artisan::command('local-findings:backfill-dedup-hash', function (): int {
+    $backfilled = 0;
+
+    LocalFinding::query()
+        ->whereNull('dedup_hash')
+        ->chunkById(500, function (Collection $findings) use (&$backfilled): void {
+            foreach ($findings as $finding) {
+                $finding->forceFill([
+                    'dedup_hash' => LocalFinding::computeDedupHash($finding->rule_id, $finding->file_path, $finding->start_line),
+                ])->save();
+                $backfilled++;
+            }
+        });
+
+    $duplicateGroups = LocalFinding::query()
+        ->select(['owner_type', 'owner_id', 'kind', 'dedup_hash'])
+        ->groupBy('owner_type', 'owner_id', 'kind', 'dedup_hash')
+        ->havingRaw('count(*) > 1')
+        ->get();
+
+    $deleted = 0;
+
+    foreach ($duplicateGroups as $group) {
+        $rows = LocalFinding::query()
+            ->where('owner_type', $group->owner_type)
+            ->where('owner_id', $group->owner_id)
+            ->where('kind', $group->kind)
+            ->where('dedup_hash', $group->dedup_hash)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->get();
+
+        // Keep the most recently updated row in the group; every other row is a pre-existing
+        // duplicate that predates any unique constraint and must be removed before one can be
+        // added.
+        $kept = $rows->shift();
+
+        foreach ($rows as $duplicate) {
+            Log::warning('Deleting duplicate local_finding during dedup_hash backfill.', [
+                'id' => $duplicate->id,
+                'kept_id' => $kept?->id,
+                'owner_type' => $duplicate->owner_type,
+                'owner_id' => $duplicate->owner_id,
+                'kind' => $duplicate->kind,
+                'rule_id' => $duplicate->rule_id,
+                'file_path' => $duplicate->file_path,
+                'start_line' => $duplicate->start_line,
+            ]);
+
+            $duplicate->delete();
+            $deleted++;
+        }
+    }
+
+    $this->info(sprintf(
+        'Backfilled dedup_hash on %d row(s). Found %d duplicate group(s), deleted %d row(s), keeping the most recently updated row in each group.',
+        $backfilled,
+        $duplicateGroups->count(),
+        $deleted,
+    ));
+
+    return self::SUCCESS;
+})->purpose('One-off backfill: populate dedup_hash on any local_findings row missing it, then resolve any duplicate (owner_type, owner_id, kind, dedup_hash) groups by keeping the most recently updated row and deleting the rest. Must be run once, in production, before the migration adding the UNIQUE constraint on (owner_type, owner_id, kind, dedup_hash) is deployed. Safe to re-run.');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
