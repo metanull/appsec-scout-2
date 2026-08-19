@@ -43,6 +43,29 @@ class LocalFinding extends Model
         ];
     }
 
+    /**
+     * dedup_hash is fully derivable from (rule_id, file_path, start_line), so every write path
+     * gets a correct value for free here rather than each caller having to remember to compute
+     * and set it — the column is NOT NULL and carries the real unique constraint (see the
+     * local_findings migrations), so nothing should ever have to set it explicitly.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $finding): void {
+            // Larastan infers dedup_hash as non-nullable from the DB column (NOT NULL), but at
+            // this point in the lifecycle — before this hook fills it — an unset attribute is
+            // genuinely null at runtime for any caller that didn't set it explicitly.
+            // @phpstan-ignore identical.alwaysFalse
+            if ($finding->dedup_hash === null) {
+                $finding->dedup_hash = self::computeDedupHash(
+                    (string) $finding->rule_id,
+                    (string) $finding->file_path,
+                    $finding->start_line,
+                );
+            }
+        });
+    }
+
     /** @return MorphTo<Model, $this> */
     public function owner(): MorphTo
     {
