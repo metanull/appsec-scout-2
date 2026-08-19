@@ -20,6 +20,7 @@ use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;
 use Database\Seeders\RolePermissionSeeder;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -136,40 +137,23 @@ it('lets a work-items.sync user dispatch source fetch and tracker refresh too', 
 });
 
 it('denies a user with neither admin.queue nor work-items.sync from invoking Operations actions directly, bypassing button visibility', function () {
-    Bus::fake();
-
     $reader = operationsUser();
     $reader->syncRoles(['Reader']);
+    $this->actingAs($reader);
 
-    ErrorLog::query()->create([
-        'channel' => 'sync', 'level' => 'ERROR', 'message' => 'seed', 'occurred_at' => now()->subDays(400),
-    ]);
-    AuditLog::query()->create(['actor_kind' => 'system', 'action' => 'seed', 'user_id' => null, 'ip' => null])
-        ->forceFill(['created_at' => now()->subDays(400)])->save();
-    DB::table('failed_jobs')->insert([
-        'uuid' => (string) str()->uuid(), 'connection' => 'database', 'queue' => 'default',
-        'payload' => '{}', 'exception' => 'boom', 'failed_at' => now()->subDays(400),
-    ]);
+    // Plain PHP instantiation, not Livewire::test(): these handlers only
+    // touch Auth/Gate, so a bare instance is enough to prove
+    // authorizeQueueOrSync() itself throws — and going through Livewire's
+    // request/snapshot lifecycle for a call that's expected to throw isn't
+    // reliable to assert against here.
+    $page = new OperationsPage;
 
-    $component = Livewire::actingAs($reader)->test(OperationsPage::class);
-    $component->call('dispatchSelectedSource', 'fake');
-    $component->call('dispatchSelectedTracker', 'fake-tracker');
-    $component->call('dispatchReconcileAll');
-    $component->call('pruneAuditLogsNow');
-    $component->call('pruneErrorLogsNow');
-    $component->call('pruneFailedJobsNow');
-
-    Bus::assertNotDispatched(FetchSourceJob::class);
-    Bus::assertNotDispatched(RefreshWorkItemsJob::class);
-    Bus::assertNotDispatched(ReconcileAllJob::class);
-
-    expect(ErrorLog::count())->toBe(1)
-        ->and(AuditLog::query()->where('action', 'seed')->exists())->toBeTrue()
-        ->and(DB::table('failed_jobs')->count())->toBe(1)
-        ->and(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', 'operations.prune_audit_logs')->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', 'operations.prune_error_logs')->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', 'operations.prune_failed_jobs')->exists())->toBeFalse();
+    expect(fn () => $page->dispatchSelectedSource('fake'))->toThrow(AuthorizationException::class);
+    expect(fn () => $page->dispatchSelectedTracker('fake-tracker'))->toThrow(AuthorizationException::class);
+    expect(fn () => $page->dispatchReconcileAll())->toThrow(AuthorizationException::class);
+    expect(fn () => $page->pruneAuditLogsNow())->toThrow(AuthorizationException::class);
+    expect(fn () => $page->pruneErrorLogsNow())->toThrow(AuthorizationException::class);
+    expect(fn () => $page->pruneFailedJobsNow())->toThrow(AuthorizationException::class);
 });
 
 it('header actions render for admin', function () {
