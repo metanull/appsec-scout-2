@@ -2,8 +2,10 @@
 
 use App\Assets\AttachmentService;
 use App\Models\Enums\EventState;
+use App\Models\Enums\EventType;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
+use App\Models\SecurityEvent;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
@@ -384,6 +386,45 @@ it('auto-resolves a local finding that disappears from a re-scan, without overri
         ->and($findingToResolve->fresh()->status)->toBe(EventState::Resolved);
 });
 
+it('upserts a large SARIF spanning multiple chunks, sweeps and correlates correctly across the chunk boundary', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+
+    // One finding, deliberately placed past the first 500-row chunk boundary, carries package
+    // info matching a pre-existing Dependency SecurityEvent — proving correlateBatch() still
+    // runs correctly across the whole set, not just within the first chunk.
+    $matchedEvent = SecurityEvent::factory()->forContainer($container)->create([
+        'type' => EventType::Dependency,
+        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4']],
+    ]);
+
+    $findings = array_map(fn (int $i): array => [
+        'ruleId' => "CVE-2024-{$i}",
+        'filePath' => 'requirements.txt',
+        'startLine' => $i,
+        'packageName' => $i === 600 ? 'Jinja2' : null,
+        'packageVersion' => $i === 600 ? '3.1.4' : null,
+    ], range(1, 700));
+
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'first.json', vulnerabilitySarif($findings));
+
+    expect(LocalFinding::query()->where('owner_id', $container->id)->count())->toBe(700)
+        ->and(LocalFinding::query()->where('owner_id', $container->id)->whereNull('dedup_hash')->exists())->toBeFalse();
+
+    $matched = LocalFinding::query()->where('owner_id', $container->id)->where('rule_id', 'CVE-2024-600')->firstOrFail();
+    expect($matched->correlated_security_event_id)->toBe($matchedEvent->id)
+        ->and($matched->correlation_method)->toBe('package_version');
+
+    // Re-scan with only the second half present — the missing half spans across where the
+    // first chunk boundary (500) used to be, proving the sweep's touchedIds are correct across
+    // chunks, not just within a single chunk.
+    $secondHalf = array_slice($findings, 500);
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'second.json', vulnerabilitySarif($secondHalf));
+
+    expect(LocalFinding::query()->where('owner_id', $container->id)->where('status', EventState::Open)->count())->toBe(200)
+        ->and(LocalFinding::query()->where('owner_id', $container->id)->where('status', EventState::Resolved)->count())->toBe(500);
+});
+
 function minimalCycloneDx(array $purls): string
 {
     return json_encode([
@@ -417,6 +458,44 @@ function minimalVulnerabilitySarif(array $findings): string
                 'ruleId' => $finding['ruleId'],
                 'level' => 'warning',
                 'message' => ['text' => "Severity: MEDIUM\nLink: [{$finding['ruleId']}](https://example.test/{$finding['ruleId']})"],
+                'locations' => [[
+                    'physicalLocation' => [
+                        'artifactLocation' => ['uri' => $finding['filePath']],
+                        'region' => ['startLine' => $finding['startLine']],
+                    ],
+                ]],
+            ], $findings),
+        ]],
+    ], JSON_THROW_ON_ERROR);
+}
+
+/**
+ * Like minimalVulnerabilitySarif(), but each finding may also carry a 'packageName'/
+ * 'packageVersion' pair — encoded as SARIF Trivy does, via "Key: Value" lines in the message
+ * text — so SecurityEventCorrelator has something to match against.
+ */
+function vulnerabilitySarif(array $findings): string
+{
+    return json_encode([
+        'version' => '2.1.0',
+        'runs' => [[
+            'tool' => [
+                'driver' => [
+                    'name' => 'Trivy',
+                    'rules' => array_map(fn (array $finding): array => [
+                        'id' => $finding['ruleId'],
+                        'shortDescription' => ['text' => "{$finding['ruleId']} description"],
+                    ], $findings),
+                ],
+            ],
+            'results' => array_map(fn (array $finding): array => [
+                'ruleId' => $finding['ruleId'],
+                'level' => 'warning',
+                'message' => ['text' => implode("\n", array_filter([
+                    'Severity: MEDIUM',
+                    isset($finding['packageName']) ? "Package: {$finding['packageName']}" : null,
+                    isset($finding['packageVersion']) ? "Installed Version: {$finding['packageVersion']}" : null,
+                ]))],
                 'locations' => [[
                     'physicalLocation' => [
                         'artifactLocation' => ['uri' => $finding['filePath']],
