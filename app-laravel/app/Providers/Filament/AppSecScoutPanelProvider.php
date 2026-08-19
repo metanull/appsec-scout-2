@@ -44,6 +44,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->navigationGroups([
                 NavigationGroup::make('Reader'),
                 NavigationGroup::make('Admin'),
+                NavigationGroup::make('Operations'),
                 NavigationGroup::make('Sync'),
             ])
             ->navigationItems([

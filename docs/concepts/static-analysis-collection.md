@@ -14,7 +14,7 @@ the same `SoftwareSystem`/`SecurityContainer` rows for a given repository.
 
 ## Trigger and Access
 
-"Run static analysis" on `Admin -> Operations`, gated by `admin.queue`, dispatches
+"Run static analysis" on `Operations -> Operations`, gated by `admin.queue`, dispatches
 `App\SourceControl\Collection\DispatchStaticAnalysisRunsJob`. Like every other action on that
 page, it is triggered explicitly — there is no scheduler entry, matching the "syncing is triggered
 explicitly, never on an automatic schedule" model described in
@@ -157,7 +157,7 @@ workload). `allowFailures()` on the batch means one repository's clone or analys
 stops the rest of the sweep or the run's own eventual `success`/`partial` status — it only shows
 up as a non-zero `repositories_failed` count in `counts_json`.
 
-Visible on `Admin -> Operations` via a "Recent static analysis runs" widget and a read-only
+Visible on `Operations -> Operations` via a "Recent static analysis runs" widget and a read-only
 `StaticAnalysisRunResource` drill-down (list/view only, no create), including a Force-finish
 action for a run wedged at `running` (e.g. a `static-analysis-collector` job died mid-flight) —
 the same pattern `RepositoryCollectionRunResource` established, itself modeled on

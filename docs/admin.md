@@ -82,13 +82,16 @@ Source, Tracker, and Source Control provider is always available; you sync them 
 - Configure their credentials on `Admin -> System Credentials` (system-wide) or
   `Profile -> Integrations` (your own personal override). Both pages also run a connection test,
   always with the credential being edited.
-- Trigger a Source fetch or Tracker refresh from `Admin -> Operations` (below).
+- Trigger a Source fetch or Tracker refresh from `Operations -> Operations` (below).
 
 See [docs/concepts/integration.md](concepts/integration.md) for the full trigger model.
 
 ## Operations
 
-Use `Admin -> Operations` for live background health and one-off operational actions.
+Use `Operations -> Operations` for live background health and one-off operational actions. The
+same "Operations" navigation group also holds dedicated pages for Sync Runs, Collection Runs,
+Analysis Runs, Queues, and Failed Jobs — each reachable directly from the sidebar rather than only
+through this page's stat links.
 
 The page shows:
 

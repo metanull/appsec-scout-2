@@ -59,7 +59,7 @@ it('renders the open alerts by source pair and hides it without alerts.view', fu
         ->assertOk()
         ->assertSee('Open Alerts by Source')
         ->assertSee('azdo')
-        ->assertSee('tableFilters');
+        ->assertSee('filters%5B');
 
     Livewire::actingAs($user)
         ->test(OpenAlertsBySourceChartWidget::class)

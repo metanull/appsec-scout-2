@@ -173,7 +173,7 @@ class SecurityEventResource extends Resource
                             ->color('warning')
                             ->formatStateUsing(fn (EventState|string|null $state): string => $state
                                 ? str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()
-                                : '—')
+                                : '-')
                             ->placeholder('-'),
                         TextEntry::make('pending_severity')
                             ->label('Pending severity')
@@ -383,17 +383,26 @@ class SecurityEventResource extends Resource
                             SoftwareSystem::select('software_asset_id')->whereColumn('software_systems.id', 'security_events.software_system_id'),
                         ),
                         $direction === 'desc' ? 'desc' : 'asc',
-                    )),
+                    ))
+                    ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem?->softwareAsset
+                        ? SoftwareAssetResource::getUrl('view', ['record' => $record->softwareSystem->softwareAsset])
+                        : null),
                 TextColumn::make('softwareSystem.name')
                     ->label('System')
                     ->placeholder('-')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem
+                        ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
+                        : null),
                 TextColumn::make('container.name')
                     ->label('Container')
                     ->placeholder('-')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->url(fn (SecurityEvent $record): ?string => $record->container
+                        ? SecurityContainerResource::getUrl('view', ['record' => $record->container])
+                        : null),
                 TextColumn::make('severity')
                     ->badge()
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(
@@ -992,9 +1001,10 @@ class SecurityEventResource extends Resource
     /**
      * Build a URL to the alert list with pre-applied filter state.
      *
-     * The Filament table filter query parameter format (Livewire 3 URL binding) is:
-     *   tableFilters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
-     *   tableFilters[{filter_name}][value]=value       (for single-value filters)
+     * The Filament table filter query parameter format (Livewire URL binding, aliased
+     * to `filters` — see Filament\Resources\Pages\ListRecords::$tableFilters) is:
+     *   filters[{filter_name}][values][0]=value  (for SelectFilter with multiple())
+     *   filters[{filter_name}][value]=value       (for single-value filters)
      *
      * @param  array<string, list<string>>  $multiSelectFilters  filter name => list of values
      */
@@ -1004,7 +1014,7 @@ class SecurityEventResource extends Resource
 
         foreach ($multiSelectFilters as $filterName => $values) {
             foreach ($values as $idx => $value) {
-                $params['tableFilters'][$filterName]['values'][$idx] = $value;
+                $params['filters'][$filterName]['values'][$idx] = $value;
             }
         }
 
@@ -1019,7 +1029,7 @@ class SecurityEventResource extends Resource
     public static function workItemFilterUrl(string $trackerId, string $workItemId): string
     {
         $params = [
-            'tableFilters' => [
+            'filters' => [
                 'work_item' => [
                     'tracker_id' => $trackerId,
                     'work_item_id' => $workItemId,

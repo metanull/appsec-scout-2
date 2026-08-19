@@ -90,7 +90,8 @@ class SoftwareSystemsRelationManager extends RelationManager
                         Notification::make()->title('Software system unlinked')->success()->send();
                     }),
             ])
-            ->emptyStateDescription('No software systems linked yet.');
+            ->emptyStateDescription('No software systems linked yet.')
+            ->paginated([10, 25, 50]);
     }
 
     private function canMutate(): bool

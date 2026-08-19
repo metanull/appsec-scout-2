@@ -5,6 +5,7 @@ namespace App\SourceControl\Collection;
 use App\Assets\AttachmentIngestionService;
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
+use App\Assets\AzDoOwnerLookup;
 use App\Assets\AzDoScanResultDtoFactory;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
@@ -113,11 +114,15 @@ final class CollectRepositoryJob implements ShouldQueue
     {
         $context = $this->logContext('job');
 
-        Log::error($exception->getMessage(), $context);
+        // Not Log::error() (the default `stack` channel already includes
+        // the `database` handler at level=error) — that would create a
+        // second, poorer-context ErrorLog row for the same failure.
+        Log::channel('single')->error($exception->getMessage(), $context);
 
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'repository-collection',
+            ...app(AzDoOwnerLookup::class)->forAzDoRepository($this->target->projectId, $this->target->repositoryId),
             'message' => $exception->getMessage(),
             'context_json' => $context,
             'trace' => $exception->getTraceAsString(),
@@ -314,11 +319,13 @@ final class CollectRepositoryJob implements ShouldQueue
     {
         $context = $this->logContext($operation);
 
-        Log::error($message, $context);
+        // Not Log::error() — see failed()'s identical comment.
+        Log::channel('single')->error($message, $context);
 
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'repository-collection',
+            ...app(AzDoOwnerLookup::class)->forAzDoRepository($this->target->projectId, $this->target->repositoryId),
             'message' => $message,
             'context_json' => $context,
             'trace' => $exception?->getTraceAsString(),

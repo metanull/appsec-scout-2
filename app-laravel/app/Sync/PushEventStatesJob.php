@@ -145,6 +145,8 @@ final class PushEventStatesJob implements ShouldQueue
                     ErrorLog::query()->create([
                         'level' => 'error',
                         'channel' => 'sync',
+                        'software_system_id' => $event->software_system_id,
+                        'security_container_id' => $event->container_id,
                         'message' => $result->error ?? 'Push failed.',
                         'context_json' => [
                             'event_id' => $event->id,

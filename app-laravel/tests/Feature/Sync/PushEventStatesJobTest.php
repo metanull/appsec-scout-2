@@ -103,11 +103,14 @@ it('preserves the dirty state and records retry metadata when a push fails', fun
 
     $event->refresh();
 
+    $errorLog = ErrorLog::query()->where('channel', 'sync')->first();
+
     expect($event->is_dirty)->toBeTrue()
         ->and($event->pending_state)->toBe(EventState::Dismissed)
         ->and($event->metadata['pushRetryCount'])->toBe(1)
         ->and($event->metadata['lastPushError'])->toBe('upstream error')
-        ->and(ErrorLog::query()->where('channel', 'sync')->exists())->toBeTrue()
+        ->and($errorLog)->not->toBeNull()
+        ->and($errorLog->software_system_id)->toBe($system->id)
         ->and(SyncRun::query()->latest('id')->first()?->status)->toBe('failure');
 });
 

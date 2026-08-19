@@ -49,7 +49,7 @@ characters), and flip `is_dirty = true`. `StateChanger::changeMany()` is the bul
 available as a table bulk action (`alerts.bulk-edit`). Both record an audit entry.
 
 **Pushing (Sync role, `work-items.sync` *and* `sources.push-state`)**: staged changes sit on
-`Admin -> Pending Sync` (`App\Filament\Pages\PendingSyncPage`) until someone with both
+`Sync -> Pending Sync` (`App\Filament\Resources\PendingSyncResource`) until someone with both
 permissions reviews and pushes them. The page groups dirty events by Source and its one action,
 `pushToSource`, dispatches one queued `App\Sync\PushEventStatesJob` per Source group, which calls
 `Source::pushEventState($event)`. On success it clears `pending_state`/`pending_comment` and
@@ -132,7 +132,7 @@ operator manually searching:
   searching every configured tracker project, exactly matching what the service itself does when
   invoked without a scope (see
   [docs/concepts/links-and-defaults.md](links-and-defaults.md#reconciliation-scoping)).
-- **Whole-database, in the background** — `Admin -> Operations`'s "Reconcile all tracker links"
+- **Whole-database, in the background** — `Operations -> Operations`'s "Reconcile all tracker links"
   action queues `ReconcileAllJob` across every alert. Gated by `admin.queue`/`work-items.sync`.
   This is an Ops-page action, not a Triage one, even though it uses the identical underlying
   matching logic and creates the same kind of `WorkItemLink` row.
@@ -174,6 +174,6 @@ Roles are cumulative: `Reader ⊂ Triage ⊂ Plan ⊂ Sync ⊂ Admin`.
 
 Practically: Reader can only look. Triage can stage state/severity changes and comment, but
 cannot create tickets or push anything upstream. Plan adds ticket creation/linking. Sync adds
-the ability to push staged changes back to a Source — `Admin -> Pending Sync` requires **both**
+the ability to push staged changes back to a Source — `Sync -> Pending Sync` requires **both**
 `work-items.sync` and `sources.push-state`, so Triage-role users can never push a change
 themselves even though they're the ones who staged it.

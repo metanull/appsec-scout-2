@@ -25,6 +25,18 @@ it('filters software systems by source', function () {
         ->assertCanNotSeeTableRecords([$asoc]);
 });
 
+it('defaults to sorting software systems by name', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $zebra = SoftwareSystem::factory()->create(['name' => 'Zebra System']);
+    $apple = SoftwareSystem::factory()->create(['name' => 'Apple System']);
+
+    Livewire::actingAs($user)
+        ->test(ListSoftwareSystems::class)
+        ->assertCanSeeTableRecords([$apple, $zebra], inOrder: true);
+});
+
 it('badge-colors the critical, high, and medium alert count columns', function () {
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);

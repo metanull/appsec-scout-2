@@ -2,7 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Audit\Recorder;
-use App\Filament\Pages\PendingSyncPage;
+use App\Filament\Resources\PendingSyncResource;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SoftwareSystemResource;
@@ -97,7 +97,7 @@ it('covers the planning workflow and a denied sync action', function () {
     expect(WorkItemLink::query()->count())->toBe(3)
         ->and(count($workItemIds))->toBe(2)
         ->and($tracker->createCalls)->toBe(2)
-        ->and(PendingSyncPage::canAccess())->toBeFalse();
+        ->and(PendingSyncResource::canViewAny())->toBeFalse();
 });
 
 it('covers the sync workflow and a denied admin action', function () {

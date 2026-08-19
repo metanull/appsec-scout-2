@@ -3,6 +3,8 @@
 use App\Audit\AuditLog;
 use App\Filament\Resources\FailedJobResource;
 use App\Filament\Resources\FailedJobResource\Pages\ListFailedJobs;
+use App\Filament\Resources\FailedJobResource\Pages\ViewFailedJob;
+use App\Filament\Support\JobPayloadInspector;
 use App\Models\FailedJob;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -37,6 +39,18 @@ function failedJobReader(): User
     return $user;
 }
 
+function failedJobSync(): User
+{
+    $user = User::factory()->create([
+        'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+        'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+        'two_factor_confirmed_at' => now(),
+    ]);
+    $user->syncRoles(['Sync']);
+
+    return $user;
+}
+
 it('grants access to an admin.queue user and denies a reader', function () {
     $admin = failedJobAdmin();
     $this->actingAs($admin);
@@ -45,6 +59,31 @@ it('grants access to an admin.queue user and denies a reader', function () {
     $reader = failedJobReader();
     $this->actingAs($reader);
     expect(FailedJobResource::canViewAny())->toBeFalse();
+});
+
+it('grants access to a work-items.sync user, per docs/roles/sync.md', function () {
+    $sync = failedJobSync();
+    $this->actingAs($sync);
+
+    expect(FailedJobResource::canViewAny())->toBeTrue();
+});
+
+it('lets a work-items.sync user retry and forget failed jobs from the list page', function () {
+    $sync = failedJobSync();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Example"}', 'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($sync)
+        ->test(ListFailedJobs::class)
+        ->callTableAction('retry', $record);
+
+    expect(DB::table('failed_jobs')->where('uuid', $uuid)->exists())->toBeFalse();
 });
 
 it('lists failed jobs with searchable columns for an admin.queue user', function () {
@@ -113,6 +152,31 @@ it('table retry and forget actions work and record the same audit actions as bef
         ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
 });
 
+it('resets the attempts counter before re-pushing a retried job, so an exhausted job actually re-runs', function () {
+    $admin = failedJobAdmin();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => json_encode(['job' => 'Example', 'displayName' => 'ExampleJob', 'attempts' => 3]),
+        'exception' => 'Illuminate\\Queue\\MaxAttemptsExceededException: Example has been attempted too many times.',
+        'failed_at' => now(),
+    ]);
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->callTableAction('retry', $record);
+
+    $pushed = DB::table('jobs')->where('queue', 'default')->first();
+
+    expect($pushed)->not->toBeNull();
+    $payload = json_decode($pushed->payload, true);
+    expect($payload['attempts'])->toBe(0);
+});
+
 it('renders the failed job view page with the exception and payload shown in full', function () {
     $admin = failedJobAdmin();
 
@@ -159,8 +223,202 @@ it('denies the view page to a user without admin.queue', function () {
 it('summarizes a failed job exception for a truncated database column error', function () {
     $exception = "PDOException: SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'version_control_url' at row 1 insert into `security_events` values secret-token";
 
-    expect(FailedJobResource::exceptionPreview($exception))
+    expect(JobPayloadInspector::exceptionPreview($exception))
         ->toBe('Database value exceeded security_events.version_control_url. Run migrations, then retry or forget this failed job.');
+});
+
+it('retries a failed job from the view page header action and redirects to the index', function () {
+    $admin = failedJobAdmin();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Example","displayName":"ExampleJob"}',
+        'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(ViewFailedJob::class, ['record' => $record->getKey()])
+        ->callAction('retry')
+        ->assertRedirect(FailedJobResource::getUrl('index'));
+
+    expect(DB::table('failed_jobs')->where('uuid', $uuid)->exists())->toBeFalse()
+        ->and(DB::table('jobs')->where('queue', 'default')->exists())->toBeTrue()
+        ->and(AuditLog::query()->where('action', 'operations.retry_failed_job')->exists())->toBeTrue();
+});
+
+it('forgets a failed job from the view page header action and redirects to the index', function () {
+    $admin = failedJobAdmin();
+
+    $uuid = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid,
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Example"}',
+        'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+    $record = FailedJob::where('uuid', $uuid)->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(ViewFailedJob::class, ['record' => $record->getKey()])
+        ->callAction('forget')
+        ->assertRedirect(FailedJobResource::getUrl('index'));
+
+    expect(DB::table('failed_jobs')->where('uuid', $uuid)->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->exists())->toBeTrue();
+});
+
+it('bulk-retries selected failed jobs, re-pushing each payload and clearing them from the list', function () {
+    $admin = failedJobAdmin();
+
+    $uuidA = (string) str()->uuid();
+    $uuidB = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        ['uuid' => $uuidA, 'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"A"}', 'exception' => 'boom', 'failed_at' => now()],
+        ['uuid' => $uuidB, 'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"B"}', 'exception' => 'boom', 'failed_at' => now()],
+    ]);
+    $records = FailedJob::whereIn('uuid', [$uuidA, $uuidB])->get();
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->callTableBulkAction('retrySelected', $records);
+
+    expect(DB::table('failed_jobs')->count())->toBe(0)
+        ->and(DB::table('jobs')->count())->toBe(2)
+        ->and(AuditLog::query()->where('action', 'operations.retry_failed_job')->count())->toBe(2);
+});
+
+it('bulk-forgets selected failed jobs', function () {
+    $admin = failedJobAdmin();
+
+    $uuidA = (string) str()->uuid();
+    $uuidB = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        ['uuid' => $uuidA, 'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"A"}', 'exception' => 'boom', 'failed_at' => now()],
+        ['uuid' => $uuidB, 'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"B"}', 'exception' => 'boom', 'failed_at' => now()],
+    ]);
+    $records = FailedJob::whereIn('uuid', [$uuidA, $uuidB])->get();
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->callTableBulkAction('forgetSelected', $records);
+
+    expect(DB::table('failed_jobs')->count())->toBe(0)
+        ->and(AuditLog::query()->where('action', 'operations.forget_failed_job')->count())->toBe(2);
+});
+
+it('does not abort a bulk retry when one selected job was already resolved by another operator', function () {
+    $admin = failedJobAdmin();
+
+    $uuidA = (string) str()->uuid();
+    $uuidB = (string) str()->uuid();
+    DB::table('failed_jobs')->insert([
+        ['uuid' => $uuidA, 'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"A"}', 'exception' => 'boom', 'failed_at' => now()],
+        ['uuid' => $uuidB, 'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"B"}', 'exception' => 'boom', 'failed_at' => now()],
+    ]);
+    $records = FailedJob::whereIn('uuid', [$uuidA, $uuidB])->get();
+
+    DB::table('failed_jobs')->where('uuid', $uuidA)->delete();
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->callTableBulkAction('retrySelected', $records);
+
+    expect(DB::table('failed_jobs')->where('uuid', $uuidB)->exists())->toBeFalse()
+        ->and(DB::table('jobs')->count())->toBe(1)
+        ->and(AuditLog::query()->where('action', 'operations.retry_failed_job')->count())->toBe(1);
+});
+
+it('filters failed jobs by a failed_at date range, including an upper bound', function () {
+    $admin = failedJobAdmin();
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Early"}', 'exception' => 'boom',
+        'failed_at' => '2026-01-05 00:00:00',
+    ]);
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Late"}', 'exception' => 'boom',
+        'failed_at' => '2026-01-25 00:00:00',
+    ]);
+    $early = FailedJob::where('payload', 'like', '%Early%')->firstOrFail();
+    $late = FailedJob::where('payload', 'like', '%Late%')->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->filterTable('failed_at_from', ['failed_at_from' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$late])
+        ->assertCanNotSeeTableRecords([$early])
+        ->removeTableFilter('failed_at_from')
+        ->filterTable('failed_at_until', ['failed_at_until' => '2026-01-10'])
+        ->assertCanSeeTableRecords([$early])
+        ->assertCanNotSeeTableRecords([$late]);
+});
+
+it('cleans up failed jobs older than the configured retention window, audits, and notifies', function () {
+    $admin = failedJobAdmin();
+    config(['queue.failed.retain_days' => 30]);
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Old"}', 'exception' => 'boom',
+        'failed_at' => now()->subDays(45),
+    ]);
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Recent"}', 'exception' => 'boom',
+        'failed_at' => now()->subDays(10),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListFailedJobs::class)
+        ->callAction('cleanUpNow')
+        ->assertNotified('1 failed job(s) deleted');
+
+    expect(DB::table('failed_jobs')->count())->toBe(1)
+        ->and(DB::table('failed_jobs')->first()->payload)->toBe('{"job":"Recent"}');
+
+    $audit = AuditLog::query()->where('action', 'operations.prune_failed_jobs')->firstOrFail();
+    expect($audit->payload_json)->toBe(['deleted' => 1, 'retain_days' => 30]);
+});
+
+it('hides the Clean up now action from a user without admin.queue or work-items.sync', function () {
+    $reader = failedJobReader();
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Example"}', 'exception' => 'boom',
+        'failed_at' => now(),
+    ]);
+
+    $this->actingAs($reader)
+        ->get(FailedJobResource::getUrl('index'))
+        ->assertForbidden();
+});
+
+it('lets a work-items.sync user use the Clean up now action too', function () {
+    $sync = failedJobSync();
+    config(['queue.failed.retain_days' => 30]);
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database', 'queue' => 'default', 'payload' => '{"job":"Old"}', 'exception' => 'boom',
+        'failed_at' => now()->subDays(45),
+    ]);
+
+    Livewire::actingAs($sync)
+        ->test(ListFailedJobs::class)
+        ->callAction('cleanUpNow')
+        ->assertNotified('1 failed job(s) deleted');
+
+    expect(DB::table('failed_jobs')->count())->toBe(0);
 });
 
 it('renders the failed job payload in full without masking', function () {

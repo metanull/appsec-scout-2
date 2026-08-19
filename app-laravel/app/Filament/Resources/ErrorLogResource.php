@@ -5,7 +5,10 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
 use App\Filament\Resources\ErrorLogResource\Pages\ViewErrorLog;
 use App\Filament\Support\DateRangeFilters;
+use App\Filament\Support\ErrorLogOwnerColumns;
+use App\Filament\Support\LogLevelBadgeColor;
 use App\Models\ErrorLog;
+use App\Models\SecurityContainer;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -48,6 +51,15 @@ class ErrorLogResource extends Resource
         return static::canViewAny();
     }
 
+    /** @return Builder<ErrorLog> */
+    public static function getEloquentQuery(): Builder
+    {
+        /** @var Builder<ErrorLog> $query */
+        $query = parent::getEloquentQuery();
+
+        return $query->with(['softwareSystem', 'securityContainer']);
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([]);
@@ -64,12 +76,22 @@ class ErrorLogResource extends Resource
                             ->dateTime('d M Y H:i:s'),
                         TextEntry::make('level')
                             ->badge()
-                            ->color(fn (string $state) => match (strtolower($state)) {
-                                'error', 'critical', 'alert', 'emergency' => 'danger',
-                                'warning' => 'warning',
-                                default => 'secondary',
-                            }),
-                        TextEntry::make('channel'),
+                            ->color(fn (string $state): string => LogLevelBadgeColor::for($state)),
+                        TextEntry::make('channel')
+                            ->badge()
+                            ->color('gray'),
+                        TextEntry::make('softwareSystem.name')
+                            ->label('System')
+                            ->placeholder('-')
+                            ->url(fn (ErrorLog $record): ?string => $record->softwareSystem
+                                ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
+                                : null),
+                        TextEntry::make('securityContainer.name')
+                            ->label('Container')
+                            ->placeholder('-')
+                            ->url(fn (ErrorLog $record): ?string => $record->securityContainer
+                                ? SecurityContainerResource::getUrl('view', ['record' => $record->securityContainer])
+                                : null),
                         TextEntry::make('message')
                             ->wrap()
                             ->columnSpan(3),
@@ -106,12 +128,9 @@ class ErrorLogResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('occurred_at')->dateTime()->sortable(),
-                TextColumn::make('level')->badge()->color(fn (string $state) => match (strtolower($state)) {
-                    'error', 'critical', 'alert', 'emergency' => 'danger',
-                    'warning' => 'warning',
-                    default => 'secondary',
-                }),
-                TextColumn::make('channel'),
+                TextColumn::make('level')->badge()->color(fn (string $state): string => LogLevelBadgeColor::for($state)),
+                TextColumn::make('channel')->badge()->color('gray'),
+                ...ErrorLogOwnerColumns::columns(),
                 TextColumn::make('message')->searchable()->wrap(),
                 TextColumn::make('context_json')
                     ->label('Context')
@@ -128,6 +147,13 @@ class ErrorLogResource extends Resource
             ->filters([
                 SelectFilter::make('level')
                     ->options(['ERROR' => 'Error', 'CRITICAL' => 'Critical', 'ALERT' => 'Alert', 'EMERGENCY' => 'Emergency']),
+                SelectFilter::make('security_container_id')
+                    ->label('Container')
+                    ->options(fn (): array => SecurityContainer::query()
+                        ->whereIn('id', ErrorLog::query()->whereNotNull('security_container_id')->distinct()->pluck('security_container_id'))
+                        ->orderBy('name')
+                        ->pluck('name', 'id')
+                        ->all()),
                 Filter::make('run')
                     ->form([
                         TextInput::make('value')

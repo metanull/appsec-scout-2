@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Filament\Support\EventSeverityBadgeColor;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -97,12 +98,6 @@ class LocalFinding extends Model
 
     public static function severityColor(?string $severity): string
     {
-        return match (strtoupper((string) $severity)) {
-            'CRITICAL' => 'danger',
-            'HIGH' => 'warning',
-            'MEDIUM' => 'info',
-            'LOW', 'UNKNOWN' => 'gray',
-            default => 'gray',
-        };
+        return EventSeverityBadgeColor::for($severity === null ? null : strtolower($severity));
     }
 }

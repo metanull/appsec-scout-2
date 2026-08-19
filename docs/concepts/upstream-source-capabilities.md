@@ -28,7 +28,7 @@ Local-first means an operator can always stage a state, severity, or comment cha
 regardless of whether the connected Source can ever receive it — appsec-scout never blocks or
 warns against a local edit at the moment it's made. The question of "can this actually push
 anywhere" is answered later, when a Sync operator runs a push (`App\Sync\PushEventStatesJob`, via
-`Admin -> Pending Sync`), by `App\Sync\PendingSyncResolver`:
+`Sync -> Pending Sync`), by `App\Sync\PendingSyncResolver`:
 
 - **Pushable** (a state change; a severity change when the Source declares `canUpdateSeverity:
   true`): attempted via `Source::pushEventState()` as normal — success clears the staged field(s)

@@ -11,6 +11,7 @@ use App\Filament\Widgets\RecentStaticAnalysisRunsTableWidget;
 use App\Filament\Widgets\RecentSyncRunsTableWidget;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
+use App\Jobs\PruneFailedJobs;
 use App\Models\RepositoryCollectionRun;
 use App\Models\StaticAnalysisRun;
 use App\Models\User;
@@ -30,6 +31,7 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -38,9 +40,9 @@ class OperationsPage extends Page
 {
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-server-stack';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Admin';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 1;
 
     protected static ?string $navigationLabel = 'Operations';
 
@@ -96,6 +98,7 @@ class OperationsPage extends Page
             Action::make('fetchSource')
                 ->label('Fetch source')
                 ->icon('heroicon-o-arrow-down-tray')
+                ->visible(fn (): bool => self::canOperateQueueOrSync())
                 ->form([
                     Select::make('source_id')
                         ->label('Source')
@@ -107,6 +110,7 @@ class OperationsPage extends Page
             Action::make('refreshTracker')
                 ->label('Refresh tracker')
                 ->icon('heroicon-o-arrow-path')
+                ->visible(fn (): bool => self::canOperateQueueOrSync())
                 ->form([
                     Select::make('tracker_id')
                         ->label('Tracker')
@@ -118,7 +122,7 @@ class OperationsPage extends Page
             Action::make('reconcileWorkItems')
                 ->label('Reconcile all tracker links')
                 ->icon('heroicon-o-arrows-pointing-in')
-                ->visible(fn (): bool => Gate::allows('admin.queue') || Gate::allows('work-items.sync'))
+                ->visible(fn (): bool => self::canOperateQueueOrSync())
                 ->requiresConfirmation()
                 ->modalDescription('Queue a global reconciliation run to discover and link existing tracker work items.')
                 ->action(fn () => $this->dispatchReconcileAll()),
@@ -150,13 +154,21 @@ class OperationsPage extends Page
             ActionGroup::make([
                 Action::make('pruneAuditLogs')
                     ->label('Prune audit logs')
+                    ->visible(fn (): bool => self::canOperateQueueOrSync())
                     ->requiresConfirmation()
                     ->action(fn () => $this->pruneAuditLogsNow()),
 
                 Action::make('pruneErrorLogs')
                     ->label('Prune error logs')
+                    ->visible(fn (): bool => self::canOperateQueueOrSync())
                     ->requiresConfirmation()
                     ->action(fn () => $this->pruneErrorLogsNow()),
+
+                Action::make('pruneFailedJobs')
+                    ->label('Prune failed jobs')
+                    ->visible(fn (): bool => self::canOperateQueueOrSync())
+                    ->requiresConfirmation()
+                    ->action(fn () => $this->pruneFailedJobsNow()),
             ])->label('Maintenance'),
         ];
     }
@@ -187,6 +199,8 @@ class OperationsPage extends Page
 
     public function dispatchSelectedSource(string $sourceId): void
     {
+        self::authorizeQueueOrSync();
+
         if ($sourceId === '') {
             Notification::make()->title('Select a source first')->warning()->send();
 
@@ -201,6 +215,8 @@ class OperationsPage extends Page
 
     public function dispatchSelectedTracker(string $trackerId): void
     {
+        self::authorizeQueueOrSync();
+
         if ($trackerId === '') {
             Notification::make()->title('Select a tracker first')->warning()->send();
 
@@ -215,7 +231,7 @@ class OperationsPage extends Page
 
     public function dispatchReconcileAll(): void
     {
-        Gate::authorize('work-items.sync');
+        self::authorizeQueueOrSync();
 
         if ($this->isReconcileAllQueued()) {
             Notification::make()->title('Reconciliation is already queued or running.')->info()->send();
@@ -293,17 +309,64 @@ class OperationsPage extends Page
 
     public function pruneAuditLogsNow(): void
     {
-        (new PruneAuditLogs((int) config('audit.retain_days', 365)))->handle();
-        app(Recorder::class)->recordAdminAction('operations.prune_audit_logs');
+        self::authorizeQueueOrSync();
 
-        Notification::make()->title('Audit logs pruned')->success()->send();
+        $retainDays = (int) config('audit.retain_days', 365);
+        $deleted = (new PruneAuditLogs($retainDays))->handle();
+
+        app(Recorder::class)->recordAdminAction('operations.prune_audit_logs', [
+            'deleted' => $deleted,
+            'retain_days' => $retainDays,
+        ]);
+
+        Notification::make()->title("{$deleted} audit log(s) deleted")->success()->send();
     }
 
     public function pruneErrorLogsNow(): void
     {
-        (new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->handle();
-        app(Recorder::class)->recordAdminAction('operations.prune_error_logs');
+        self::authorizeQueueOrSync();
 
-        Notification::make()->title('Error logs pruned')->success()->send();
+        $retainDays = (int) config('logging.error_retain_days', 90);
+        $deleted = (new PruneErrorLogs($retainDays))->handle();
+
+        app(Recorder::class)->recordAdminAction('operations.prune_error_logs', [
+            'deleted' => $deleted,
+            'retain_days' => $retainDays,
+        ]);
+
+        Notification::make()->title("{$deleted} error log(s) deleted")->success()->send();
+    }
+
+    public function pruneFailedJobsNow(): void
+    {
+        self::authorizeQueueOrSync();
+
+        $retainDays = (int) config('queue.failed.retain_days', 90);
+        $deleted = (new PruneFailedJobs($retainDays))->handle();
+
+        app(Recorder::class)->recordAdminAction('operations.prune_failed_jobs', [
+            'deleted' => $deleted,
+            'retain_days' => $retainDays,
+        ]);
+
+        Notification::make()->title("{$deleted} failed job(s) deleted")->success()->send();
+    }
+
+    /**
+     * Every action on this page that's meant for either audience — Admin
+     * operators (admin.queue) or Sync operators (work-items.sync) — shares
+     * this one check, so the gate can't silently drift out of sync between
+     * a button's ->visible() and its handler's own authorization.
+     */
+    private static function canOperateQueueOrSync(): bool
+    {
+        return Gate::any(['admin.queue', 'work-items.sync']);
+    }
+
+    private static function authorizeQueueOrSync(): void
+    {
+        if (! self::canOperateQueueOrSync()) {
+            throw new AuthorizationException('This action requires the admin.queue or work-items.sync permission.');
+        }
     }
 }

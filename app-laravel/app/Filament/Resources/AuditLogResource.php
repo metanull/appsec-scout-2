@@ -5,19 +5,22 @@ namespace App\Filament\Resources;
 use App\Audit\AuditLog;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
+use App\Filament\Resources\AuditLogResource\Support\AuditSubjectResolver;
+use App\Filament\Support\ActorKindBadgeColor;
 use App\Filament\Support\DateRangeFilters;
-use App\Models\SecurityContainer;
-use App\Models\SecurityEvent;
-use App\Models\User;
 use Filament\Infolists\Components\CodeEntry;
+use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Phiki\Grammar\Grammar;
 
 class AuditLogResource extends Resource
@@ -47,6 +50,15 @@ class AuditLogResource extends Resource
         return $schema->components([]);
     }
 
+    /** @return Builder<AuditLog> */
+    public static function getEloquentQuery(): Builder
+    {
+        /** @var Builder<AuditLog> $query */
+        $query = parent::getEloquentQuery();
+
+        return $query->with(['user']);
+    }
+
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
@@ -60,13 +72,7 @@ class AuditLogResource extends Resource
                         TextEntry::make('actor_kind')
                             ->label('Actor kind')
                             ->badge()
-                            ->color(fn (string $state): string => match ($state) {
-                                'user' => 'info',
-                                'job' => 'gray',
-                                'cli' => 'warning',
-                                'system' => 'secondary',
-                                default => 'secondary',
-                            }),
+                            ->color(fn (string $state): string => ActorKindBadgeColor::for($state)),
                         TextEntry::make('ip')
                             ->label('IP address')
                             ->placeholder('-'),
@@ -74,29 +80,19 @@ class AuditLogResource extends Resource
                             ->label('Action')
                             ->grow()
                             ->columnSpan(2),
-                        TextEntry::make('user_id')
+                        TextEntry::make('user.name')
                             ->label('User')
-                            ->state(fn (AuditLog $record): string => self::resolveUserName($record))
-                            ->url(fn (AuditLog $record): ?string => self::resolveUserUrl($record))
-                            ->placeholder('—'),
+                            ->url(fn (AuditLog $record): ?string => self::userUrl($record))
+                            ->placeholder('-'),
                     ]),
+                    KeyValueEntry::make('_payload_summary')
+                        ->label('Details')
+                        ->state(fn (AuditLog $record): array => self::promotedPayload($record))
+                        ->columnSpanFull(),
                 ]),
 
             Section::make('Subject')
-                ->schema([
-                    Grid::make(3)->schema([
-                        TextEntry::make('subject_type')
-                            ->label('Type')
-                            ->formatStateUsing(fn (?string $state): string => $state
-                                ? class_basename($state)
-                                : '—')
-                            ->placeholder('-'),
-                        TextEntry::make('subject_id')
-                            ->label('ID')
-                            ->url(fn (AuditLog $record): ?string => self::resolveSubjectUrl($record))
-                            ->placeholder('-'),
-                    ]),
-                ]),
+                ->schema(self::subjectEntries()),
 
             Section::make('Payload')
                 ->collapsible()
@@ -122,24 +118,18 @@ class AuditLogResource extends Resource
                     ->sortable(),
                 TextColumn::make('actor_kind')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'user' => 'info',
-                        'job' => 'gray',
-                        'cli' => 'warning',
-                        'system' => 'secondary',
-                        default => 'secondary',
-                    })
+                    ->color(fn (string $state): string => ActorKindBadgeColor::for($state))
                     ->placeholder('-'),
                 TextColumn::make('action')
                     ->searchable()
                     ->wrap()
                     ->grow(),
-                TextColumn::make('user_id')
+                TextColumn::make('user.name')
                     ->label('User')
-                    ->formatStateUsing(fn (AuditLog $record): string => self::resolveUserName($record))
                     ->placeholder('-'),
+                self::subjectColumn(),
                 TextColumn::make('subject_type')
-                    ->label('Subject')
+                    ->label('Subject type')
                     ->formatStateUsing(fn (string $state): string => class_basename($state))
                     ->badge()
                     ->color('gray')
@@ -178,46 +168,110 @@ class AuditLogResource extends Resource
         ];
     }
 
-    private static function resolveUserName(AuditLog $record): string
+    private static function userUrl(AuditLog $record): ?string
     {
-        if ($record->user_id === null) {
-            return '—';
-        }
-
-        $user = User::find($record->user_id);
-
-        return $user instanceof User ? $user->name : "User #{$record->user_id}";
+        return $record->user !== null
+            ? UserResource::getUrl('edit', ['record' => $record->user_id])
+            : null;
     }
 
-    private static function resolveUserUrl(AuditLog $record): ?string
+    /** @return array<string, string> */
+    private static function promotedPayload(AuditLog $record): array
     {
-        if ($record->user_id === null) {
-            return null;
+        if (! is_array($record->payload_json)) {
+            return [];
         }
 
-        if (! User::where('id', $record->user_id)->exists()) {
-            return null;
+        $promoted = [];
+
+        foreach ($record->payload_json as $key => $value) {
+            if (is_scalar($value) || $value === null) {
+                $promoted[(string) $key] = $value === null ? '-' : (string) $value;
+            }
         }
 
-        return UserResource::getUrl('edit', ['record' => $record->user_id]);
+        return $promoted;
     }
 
-    private static function resolveSubjectUrl(AuditLog $record): ?string
+    /**
+     * A single "Subject" table column, batch-resolving every row's subject
+     * in one query per type the first time any row on this page needs it —
+     * $subjectMap is captured by reference and local to this one table()
+     * call (one per request), so nothing here is cached across requests.
+     */
+    private static function subjectColumn(): TextColumn
     {
-        $subjectType = $record->subject_type;
+        $subjectMap = null;
 
-        if ($subjectType === null || $record->subject_id === null) {
-            return null;
-        }
+        $resolve = function (AuditLog $record, HasTable $livewire) use (&$subjectMap): ?array {
+            if ($record->subject_type === null || $record->subject_id === null) {
+                return null;
+            }
 
-        return match (class_basename($subjectType)) {
-            'SecurityEvent' => SecurityEvent::where('id', $record->subject_id)->exists()
-                ? SecurityEventResource::getUrl('view', ['record' => $record->subject_id])
-                : null,
-            'SecurityContainer' => SecurityContainer::where('id', $record->subject_id)->exists()
-                ? SecurityContainerResource::getUrl('view', ['record' => $record->subject_id])
-                : null,
-            default => null,
+            if ($subjectMap === null) {
+                $records = $livewire->getTableRecords();
+
+                /** @var array<int, AuditLog> $items */
+                $items = $records instanceof Collection ? $records->all() : $records->items();
+
+                $subjectMap = AuditSubjectResolver::resolveForRecords($items);
+            }
+
+            return $subjectMap["{$record->subject_type}:{$record->subject_id}"] ?? null;
         };
+
+        return TextColumn::make('subject')
+            ->label('Subject')
+            ->state(fn (AuditLog $record, HasTable $livewire): ?string => $resolve($record, $livewire)['name'] ?? null)
+            ->url(fn (AuditLog $record, HasTable $livewire): ?string => $resolve($record, $livewire)['url'] ?? null)
+            ->placeholder('-')
+            ->toggleable();
+    }
+
+    /**
+     * The Subject section's entries — $subjectInfo is captured by reference
+     * and local to this one infolist() call (one per request/record), so
+     * Name/Kind/System share a single resolveOne() lookup instead of three.
+     *
+     * @return array<int, Grid>
+     */
+    private static function subjectEntries(): array
+    {
+        $subjectInfo = null;
+        $resolved = false;
+
+        $resolve = function (AuditLog $record) use (&$subjectInfo, &$resolved): ?array {
+            if (! $resolved) {
+                $subjectInfo = AuditSubjectResolver::resolveOne($record);
+                $resolved = true;
+            }
+
+            return $subjectInfo;
+        };
+
+        return [
+            Grid::make(3)->schema([
+                TextEntry::make('_subject_name')
+                    ->label('Name')
+                    ->state(fn (AuditLog $record): ?string => $resolve($record)['name'] ?? null)
+                    ->url(fn (AuditLog $record): ?string => $resolve($record)['url'] ?? null)
+                    ->placeholder('-'),
+                TextEntry::make('_subject_kind')
+                    ->label('Kind')
+                    ->state(fn (AuditLog $record): ?string => $resolve($record)['kind'] ?? null)
+                    ->placeholder('-'),
+                TextEntry::make('_subject_system')
+                    ->label('System')
+                    ->state(fn (AuditLog $record): ?string => $resolve($record)['system'] ?? null)
+                    ->placeholder('-'),
+                TextEntry::make('subject_type')
+                    ->label('Type')
+                    ->formatStateUsing(fn (?string $state): string => $state ? class_basename($state) : '-')
+                    ->placeholder('-'),
+                TextEntry::make('subject_id')
+                    ->label('ID')
+                    ->placeholder('-'),
+            ]),
+        ];
     }
 }

@@ -16,6 +16,7 @@ use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
+use App\Jobs\PruneFailedJobs;
 use App\Models\Attachment;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
@@ -929,5 +930,6 @@ Artisan::command('events:recompute-pending-sync', function (SourceRegistry $sour
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
+Schedule::job(new PruneFailedJobs((int) config('queue.failed.retain_days', 90)))->daily();
 Schedule::command('sbom:import-pending-scans')->everyMinute()->withoutOverlapping()->name('sbom:import-pending-scans');
 Schedule::command('staticanalysis:import-pending-scans')->everyMinute()->withoutOverlapping()->name('staticanalysis:import-pending-scans');

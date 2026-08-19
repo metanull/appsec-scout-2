@@ -200,10 +200,10 @@ AppSec Scout is the system of record for operator edits.
 - Tracker refresh updates local work-item metadata only.
 - SbomScan/StaticAnalysis and their import commands are the equivalent read path for Local
   Findings and Dependencies — see [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md).
-- Repository collection (`Admin -> Operations` "Collect repositories") is a second, in-app,
+- Repository collection (`Operations -> Operations` "Collect repositories") is a second, in-app,
   asynchronous read path for the same kind of data, scoped to Azure DevOps repositories — see
   [docs/concepts/repository-collection.md](concepts/repository-collection.md).
-- Static analysis collection (`Admin -> Operations` "Run static analysis") is the equivalent
+- Static analysis collection (`Operations -> Operations` "Run static analysis") is the equivalent
   second, in-app, asynchronous read path for Roslynator/SpotBugs/Opengrep code-quality findings —
   see [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md).
 

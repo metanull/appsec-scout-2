@@ -144,7 +144,8 @@ class RepositoryMappingsRelationManager extends RelationManager
                     }),
             ])
             ->emptyStateDescription('No repository mappings yet.')
-            ->defaultSort('updated_at', 'desc');
+            ->defaultSort('updated_at', 'desc')
+            ->paginated([10, 25, 50]);
     }
 
     /** @return array<int, mixed> */
@@ -220,13 +221,13 @@ class RepositoryMappingsRelationManager extends RelationManager
         $repositoryName = is_string($get('repository_name')) ? trim($get('repository_name')) : '';
 
         if (! is_numeric($providerId) || $repositoryName === '') {
-            return '—';
+            return '-';
         }
 
         $provider = RepositoryProvider::query()->find((int) $providerId);
 
         if (! $provider instanceof RepositoryProvider || $provider->base_url === '') {
-            return '—';
+            return '-';
         }
 
         $normalizedRepositoryName = implode('/', array_map(
@@ -235,14 +236,14 @@ class RepositoryMappingsRelationManager extends RelationManager
         ));
 
         if ($normalizedRepositoryName === '') {
-            return '—';
+            return '-';
         }
 
         $normalizedBaseUrl = rtrim($provider->base_url, '/');
         $providerType = RepositoryProviderType::tryFrom((string) $provider->getRawOriginal('provider_type'));
 
         if (! $providerType instanceof RepositoryProviderType) {
-            return '—';
+            return '-';
         }
 
         return RepositoryCodeUrlGenerator::browseUrl($providerType, $normalizedBaseUrl, $normalizedRepositoryName);

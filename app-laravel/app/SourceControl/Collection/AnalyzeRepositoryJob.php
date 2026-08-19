@@ -5,6 +5,7 @@ namespace App\SourceControl\Collection;
 use App\Assets\AttachmentIngestionService;
 use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
+use App\Assets\AzDoOwnerLookup;
 use App\Assets\AzDoScanResultDtoFactory;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
@@ -519,20 +520,23 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         return str_starts_with($content, "\xEF\xBB\xBF") ? substr($content, 3) : $content;
     }
 
-    private function logFailure(string $stage, string $message, ?string $subject = null): void
+    private function logFailure(string $stage, string $message, ?string $subject = null, ?Throwable $exception = null): void
     {
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'static-analysis',
+            ...app(AzDoOwnerLookup::class)->forAzDoRepository($this->target->projectId, $this->target->repositoryId),
             'message' => $message,
             'context_json' => array_filter([
                 'run' => $this->staticAnalysisRunId,
+                'project_id' => $this->target->projectId,
+                'project_name' => $this->target->projectName,
                 'repository_id' => $this->target->repositoryId,
-                'repository' => $this->target->repositoryName,
+                'repository_name' => $this->target->repositoryName,
                 'stage' => $stage,
                 'subject' => $subject,
             ], fn (mixed $value): bool => $value !== null),
-            'trace' => null,
+            'trace' => $exception?->getTraceAsString(),
             'occurred_at' => now(),
         ]);
     }

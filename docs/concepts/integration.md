@@ -13,10 +13,10 @@ Related concepts, documented separately:
 - [docs/concepts/triage.md](triage.md) — the manual, user-driven workflow that produces the
   staged changes a Source sync eventually pushes upstream.
 - [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md) — the separate,
-  host-side "Ops" scan workflows (not to be confused with the `Admin -> Operations` page
+  host-side "Ops" scan workflows (not to be confused with the `Operations -> Operations` page
   described below).
 - [docs/concepts/repository-collection.md](repository-collection.md) — the in-app, queued
-  counterpart to SbomScan, triggered from this same `Admin -> Operations` page but dispatching
+  counterpart to SbomScan, triggered from this same `Operations -> Operations` page but dispatching
   onto a second, dedicated worker/queue rather than the app container's own.
 - [docs/concepts/static-analysis-collection.md](static-analysis-collection.md) — the equivalent
   in-app, queued counterpart to StaticAnalysis, on its own third dedicated worker/queue.
@@ -48,7 +48,7 @@ automatic schedule.
 
 ## Trigger
 
-Integration jobs are dispatched on demand from `Admin -> Operations`:
+Integration jobs are dispatched on demand from `Operations -> Operations`:
 
 - **Fetch source** — dispatches `App\Sync\FetchSourceJob` for one chosen source right now.
 - **Refresh tracker** — dispatches `App\Trackers\RefreshWorkItemsJob` for one chosen tracker
@@ -105,7 +105,7 @@ Three distinct UI surfaces control different things, gated by different permissi
 | --- | --- | --- | --- |
 | `Admin -> System Credentials` | System-wide PATs/tokens shared across all operators | `admin.system-pats` | Admin only |
 | `Profile -> Integrations` | Your own personal credential, used only for your own interactive actions | none — just an authenticated session | Every signed-in user, Reader included |
-| `Admin -> Operations` "Fetch/Refresh/Sync now" | Force an immediate run | `admin.queue` **or** `work-items.sync` | Admin and Sync |
+| `Operations -> Operations` "Fetch/Refresh/Sync now" | Force an immediate run | `admin.queue` **or** `work-items.sync` | Admin and Sync |
 
 Roles are cumulative (`Reader < Triage < Plan < Sync < Admin`). Practically, this means:
 
@@ -118,7 +118,7 @@ Roles are cumulative (`Reader < Triage < Plan < Sync < Admin`). Practically, thi
 
 ## Observability
 
-- **`Admin -> Operations`** shows a "Recent sync runs" widget (gated by `alerts.view`, so visible
+- **`Operations -> Operations`** shows a "Recent sync runs" widget (gated by `alerts.view`, so visible
   from Reader upward) backed by the `SyncRun` table — the most recent runs across all Sources,
   with status, duration, and record counts. `SyncRun` is the system of record for per-run status.
 

@@ -4,7 +4,7 @@
 **SbomScan** and **StaticAnalysis** — the pipeline that gets their output into appsec-scout as
 Local Findings and Dependencies, and a related, simpler inventory tool,
 `assets:sync-azdo-projects` (see [below](#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
-Don't confuse any of this with the `Admin -> Operations` **Filament page** (covered in
+Don't confuse any of this with the `Operations -> Operations` **Filament page** (covered in
 [docs/concepts/integration.md](integration.md)), which is about monitoring and manually
 triggering Source/Tracker sync jobs — a completely different thing that happens to share the
 word "operations." Nothing in this document runs from Filament.
@@ -13,7 +13,7 @@ word "operations." Nothing in this document runs from Filament.
 
 [docs/concepts/repository-collection.md](repository-collection.md) documents a second,
 **in-app, asynchronous** path to the same kind of output as SbomScan — queued from
-`Admin -> Operations` and run by an isolated `collector` container/queue, rather than
+`Operations -> Operations` and run by an isolated `collector` container/queue, rather than
 operator-triggered on a workstation. It does not replace SbomScan, which remains a fully valid
 manual SBOM/vulnerability/secret alternative; the two are independent, parallel paths.
 
@@ -21,7 +21,7 @@ manual SBOM/vulnerability/secret alternative; the two are independent, parallel 
 
 [docs/concepts/static-analysis-collection.md](static-analysis-collection.md) documents the
 identical second, in-app, asynchronous path for StaticAnalysis — queued from
-`Admin -> Operations` ("Run static analysis") and run by an isolated `static-analysis-collector`
+`Operations -> Operations` ("Run static analysis") and run by an isolated `static-analysis-collector`
 container/queue. It does not replace StaticAnalysis, which remains a fully valid manual
 Roslynator/SpotBugs/Opengrep alternative (in particular for `-Resume`/`-ProjectFilter`/
 `-RepositoryFilter`/`-SkipUpload`, none of which the in-app path supports); the two are
@@ -50,7 +50,7 @@ Once results land in appsec-scout, they're visible through the normal permission
 resources like any other data (`alerts.view` for the containers/findings/components involved) —
 there is no special-casing for ops-imported vs. any other data. A read-only
 `SbomScanStatusWidget` (gated by `admin.queue`) surfaces recent run status on
-`Admin -> Operations`, but has no action buttons.
+`Operations -> Operations`, but has no action buttons.
 
 ## SbomScan
 
@@ -179,7 +179,7 @@ A second, much simpler tool also browses an AzDO organization and populates the
 [Software Asset / System / Container hierarchy](asset-system-container-alert.md) — but it isn't
 a host-side script like SbomScan/StaticAnalysis, and it doesn't touch alerts at all. The command
 is a thin wrapper around `App\Sync\InventorySyncService`, a shared service that also backs a
-"Sync inventory" button on `Admin -> Operations` (gated by `admin.queue`): that service walks
+"Sync inventory" button on `Operations -> Operations` (gated by `admin.queue`): that service walks
 every enabled Source (`fetchSystems()`/`fetchContainers()`) *and* every enabled Source Control
 provider that implements the optional `App\SourceControl\Contracts\EnumeratesInventory` mixin
 (`fetchProjects()`/`fetchRepositories()`, reusing the identical `SystemDto`/`ContainerDto` shapes)

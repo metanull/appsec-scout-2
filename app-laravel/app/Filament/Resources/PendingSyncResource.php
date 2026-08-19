@@ -1,31 +1,38 @@
 <?php
 
-namespace App\Filament\Pages;
+namespace App\Filament\Resources;
 
+use App\Filament\Resources\PendingSyncResource\Pages\ListPendingSync;
 use App\Filament\Support\EventSeverityBadgeColor;
+use App\Filament\Support\EventStateBadgeColor;
+use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Sync\PushEventStatesJob;
-use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
-use Filament\Schemas\Components\EmbeddedTable;
+use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Concerns\InteractsWithTable;
-use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
-class PendingSyncPage extends Page implements HasTable
+/**
+ * Alerts with an unpushed local change (state and/or severity), awaiting a
+ * Push to source. A second, narrow Resource over SecurityEvent — index page
+ * only, no create/edit/view pages of its own — so the list gets Filament's
+ * usual URL-persisted filter/search/sort state and a recordUrl into the
+ * alert's own SecurityEventResource view page, neither of which a plain
+ * Page + InteractsWithTable provides.
+ */
+class PendingSyncResource extends Resource
 {
-    use InteractsWithTable {
-        applySortingToTableQuery as private defaultApplySortingToTableQuery;
-    }
+    protected static ?string $model = SecurityEvent::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-up-on-square-stack';
 
@@ -37,32 +44,43 @@ class PendingSyncPage extends Page implements HasTable
 
     protected static ?string $slug = 'sync/pending';
 
-    public static function canAccess(): bool
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canViewAny(): bool
     {
         /** @var User|null $user */
         $user = Auth::user();
 
-        if (! $user instanceof User) {
-            return false;
-        }
-
-        return $user->can('work-items.sync') && $user->can('sources.push-state');
+        return $user instanceof User
+            && $user->can('work-items.sync')
+            && $user->can('sources.push-state');
     }
 
-    public function content(Schema $schema): Schema
+    public static function canView(Model $record): bool
     {
-        return $schema->components([
-            EmbeddedTable::make(),
-        ]);
+        return static::canViewAny();
     }
 
-    public function table(Table $table): Table
+    /** @return Builder<SecurityEvent> */
+    public static function getEloquentQuery(): Builder
+    {
+        /** @var Builder<SecurityEvent> $query */
+        $query = parent::getEloquentQuery();
+
+        return $query->where('is_dirty', true);
+    }
+
+    public static function form(Schema $schema): Schema
+    {
+        return $schema->components([]);
+    }
+
+    public static function table(Table $table): Table
     {
         return $table
-            ->query(
-                SecurityEvent::query()
-                    ->where('is_dirty', true)
-            )
             ->columns([
                 TextColumn::make('source_id')
                     ->label('Source')
@@ -78,22 +96,12 @@ class PendingSyncPage extends Page implements HasTable
                 TextColumn::make('state')
                     ->label('Current state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->state)) {
-                        'open' => 'danger',
-                        'resolved' => 'success',
-                        'dismissed' => 'gray',
-                        default => 'secondary',
-                    })
+                    ->color(fn (SecurityEvent $record): string => self::stateBadgeColor($record->state))
                     ->placeholder('-'),
                 TextColumn::make('pending_state')
                     ->label('Pending state')
                     ->badge()
-                    ->color(fn (SecurityEvent $record): string => match ($this->enumString($record->pending_state)) {
-                        'open' => 'danger',
-                        'resolved' => 'success',
-                        'dismissed' => 'gray',
-                        default => 'secondary',
-                    })
+                    ->color(fn (SecurityEvent $record): string => self::stateBadgeColor($record->pending_state))
                     ->placeholder('-'),
                 TextColumn::make('severity')
                     ->label('Current severity')
@@ -116,8 +124,19 @@ class PendingSyncPage extends Page implements HasTable
                     ->since()
                     ->sortable(),
             ])
+            ->filters([
+                SelectFilter::make('source_id')
+                    ->label('Source')
+                    ->options(fn (): array => static::getEloquentQuery()->distinct()->pluck('source_id', 'source_id')->all()),
+                SelectFilter::make('pending_state')
+                    ->label('Pending state')
+                    ->options(collect(EventState::cases())->mapWithKeys(
+                        fn (EventState $state): array => [$state->value => str($state->value)->replace('_', ' ')->title()->toString()],
+                    )->all()),
+            ])
             ->groups(['source_id'])
             ->defaultGroup('source_id')
+            ->defaultSort('updated_at', 'desc')
             ->bulkActions([
                 BulkAction::make('pushToSource')
                     ->label('Push to source')
@@ -146,36 +165,28 @@ class PendingSyncPage extends Page implements HasTable
                         Notification::make()->title('Selected alerts queued for sync')->success()->send();
                     }),
             ])
+            ->recordUrl(fn (SecurityEvent $record): string => SecurityEventResource::getUrl('view', ['record' => $record]))
             ->emptyStateHeading('No pending sync')
             ->emptyStateDescription('All alerts are up to date with their sources.')
             ->paginated([25, 50, 100]);
     }
 
-    /** @return array<int, Action> */
-    protected function getHeaderActions(): array
+    public static function getPages(): array
     {
-        return [];
+        return [
+            'index' => ListPendingSync::route('/'),
+        ];
     }
 
     /**
-     * @param  Builder<SecurityEvent>  $query
-     * @return Builder<SecurityEvent>
+     * `pending_state` is nullable (an event can have a pending severity
+     * change with no pending state change, or vice versa); a null value
+     * must render as neutral, not as EventStateBadgeColor's "open" default.
      */
-    protected function applySortingToTableQuery(Builder $query): Builder
+    private static function stateBadgeColor(mixed $state): string
     {
-        if ($this->getTableSortColumn()) {
-            return $this->defaultApplySortingToTableQuery($query);
-        }
+        $value = $state instanceof EventState ? $state->value : (is_string($state) ? $state : '');
 
-        return $query->orderBy('source_id')->orderByDesc('updated_at');
-    }
-
-    private function enumString(mixed $state): string
-    {
-        if ($state instanceof \BackedEnum) {
-            return (string) $state->value;
-        }
-
-        return is_string($state) ? $state : '';
+        return $value === '' ? 'secondary' : EventStateBadgeColor::for($value);
     }
 }

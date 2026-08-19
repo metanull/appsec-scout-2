@@ -20,6 +20,7 @@ use App\Trackers\RefreshWorkItemsJob;
 use App\Trackers\Registry;
 use Database\Seeders\RolePermissionSeeder;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -118,6 +119,41 @@ it('queues supported operational actions and records audit rows', function () {
 
     expect(AuditLog::query()->where('action', 'operations.dispatch_source_fetch')->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.dispatch_tracker_refresh')->exists())->toBeTrue();
+});
+
+it('lets a work-items.sync user dispatch source fetch and tracker refresh too', function () {
+    Bus::fake();
+
+    $sync = operationsUser();
+    $sync->syncRoles(['Sync']);
+
+    Livewire::actingAs($sync)
+        ->test(OperationsPage::class)
+        ->callAction('fetchSource', data: ['source_id' => 'fake'])
+        ->callAction('refreshTracker', data: ['tracker_id' => 'fake-tracker']);
+
+    Bus::assertDispatched(FetchSourceJob::class);
+    Bus::assertDispatched(RefreshWorkItemsJob::class);
+});
+
+it('denies a user with neither admin.queue nor work-items.sync from invoking Operations actions directly, bypassing button visibility', function () {
+    $reader = operationsUser();
+    $reader->syncRoles(['Reader']);
+    $this->actingAs($reader);
+
+    // Plain PHP instantiation, not Livewire::test(): these handlers only
+    // touch Auth/Gate, so a bare instance is enough to prove
+    // authorizeQueueOrSync() itself throws — and going through Livewire's
+    // request/snapshot lifecycle for a call that's expected to throw isn't
+    // reliable to assert against here.
+    $page = new OperationsPage;
+
+    expect(fn () => $page->dispatchSelectedSource('fake'))->toThrow(AuthorizationException::class);
+    expect(fn () => $page->dispatchSelectedTracker('fake-tracker'))->toThrow(AuthorizationException::class);
+    expect(fn () => $page->dispatchReconcileAll())->toThrow(AuthorizationException::class);
+    expect(fn () => $page->pruneAuditLogsNow())->toThrow(AuthorizationException::class);
+    expect(fn () => $page->pruneErrorLogsNow())->toThrow(AuthorizationException::class);
+    expect(fn () => $page->pruneFailedJobsNow())->toThrow(AuthorizationException::class);
 });
 
 it('header actions render for admin', function () {
@@ -258,7 +294,7 @@ it('shows only the reconciliation stat to a work-items.sync-only user', function
         ->test(OperationsPage::class)
         ->assertSee('Reconciliation')
         ->assertDontSee('Inventory sync')
-        ->assertDontSee('Jobs waiting in the queue')
+        ->assertDontSee('Jobs queued or currently running')
         ->assertDontSee('Failed jobs needing attention');
 });
 
@@ -269,7 +305,7 @@ it('shows all four operations health stats to an admin.queue user', function () 
         ->test(OperationsPage::class)
         ->assertSee('Reconciliation')
         ->assertSee('Inventory sync')
-        ->assertSee('Jobs waiting in the queue')
+        ->assertSee('Jobs queued or currently running')
         ->assertSee('Failed jobs needing attention');
 });
 
@@ -508,6 +544,39 @@ it('shows recent sync runs, repository collection runs, and static analysis runs
         ->assertSee('Recent Sync Runs')
         ->assertSee('Recent Repository Collection Runs')
         ->assertSee('Recent Static Analysis Runs');
+});
+
+it('prunes failed jobs older than the configured retention window, audits, and notifies', function () {
+    $admin = operationsAdmin();
+    config(['queue.failed.retain_days' => 30]);
+
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Old"}',
+        'exception' => 'boom',
+        'failed_at' => now()->subDays(45),
+    ]);
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) str()->uuid(),
+        'connection' => 'database',
+        'queue' => 'default',
+        'payload' => '{"job":"Recent"}',
+        'exception' => 'boom',
+        'failed_at' => now()->subDays(10),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('pruneFailedJobsNow')
+        ->assertNotified('1 failed job(s) deleted');
+
+    expect(DB::table('failed_jobs')->count())->toBe(1)
+        ->and(DB::table('failed_jobs')->first()->payload)->toBe('{"job":"Recent"}');
+
+    $audit = AuditLog::query()->where('action', 'operations.prune_failed_jobs')->firstOrFail();
+    expect($audit->payload_json)->toBe(['deleted' => 1, 'retain_days' => 30]);
 });
 
 function bindFakeOperationsIntegrations(): void

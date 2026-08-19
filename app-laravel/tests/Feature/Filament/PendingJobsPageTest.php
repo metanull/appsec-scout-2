@@ -103,3 +103,46 @@ it('drops exactly the targeted pending job and records an audit action', functio
         ->and(DB::table('jobs')->where('payload', $keepPayload)->exists())->toBeTrue()
         ->and(AuditLog::query()->where('action', 'operations.drop_pending_job')->exists())->toBeTrue();
 });
+
+it('paginates pending jobs at 25 per page', function () {
+    $admin = pendingJobsAdmin();
+
+    foreach (range(1, 30) as $i) {
+        insertPendingJob('default', sprintf('{"displayName":"App\\\\Jobs\\\\Job%02d"}', $i));
+    }
+
+    $component = Livewire::actingAs($admin)->test(PendingJobsPage::class);
+
+    $firstPage = $component->instance()->getTableRecords();
+    expect($firstPage->count())->toBe(25)
+        ->and($firstPage->total())->toBe(30);
+
+    $component->call('gotoPage', 2);
+
+    $secondPage = $component->instance()->getTableRecords();
+    expect($secondPage->count())->toBe(5)
+        ->and($secondPage->total())->toBe(30);
+});
+
+it('keeps the queue filter applied when navigating to a later page', function () {
+    $admin = pendingJobsAdmin();
+
+    foreach (range(1, 30) as $i) {
+        insertPendingJob('default', sprintf('{"displayName":"App\\\\Jobs\\\\Job%02d"}', $i));
+    }
+    foreach (range(1, 5) as $i) {
+        insertPendingJob('repository-collection', sprintf('{"displayName":"App\\\\Jobs\\\\Collect%02d"}', $i));
+    }
+
+    $component = Livewire::actingAs($admin)
+        ->test(PendingJobsPage::class)
+        ->filterTable('queue', 'default');
+
+    expect($component->instance()->getTableRecords()->total())->toBe(30);
+
+    $component->call('gotoPage', 2);
+
+    $secondPage = $component->instance()->getTableRecords();
+    expect($secondPage->count())->toBe(5)
+        ->and($secondPage->total())->toBe(30);
+});

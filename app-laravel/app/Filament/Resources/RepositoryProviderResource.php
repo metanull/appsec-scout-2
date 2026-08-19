@@ -19,6 +19,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -141,6 +142,11 @@ class RepositoryProviderResource extends Resource
                     ->label('Updated')
                     ->since(),
             ])
+            ->filters([
+                SelectFilter::make('provider_type')
+                    ->label('Type')
+                    ->options(self::providerTypeOptions()),
+            ])
             ->actions([
                 ActionGroup::make([
                     EditAction::make(),
@@ -150,6 +156,7 @@ class RepositoryProviderResource extends Resource
                     ->tooltip('Actions'),
             ])
             ->recordUrl(fn (RepositoryProvider $record): string => static::getUrl('view', ['record' => $record]))
+            ->defaultSort('name')
             ->paginated([25, 50, 100]);
     }
 

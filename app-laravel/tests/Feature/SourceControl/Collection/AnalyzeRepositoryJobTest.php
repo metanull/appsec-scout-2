@@ -313,10 +313,56 @@ it('logs a dotnet-analyze failure only when roslynator both fails and produces n
         ->and(Attachment::query()->value('kind'))->toBe(AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP);
 
     $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'dotnet-analyze')->first();
-    expect($errorLog)->not->toBeNull();
+
+    // Same context key shape as CollectRepositoryJob's identical failure kind
+    // (project_id/project_name/repository_id/repository_name), not the
+    // project-id-less shape this channel previously used.
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->context_json['project_id'])->toBe('project-001')
+        ->and($errorLog->context_json['project_name'])->toBe('SecurityProject')
+        ->and($errorLog->context_json['repository_id'])->toBe('repo-001')
+        ->and($errorLog->context_json['repository_name'])->toBe('backend-api');
 
     $run->refresh();
     expect($run->status)->toBe('success');
+});
+
+it('records the owning system/container on a logged static-analysis failure', function () {
+    $system = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001']);
+    $container = SecurityContainer::factory()->create([
+        'software_system_id' => $system->id,
+        'source_container_id' => 'repo-001',
+    ]);
+
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['App.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            return Process::result(exitCode: 1, errorOutput: 'fatal: could not load MSBuild workspace');
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'dotnet-analyze')->firstOrFail();
+
+    expect($errorLog->software_system_id)->toBe($system->id)
+        ->and($errorLog->security_container_id)->toBe($container->id);
 });
 
 it('produces only a java attachment for a repository with no .sln', function () {

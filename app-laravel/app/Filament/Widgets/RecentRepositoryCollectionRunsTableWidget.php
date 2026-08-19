@@ -3,12 +3,13 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\RepositoryCollectionRunResource;
+use App\Filament\Support\RunCounts;
+use App\Filament\Support\RunStatusBadgeColor;
 use App\Models\RepositoryCollectionRun;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 class RecentRepositoryCollectionRunsTableWidget extends TableWidget
@@ -32,11 +33,11 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
                 TextColumn::make('source_control_id')->label('Source Control')->badge(),
                 TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state) => $state === 'success' ? 'success' : ($state === 'failure' ? 'danger' : 'warning')),
+                    ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                 TextColumn::make('started_at')->dateTime(),
                 TextColumn::make('duration')->label('Duration')
                     ->state(function (RepositoryCollectionRun $record): string {
-                        $duration = self::durationSeconds($record);
+                        $duration = RunCounts::durationSeconds($record);
 
                         if ($duration === null) {
                             return 'n/a';
@@ -50,7 +51,7 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
                     }),
                 TextColumn::make('counts_json')
                     ->label('Counts')
-                    ->state(fn (RepositoryCollectionRun $record): string => RepositoryCollectionRunResource::formatCounts($record)),
+                    ->state(fn (RepositoryCollectionRun $record): string => RunCounts::format($record->counts_json)),
             ])
             ->headerActions([
                 Action::make('viewAll')
@@ -62,17 +63,5 @@ class RecentRepositoryCollectionRunsTableWidget extends TableWidget
             ->defaultSort('started_at', 'desc')
             ->paginated(false)
             ->poll('30s');
-    }
-
-    private static function durationSeconds(RepositoryCollectionRun $run): ?int
-    {
-        if ($run->getRawOriginal('started_at') === null || $run->getRawOriginal('finished_at') === null) {
-            return null;
-        }
-
-        $startedAt = Carbon::parse((string) $run->started_at);
-        $finishedAt = Carbon::parse((string) $run->finished_at);
-
-        return abs((int) $finishedAt->diffInSeconds($startedAt));
     }
 }

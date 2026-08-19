@@ -3,7 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Audit\Recorder;
-use App\Filament\Resources\FailedJobResource;
+use App\Filament\Support\JobPayloadInspector;
 use App\Queue\QueueRuntimeInspector;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -16,18 +16,29 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
+/**
+ * Backed by an array data source (QueueRuntimeInspector::pendingJobs()), not
+ * an Eloquent query, since the queue driver (database table or Redis list)
+ * isn't a model — so unlike a resource ListRecords page, this table's
+ * filter/sort state is not persisted in the URL: plain Page +
+ * InteractsWithTable only gets Filament's URL bindings via a query()/
+ * relationship(), neither of which applies here.
+ */
 class PendingJobsPage extends Page implements HasTable
 {
     use InteractsWithTable;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-queue-list';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Admin';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static bool $shouldRegisterNavigation = false;
+    protected static ?int $navigationSort = 5;
+
+    protected static ?string $navigationLabel = 'Queues';
 
     protected static ?string $slug = 'admin/queues';
 
@@ -46,7 +57,7 @@ class PendingJobsPage extends Page implements HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->records(function (?array $filters): array {
+            ->records(function (?array $filters, int|string $page, int|string $recordsPerPage): LengthAwarePaginator {
                 $jobs = app(QueueRuntimeInspector::class)->pendingJobs();
 
                 $queue = $filters['queue']['value'] ?? null;
@@ -57,9 +68,19 @@ class PendingJobsPage extends Page implements HasTable
 
                 $keyName = ArrayRecord::getKeyName();
 
-                return array_map(
+                $records = array_map(
                     fn (array $job): array => [...$job, $keyName => static::jobKey($job['queue'], $job['payload'])],
                     $jobs,
+                );
+
+                $page = (int) $page;
+                $perPage = (int) $recordsPerPage;
+
+                return new LengthAwarePaginator(
+                    array_slice($records, ($page - 1) * $perPage, $perPage),
+                    count($records),
+                    $perPage,
+                    $page,
                 );
             })
             ->columns([
@@ -67,11 +88,15 @@ class PendingJobsPage extends Page implements HasTable
                     ->badge(),
                 TextColumn::make('job')
                     ->label('Job')
-                    ->getStateUsing(fn (array $record): string => FailedJobResource::jobName($record['payload']))
+                    ->getStateUsing(fn (array $record): string => JobPayloadInspector::jobName($record['payload']))
                     ->wrap(),
                 TextColumn::make('source_tracker')
                     ->label('Source / Tracker')
-                    ->getStateUsing(fn (array $record): string => FailedJobResource::sourceOrTracker($record['payload']))
+                    ->getStateUsing(fn (array $record): ?string => JobPayloadInspector::sourceOrTracker($record['payload']))
+                    ->placeholder('-'),
+                TextColumn::make('repository')
+                    ->label('Repository')
+                    ->getStateUsing(fn (array $record): ?string => self::repositoryLabel($record['payload']))
                     ->placeholder('-'),
             ])
             ->filters([
@@ -92,7 +117,8 @@ class PendingJobsPage extends Page implements HasTable
                     ->action(fn (array $record) => self::dropJob($record['queue'], $record['payload'])),
             ])
             ->emptyStateHeading('No jobs pending')
-            ->paginated(false);
+            ->paginated([25, 50, 100])
+            ->poll('30s');
     }
 
     public static function jobKey(string $queue, string $payload): string
@@ -108,9 +134,16 @@ class PendingJobsPage extends Page implements HasTable
 
         app(Recorder::class)->recordAdminAction('operations.drop_pending_job', [
             'queue' => $queue,
-            'job' => FailedJobResource::jobName($payload),
+            'job' => JobPayloadInspector::jobName($payload),
         ]);
 
         Notification::make()->title('Job removed from queue')->success()->send();
+    }
+
+    private static function repositoryLabel(string $payload): ?string
+    {
+        $target = JobPayloadInspector::repositoryTarget($payload);
+
+        return $target === null ? null : "{$target['project']} / {$target['repository']}";
     }
 }

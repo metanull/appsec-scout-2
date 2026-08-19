@@ -187,6 +187,15 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 - `->paginated([25, 50, 100])` for consistent page-size options.
 - At least one meaningful `->filters([...])` entry when the model has an obviously filterable dimension (status, kind, boolean flag, relation) — reuse `App\Filament\Support\DateRangeFilters::for($column)` for a from/until date-range filter instead of hand-rolling one.
 
+### Detail page baseline
+
+`ErrorLogResource::infolist()` is the canonical example — compare a new or edited detail page (`infolist()` method) against it. A detail page should have:
+
+- Stacked full-width `Section`s in reading order: identity/summary first, long text (exception, message, trace) next, raw JSON last.
+- `Grid` used only *inside* a section and only for short scalar fields (timestamps, badges, ids) — never mixed with long text in the same grid row.
+- Long text always full-column-span (`->columnSpanFull()` or the section's full width), `->fontFamily('mono')` where it is machine output.
+- Raw JSON always a collapsible `CodeEntry` at the bottom, with its meaningful keys promoted into the sections above rather than left buried in the raw dump.
+
 ## Key Models and Enums
 
 - `SecurityEvent` — central entity; `EventState` (Open, Acknowledged, InProgress, Resolved, Dismissed), `EventSeverity` (Critical → Informational), `EventType` (Vulnerability, Secret, Dependency, License, Misconfiguration, CodeQuality, IaC, Posture)

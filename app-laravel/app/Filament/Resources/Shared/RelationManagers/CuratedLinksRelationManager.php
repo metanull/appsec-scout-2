@@ -148,7 +148,8 @@ class CuratedLinksRelationManager extends RelationManager
                     }),
             ])
             ->emptyStateDescription('No curated links yet.')
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('created_at', 'desc')
+            ->paginated([10, 25, 50]);
     }
 
     /** @return array<int, mixed> */

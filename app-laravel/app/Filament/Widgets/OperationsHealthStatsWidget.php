@@ -48,7 +48,7 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
         $failed = (int) DB::table('failed_jobs')->count();
 
         $stats[] = Stat::make('Queued jobs', $queued)
-            ->description('Jobs waiting in the queue')
+            ->description('Jobs queued or currently running (the pending list below only shows jobs not yet started)')
             ->color($queued > 50 ? 'warning' : 'success')
             ->icon('heroicon-o-queue-list')
             ->url(PendingJobsPage::getUrl());

@@ -181,6 +181,8 @@ class UserResource extends Resource
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->tooltip('Actions'),
             ])
+            ->recordUrl(fn (User $record): string => static::getUrl('edit', ['record' => $record]))
+            ->defaultSort('name')
             ->paginated([25, 50, 100]);
     }
 

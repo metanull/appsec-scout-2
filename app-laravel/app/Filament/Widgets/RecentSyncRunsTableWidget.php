@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\SyncRunResource;
+use App\Filament\Support\RunStatusBadgeColor;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\SyncRun;
 use Filament\Actions\Action;
@@ -32,7 +33,7 @@ class RecentSyncRunsTableWidget extends TableWidget
                 TextColumn::make('source_id')->label('Source')->badge(),
                 TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state) => $state === 'success' ? 'success' : ($state === 'failure' ? 'danger' : 'warning')),
+                    ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                 TextColumn::make('started_at')->dateTime(),
                 TextColumn::make('duration')->label('Duration')
                     ->state(function ($record): string {
@@ -60,6 +61,7 @@ class RecentSyncRunsTableWidget extends TableWidget
             ])
             ->recordUrl(fn (SyncRun $record): string => SyncRunResource::getUrl('view', ['record' => $record]))
             ->defaultSort('started_at', 'desc')
-            ->paginated(false);
+            ->paginated(false)
+            ->poll('30s');
     }
 }

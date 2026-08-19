@@ -13,9 +13,9 @@ class PruneAuditLogs implements ShouldQueue
 
     public function __construct(private readonly int $retainDays = 365) {}
 
-    public function handle(): void
+    public function handle(): int
     {
-        AuditLog::query()
+        return AuditLog::query()
             ->where('created_at', '<', now()->subDays($this->retainDays))
             ->delete();
     }

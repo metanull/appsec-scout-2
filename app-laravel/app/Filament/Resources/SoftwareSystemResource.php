@@ -127,7 +127,7 @@ class SoftwareSystemResource extends Resource
                     TextEntry::make('removed_at')
                         ->label('Removed')
                         ->since()
-                        ->placeholder('No — still present in the latest sync')
+                        ->placeholder('No - still present in the latest sync')
                         ->badge()
                         ->color(fn (SoftwareSystem $record): string => $record->removed_at !== null ? 'danger' : 'success'),
                 ])
@@ -234,6 +234,7 @@ class SoftwareSystemResource extends Resource
                     ),
             ])
             ->recordUrl(fn (SoftwareSystem $record): string => static::getUrl('view', ['record' => $record]))
+            ->defaultSort('name')
             ->paginated([25, 50, 100]);
     }
 

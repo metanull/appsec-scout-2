@@ -65,6 +65,18 @@ it('does not register tracker project links at the asset level, since they are n
     expect(SoftwareAssetResource::getRelations())->not->toContain(TrackerProjectLinksRelationManager::class);
 });
 
+it('defaults to sorting software assets by name', function () {
+    $user = twoFactorUser();
+    $user->syncRoles(['Reader']);
+
+    $zebra = SoftwareAsset::factory()->create(['name' => 'Zebra Asset']);
+    $apple = SoftwareAsset::factory()->create(['name' => 'Apple Asset']);
+
+    Livewire::actingAs($user)
+        ->test(ListSoftwareAssets::class)
+        ->assertCanSeeTableRecords([$apple, $zebra], inOrder: true);
+});
+
 it('filters software assets by whether they have open or critical alerts', function () {
     $user = twoFactorUser();
     $user->syncRoles(['Reader']);

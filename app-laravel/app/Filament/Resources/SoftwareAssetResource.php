@@ -197,6 +197,7 @@ class SoftwareAssetResource extends Resource
                     ),
             ])
             ->recordUrl(fn (SoftwareAsset $record): string => static::getUrl('view', ['record' => $record]))
+            ->defaultSort('name')
             ->paginated([25, 50, 100]);
     }
 

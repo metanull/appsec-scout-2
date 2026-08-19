@@ -133,7 +133,7 @@ class SecurityContainerResource extends Resource
                     TextEntry::make('removed_at')
                         ->label('Removed')
                         ->since()
-                        ->placeholder('No — still present in the latest sync')
+                        ->placeholder('No - still present in the latest sync')
                         ->badge()
                         ->color(fn (SecurityContainer $record): string => $record->removed_at !== null ? 'danger' : 'success'),
                 ])
@@ -244,6 +244,7 @@ class SecurityContainerResource extends Resource
                     ),
             ])
             ->recordUrl(fn (SecurityContainer $record): string => static::getUrl('view', ['record' => $record]))
+            ->defaultSort('name')
             ->paginated([25, 50, 100]);
     }
 

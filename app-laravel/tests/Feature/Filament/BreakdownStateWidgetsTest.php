@@ -97,7 +97,7 @@ it('renders the alerts by state pair with counts and filtered row links', functi
         ->assertOk()
         ->assertSee('Alerts by State')
         ->assertSee('Open')
-        ->assertSee('tableFilters');
+        ->assertSee('filters%5B');
 
     Livewire::actingAs($user)
         ->test(AlertsByStateChartWidget::class)
@@ -115,7 +115,7 @@ it('renders the local findings by state pair with counts and filtered row links'
         ->assertOk()
         ->assertSee('Local Findings by State')
         ->assertSee('Open')
-        ->assertSee('tableFilters');
+        ->assertSee('filters%5B');
 
     Livewire::actingAs($user)
         ->test(LocalFindingsByStateChartWidget::class)

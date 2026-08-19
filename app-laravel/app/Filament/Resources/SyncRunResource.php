@@ -5,8 +5,10 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SyncRunResource\Pages\ListSyncRuns;
 use App\Filament\Resources\SyncRunResource\Pages\ViewSyncRun;
 use App\Filament\Support\DateRangeFilters;
+use App\Filament\Support\RunStatusBadgeColor;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\SyncRun;
+use Filament\Actions\Action;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -25,9 +27,11 @@ class SyncRunResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-path';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Admin';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static bool $shouldRegisterNavigation = false;
+    protected static ?int $navigationSort = 2;
+
+    protected static ?string $navigationLabel = 'Sync Runs';
 
     public static function canCreate(): bool
     {
@@ -54,17 +58,13 @@ class SyncRunResource extends Resource
         return $schema->components([
             Section::make('Sync Run')
                 ->schema([
-                    Grid::make(3)->schema([
+                    Grid::make(2)->schema([
                         TextEntry::make('source_id')
                             ->label('Source')
                             ->badge(),
                         TextEntry::make('status')
                             ->badge()
-                            ->color(fn (string $state): string => match ($state) {
-                                'success' => 'success',
-                                'failure' => 'danger',
-                                default => 'warning',
-                            }),
+                            ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                         TextEntry::make('started_at')
                             ->label('Started')
                             ->dateTime('d M Y H:i:s')
@@ -73,12 +73,12 @@ class SyncRunResource extends Resource
                             ->label('Finished')
                             ->dateTime('d M Y H:i:s')
                             ->placeholder('-'),
-                        TextEntry::make('error_message')
-                            ->label('Error')
-                            ->wrap()
-                            ->placeholder('-')
-                            ->columnSpan(2),
                     ]),
+                    TextEntry::make('error_message')
+                        ->label('Error')
+                        ->wrap()
+                        ->placeholder('-')
+                        ->columnSpanFull(),
                 ]),
 
             Section::make('Counts')
@@ -104,11 +104,7 @@ class SyncRunResource extends Resource
                     ->badge(),
                 TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'success' => 'success',
-                        'failure' => 'danger',
-                        default => 'warning',
-                    }),
+                    ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
                 TextColumn::make('started_at')
                     ->dateTime()
                     ->sortable(),
@@ -119,12 +115,13 @@ class SyncRunResource extends Resource
                 TextColumn::make('counts_json')
                     ->label('Counts')
                     ->state(fn (SyncRun $record): string => DashboardData::formatCounts($record))
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
                 TextColumn::make('error_message')
                     ->label('Error')
                     ->wrap()
                     ->placeholder('-')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->searchable()
+                    ->toggleable(),
             ])
             ->filters([
                 SelectFilter::make('source_id')
@@ -132,6 +129,20 @@ class SyncRunResource extends Resource
                 SelectFilter::make('status')
                     ->options(['success' => 'Success', 'failure' => 'Failure', 'running' => 'Running']),
                 ...DateRangeFilters::for('started_at', 'Started from', 'Started until'),
+            ])
+            ->actions([
+                Action::make('viewError')
+                    ->label('View error')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->color('danger')
+                    ->modalHeading('Sync run error')
+                    ->infolist([
+                        TextEntry::make('error_message')
+                            ->label('')
+                            ->wrap(),
+                    ])
+                    ->modalSubmitAction(false)
+                    ->visible(fn (SyncRun $record): bool => filled($record->error_message)),
             ])
             ->defaultSort('started_at', 'desc')
             ->paginated([25, 50, 100])
