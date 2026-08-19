@@ -92,8 +92,6 @@ final class AttachmentIngestionService
         $hierarchy = $this->hierarchyColumns($owner);
 
         $rows = array_map(fn (ParsedComponent $component): array => [
-            'owner_type' => SecurityContainer::class,
-            'owner_id' => $owner->id,
             'attachment_id' => $attachment->id,
             'name' => $component->name,
             'version' => $component->version,
@@ -101,12 +99,11 @@ final class AttachmentIngestionService
             'purl' => $component->purl,
             'license' => $component->license,
             'metadata' => json_encode($component->metadata, JSON_THROW_ON_ERROR),
-            'software_system_id' => $hierarchy['software_system_id'],
-            'software_asset_id' => $hierarchy['software_asset_id'],
             'first_seen_at' => $now,
             'last_seen_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
+            ...$hierarchy,
         ], $components);
 
         foreach (array_chunk($rows, 500) as $chunk) {
@@ -204,22 +201,38 @@ final class AttachmentIngestionService
         $this->sweeper->sweepFindingsAsResolved($owner, $kind, $touchedIds);
     }
 
-    /** @return array{software_system_id: ?int, software_asset_id: ?int} */
+    /**
+     * owner_type/owner_id are included here (not just software_system_id/software_asset_id)
+     * because only a SecurityContainer owner's softwareComponents()/localFindings() is a
+     * morphMany — Eloquent stamps the morph columns automatically through that relation only.
+     * SoftwareSystem/SoftwareAsset ownership uses a plain hasMany keyed on
+     * software_system_id/software_asset_id, which never touches owner_type/owner_id, and both
+     * columns are NOT NULL — so without this, creating a component/finding directly on a bare
+     * SoftwareSystem/SoftwareAsset owner fails outright, and even where it wouldn't (an update
+     * to an existing row), the real (owner_type, owner_id, purl) unique constraint would stay
+     * silently unenforceable for that path, since NULL never equals NULL in a unique index.
+     *
+     * @return array{owner_type: class-string, owner_id: int, software_system_id: ?int, software_asset_id: ?int}
+     */
     private function hierarchyColumns(SoftwareAsset|SoftwareSystem|SecurityContainer $owner): array
     {
-        return match (true) {
-            $owner instanceof SecurityContainer => [
-                'software_system_id' => $owner->software_system_id,
-                'software_asset_id' => $owner->softwareSystem?->software_asset_id,
-            ],
-            $owner instanceof SoftwareSystem => [
-                'software_system_id' => $owner->id,
-                'software_asset_id' => $owner->software_asset_id,
-            ],
-            $owner instanceof SoftwareAsset => [
-                'software_system_id' => null,
-                'software_asset_id' => $owner->id,
-            ],
-        };
+        return [
+            'owner_type' => $owner::class,
+            'owner_id' => $owner->id,
+            ...match (true) {
+                $owner instanceof SecurityContainer => [
+                    'software_system_id' => $owner->software_system_id,
+                    'software_asset_id' => $owner->softwareSystem?->software_asset_id,
+                ],
+                $owner instanceof SoftwareSystem => [
+                    'software_system_id' => $owner->id,
+                    'software_asset_id' => $owner->software_asset_id,
+                ],
+                $owner instanceof SoftwareAsset => [
+                    'software_system_id' => null,
+                    'software_asset_id' => $owner->id,
+                ],
+            },
+        ];
     }
 }

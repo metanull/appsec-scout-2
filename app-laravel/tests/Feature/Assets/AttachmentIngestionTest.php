@@ -242,6 +242,68 @@ it('leaves the asset hierarchy null when the system has no asset', function () {
         ->and($component->software_asset_id)->toBeNull();
 });
 
+it('ingests an SBOM attached directly to a SoftwareSystem, stamping owner_type/owner_id', function () {
+    $system = SoftwareSystem::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $system,
+        'sbom',
+        'application/json',
+        'sbom.cdx.json',
+        trivyFixture('cyclonedx-sample.json'),
+    );
+
+    $component = SoftwareComponent::query()->where('software_system_id', $system->id)->firstOrFail();
+
+    expect($component->owner_type)->toBe(SoftwareSystem::class)
+        ->and($component->owner_id)->toBe($system->id);
+});
+
+it('ingests an SBOM attached directly to a SoftwareAsset, stamping owner_type/owner_id', function () {
+    $asset = SoftwareAsset::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $asset,
+        'sbom',
+        'application/json',
+        'sbom.cdx.json',
+        trivyFixture('cyclonedx-sample.json'),
+    );
+
+    $component = SoftwareComponent::query()->where('software_asset_id', $asset->id)->firstOrFail();
+
+    expect($component->owner_type)->toBe(SoftwareAsset::class)
+        ->and($component->owner_id)->toBe($asset->id)
+        ->and($component->software_system_id)->toBeNull();
+});
+
+it('re-scanning an SBOM attached to a SoftwareSystem updates the same row instead of duplicating it', function () {
+    $system = SoftwareSystem::factory()->create();
+    $service = app(AttachmentService::class);
+
+    $service->attachTo($system, 'sbom', 'application/json', 'first.json', trivyFixture('cyclonedx-sample.json'));
+    $service->attachTo($system, 'sbom', 'application/json', 'second.json', trivyFixture('cyclonedx-sample.json'));
+
+    expect(SoftwareComponent::query()->where('software_system_id', $system->id)->count())->toBe(4);
+});
+
+it('ingests findings attached directly to a SoftwareSystem, stamping owner_type/owner_id', function () {
+    $system = SoftwareSystem::factory()->create();
+
+    app(AttachmentService::class)->attachTo(
+        $system,
+        'vulnerabilities',
+        'application/json',
+        'vuln.sarif.json',
+        trivyFixture('vuln-sarif-sample.json'),
+    );
+
+    $finding = LocalFinding::query()->where('software_system_id', $system->id)->firstOrFail();
+
+    expect($finding->owner_type)->toBe(SoftwareSystem::class)
+        ->and($finding->owner_id)->toBe($system->id);
+});
+
 it('marks a software component removed when it disappears from a re-scan, and un-marks it if it reappears', function () {
     $container = SecurityContainer::factory()->create();
     $service = app(AttachmentService::class);
