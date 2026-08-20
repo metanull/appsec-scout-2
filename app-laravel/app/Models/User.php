@@ -10,9 +10,11 @@ use Filament\Panel;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
@@ -43,6 +45,18 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Emails are lowercased on write so lookups behave identically on
+     * case-insensitive (MySQL) and case-sensitive (PostgreSQL, SQLite)
+     * engines — Fortify already lowercases the login input.
+     *
+     * @return Attribute<never, string>
+     */
+    protected function email(): Attribute
+    {
+        return Attribute::set(fn (string $value): string => Str::lower($value));
     }
 
     protected static function booted(): void
