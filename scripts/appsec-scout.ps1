@@ -3,7 +3,8 @@
     This script manages the lifecycle of the AppSec Scout application using Docker Compose. It can start the application, rebuild it from scratch, and ensure that it's up and running before opening it in the browser.
 .DESCRIPTION
     The script checks if Docker Compose is available, exports trusted host CA certificates into
-    .docker/certs when present, builds the app and collector images, starts the containers —
+    .docker/certs when present, builds the app, collector, and static-analysis-collector images,
+    starts the containers —
     including Dependency-Track and its bundled Trivy analyzer server, which start with the app
     by default, not as an opt-in profile — runs database migrations and seeds the database,
     bootstraps an admin user with known credentials for testing purposes, imports system
@@ -15,27 +16,28 @@
     If specified, stops and removes existing containers, volumes, and orphans (wiping the
     database and all app state) and re-exports host CA certificates before rebuilding and
     starting the application. Use this for a clean slate, not just to pick up code changes —
-    every run already rebuilds the app and collector images (respecting Docker's layer cache)
-    before starting, so plain `.\appsec-scout.ps1` alone is enough to pick up any source,
-    dependency, or Dockerfile change without losing data.
+    every run already rebuilds the app, collector, and static-analysis-collector images
+    (respecting Docker's layer cache) before starting, so plain `.\appsec-scout.ps1` alone is
+    enough to pick up any source, dependency, or Dockerfile change without losing data.
 .PARAMETER Force
-    Skips Docker's build cache for the app and collector images on this run (`--no-cache`).
-    Independent of -Rebuild — use it alone if you suspect a stale cache layer, without wiping
-    any data.
+    Skips Docker's build cache for the app, collector, and static-analysis-collector images on
+    this run (`--no-cache`). Independent of -Rebuild — use it alone if you suspect a stale cache
+    layer, without wiping any data.
 .EXAMPLE
     .\appsec-scout.ps1
-    Rebuilds the app and collector images (cache permitting) and starts the application,
-    preserving all data.
+    Rebuilds the app, collector, and static-analysis-collector images (cache permitting) and
+    starts the application, preserving all data.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild
     Wipes all containers/volumes/data, re-exports host CA certs, then rebuilds and starts fresh.
 .EXAMPLE
     .\appsec-scout.ps1 -Force
-    Rebuilds the app and collector images from scratch (no cache) and starts the application,
-    preserving all data.
+    Rebuilds the app, collector, and static-analysis-collector images from scratch (no cache) and
+    starts the application, preserving all data.
 .EXAMPLE
     .\appsec-scout.ps1 -Rebuild -Force
-    Wipes all data and rebuilds the app and collector images from scratch before starting.
+    Wipes all data and rebuilds the app, collector, and static-analysis-collector images from
+    scratch before starting.
 #>
 [CmdletBinding()]
 param(
@@ -109,14 +111,14 @@ try {
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
     }
 
-    # Always rebuild the app and collector images (Docker's layer cache makes this a fast
-    # no-op when nothing changed) so a plain run never silently starts a stale image after a
-    # `git pull` — `docker compose up` alone only builds an image the first time it's missing,
-    # it never rebuilds an existing one just because its Dockerfile changed.
+    # Always rebuild the app, collector, and static-analysis-collector images (Docker's layer
+    # cache makes this a fast no-op when nothing changed) so a plain run never silently starts a
+    # stale image after a `git pull` — `docker compose up` alone only builds an image the first
+    # time it's missing, it never rebuilds an existing one just because its Dockerfile changed.
     if ($Force.IsPresent -and $Force) {
-        Invoke-Docker compose build app collector --no-cache
+        Invoke-Docker compose build app collector static-analysis-collector --no-cache
     } else {
-        Invoke-Docker compose build app collector
+        Invoke-Docker compose build app collector static-analysis-collector
     }
 
     Invoke-Docker compose up -d

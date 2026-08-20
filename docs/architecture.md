@@ -184,7 +184,11 @@ and `static-analysis-collector`, unlike `ops`, have no profile and start by defa
 `app` — they back in-app features, not a manual operator tool.
 
 Inside the `app` container, Supervisor runs `nginx`, `php-fpm`, `php artisan schedule:work`, and
-`php artisan queue:work` (see `docker/supervisord.conf` for the exact flags).
+`php artisan queue:work` (see `docker/supervisord.conf` for the exact flags). The container
+entrypoint (`docker/entrypoint.sh`) has two boot modes: the default persistent local mode
+(persisted `.env`, first-boot `APP_KEY` generation, migrations/seeding/admin bootstrap on every
+start) and an env-gated immutable mode (`APP_IMMUTABLE_BOOT=1`) that skips all runtime mutation
+for cloud deployments — see [docs/install.md](install.md#cloud--immutable-boot).
 
 The `app` and `dependencytrack-bootstrap` services run as `www-data` with a read-only root
 filesystem, all Linux capabilities dropped, and writable storage volumes plus tmpfs-backed

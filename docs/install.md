@@ -31,7 +31,9 @@ There are two separate environment files, read by two different things:
 - **`app-laravel/.env`** (from `app-laravel/.env.example`) — the Laravel application's own
   configuration. This one you do not need to create or edit for a first run: the `app` container's
   entrypoint copies `app-laravel/.env.example` to a persisted location on first boot, generates
-  `APP_KEY` automatically, and re-copies its saved copy on every subsequent start.
+  `APP_KEY` automatically (unless one is supplied through the container environment — see
+  [Cloud / Immutable Boot](#cloud--immutable-boot)), and re-copies its saved copy on every
+  subsequent start.
 
 If you set `DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD` in the root `.env`, they must match the same
 keys in `app-laravel/.env` — the root file's comment block says so explicitly, since the `mysql`
@@ -97,7 +99,7 @@ Root `.env` (Docker Compose only — see `.env.example` for the full, commented 
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `APP_KEY` | *(auto-generated)* | Set automatically by the entrypoint on first boot — no manual step |
+| `APP_KEY` | *(auto-generated)* | Set automatically by the entrypoint on first boot — no manual step. If supplied through the container environment instead (e.g. from a secret store), it takes precedence and no key is ever generated |
 | `APP_URL` | `http://localhost:8080` | External base URL |
 | `DB_CONNECTION`/`DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD` | `mysql` / `mysql` / `3306` / `appsec_scout` / `appsec_scout` / `password` | Must match the root `.env` values |
 | `SESSION_DRIVER`/`CACHE_STORE`/`QUEUE_CONNECTION` | `redis` | All three use the `redis` container |
@@ -130,6 +132,46 @@ Data is **not** migrated between engines: switching starts from an empty Postgre
 (first boot runs migrations, seeding, and admin bootstrap exactly like a fresh install). The
 `mysql_data` volume is left untouched, so removing the `COMPOSE_FILE` line brings the previous
 MySQL state back.
+
+## Running Behind a Reverse Proxy
+
+When the app sits behind a TLS-terminating reverse proxy or cloud ingress (which forwards
+requests over plain HTTP with `X-Forwarded-*` headers), set these together in the app
+environment:
+
+| Variable | Value behind a proxy | Description |
+| --- | --- | --- |
+| `TRUSTED_PROXIES` | proxy IPs/CIDRs, comma-separated, or `*` | Which upstream addresses may set `X-Forwarded-*` headers. Unset (the default), those headers are ignored |
+| `APP_FORCE_HTTPS` | `true` | Forces the `https` scheme on every generated URL (redirects, assets, signed URLs) |
+| `SESSION_SECURE_COOKIE` | `true` | Marks session cookies `Secure` so browsers only send them over HTTPS |
+| `APP_URL` | the public `https://` base URL | Used for URLs generated outside a request (queue jobs, CLI) |
+
+None of this is needed for the plain local Docker Desktop setup, where the app is reached
+directly on `http://localhost:8080`.
+
+## Cloud / Immutable Boot
+
+The entrypoint has two boot modes:
+
+- **Persistent local boot** (default, `APP_IMMUTABLE_BOOT` unset): the flow described above —
+  persisted `.env`, first-boot `APP_KEY` generation, runtime `composer install`, asset resync,
+  migrations, seeding, admin bootstrap.
+- **Immutable cloud boot** (`APP_IMMUTABLE_BOOT=1` in the container environment): the image
+  content is authoritative and configuration comes exclusively from the container environment.
+  The entrypoint skips the persisted-`.env` handling, `composer install`, the asset resync,
+  migrations, seeding, the admin bootstrap, and `chown`, then starts the container command
+  directly. Intended for immutable, possibly multi-replica deployments (e.g. Azure Container
+  Apps).
+
+Immutable boot **requires `APP_KEY` in the environment** and exits with an error without it:
+nothing may generate a key in this mode, and every credential-vault secret and every user's TOTP
+secret is encrypted with this key — treat it as the crown jewel, store it in a secret store, and
+rotate via `APP_PREVIOUS_KEYS` (comma-separated old keys, already supported by stock config).
+
+Migrations in immutable mode are expected to run as a dedicated one-shot job executing
+`php artisan migrate --force` (the same image and entrypoint, with the migrate command as the
+container command). Alternatively, a deployment that guarantees a single replica can set
+`APP_BOOT_MIGRATE=1` to run migrations on boot before the application starts.
 
 ## Corporate Proxy and SSL Inspection
 
