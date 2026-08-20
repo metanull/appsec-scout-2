@@ -134,6 +134,30 @@ Data is **not** migrated between engines: switching starts from an empty Postgre
 `mysql_data` volume is left untouched, so removing the `COMPOSE_FILE` line brings the previous
 MySQL state back.
 
+## Outbound Mail
+
+The app sends mail for password-reset links (self-service "Forgot password" and the admin "Send
+password reset" action). The shipped default is `MAIL_MAILER=log`: nothing is delivered, and each
+mail — reset link included — is written to the Laravel log instead. Read it with
+`docker compose logs app` or from `storage/logs/` inside the container. This is fine for local
+Docker Desktop use.
+
+For real delivery, set these in `app-laravel/.env` and restart the app container:
+
+```
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_USERNAME=...
+MAIL_PASSWORD=...
+# MAIL_SCHEME=smtps   # implicit TLS (usually port 465); leave unset for STARTTLS on 587
+MAIL_FROM_ADDRESS="appsec-scout@example.com"
+MAIL_FROM_NAME="AppSecScout"
+```
+
+Any SMTP relay works — a corporate relay, or a cloud service such as Azure Communication
+Services' SMTP endpoint for an Azure deployment.
+
 ## Running Behind a Reverse Proxy
 
 When the app sits behind a TLS-terminating reverse proxy or cloud ingress (which forwards
