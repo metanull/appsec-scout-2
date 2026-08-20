@@ -12,8 +12,14 @@ if [ -f "$STORED_ENV" ]; then
 else
     cp .env.example "$STORED_ENV"
     cp "$STORED_ENV" .env
-    php artisan key:generate --force
-    cp .env "$STORED_ENV"
+    # An APP_KEY supplied through the container environment (e.g. from a cloud
+    # secret store) takes precedence over .env in Laravel and is the single key
+    # of record — never generate a competing key into the persisted .env, or a
+    # later loss of the env var would silently decrypt with the wrong key.
+    if [ -z "${APP_KEY:-}" ]; then
+        php artisan key:generate --force
+        cp .env "$STORED_ENV"
+    fi
 fi
 
 composer install --optimize-autoloader
