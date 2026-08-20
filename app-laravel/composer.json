@@ -11,8 +11,10 @@
         "guzzlehttp/guzzle": "^7.0",
         "laravel/fortify": "^1.37",
         "laravel/framework": "^13.8",
+        "laravel/socialite": "^5.30",
         "laravel/tinker": "^3.0",
         "phiki/phiki": "^2.0",
+        "socialiteproviders/microsoft-azure": "^5.2",
         "spatie/laravel-permission": "^6.0"
     },
     "require-dev": {

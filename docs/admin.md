@@ -38,6 +38,11 @@ Behavior details:
 - Resetting multi-factor enrollment clears the current TOTP secret and recovery codes so the next
   login is forced through enrollment again.
 - User lifecycle actions write audit rows.
+- **Federated (Entra) users**: their roles are managed in Entra (App Role assignments) and
+  re-synced at every login — local role edits to a federated user are overwritten at their next
+  sign-in. They have no password, so "Send a password reset link" and the profile password
+  section do not apply; the TOTP reset action is only relevant to password-authenticated
+  sessions. See [docs/security.md](security.md#entra-id-federated-sign-in-optional).
 
 ## Roles
 

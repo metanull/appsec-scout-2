@@ -18,6 +18,8 @@ use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use SocialiteProviders\Azure\Provider as AzureProvider;
+use SocialiteProviders\Manager\SocialiteWasCalled;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -73,6 +75,9 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Event::listen(SyncRunFinished::class, BustDashboardCache::class);
+        Event::listen(SocialiteWasCalled::class, function (SocialiteWasCalled $event): void {
+            $event->extendSocialite('entra', AzureProvider::class);
+        });
         // ParseAttachmentIntoFindings/PushSbomAttachmentToDependencyTrack are deliberately
         // NOT registered here — Laravel auto-discovers app/Listeners classes by their typed
         // handle() parameter, and registering them again here would double-fire both.

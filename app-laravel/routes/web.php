@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\EntraLoginController;
 use App\Http\Controllers\EventAttachmentDownloadController;
 use App\Http\Controllers\SecurityContainerAttachmentDownloadController;
 use App\Http\Controllers\SecurityContainerFindingsZipDownloadController;
@@ -10,6 +11,13 @@ use App\Http\Controllers\SoftwareSystemAttachmentDownloadController;
 use App\Http\Controllers\SoftwareSystemFindingsZipDownloadController;
 use App\Http\Controllers\SoftwareSystemSbomZipDownloadController;
 use Illuminate\Support\Facades\Route;
+
+Route::middleware('throttle:entra')->group(function () {
+    Route::get('/auth/entra/redirect', [EntraLoginController::class, 'redirect'])
+        ->name('entra.redirect');
+    Route::get('/auth/entra/callback', [EntraLoginController::class, 'callback'])
+        ->name('entra.callback');
+});
 
 Route::middleware('auth')->group(function () {
     Route::get('/alerts/{event}/attachments/{attachment}/download', EventAttachmentDownloadController::class)

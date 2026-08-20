@@ -2,8 +2,11 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\EditProfile;
+use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\ProfileIntegrationsPage;
+use App\Http\Middleware\EnsureMultiFactorAuthenticationIsEnabledForLocalSessions;
 use App\Http\Middleware\EnsureUserIsEnabled;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Facades\Filament;
@@ -33,7 +36,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->default()
             ->id('appsec-scout')
             ->path('')
-            ->login()
+            ->login(Login::class)
             ->colors(['primary' => Color::Amber])
             ->maxContentWidth(Width::Full)
             ->sidebarCollapsibleOnDesktop()
@@ -59,7 +62,7 @@ class AppSecScoutPanelProvider extends PanelProvider
                     ->isActiveWhen(fn (): bool => request()->routeIs(ProfileIntegrationsPage::getRouteName()))
                     ->sort(0),
             ])
-            ->profile(isSimple: false)
+            ->profile(EditProfile::class, isSimple: false)
             ->userMenuItems([
                 'profile-integrations' => MenuItem::make()
                     ->label('Profile integrations')
@@ -69,6 +72,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->multiFactorAuthentication([
                 AppAuthentication::make()->recoverable(),
             ], isRequired: true)
+            ->multiFactorAuthenticationRequiredMiddlewareName(EnsureMultiFactorAuthenticationIsEnabledForLocalSessions::class)
             ->middleware($this->webMiddleware())
             ->authMiddleware([EnsureUserIsEnabled::class, Authenticate::class]);
     }

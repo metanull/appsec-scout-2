@@ -19,7 +19,7 @@ This plan is sliced into 6 ordered milestones. Each milestone is independently d
 
 | Topic | Decision |
 |---|---|
-| Authentication | Laravel **Fortify** (email/password + mandatory TOTP 2FA) — no SSO |
+| Authentication | Laravel **Fortify** (email/password + mandatory TOTP 2FA), plus optional env-gated Entra ID SSO added later (epic #432) |
 | User roles | Reader → Triage → Plan → Sync → Admin (cumulative, via `spatie/laravel-permission`) |
 | Sources in scope | AzDO Advanced Security, ASoC, Detectify (M2); Defender for Cloud (M5) |
 | Trackers in scope | Jira Cloud, GitHub Issues |

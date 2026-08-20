@@ -16,7 +16,7 @@ Primary concerns:
 Core responses:
 
 - Laravel Fortify for password authentication, plus Filament's native panel-level mandatory
-  multi-factor authentication.
+  multi-factor authentication; optional env-gated Entra ID OIDC sign-in for federated accounts.
 - Spatie permission-based role enforcement.
 - Encrypted credential storage.
 - Audit rows for write actions and operational actions.
@@ -46,6 +46,38 @@ Other controls:
 
 2FA reset is an Admin action that clears the stored secret, recovery codes, and confirmation
 timestamp, forcing re-enrollment on next login.
+
+## Entra ID Federated Sign-In (Optional)
+
+Authentication is **dual-mode**. Local password + TOTP auth (above) always works; setting
+`ENTRA_ENABLED=true` additionally offers "Sign in with Microsoft" on the login page
+(authorization-code flow via Laravel Socialite + the `socialiteproviders/microsoft-azure`
+provider, routes `/auth/entra/redirect` and `/auth/entra/callback`, `entra` rate limiter). With
+`ENTRA_ENABLED` unset — the local Docker Desktop default — the Entra code is dormant: the routes
+404 and the login page is unchanged.
+
+Behavior of a federated sign-in (`App\Http\Controllers\Auth\EntraLoginController`):
+
+- **Account matching**: by the Entra `oid` claim (`users.entra_object_id`), then by lowercased
+  email (linking an existing local account and stamping its `entra_object_id`), else the user is
+  JIT-provisioned with a `null` password — federated users can never password-login.
+- **Authorization**: Entra **App Roles** named exactly `Reader`/`Triage`/`Plan`/`Sync`/`Admin`
+  are read from the id_token `roles` claim and replace the user's Spatie roles at **every**
+  login — unknown names are ignored and an empty claim clears all roles, so federated access is
+  governed in Entra (assign groups to the App Roles on the Enterprise Application). Local role
+  edits to federated users are overwritten at their next login.
+- **MFA policy**: the TOTP wall is waived only for sessions authenticated through the Entra
+  callback (Conditional Access already enforces MFA at the IdP) — the panel's required-MFA
+  middleware is `EnsureMultiFactorAuthenticationIsEnabledForLocalSessions`, keyed on a session
+  marker set by the callback, never on the user record. Any password-authenticated session,
+  including a linked account's, still requires TOTP enrollment.
+- **Lifecycle**: disabling a user in Entra takes effect at their next login (there is no periodic
+  Graph check — deliberately deferred); the local `is_disabled` kill-switch remains the immediate
+  revocation path and is enforced on every request and at the callback.
+- **Audit**: `user_sso_provisioned`, `user_sso_linked`, and `user_roles_synced_from_idp` (with
+  before/after role sets) audit rows; no tokens or secrets are ever logged or audited.
+- **Break-glass**: the bootstrap local admin (password + TOTP) keeps working with Entra enabled,
+  so an IdP outage cannot lock every operator out.
 
 ## Authorization Model
 

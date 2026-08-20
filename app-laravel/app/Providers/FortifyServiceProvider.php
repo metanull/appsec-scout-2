@@ -22,7 +22,14 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::authenticateUsing(function (Request $request): ?User {
             $user = User::query()->where('email', $request->string('email')->lower()->toString())->first();
 
-            if (! $user instanceof User || ! Hash::check($request->string('password')->toString(), $user->password)) {
+            if (! $user instanceof User) {
+                return null;
+            }
+
+            // Federated (Entra-provisioned) users have no password hash and can never password-login.
+            $hash = $user->getRawOriginal('password');
+
+            if (! is_string($hash) || ! Hash::check($request->string('password')->toString(), $hash)) {
                 return null;
             }
 
@@ -34,7 +41,6 @@ class FortifyServiceProvider extends ServiceProvider
 
             return $user;
         });
-        Fortify::loginView(fn () => view('auth.login'));
     }
 
     private function configureRateLimiters(): void
@@ -49,6 +55,10 @@ class FortifyServiceProvider extends ServiceProvider
 
         RateLimiter::for('two-factor', function (Request $request) {
             return Limit::perMinute(5)->by((string) $request->session()->get('login.id'));
+        });
+
+        RateLimiter::for('entra', function (Request $request) {
+            return Limit::perMinute(10)->by('entra|' . $request->ip());
         });
     }
 }

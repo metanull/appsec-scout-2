@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\User;
 use Closure;
+use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,7 +25,7 @@ class EnsureUserIsEnabled
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect('/user/login')->withErrors([
+        return redirect()->to(Filament::getDefaultPanel()->getLoginUrl() ?? '/login')->withErrors([
             'email' => 'Your account is disabled. Contact an administrator.',
         ]);
     }
