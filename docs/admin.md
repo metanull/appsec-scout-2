@@ -85,6 +85,15 @@ environments, configure the proxy and mounted CA bundle as described in
 ASoC credentials require a regional base URL in addition to `keyId` and `keySecret`. Use
 `https://cloud.appscan.com/` for US tenants and `https://eu.cloud.appscan.com/` for EU tenants.
 
+The page also has a **Dependency-Track** section for the two vault keys the app itself consumes:
+the API server base URL (`dependencytrack.baseUrl`, in-cluster default
+`http://dependencytrack-apiserver:8080`) and the automation-team API key
+(`dependencytrack.apiKey`). Both are auto-provisioned by the `dependencytrack-bootstrap`
+container on first start; edit them here when pointing the app at a Dependency-Track instance
+hosted elsewhere. The Test action calls the Dependency-Track API with the stored key.
+`dependencytrack.adminPassword` (Dependency-Track's own UI login) is intentionally not exposed in
+the UI — it remains reachable via the `vault:get` CLI only.
+
 ## Integrations
 
 Integrations are not scheduled and have no enable/disable or interval settings. Every registered

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages\Concerns;
 
+use App\Assets\DependencyTrack\DependencyTrackSystemCredentials;
 use App\Credentials\Credential;
 use App\Credentials\CredentialDecryptionException;
 use App\Credentials\CredentialField;
@@ -95,7 +96,22 @@ trait ManagesIntegrationCredentials
             $integrations[] = $this->integrationDescriptor('source_control', $sourceControl->id(), $sourceControl->displayName(), $sourceControl->credentialFields());
         }
 
+        foreach ($this->extraIntegrationEntries() as $extra) {
+            $integrations[] = $this->integrationDescriptor($extra['type'], $extra['id'], $extra['display_name'], $extra['credential_fields']);
+        }
+
         return $integrations;
+    }
+
+    /**
+     * Additional page-specific credential sections beyond the three registries
+     * (e.g. the Dependency-Track section on the System Credentials page).
+     *
+     * @return list<array{id: string, type: string, display_name: string, instance: DependencyTrackSystemCredentials, credential_fields: list<CredentialField>}>
+     */
+    protected function extraIntegrationEntries(): array
+    {
+        return [];
     }
 
     public function saveIntegration(string $integrationId): void
@@ -540,7 +556,7 @@ trait ManagesIntegrationCredentials
         }
     }
 
-    /** @return array{id: string, type: string, display_name: string, instance: Source|Tracker|SourceControlProvider, credential_fields: list<CredentialField>} */
+    /** @return array{id: string, type: string, display_name: string, instance: Source|Tracker|SourceControlProvider|DependencyTrackSystemCredentials, credential_fields: list<CredentialField>} */
     private function integrationById(string $integrationId): array
     {
         foreach ($this->integrationEntries() as $integration) {
@@ -552,7 +568,7 @@ trait ManagesIntegrationCredentials
         throw new \RuntimeException("Unknown integration [{$integrationId}].");
     }
 
-    /** @return list<array{id: string, type: string, display_name: string, instance: Source|Tracker|SourceControlProvider, credential_fields: list<CredentialField>}> */
+    /** @return list<array{id: string, type: string, display_name: string, instance: Source|Tracker|SourceControlProvider|DependencyTrackSystemCredentials, credential_fields: list<CredentialField>}> */
     private function integrationEntries(): array
     {
         $integrations = [];
@@ -576,6 +592,10 @@ trait ManagesIntegrationCredentials
                 $this->integrationDescriptor('source_control', $sourceControl->id(), $sourceControl->displayName(), $sourceControl->credentialFields()),
                 ['instance' => $sourceControl],
             );
+        }
+
+        foreach ($this->extraIntegrationEntries() as $extra) {
+            $integrations[] = $extra;
         }
 
         return $integrations;

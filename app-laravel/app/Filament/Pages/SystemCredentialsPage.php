@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Assets\DependencyTrack\DependencyTrackSystemCredentials;
+use App\Credentials\CredentialField;
 use App\Filament\Pages\Concerns\ManagesIntegrationCredentials;
 use App\Models\User;
 use Filament\Forms\Contracts\HasForms;
@@ -47,5 +49,24 @@ class SystemCredentialsPage extends Page implements HasForms
     protected function credentialOwnerId(): ?int
     {
         return null;
+    }
+
+    /**
+     * Dependency-Track credentials are system-scope only, so the section exists
+     * here and not on Profile -> Integrations.
+     *
+     * @return list<array{id: string, type: string, display_name: string, instance: DependencyTrackSystemCredentials, credential_fields: list<CredentialField>}>
+     */
+    protected function extraIntegrationEntries(): array
+    {
+        $dependencyTrack = app(DependencyTrackSystemCredentials::class);
+
+        return [[
+            'id' => $dependencyTrack->id(),
+            'type' => 'platform',
+            'display_name' => $dependencyTrack->displayName(),
+            'instance' => $dependencyTrack,
+            'credential_fields' => $dependencyTrack->credentialFields(),
+        ]];
     }
 }
