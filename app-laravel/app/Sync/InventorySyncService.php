@@ -4,6 +4,9 @@ namespace App\Sync;
 
 use App\Assets\AzDoProjectLinker;
 use App\Assets\StaleRecordSweeper;
+use App\Events\SyncRunFinished;
+use App\Models\ErrorLog;
+use App\Models\SyncRun;
 use App\SourceControl\Contracts\EnumeratesInventory;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\Registry as SourceControlRegistry;
@@ -11,6 +14,8 @@ use App\Sources\Contracts\Source;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 use App\Sources\Registry as SourceRegistry;
+use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Syncs SoftwareSystem/SecurityContainer inventory from every enabled Source
@@ -21,6 +26,8 @@ use App\Sources\Registry as SourceRegistry;
  */
 final class InventorySyncService
 {
+    public const string RUN_SOURCE_ID = 'inventory';
+
     public function __construct(
         private readonly SourceRegistry $sources,
         private readonly SourceControlRegistry $sourceControls,
@@ -49,6 +56,70 @@ final class InventorySyncService
             'repository_mappings_created' => 0,
         ];
 
+        $run = SyncRun::query()->create([
+            'source_id' => self::RUN_SOURCE_ID,
+            'started_at' => now(),
+            'status' => 'running',
+            'counts_json' => [],
+        ]);
+
+        // A scoped pass (the assets:sync-azdo-projects CLI path) is deliberately partial —
+        // record its scope on the run so it can't be mistaken for a full sync in the history.
+        $scope = array_filter([
+            'only' => $onlyId,
+            'project_filter' => $projectFilter,
+            'repo_filter' => $repoFilter,
+        ]);
+
+        try {
+            $this->syncAllProviders($onlyId, $projectFilter, $repoFilter, $counts);
+        } catch (Throwable $exception) {
+            $message = trim($exception->getMessage());
+            $message = Str::limit(preg_replace('/\s+/', ' ', $message) ?? $message, 1000);
+
+            $run->update([
+                'finished_at' => now(),
+                'status' => 'failure',
+                'counts_json' => $counts + ($scope !== [] ? ['scope' => $scope] : []),
+                'error_message' => $message,
+            ]);
+
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'sync',
+                'message' => $message,
+                'context_json' => [
+                    'source_id' => self::RUN_SOURCE_ID,
+                ],
+                'trace' => $exception->getTraceAsString(),
+                'occurred_at' => now(),
+            ]);
+
+            event(new SyncRunFinished($run));
+
+            throw $exception;
+        }
+
+        $run->update([
+            'finished_at' => now(),
+            'status' => 'success',
+            'counts_json' => $counts + ($scope !== [] ? ['scope' => $scope] : []),
+            'error_message' => null,
+        ]);
+
+        event(new SyncRunFinished($run));
+
+        return $counts;
+    }
+
+    /**
+     * @param  array{
+     *     projects_seen: int, systems_created: int, systems_updated: int, assets_created: int,
+     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int,
+     * }  $counts
+     */
+    private function syncAllProviders(?string $onlyId, ?string $projectFilter, ?string $repoFilter, array &$counts): void
+    {
         // A filtered pass is deliberately partial (an operator narrowing scope), not "this is
         // everything" — sweeping against a filtered touched-set would wrongly mark every
         // filtered-out project/repo as removed, so only sweep on a genuinely full pass.
@@ -115,8 +186,6 @@ final class InventorySyncService
                 }
             });
         }
-
-        return $counts;
     }
 
     /**

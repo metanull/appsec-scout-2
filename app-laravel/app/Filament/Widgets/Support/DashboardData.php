@@ -49,6 +49,13 @@ final class DashboardData
         $counts = $run->getAttribute('counts_json');
         $counts = is_array($counts) ? $counts : [];
 
+        if (array_key_exists('projects_seen', $counts) || array_key_exists('repos_seen', $counts)) {
+            $systems = (int) ($counts['systems_created'] ?? 0) + (int) ($counts['systems_updated'] ?? 0);
+            $containers = (int) ($counts['containers_created'] ?? 0) + (int) ($counts['containers_updated'] ?? 0);
+
+            return "{$systems} system(s), {$containers} container(s) synced";
+        }
+
         if (array_key_exists('events_succeeded', $counts)) {
             $retrieved = (int) ($counts['events_succeeded'] ?? 0);
             $warnings = (int) ($counts['events_resolved_local_only'] ?? 0);

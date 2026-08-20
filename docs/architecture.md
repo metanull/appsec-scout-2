@@ -100,6 +100,8 @@ flowchart LR
     FETCH --> AUD
     SYNCINV --> SYS
     SYNCINV --> CONT
+    SYNCINV --> RUNS
+    SYNCINV --> ERR
 
     TRACK --> LINKS
     TRACK --> AUD

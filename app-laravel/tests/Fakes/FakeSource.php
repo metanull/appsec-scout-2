@@ -29,6 +29,8 @@ class FakeSource implements Source
 
     private bool $connectionOk = true;
 
+    private bool $fetchSystemsFails = false;
+
     private bool $pushOk = true;
 
     /** @var callable(SecurityEvent): PushResult|null */
@@ -75,6 +77,10 @@ class FakeSource implements Source
     /** @return iterable<SystemDto> */
     public function fetchSystems(): iterable
     {
+        if ($this->fetchSystemsFails) {
+            throw new \RuntimeException('systems enumeration failed');
+        }
+
         return $this->systems;
     }
 
@@ -150,6 +156,13 @@ class FakeSource implements Source
     public function withRawEvent(EventDto $event): self
     {
         $this->rawEvent = $event;
+
+        return $this;
+    }
+
+    public function withFetchSystemsFailure(): self
+    {
+        $this->fetchSystemsFails = true;
 
         return $this;
     }

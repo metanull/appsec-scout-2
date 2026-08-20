@@ -6,7 +6,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Support\Facades\Cache;
 
 final class SyncInventoryJob implements ShouldBeUnique, ShouldQueue
 {
@@ -21,9 +20,6 @@ final class SyncInventoryJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(InventorySyncService $service): void
     {
-        $counts = $service->sync();
-
-        Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
-        Cache::put('inventory_sync:last_run_counts', $counts);
+        $service->sync();
     }
 }
