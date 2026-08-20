@@ -89,7 +89,8 @@ The `app` container runs every application process through Supervisor (`docker/s
 - `php artisan schedule:work`
 - `php artisan queue:work --tries=3 --timeout=1800 --max-time=3600`
 
-Queue, cache, and session backends are all Redis. Source fetch and Tracker refresh are not
+Queue and cache backends are Redis; sessions are stored in the primary database (`sessions`
+table) so that disabling a user revokes its live sessions immediately. Source fetch and Tracker refresh are not
 scheduled: they run only when triggered on demand from `Operations -> Operations` (or the
 `assets:sync-azdo-projects` CLI command) — see [docs/concepts/integration.md](concepts/integration.md)
 for the full trigger model. The scheduler's minutely entries are limited to the SBOM/static-analysis

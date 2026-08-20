@@ -39,6 +39,11 @@ encrypted on the model.
 
 Other controls:
 
+- Sessions are stored in the primary database (`SESSION_DRIVER=database`, `sessions` table).
+  Disabling a user deletes that user's session rows immediately — a real server-side
+  revocation, not just a client-side logout. Installs whose persisted `app-laravel/.env` still
+  says `SESSION_DRIVER=redis` should switch it to `database`; until they do, session deletion
+  on disable is inert and only the per-request middleware (below) locks the user out.
 - Disabled-user enforcement (`EnsureUserIsEnabled` middleware): a disabled user is logged out,
   their session is invalidated and its token regenerated, and they're redirected to login with an
   explanatory error — on every request, not just at login.
@@ -46,6 +51,14 @@ Other controls:
 
 2FA reset is an Admin action that clears the stored secret, recovery codes, and confirmation
 timestamp, forcing re-enrollment on next login.
+
+Password reset uses Filament's native panel flow backed by Laravel's password broker: a
+"Forgot password" link on the login page and a signed, token-protected reset page, both
+rate-limited by Filament. Admins can also mail a reset link from the Users table; it targets the
+same signed route. Federated (Entra) accounts have no password hash and are excluded from both
+paths — a self-service request for one responds exactly like a successful send (no token is
+created, no mail goes out) so the response does not reveal whether an account is federated, and
+the admin action is hidden for them.
 
 ## Entra ID Federated Sign-In (Optional)
 
@@ -95,6 +108,11 @@ Upstream credentials and personal access tokens are stored in the `credentials` 
 Laravel's `encrypted` Eloquent cast (`Credential::$casts['value']`). Controls:
 
 - No secret is intentionally rendered back in plaintext in the UI.
+- Decryption failures are loud, never silent: a stored credential that can no longer be
+  decrypted (typically after an `APP_KEY` change) raises `CredentialDecryptionException` naming
+  the key — jobs fail into the error log instead of reporting "not configured", and the
+  credential pages flag the affected fields with a repair path (restore the original `APP_KEY`,
+  or Replace/re-enter each affected credential).
 - Connection tests update last-tested state without exposing secret values.
 - The Operations page redacts sensitive keys from failed-job payload previews.
 - Dependency-Track's own API key (`dependencytrack.apiKey`) is provisioned automatically by the

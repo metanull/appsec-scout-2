@@ -4,10 +4,14 @@ namespace App\Users;
 
 use App\Audit\Recorder;
 use App\Models\User;
+use Filament\Auth\Notifications\ResetPassword as ResetPasswordNotification;
+use Filament\Facades\Filament;
+use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use RuntimeException;
+use SensitiveParameter;
 use Spatie\Permission\Models\Role;
 
 final class UserAdminService
@@ -146,7 +150,23 @@ final class UserAdminService
 
     public function sendPasswordResetLink(User $user, User $actor): void
     {
-        $status = Password::sendResetLink(['email' => $user->email]);
+        if (! is_string($user->getRawOriginal('password'))) {
+            throw new RuntimeException('Federated (Entra) users have no password to reset.');
+        }
+
+        $status = Password::sendResetLink(
+            ['email' => $user->email],
+            function (CanResetPassword $resetUser, #[SensitiveParameter] string $token): void {
+                if (! $resetUser instanceof User) {
+                    return;
+                }
+
+                $notification = app(ResetPasswordNotification::class, ['token' => $token]);
+                $notification->url = Filament::getResetPasswordUrl($token, $resetUser);
+
+                $resetUser->notify($notification);
+            },
+        );
 
         if ($status !== Password::RESET_LINK_SENT) {
             throw new RuntimeException(__($status));

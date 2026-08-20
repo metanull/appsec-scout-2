@@ -170,7 +170,7 @@ The default Compose stack (`docker-compose.yml`, no profile needed) starts these
 | `app` | `appsec-scout:latest` | Laravel app: nginx + php-fpm + scheduler + queue worker, run under Supervisor |
 | `mysql` | `mysql:8.0` | Primary database (default engine) |
 | `postgres` | `postgres:16-alpine` | Optional primary database replacing `mysql` when the `docker-compose.pgsql.yml` override is activated via `COMPOSE_FILE` in the root `.env` |
-| `redis` | `redis:7-alpine` | Cache, queue, and session backend |
+| `redis` | `redis:7-alpine` | Cache and queue backend (sessions live in the primary database) |
 | `dependencytrack-postgres` | `postgres:16-alpine` | Dependency-Track's own database |
 | `dependencytrack-cacerts-init` | `dependencytrack/apiserver` | One-shot: merges any corporate CA into a shared truststore volume for the API server |
 | `dependencytrack-apiserver` | `dependencytrack/apiserver` | Dependency-Track API |

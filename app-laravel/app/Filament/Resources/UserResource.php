@@ -141,7 +141,7 @@ class UserResource extends Resource
                         }),
                     Action::make('sendPasswordReset')
                         ->label('Send password reset')
-                        ->visible(fn (User $record): bool => $record->id !== Auth::id())
+                        ->visible(fn (User $record): bool => $record->id !== Auth::id() && is_string($record->getRawOriginal('password')))
                         ->action(function (User $record): void {
                             $actor = Auth::user();
 

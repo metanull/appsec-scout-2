@@ -74,9 +74,9 @@ it('provisions the automation team and stores the api key in the vault', functio
         ->expectsOutputToContain('Dependency-Track bootstrap complete')
         ->assertSuccessful();
 
-    expect(app(Vault::class)->get('dependencytrack.apiKey', null, true))->toBe('odt_fresh_key')
-        ->and(app(Vault::class)->get('dependencytrack.baseUrl', null, true))->toBe('http://dependencytrack-apiserver:8080')
-        ->and(app(Vault::class)->get('dependencytrack.adminPassword', null, true))->toBe('admin');
+    expect(app(Vault::class)->get('dependencytrack.apiKey', null))->toBe('odt_fresh_key')
+        ->and(app(Vault::class)->get('dependencytrack.baseUrl', null))->toBe('http://dependencytrack-apiserver:8080')
+        ->and(app(Vault::class)->get('dependencytrack.adminPassword', null))->toBe('admin');
 
     expect($history[2]['request']->getMethod())->toBe('POST')
         ->and((string) $history[2]['request']->getUri())->toContain('permission/PROJECT_CREATION_UPLOAD/team/team-uuid');
@@ -105,8 +105,8 @@ it('handles a forced password change on first boot', function () {
 
     $this->artisan('dependencytrack:bootstrap')->assertSuccessful();
 
-    expect(app(Vault::class)->get('dependencytrack.adminPassword', null, true))->not()->toBeNull()
-        ->and(app(Vault::class)->get('dependencytrack.apiKey', null, true))->toBe('odt_fresh_key');
+    expect(app(Vault::class)->get('dependencytrack.adminPassword', null))->not()->toBeNull()
+        ->and(app(Vault::class)->get('dependencytrack.apiKey', null))->toBe('odt_fresh_key');
 });
 
 it('fails cleanly when the admin password is wrong and not a forced change', function () {

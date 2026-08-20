@@ -37,6 +37,12 @@ Behavior details:
   access.
 - Resetting multi-factor enrollment clears the current TOTP secret and recovery codes so the next
   login is forced through enrollment again.
+- "Send a password reset link" mails a signed link to the panel's reset page (users can also
+  request one themselves via "Forgot password" on the login page). With the default
+  `MAIL_MAILER=log`, the mail — link included — is written to the Laravel log instead of being
+  delivered; configure SMTP for real delivery (see
+  [docs/install.md](install.md#outbound-mail)). The action is hidden for federated users, who
+  have no password.
 - User lifecycle actions write audit rows.
 - **Federated (Entra) users**: their roles are managed in Entra (App Role assignments) and
   re-synced at every login — local role edits to a federated user are overwritten at their next
@@ -78,6 +84,15 @@ environments, configure the proxy and mounted CA bundle as described in
 
 ASoC credentials require a regional base URL in addition to `keyId` and `keySecret`. Use
 `https://cloud.appscan.com/` for US tenants and `https://eu.cloud.appscan.com/` for EU tenants.
+
+The page also has a **Dependency-Track** section for the two vault keys the app itself consumes:
+the API server base URL (`dependencytrack.baseUrl`, in-cluster default
+`http://dependencytrack-apiserver:8080`) and the automation-team API key
+(`dependencytrack.apiKey`). Both are auto-provisioned by the `dependencytrack-bootstrap`
+container on first start; edit them here when pointing the app at a Dependency-Track instance
+hosted elsewhere. The Test action calls the Dependency-Track API with the stored key.
+`dependencytrack.adminPassword` (Dependency-Track's own UI login) is intentionally not exposed in
+the UI — it remains reachable via the `vault:get` CLI only.
 
 ## Integrations
 

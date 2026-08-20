@@ -54,7 +54,7 @@ it('uses the operator credential when pushing selected dirty records from the qu
     app(Vault::class)->set('fake.apiKey', $operator->id, 'operator-key');
 
     $source = bindFakePushSource((new FakeSource)->withPushCallback(function (): PushResult {
-        return app(Vault::class)->get('fake.apiKey', null, true) === 'operator-key'
+        return app(Vault::class)->get('fake.apiKey', null) === 'operator-key'
             ? PushResult::success()
             : PushResult::failure('operator credential was not used');
     }));

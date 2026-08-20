@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Auth\Login;
+use App\Filament\Pages\Auth\RequestPasswordReset;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Http\Middleware\EnsureMultiFactorAuthenticationIsEnabledForLocalSessions;
@@ -37,6 +38,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->id('appsec-scout')
             ->path('')
             ->login(Login::class)
+            ->passwordReset(RequestPasswordReset::class)
             ->colors(['primary' => Color::Amber])
             ->maxContentWidth(Width::Full)
             ->sidebarCollapsibleOnDesktop()

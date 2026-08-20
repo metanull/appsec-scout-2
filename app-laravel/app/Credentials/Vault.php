@@ -5,7 +5,6 @@ namespace App\Credentials;
 use App\Audit\Recorder;
 use App\Sync\CredentialResolver;
 use Illuminate\Contracts\Encryption\DecryptException;
-use Illuminate\Support\Facades\Crypt;
 
 class Vault
 {
@@ -21,6 +20,10 @@ class Vault
         private readonly CredentialResolver $resolver,
     ) {}
 
+    /**
+     * @throws CredentialDecryptionException when a stored value cannot be decrypted
+     *                                       (typically after an APP_KEY change)
+     */
     public function get(string $key, ?int $userId): ?string
     {
         if (array_key_exists($key, $this->valueOverrides)) {
@@ -34,13 +37,25 @@ class Vault
 
     public function set(string $key, ?int $userId, string $value, ?string $description = null): void
     {
-        Credential::updateOrCreate(
-            ['integration_key' => $key, 'owner_user_id' => $userId],
-            array_filter([
-                'value' => $value,
-                'description' => $description,
-            ], fn (mixed $v) => $v !== null),
-        );
+        $attributes = ['integration_key' => $key, 'owner_user_id' => $userId];
+        $values = array_filter([
+            'value' => $value,
+            'description' => $description,
+        ], fn (mixed $v) => $v !== null);
+
+        try {
+            Credential::updateOrCreate($attributes, $values);
+        } catch (DecryptException) {
+            // Eloquent's dirty comparison decrypts the original value; an unreadable
+            // stored ciphertext (APP_KEY changed) would make replacing it impossible.
+            // Recreate the row so storing a new value is always the repair path.
+            Credential::query()
+                ->where('integration_key', $key)
+                ->when($userId === null, fn ($query) => $query->whereNull('owner_user_id'), fn ($query) => $query->where('owner_user_id', $userId))
+                ->delete();
+
+            Credential::query()->create([...$attributes, ...$values]);
+        }
 
         $actor = $userId !== null ? "user:{$userId}" : 'system';
         $this->recorder->recordCredentialChange($key, $actor, 'set');
@@ -149,24 +164,11 @@ class Vault
         ]);
     }
 
+    /**
+     * @throws CredentialDecryptionException when a stored value cannot be decrypted
+     */
     private function credentialValue(?Credential $credential): ?string
     {
-        if (! $credential instanceof Credential) {
-            return null;
-        }
-
-        $encrypted = $credential->getRawOriginal('value');
-
-        if (! is_string($encrypted) || $encrypted === '') {
-            return null;
-        }
-
-        try {
-            $decrypted = Crypt::decrypt($encrypted, false);
-
-            return is_string($decrypted) ? $decrypted : null;
-        } catch (DecryptException) {
-            return null;
-        }
+        return $credential instanceof Credential ? $credential->decryptedValue() : null;
     }
 }

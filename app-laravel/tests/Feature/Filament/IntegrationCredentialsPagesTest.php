@@ -1,6 +1,7 @@
 <?php
 
 use App\Credentials\Credential;
+use App\Credentials\Vault;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Pages\SystemCredentialsPage;
 use App\Models\User;
@@ -221,7 +222,7 @@ it('requires a replacement value when replace is activated for a secret', functi
         ->assertHasErrors(['values.fake_tracker_token']);
 });
 
-it('renders system credentials page even when an existing credential is unreadable', function () {
+it('flags an undecryptable credential as stored-but-broken instead of pretending it is unconfigured', function () {
     bindFakeCredentialIntegrations();
 
     $admin = enrolledUser();
@@ -235,7 +236,51 @@ it('renders system credentials page even when an existing credential is unreadab
 
     Livewire::actingAs($admin)
         ->test(SystemCredentialsPage::class)
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertSet('hasStored.fake_tracker_token', true)
+        ->assertSet('decryptFailed.fake_tracker_token', true);
+});
+
+it('repairs an undecryptable secret through the Replace flow', function () {
+    bindFakeCredentialIntegrations();
+
+    $admin = enrolledUser();
+    $admin->syncRoles(['Admin']);
+
+    DB::table('credentials')->insert([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => null,
+        'value' => 'invalid-payload',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(SystemCredentialsPage::class)
+        ->set('replace.fake_tracker_token', true)
+        ->set('values.fake_tracker_token', 'replacement-token')
+        ->call('saveIntegration', 'fake-tracker')
+        ->assertHasNoErrors()
+        ->assertSet('decryptFailed.fake_tracker_token', false);
+
+    expect(app(Vault::class)->get('fake-tracker.token', null))->toBe('replacement-token');
+});
+
+it('rejects saving over an undecryptable secret without activating Replace', function () {
+    bindFakeCredentialIntegrations();
+
+    $admin = enrolledUser();
+    $admin->syncRoles(['Admin']);
+
+    DB::table('credentials')->insert([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => null,
+        'value' => 'invalid-payload',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(SystemCredentialsPage::class)
+        ->set('descriptions.fake-tracker', 'trigger a save of the kept secret')
+        ->call('saveIntegration', 'fake-tracker')
+        ->assertHasErrors(['values.fake_tracker_token']);
 });
 
 function bindFakeCredentialIntegrations(): void
