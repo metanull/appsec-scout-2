@@ -5,8 +5,8 @@ use App\Filament\Resources\UserResource;
 use App\Models\User;
 use App\Users\UserAdminService;
 use Database\Seeders\RolePermissionSeeder;
+use Filament\Auth\Notifications\ResetPassword;
 use Filament\Facades\Filament;
-use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -120,7 +120,11 @@ it('sends a password reset link and records an audit row', function () {
 
     app(UserAdminService::class)->sendPasswordResetLink($user, $admin);
 
-    Notification::assertSentTo($user, ResetPassword::class);
+    Notification::assertSentTo($user, ResetPassword::class, function (ResetPassword $notification): bool {
+        return is_string($notification->url)
+            && str_contains($notification->url, '/password-reset/reset')
+            && str_contains($notification->url, 'signature=');
+    });
 
     expect(AuditLog::query()->where('action', 'user.password_reset_link_sent')->exists())->toBeTrue();
 });

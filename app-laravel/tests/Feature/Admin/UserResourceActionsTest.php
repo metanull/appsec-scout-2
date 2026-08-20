@@ -99,6 +99,19 @@ it('filters users by 2FA enrollment', function () {
         ->assertCanNotSeeTableRecords([$notEnrolled]);
 });
 
+it('hides sendPasswordReset for federated users without a password', function () {
+    $admin = enrolledAdminForUserResource();
+    $federated = User::factory()->create([
+        'password' => null,
+        'entra_object_id' => 'oid-actions-test',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListUsers::class)
+        ->assertTableActionHidden('sendPasswordReset', $federated)
+        ->assertTableActionVisible('resetTwoFactor', $federated);
+});
+
 it('groups the user row actions into a single action group', function () {
     $admin = enrolledAdminForUserResource();
     $other = User::factory()->create();

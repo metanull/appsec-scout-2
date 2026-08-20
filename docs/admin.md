@@ -37,6 +37,12 @@ Behavior details:
   access.
 - Resetting multi-factor enrollment clears the current TOTP secret and recovery codes so the next
   login is forced through enrollment again.
+- "Send a password reset link" mails a signed link to the panel's reset page (users can also
+  request one themselves via "Forgot password" on the login page). With the default
+  `MAIL_MAILER=log`, the mail — link included — is written to the Laravel log instead of being
+  delivered; configure SMTP for real delivery (see
+  [docs/install.md](install.md#outbound-mail)). The action is hidden for federated users, who
+  have no password.
 - User lifecycle actions write audit rows.
 - **Federated (Entra) users**: their roles are managed in Entra (App Role assignments) and
   re-synced at every login — local role edits to a federated user are overwritten at their next

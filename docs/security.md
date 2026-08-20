@@ -52,6 +52,14 @@ Other controls:
 2FA reset is an Admin action that clears the stored secret, recovery codes, and confirmation
 timestamp, forcing re-enrollment on next login.
 
+Password reset uses Filament's native panel flow backed by Laravel's password broker: a
+"Forgot password" link on the login page and a signed, token-protected reset page, both
+rate-limited by Filament. Admins can also mail a reset link from the Users table; it targets the
+same signed route. Federated (Entra) accounts have no password hash and are excluded from both
+paths — a self-service request for one responds exactly like a successful send (no token is
+created, no mail goes out) so the response does not reveal whether an account is federated, and
+the admin action is hidden for them.
+
 ## Entra ID Federated Sign-In (Optional)
 
 Authentication is **dual-mode**. Local password + TOTP auth (above) always works; setting
