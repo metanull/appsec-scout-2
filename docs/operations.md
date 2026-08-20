@@ -74,6 +74,12 @@ docker compose logs -f app
 static-asset resync, and permission cache reset — the same sequence the container ran on its
 first boot — without recreating the container or touching any volume.
 
+That boot sequence belongs to the entrypoint's default *persistent local* mode. A second,
+env-gated *immutable* mode (`APP_IMMUTABLE_BOOT=1`, for cloud deployments) skips all of it and
+requires `APP_KEY` from the container environment — see
+[docs/install.md](install.md#cloud--immutable-boot). Local Docker Desktop operation never sets
+it.
+
 ## Queue And Scheduler Model
 
 The `app` container runs every application process through Supervisor (`docker/supervisord.conf`):
