@@ -26,8 +26,8 @@ inside containers.
 There are two separate environment files, read by two different things:
 
 - **Root `.env`** (from `.env.example`) — read only by Docker Compose, for container-level
-  settings: host ports, MySQL root/app credentials, proxy/TLS variables, Dependency-Track/Trivy
-  configuration, and per-container resource limits.
+  settings: host ports, database credentials, the optional database-engine switch, proxy/TLS
+  variables, Dependency-Track/Trivy configuration, and per-container resource limits.
 - **`app-laravel/.env`** (from `app-laravel/.env.example`) — the Laravel application's own
   configuration. This one you do not need to create or edit for a first run: the `app` container's
   entrypoint copies `app-laravel/.env.example` to a persisted location on first boot, generates
@@ -86,7 +86,8 @@ Root `.env` (Docker Compose only — see `.env.example` for the full, commented 
 | --- | --- | --- |
 | `APP_PORT` | `8080` | Host port published for the `app` service |
 | `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` | `appsec_scout` / `appsec_scout` / `password` | Must match the same keys in `app-laravel/.env` |
-| `DB_ROOT_PASSWORD` | `rootpassword` | MySQL root password (container-only, not used by the app) |
+| `DB_ROOT_PASSWORD` | `rootpassword` | MySQL root password (container-only, not used by the app; unused by the PostgreSQL engine) |
+| `COMPOSE_FILE` | unset | Uncomment `COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml` to run the stack on PostgreSQL 16 instead of MySQL 8 — see "Choosing the database engine" below |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `SSL_CERT_FILE` | — | Corporate proxy/TLS settings, shared by every container in the stack |
 | `DTRACK_*` (`DTRACK_DB_*`, `DTRACK_API_PORT`, `DTRACK_FRONTEND_PORT`, `DTRACK_ADMIN_*`, `DTRACK_JAVA_MAX_HEAP`, ...) | see `.env.example` | Dependency-Track database, ports, admin bootstrap, and JVM sizing |
 | `TRIVY_SERVER_URL` | `http://trivy-server:4954` | Shared self-hosted Trivy vulnerability DB server, used by Dependency-Track's Trivy analyzer and by SbomScan/StaticAnalysis |
@@ -105,6 +106,30 @@ Root `.env` (Docker Compose only — see `.env.example` for the full, commented 
 
 For a direct internet connection, leave the proxy/CA variables unset or empty — every container
 then uses its own default OS/JRE CA store.
+
+## Choosing the Database Engine
+
+The stack runs on MySQL 8 by default — no configuration needed. To run it on PostgreSQL 16
+instead, uncomment this line in the root `.env` (see `.env.example`):
+
+```
+COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml
+```
+
+Every `docker compose` invocation — including the PowerShell scripts — then layers the
+`docker-compose.pgsql.yml` override on top of the base file: a `postgres` service starts instead
+of `mysql`, and the app containers are repointed at it through `DB_*` environment variables
+(which take precedence over the persisted `app-laravel/.env`). The same `DB_DATABASE` /
+`DB_USERNAME` / `DB_PASSWORD` values from the root `.env` are reused; `DB_ROOT_PASSWORD` is
+MySQL-only.
+
+The `;` path separator is Docker Compose's default on Windows; on Linux/macOS use `:` or set
+`COMPOSE_PATH_SEPARATOR` accordingly.
+
+Data is **not** migrated between engines: switching starts from an empty PostgreSQL database
+(first boot runs migrations, seeding, and admin bootstrap exactly like a fresh install). The
+`mysql_data` volume is left untouched, so removing the `COMPOSE_FILE` line brings the previous
+MySQL state back.
 
 ## Corporate Proxy and SSL Inspection
 

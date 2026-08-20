@@ -31,7 +31,7 @@ system (searchable), security container (searchable), alert type (multi), tags, 
 (yes/no), "pending sync" (`is_dirty`, yes/no), and a compound tracker + work-item-ID filter.
 
 Search matches `title`, `description`, `rule_id`, and the raw `metadata` payload
-(`LIKE`-based, portable across MySQL/SQLite). Sortable columns include severity (ranked
+(`LIKE`-based, portable across MySQL/SQLite/PostgreSQL). Sortable columns include severity (ranked
 critical → informational, not alphabetical), state, source, type, title, and first/last seen
 timestamps; the default sort (when nothing else is chosen) is severity rank descending, then
 most-recently-seen first.
