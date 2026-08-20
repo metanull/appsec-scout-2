@@ -1,5 +1,6 @@
 <?php
 
+use App\Audit\AuditLog;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
@@ -153,6 +154,49 @@ it('marks the sync run failed and writes an error log when a provider throws', f
         ->and($run->finished_at)->not->toBeNull()
         ->and($run->error_message)->toContain('systems enumeration failed')
         ->and(ErrorLog::query()->where('channel', 'sync')->where('message', 'like', '%systems enumeration failed%')->exists())->toBeTrue();
+});
+
+it('writes one inventory_sync_completed audit entry describing what changed', function () {
+    $source = (new FakeSource)
+        ->withSystems(new SystemDto('sys-1', 'Payments API'))
+        ->withContainers('sys-1', new ContainerDto('cont-1', 'Backend Repo', 'sys-1', 'repository'));
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+
+    app(InventorySyncService::class)->sync();
+
+    $entries = AuditLog::query()->where('action', 'inventory_sync_completed')->get();
+
+    expect($entries)->toHaveCount(1)
+        ->and($entries->first()?->payload_json['counts']['systems_created'])->toBe(1)
+        ->and($entries->first()?->payload_json['created_systems'])->toBe(['fake: Payments API'])
+        ->and($entries->first()?->payload_json['created_containers'])->toBe(['fake: Backend Repo'])
+        ->and($entries->first()?->payload_json)->not->toHaveKey('scope');
+});
+
+it('records the scope in the completion audit entry of a filtered pass', function () {
+    $source = (new FakeSource)->withSystems(new SystemDto('sys-1', 'Payments API'));
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+
+    app(InventorySyncService::class)->sync('fake', '^Payments API$');
+
+    $entry = AuditLog::query()->where('action', 'inventory_sync_completed')->firstOrFail();
+
+    expect($entry->payload_json['scope'])->toBe(['only' => 'fake', 'project_filter' => '^Payments API$']);
+});
+
+it('writes no completion audit entry when the sync fails', function () {
+    $source = (new FakeSource)->withFetchSystemsFailure();
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+
+    expect(fn () => app(InventorySyncService::class)->sync())->toThrow(RuntimeException::class);
+
+    expect(AuditLog::query()->where('action', 'inventory_sync_completed')->exists())->toBeFalse();
 });
 
 it('ignores a Source Control provider that does not implement EnumeratesInventory', function () {

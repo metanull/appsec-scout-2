@@ -102,6 +102,7 @@ flowchart LR
     SYNCINV --> CONT
     SYNCINV --> RUNS
     SYNCINV --> ERR
+    SYNCINV --> AUD
 
     TRACK --> LINKS
     TRACK --> AUD
