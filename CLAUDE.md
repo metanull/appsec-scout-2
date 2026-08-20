@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - PHP 8.4 with Laravel 13 and Filament 5 (single panel, root path, amber theme); MySQL 8 (default) or PostgreSQL 16 (opt-in via the `docker-compose.pgsql.yml` override), and Redis 7
 - UI is Filament-native — it is the main and only UI, not reserved to admins
-- Spatie permissions for RBAC; Laravel Fortify for auth with mandatory app-based TOTP 2FA
+- Spatie permissions for RBAC; Laravel Fortify for local password auth with mandatory app-based TOTP 2FA, plus optional env-gated Entra ID OIDC SSO (Socialite) for federated accounts — dormant unless `ENTRA_ENABLED` is set
 - Sources (AzDo, Asoc, Detectify), Trackers (GitHub, Jira), and Source Control providers (AzDO Repos, GitHub Repos) each follow the same tagged-singleton registry pattern, bound at boot in AppServiceProvider. These are three distinct concepts with their own credentials, even when the same upstream product plays more than one role (e.g. AzDO is both a Source and a Source Control provider; GitHub is both a Tracker and a Source Control provider)
 - Local DB is the system of record; upstream sources are read-only except when Sync explicitly pushes state
 - All write actions record an AuditLog entry (actor, action, old/new values)

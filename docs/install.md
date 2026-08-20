@@ -227,6 +227,37 @@ After the stack is up and the admin account is bootstrapped (see [Quick Start](#
    redirected to the setup page automatically until it's done.
 4. Change the bootstrap password immediately if you used the default value.
 
+## Entra ID Sign-In (Optional)
+
+Local Docker Desktop installs need none of this — with `ENTRA_ENABLED` unset, authentication is
+local password + TOTP only and nothing below applies.
+
+To offer "Sign in with Microsoft" (e.g. for an Azure deployment):
+
+1. Create an Entra app registration on the **Web** platform with redirect URI
+   `https://<app-host>/auth/entra/callback`, and a client secret (store it in a secret store —
+   Key Vault in Azure).
+2. Define **App Roles** named exactly `Reader`, `Triage`, `Plan`, `Sync`, `Admin` on the
+   registration, and assign Entra groups (or users) to them on the Enterprise Application. The
+   role *names* arrive in the token and map 1:1 onto the app's Spatie roles at every login; a
+   user with no assigned App Role signs in with no roles.
+3. Set the environment:
+
+   ```dotenv
+   ENTRA_ENABLED=true
+   ENTRA_TENANT_ID=<directory-tenant-id>
+   ENTRA_CLIENT_ID=<application-client-id>
+   ENTRA_CLIENT_SECRET=<client-secret>
+   # Optional; defaults to APP_URL + /auth/entra/callback
+   ENTRA_REDIRECT_URI=
+   ```
+
+Behind a TLS-terminating ingress the reverse-proxy variables (`TRUSTED_PROXIES`,
+`APP_FORCE_HTTPS`, `SESSION_SECURE_COOKIE`, `APP_URL`) must also be set, or the OIDC redirect URI
+is generated as `http://`. Local password + TOTP sign-in — including the bootstrap admin as
+break-glass — keeps working alongside Entra. Full behavior (matching, role sync, MFA policy,
+lifecycle) in [docs/security.md](security.md#entra-id-federated-sign-in-optional).
+
 Disabled users are logged out automatically and cannot access the panel or web routes until
 re-enabled by an Admin.
 
