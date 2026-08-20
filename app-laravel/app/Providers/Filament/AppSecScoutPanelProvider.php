@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\ProfileIntegrationsPage;
+use App\Http\Middleware\EnsureMultiFactorAuthenticationIsEnabledForLocalSessions;
 use App\Http\Middleware\EnsureUserIsEnabled;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Facades\Filament;
@@ -70,6 +71,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->multiFactorAuthentication([
                 AppAuthentication::make()->recoverable(),
             ], isRequired: true)
+            ->multiFactorAuthenticationRequiredMiddlewareName(EnsureMultiFactorAuthenticationIsEnabledForLocalSessions::class)
             ->middleware($this->webMiddleware())
             ->authMiddleware([EnsureUserIsEnabled::class, Authenticate::class]);
     }
