@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Force HTTPS Scheme
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, every generated URL uses the https scheme regardless of
+    | the incoming request's scheme. Required behind TLS-terminating reverse
+    | proxies (together with TRUSTED_PROXIES and SESSION_SECURE_COOKIE).
+    |
+    */
+
+    'force_https' => (bool) env('APP_FORCE_HTTPS', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

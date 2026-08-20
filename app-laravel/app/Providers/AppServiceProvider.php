@@ -16,6 +16,7 @@ use App\Trackers\GitHub\GitHubTracker;
 use App\Trackers\Jira\JiraTracker;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -67,6 +68,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (config('app.force_https')) {
+            URL::forceHttps();
+        }
+
         Event::listen(SyncRunFinished::class, BustDashboardCache::class);
         // ParseAttachmentIntoFindings/PushSbomAttachmentToDependencyTrack are deliberately
         // NOT registered here — Laravel auto-discovers app/Listeners classes by their typed
