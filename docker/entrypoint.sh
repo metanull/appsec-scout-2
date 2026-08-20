@@ -3,6 +3,28 @@ set -e
 
 cd /var/www/html
 
+# Immutable cloud boot: the image content is authoritative and configuration
+# comes exclusively from the real environment. Skips the persisted-.env dance,
+# runtime composer install, asset resync, migrate/seed/admin bootstrap, and
+# chown — all of which are wrong for immutable, possibly multi-replica deploys
+# (migration races, package-registry egress on cold start, chown failing on
+# mounted shares). Migrations belong to a dedicated job (which can run
+# `php artisan migrate --force` through this same entrypoint as the container
+# command); APP_BOOT_MIGRATE=1 is the guarded-single-replica alternative that
+# migrates on boot.
+if [ "${APP_IMMUTABLE_BOOT:-0}" = "1" ]; then
+    if [ -z "${APP_KEY:-}" ]; then
+        echo "APP_IMMUTABLE_BOOT=1 requires APP_KEY in the environment: nothing may generate a key in this mode, and booting without one would encrypt new secrets with a key that is lost on the next boot." >&2
+        exit 1
+    fi
+
+    if [ "${APP_BOOT_MIGRATE:-0}" = "1" ]; then
+        php artisan migrate --force
+    fi
+
+    exec "$@"
+fi
+
 STORED_ENV="storage/app/private/.env"
 
 mkdir -p "$(dirname "$STORED_ENV")"
