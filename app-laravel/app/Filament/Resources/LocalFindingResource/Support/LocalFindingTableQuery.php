@@ -222,7 +222,10 @@ final class LocalFindingTableQuery
             return $query;
         }
 
-        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
+        // '!' is the one escape character with identical literal syntax on all three
+        // engines: MySQL rejects ESCAPE '\' outright (backslash escapes the closing
+        // quote in its string literals), while PostgreSQL rejects ESCAPE '\\'.
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search) . '%';
 
         $columns = ['title', 'description', 'rule_id', 'file_path', 'package_name', 'package_version', 'metadata'];
 
@@ -233,7 +236,7 @@ final class LocalFindingTableQuery
         return $query->where(function (Builder $nested) use ($columns, $like, $castJsonToText): void {
             foreach ($columns as $column) {
                 $expression = $castJsonToText && $column === 'metadata' ? $column . '::text' : $column;
-                $nested->orWhereRaw($expression . " LIKE ? ESCAPE '\\'", [$like]);
+                $nested->orWhereRaw($expression . " LIKE ? ESCAPE '!'", [$like]);
             }
         });
     }
