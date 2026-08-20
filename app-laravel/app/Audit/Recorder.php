@@ -105,6 +105,24 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordSsoProvisioned(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('user_sso_provisioned', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordSsoLinked(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('user_sso_linked', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordRolesSyncedFromIdp(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('user_roles_synced_from_idp', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordAdminAction(string $action, array $payload = []): void
     {
         $this->write($action, null, null, $payload);

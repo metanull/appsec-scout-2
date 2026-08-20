@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'entra' => [
+        'client_id' => env('ENTRA_CLIENT_ID'),
+        'client_secret' => env('ENTRA_CLIENT_SECRET'),
+        'redirect' => env('ENTRA_REDIRECT_URI') ?: rtrim((string) env('APP_URL', 'http://localhost'), '/') . '/auth/entra/callback',
+        'tenant' => env('ENTRA_TENANT_ID'),
+    ],
+
 ];
