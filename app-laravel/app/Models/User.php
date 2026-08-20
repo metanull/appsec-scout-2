@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password', 'is_disabled', 'last_login_at', 'disabled_at'])]
+#[Fillable(['name', 'email', 'password', 'entra_object_id', 'is_disabled', 'last_login_at', 'disabled_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery
 {
