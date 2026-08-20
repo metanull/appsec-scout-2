@@ -113,6 +113,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         imagemagick \
         libmagickwand-dev \
         libicu-dev \
+        libpq-dev \
         libzip-dev \
         unzip \
     && if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
@@ -120,7 +121,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
             -exec cp {} /usr/local/share/ca-certificates/ \; ; \
         update-ca-certificates; \
     fi \
-    && docker-php-ext-install -j"$(nproc)" pdo_mysql intl bcmath zip pcntl opcache \
+    && docker-php-ext-install -j"$(nproc)" pdo_mysql pdo_pgsql intl bcmath zip pcntl opcache \
     && printf 'memory_limit=512M\n' > /usr/local/etc/php/conf.d/appsec-scout-memory-limit.ini \
     && pecl install imagick \
     && docker-php-ext-enable imagick \
