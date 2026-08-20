@@ -261,12 +261,12 @@ Artisan::command(
         $baseUrlOption = $this->option('base-url');
         $baseUrl = is_string($baseUrlOption) && $baseUrlOption !== ''
             ? $baseUrlOption
-            : ($vault->get('dependencytrack.baseUrl', null, true) ?? 'http://dependencytrack-apiserver:8080');
+            : ($vault->get('dependencytrack.baseUrl', null) ?? 'http://dependencytrack-apiserver:8080');
         $team = (string) $this->option('team');
         $adminUsername = (string) $this->option('admin-username');
         $force = (bool) $this->option('force');
 
-        $existingApiKey = $vault->get('dependencytrack.apiKey', null, true);
+        $existingApiKey = $vault->get('dependencytrack.apiKey', null);
 
         if ($existingApiKey !== null && ! $force && $clientFactory->make($existingApiKey, $baseUrl)->ping()) {
             $vault->set('dependencytrack.baseUrl', null, $baseUrl);
@@ -276,7 +276,7 @@ Artisan::command(
         }
 
         $adminClient = $adminClientFactory->make($baseUrl);
-        $adminPassword = $vault->get('dependencytrack.adminPassword', null, true) ?? (string) $this->option('admin-password');
+        $adminPassword = $vault->get('dependencytrack.adminPassword', null) ?? (string) $this->option('admin-password');
 
         try {
             $token = $adminClient->login($adminUsername, $adminPassword);
@@ -370,7 +370,7 @@ Artisan::command(
         $apiKeyOption = $this->option('api-key');
         $apiKey = is_string($apiKeyOption) && $apiKeyOption !== ''
             ? $apiKeyOption
-            : $vault->get('dependencytrack.apiKey', null, true);
+            : $vault->get('dependencytrack.apiKey', null);
 
         if ($apiKey === null) {
             $this->error('Dependency-Track API key is not configured. Run `php artisan dependencytrack:bootstrap` first, or pass --api-key.');
@@ -381,7 +381,7 @@ Artisan::command(
         $baseUrlOption = $this->option('base-url');
         $baseUrl = is_string($baseUrlOption) && $baseUrlOption !== ''
             ? $baseUrlOption
-            : ($vault->get('dependencytrack.baseUrl', null, true) ?? 'http://dependencytrack-apiserver:8080');
+            : ($vault->get('dependencytrack.baseUrl', null) ?? 'http://dependencytrack-apiserver:8080');
         $containerId = $this->option('container');
         $projectVersion = (string) $this->option('project-version');
 
@@ -568,7 +568,7 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
         $fields = [];
 
         foreach ($source->credentialFields() as $field) {
-            $fields[$field->key] = app(Vault::class)->get($field->key, null, true);
+            $fields[$field->key] = app(Vault::class)->get($field->key, null);
         }
 
         $integrations[$source->id()] = [
@@ -582,7 +582,7 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
         $fields = [];
 
         foreach ($tracker->credentialFields() as $field) {
-            $fields[$field->key] = app(Vault::class)->get($field->key, null, true);
+            $fields[$field->key] = app(Vault::class)->get($field->key, null);
         }
 
         $integrations[$tracker->id()] = [
@@ -596,7 +596,7 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
         $fields = [];
 
         foreach ($sourceControl->credentialFields() as $field) {
-            $fields[$field->key] = app(Vault::class)->get($field->key, null, true);
+            $fields[$field->key] = app(Vault::class)->get($field->key, null);
         }
 
         $integrations[$sourceControl->id()] = [
@@ -657,7 +657,7 @@ Artisan::command('credentials:system:get {key}', function (SourceRegistry $sourc
         return self::FAILURE;
     }
 
-    $value = $vault->get($key, null, true);
+    $value = $vault->get($key, null);
 
     if ($value === null) {
         $this->error(sprintf('System credential "%s" is not configured.', $key));
@@ -862,7 +862,7 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
 
 Artisan::command('vault:get {key}', function (Vault $vault): int {
     $key = (string) $this->argument('key');
-    $value = $vault->get($key, null, true);
+    $value = $vault->get($key, null);
 
     if ($value === null) {
         $this->error(sprintf('Vault key "%s" is not configured.', $key));
