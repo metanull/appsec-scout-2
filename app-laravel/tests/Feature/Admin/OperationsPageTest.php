@@ -204,8 +204,13 @@ it('does not dispatch inventory sync when it is already queued', function () {
 it('shows inventory sync last-run summary on operations page', function () {
     $admin = operationsAdmin();
 
-    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
-    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 2, 'systems_updated' => 1, 'containers_created' => 3, 'containers_updated' => 0]);
+    SyncRun::query()->create([
+        'source_id' => 'inventory',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['projects_seen' => 3, 'systems_created' => 2, 'systems_updated' => 1, 'containers_created' => 3, 'containers_updated' => 0],
+    ]);
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
@@ -214,8 +219,13 @@ it('shows inventory sync last-run summary on operations page', function () {
 });
 
 it('colors the inventory sync stat as warning when the last run found nothing', function () {
-    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
-    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 0, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
+    SyncRun::query()->create([
+        'source_id' => 'inventory',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['projects_seen' => 0, 'systems_created' => 0, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0],
+    ]);
 
     $method = new ReflectionMethod(OperationsHealthStatsWidget::class, 'inventorySyncStat');
     $method->setAccessible(true);
@@ -227,8 +237,13 @@ it('colors the inventory sync stat as warning when the last run found nothing', 
 });
 
 it('colors the inventory sync stat as success when the last run found something', function () {
-    Cache::put('inventory_sync:last_run_at', now()->toIso8601String());
-    Cache::put('inventory_sync:last_run_counts', ['systems_created' => 1, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0]);
+    SyncRun::query()->create([
+        'source_id' => 'inventory',
+        'started_at' => now()->subMinute(),
+        'finished_at' => now(),
+        'status' => 'success',
+        'counts_json' => ['projects_seen' => 1, 'systems_created' => 1, 'systems_updated' => 0, 'containers_created' => 0, 'containers_updated' => 0],
+    ]);
 
     $method = new ReflectionMethod(OperationsHealthStatsWidget::class, 'inventorySyncStat');
     $method->setAccessible(true);

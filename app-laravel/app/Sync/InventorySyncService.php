@@ -4,6 +4,10 @@ namespace App\Sync;
 
 use App\Assets\AzDoProjectLinker;
 use App\Assets\StaleRecordSweeper;
+use App\Audit\Recorder;
+use App\Events\SyncRunFinished;
+use App\Models\ErrorLog;
+use App\Models\SyncRun;
 use App\SourceControl\Contracts\EnumeratesInventory;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\Registry as SourceControlRegistry;
@@ -11,6 +15,8 @@ use App\Sources\Contracts\Source;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 use App\Sources\Registry as SourceRegistry;
+use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Syncs SoftwareSystem/SecurityContainer inventory from every enabled Source
@@ -21,6 +27,10 @@ use App\Sources\Registry as SourceRegistry;
  */
 final class InventorySyncService
 {
+    public const string RUN_SOURCE_ID = 'inventory';
+
+    private const int MAX_AUDITED_NAMES = 100;
+
     public function __construct(
         private readonly SourceRegistry $sources,
         private readonly SourceControlRegistry $sourceControls,
@@ -28,6 +38,7 @@ final class InventorySyncService
         private readonly SystemContainerUpserter $upserter,
         private readonly AzDoProjectLinker $linker,
         private readonly StaleRecordSweeper $sweeper,
+        private readonly Recorder $auditRecorder,
     ) {}
 
     /**
@@ -49,6 +60,106 @@ final class InventorySyncService
             'repository_mappings_created' => 0,
         ];
 
+        $run = SyncRun::query()->create([
+            'source_id' => self::RUN_SOURCE_ID,
+            'started_at' => now(),
+            'status' => 'running',
+            'counts_json' => [],
+        ]);
+
+        // A scoped pass (the assets:sync-azdo-projects CLI path) is deliberately partial —
+        // record its scope on the run so it can't be mistaken for a full sync in the history.
+        $scope = array_filter([
+            'only' => $onlyId,
+            'project_filter' => $projectFilter,
+            'repo_filter' => $repoFilter,
+        ]);
+
+        $created = ['systems' => [], 'containers' => []];
+
+        try {
+            $this->syncAllProviders($onlyId, $projectFilter, $repoFilter, $counts, $created);
+        } catch (Throwable $exception) {
+            $message = trim($exception->getMessage());
+            $message = Str::limit(preg_replace('/\s+/', ' ', $message) ?? $message, 1000);
+
+            $run->update([
+                'finished_at' => now(),
+                'status' => 'failure',
+                'counts_json' => $counts + ($scope !== [] ? ['scope' => $scope] : []),
+                'error_message' => $message,
+            ]);
+
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'sync',
+                'message' => $message,
+                'context_json' => [
+                    'source_id' => self::RUN_SOURCE_ID,
+                ],
+                'trace' => $exception->getTraceAsString(),
+                'occurred_at' => now(),
+            ]);
+
+            event(new SyncRunFinished($run));
+
+            throw $exception;
+        }
+
+        $run->update([
+            'finished_at' => now(),
+            'status' => 'success',
+            'counts_json' => $counts + ($scope !== [] ? ['scope' => $scope] : []),
+            'error_message' => null,
+        ]);
+
+        event(new SyncRunFinished($run));
+
+        $this->auditRecorder->recordInventorySyncCompleted($this->auditPayload($counts, $scope, $created));
+
+        return $counts;
+    }
+
+    /**
+     * @param  array<string, int>  $counts
+     * @param  array<string, string>  $scope
+     * @param  array{systems: list<string>, containers: list<string>}  $created
+     * @return array<string, mixed>
+     */
+    private function auditPayload(array $counts, array $scope, array $created): array
+    {
+        $payload = [
+            'counts' => $counts,
+            'created_systems' => array_slice($created['systems'], 0, self::MAX_AUDITED_NAMES),
+            'created_containers' => array_slice($created['containers'], 0, self::MAX_AUDITED_NAMES),
+        ];
+
+        if ($scope !== []) {
+            $payload['scope'] = $scope;
+        }
+
+        $systemsTruncated = count($created['systems']) - self::MAX_AUDITED_NAMES;
+        if ($systemsTruncated > 0) {
+            $payload['created_systems_truncated'] = $systemsTruncated;
+        }
+
+        $containersTruncated = count($created['containers']) - self::MAX_AUDITED_NAMES;
+        if ($containersTruncated > 0) {
+            $payload['created_containers_truncated'] = $containersTruncated;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array{
+     *     projects_seen: int, systems_created: int, systems_updated: int, assets_created: int,
+     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int,
+     * }  $counts
+     * @param  array{systems: list<string>, containers: list<string>}  $created
+     */
+    private function syncAllProviders(?string $onlyId, ?string $projectFilter, ?string $repoFilter, array &$counts, array &$created): void
+    {
         // A filtered pass is deliberately partial (an operator narrowing scope), not "this is
         // everything" — sweeping against a filtered touched-set would wrongly mark every
         // filtered-out project/repo as removed, so only sweep on a genuinely full pass.
@@ -65,7 +176,7 @@ final class InventorySyncService
                 continue;
             }
 
-            $this->runtime->runSource($source->id(), function (Source $resolvedSource) use ($projectFilter, $repoFilter, $shouldSweep, &$counts): void {
+            $this->runtime->runSource($source->id(), function (Source $resolvedSource) use ($projectFilter, $repoFilter, $shouldSweep, &$counts, &$created): void {
                 $touched = $this->syncOne(
                     $resolvedSource->id(),
                     $resolvedSource->fetchSystems(),
@@ -73,6 +184,7 @@ final class InventorySyncService
                     $projectFilter,
                     $repoFilter,
                     $counts,
+                    $created,
                 );
 
                 if ($shouldSweep) {
@@ -95,7 +207,7 @@ final class InventorySyncService
                 continue;
             }
 
-            $this->runtime->runSourceControl($provider->id(), function (SourceControlProvider $resolvedProvider) use ($projectFilter, $repoFilter, $shouldSweep, &$counts): void {
+            $this->runtime->runSourceControl($provider->id(), function (SourceControlProvider $resolvedProvider) use ($projectFilter, $repoFilter, $shouldSweep, &$counts, &$created): void {
                 if (! $resolvedProvider instanceof EnumeratesInventory) {
                     return;
                 }
@@ -107,6 +219,7 @@ final class InventorySyncService
                     $projectFilter,
                     $repoFilter,
                     $counts,
+                    $created,
                 );
 
                 if ($shouldSweep) {
@@ -115,8 +228,6 @@ final class InventorySyncService
                 }
             });
         }
-
-        return $counts;
     }
 
     /**
@@ -126,9 +237,10 @@ final class InventorySyncService
      *     projects_seen: int, systems_created: int, systems_updated: int, assets_created: int,
      *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int,
      * }  $counts
+     * @param  array{systems: list<string>, containers: list<string>}  $created
      * @return array{systemIds: list<int>, containerIds: list<int>}
      */
-    private function syncOne(string $id, iterable $systemDtos, callable $fetchContainers, ?string $projectFilter, ?string $repoFilter, array &$counts): array
+    private function syncOne(string $id, iterable $systemDtos, callable $fetchContainers, ?string $projectFilter, ?string $repoFilter, array &$counts, array &$created): array
     {
         $systemIds = [];
         $containerIds = [];
@@ -143,6 +255,10 @@ final class InventorySyncService
             ['system' => $system, 'wasCreated' => $systemIsNew] = $this->upserter->upsertSystem($id, $systemDto);
             $counts[$systemIsNew ? 'systems_created' : 'systems_updated']++;
             $systemIds[] = $system->id;
+
+            if ($systemIsNew) {
+                $created['systems'][] = "{$id}: {$systemDto->name}";
+            }
 
             $hadAsset = $system->software_asset_id !== null;
             $this->linker->linkSystemToAsset($system);
@@ -160,6 +276,10 @@ final class InventorySyncService
                 ['container' => $container, 'wasCreated' => $containerIsNew] = $this->upserter->upsertContainer($system, $containerDto);
                 $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
                 $containerIds[] = $container->id;
+
+                if ($containerIsNew) {
+                    $created['containers'][] = "{$id}: {$containerDto->name}";
+                }
 
                 $hadMapping = $container->repositoryMappings()->exists();
                 $this->linker->ensureRepositoryMapping($container);

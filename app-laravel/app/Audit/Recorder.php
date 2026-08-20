@@ -99,6 +99,12 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordInventorySyncCompleted(array $payload = []): void
+    {
+        $this->write('inventory_sync_completed', null, null, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordAdminAction(string $action, array $payload = []): void
     {
         $this->write($action, null, null, $payload);

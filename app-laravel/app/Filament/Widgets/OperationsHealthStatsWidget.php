@@ -4,8 +4,10 @@ namespace App\Filament\Widgets;
 
 use App\Filament\Pages\PendingJobsPage;
 use App\Filament\Resources\FailedJobResource;
+use App\Models\SyncRun;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
+use App\Sync\InventorySyncService;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Carbon;
@@ -83,23 +85,26 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 
     private function inventorySyncStat(): Stat
     {
-        $timestampRaw = Cache::get('inventory_sync:last_run_at');
+        $run = SyncRun::query()
+            ->where('source_id', InventorySyncService::RUN_SOURCE_ID)
+            ->where('status', 'success')
+            ->whereNotNull('finished_at')
+            ->orderByDesc('finished_at')
+            ->first();
 
-        /** @var array<string, int> $counts */
-        $counts = Cache::get('inventory_sync:last_run_counts', []);
-        $systems = ($counts['systems_created'] ?? 0) + ($counts['systems_updated'] ?? 0);
-        $containers = ($counts['containers_created'] ?? 0) + ($counts['containers_updated'] ?? 0);
-
-        if (! is_string($timestampRaw) || trim($timestampRaw) === '') {
+        if ($run === null || $run->getRawOriginal('finished_at') === null) {
             return Stat::make('Inventory sync', 'Never')
                 ->description('0 system(s), 0 container(s) synced')
                 ->color('gray')
                 ->icon('heroicon-o-square-3-stack-3d');
         }
 
-        $timestamp = Carbon::parse($timestampRaw);
+        $counts = $run->getAttribute('counts_json');
+        $counts = is_array($counts) ? $counts : [];
+        $systems = (int) ($counts['systems_created'] ?? 0) + (int) ($counts['systems_updated'] ?? 0);
+        $containers = (int) ($counts['containers_created'] ?? 0) + (int) ($counts['containers_updated'] ?? 0);
 
-        return Stat::make('Inventory sync', $timestamp->toDayDateTimeString())
+        return Stat::make('Inventory sync', Carbon::parse((string) $run->finished_at)->toDayDateTimeString())
             ->description(sprintf('%d system(s), %d container(s) synced', $systems, $containers))
             ->color($systems === 0 && $containers === 0 ? 'warning' : 'success')
             ->icon('heroicon-o-square-3-stack-3d');

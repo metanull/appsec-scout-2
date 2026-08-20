@@ -148,3 +148,22 @@ it('formats a push run using its succeeded/local-only/failed counts', function (
 
     expect(DashboardData::formatCounts($run))->toBe('5 alerts retrieved, 2 warning(s), 1 error(s)');
 });
+
+it('formats an inventory sync run using its systems/containers counts', function () {
+    $run = new SyncRun([
+        'source_id' => 'inventory',
+        'status' => 'success',
+        'counts_json' => [
+            'projects_seen' => 3,
+            'systems_created' => 2,
+            'systems_updated' => 1,
+            'assets_created' => 0,
+            'repos_seen' => 5,
+            'containers_created' => 4,
+            'containers_updated' => 1,
+            'repository_mappings_created' => 0,
+        ],
+    ]);
+
+    expect(DashboardData::formatCounts($run))->toBe('3 system(s), 5 container(s) synced');
+});
