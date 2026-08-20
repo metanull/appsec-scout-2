@@ -32,7 +32,7 @@ Starts the app via Docker Compose: rebuilds the `app` image (respecting Docker's
 Runs read-only CI checks against the Laravel app inside the `app` container.
 
 **Parameters**
-- `-Check <all|lint|test|test-sqlite|test-mysql|static-analysis|smoke|dependencies|npm-audit>` — default `all`. `test` runs both `test-sqlite` and `test-mysql`.
+- `-Check <all|lint|test|test-sqlite|test-mysql|test-pgsql|static-analysis|smoke|dependencies|npm-audit>` — default `all`. `test` runs `test-sqlite`, `test-mysql`, and `test-pgsql`.
 
 ```powershell
 .\scripts\invoke-check.ps1

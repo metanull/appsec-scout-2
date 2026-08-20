@@ -7,7 +7,7 @@
         or groups of checks using the -Check parameter. The script ensures that the testing environment file exists and then runs
         commands against the already-built app image. If any check fails, the script will throw an error with a descriptive message.
     .PARAMETER Check
-        Selects which tests to run; by default, all read-only checks are run. Specify one or more of: lint, test, test-sqlite, test-mysql, static-analysis, smoke, dependencies.
+        Selects which tests to run; by default, all read-only checks are run. Specify one or more of: lint, test, test-sqlite, test-mysql, test-pgsql, static-analysis, smoke, dependencies.
     .EXAMPLE
         .\invoke-check.ps1
         Runs all checks (linting, static analysis, tests, etc.) against the Laravel application using Docker Compose.
@@ -17,9 +17,9 @@
 #>
 [CmdletBinding()]
 param(
-    # Selects which tests to run; by default, all tests are run. Specify one or more of: lint, test, test-sqlite, test-mysql, static-analysis, smoke, dependencies, npm-audit
+    # Selects which tests to run; by default, all tests are run. Specify one or more of: lint, test, test-sqlite, test-mysql, test-pgsql, static-analysis, smoke, dependencies, npm-audit
     [Parameter(Mandatory = $false)]
-    [ValidateSet('all', 'lint', 'test', 'test-sqlite', 'test-mysql', 'static-analysis', 'smoke', 'dependencies', 'npm-audit')]
+    [ValidateSet('all', 'lint', 'test', 'test-sqlite', 'test-mysql', 'test-pgsql', 'static-analysis', 'smoke', 'dependencies', 'npm-audit')]
     [string]$Check = 'all'
 )
 $MyScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -64,17 +64,35 @@ try {
          }
     }
 
+    # Engine-specific DB_* variables are re-passed AFTER the .env.testing args (the last -e
+    # occurrence wins) because real environment variables beat the phpunit XML <env force>
+    # overrides: PHPUnit sets putenv/$_ENV but not $_SERVER, and Laravel's Env repository
+    # reads $_SERVER first — without the explicit override the run silently uses whatever
+    # engine .env.testing points at instead of the one the phpunit configuration declares.
     if ($Check -eq 'all' -or $Check -eq 'test' -or $Check -eq 'test-sqlite') {
-        docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs app vendor/bin/pest --no-coverage --compact
+        docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs -e DB_CONNECTION=sqlite -e "DB_DATABASE=:memory:" app vendor/bin/pest --no-coverage --compact
         if ($LASTEXITCODE -ne 0) {
             throw "Pest (SQLite) check failed."
         }
     }
 
+    # Pinned to the base compose file so the mysql service exists (and starts) even when
+    # the root .env activates the PostgreSQL override via COMPOSE_FILE.
     if ($Check -eq 'all' -or $Check -eq 'test' -or $Check -eq 'test-mysql') {
-        docker compose run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml --compact
+        docker compose -f docker-compose.yml run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs app vendor/bin/pest --no-coverage --configuration phpunit.mysql.xml --compact
         if ($LASTEXITCODE -ne 0) {
             throw "Pest (MySQL) check failed."
+        }
+    }
+
+    # Explicitly layers the PostgreSQL override so the postgres service exists (and
+    # starts) regardless of which engine the running stack uses. .env.testing points at
+    # the mysql engine/host, so the pgsql connection settings are re-overridden after
+    # @testEnvArgs (see the engine-override note above).
+    if ($Check -eq 'all' -or $Check -eq 'test' -or $Check -eq 'test-pgsql') {
+        docker compose -f docker-compose.yml -f docker-compose.pgsql.yml run --rm -e SKIP_APP_BOOTSTRAP=1 -v "$workspaceMount" @testEnvArgs -e DB_CONNECTION=pgsql -e DB_HOST=postgres -e DB_PORT=5432 app vendor/bin/pest --no-coverage --configuration phpunit.pgsql.xml --compact
+        if ($LASTEXITCODE -ne 0) {
+            throw "Pest (PostgreSQL) check failed."
         }
     }
 

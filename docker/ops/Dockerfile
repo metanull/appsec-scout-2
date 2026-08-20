@@ -95,6 +95,7 @@ RUN curl -fsSL https://packages.sury.org/php/apt.gpg \
         php8.4-mbstring \
         php8.4-curl \
         php8.4-mysql \
+        php8.4-pgsql \
         php8.4-imagick \
         php8.4-redis \
         php8.4-pcov \

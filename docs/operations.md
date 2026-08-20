@@ -211,6 +211,7 @@ detail, including the Dependency-Track visualization pipeline, in
 .\scripts\invoke-check.ps1 -Check lint            # Pint, read-only
 .\scripts\invoke-check.ps1 -Check test            # Pest (SQLite)
 .\scripts\invoke-check.ps1 -Check test-mysql      # Pest (MySQL)
+.\scripts\invoke-check.ps1 -Check test-pgsql      # Pest (PostgreSQL)
 .\scripts\invoke-check.ps1 -Check static-analysis # PHPStan
 .\scripts\invoke-check.ps1 -Check smoke           # smoke tests
 .\scripts\invoke-check.ps1 -Check dependencies    # composer outdated-dependency check

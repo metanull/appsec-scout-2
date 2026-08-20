@@ -31,6 +31,20 @@ it('creates a user and defaults the role to Reader when none are selected', func
         ->and(AuditLog::query()->where('action', 'user.roles_changed')->exists())->toBeTrue();
 });
 
+it('stores emails lowercased so login lookups match on case-sensitive database engines', function () {
+    $admin = enrolledAdminForLifecycle();
+
+    $user = app(UserAdminService::class)->create([
+        'name' => 'Mixed Case',
+        'email' => 'Mixed.Case@Example.TEST',
+        'password' => 'secret-pass',
+        'roles' => [],
+    ], $admin);
+
+    expect($user->refresh()->email)->toBe('mixed.case@example.test')
+        ->and(User::query()->where('email', 'mixed.case@example.test')->exists())->toBeTrue();
+});
+
 it('updates roles and resets two-factor enrollment with audit rows', function () {
     $admin = enrolledAdminForLifecycle();
     $user = User::factory()->create([

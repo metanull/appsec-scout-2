@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-- PHP 8.4 with Laravel 13 and Filament 5 (single panel, root path, amber theme); MySQL 8 and Redis 7
+- PHP 8.4 with Laravel 13 and Filament 5 (single panel, root path, amber theme); MySQL 8 (default) or PostgreSQL 16 (opt-in via the `docker-compose.pgsql.yml` override), and Redis 7
 - UI is Filament-native — it is the main and only UI, not reserved to admins
 - Spatie permissions for RBAC; Laravel Fortify for auth with mandatory app-based TOTP 2FA
 - Sources (AzDo, Asoc, Detectify), Trackers (GitHub, Jira), and Source Control providers (AzDO Repos, GitHub Repos) each follow the same tagged-singleton registry pattern, bound at boot in AppServiceProvider. These are three distinct concepts with their own credentials, even when the same upstream product plays more than one role (e.g. AzDO is both a Source and a Source Control provider; GitHub is both a Tracker and a Source Control provider)
@@ -57,7 +57,9 @@ Docker is the only environment for development and usage. `docker-compose.yml` s
 | Service | Image | Role |
 |---------|-------|------|
 | `app` | `appsec-scout:latest` | Laravel app (nginx + php-fpm + scheduler + queue worker via Supervisor) |
-| `mysql` | `8.0` | Primary database; creates `appsec_scout_test` DB on init |
+| `mysql` | `8.0` | Primary database (default engine); creates `appsec_scout_test` DB on init |
+
+The database engine is switchable: uncommenting `COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml` in the root `.env` replaces `mysql` with a `postgres` (16-alpine) service and repoints every Laravel container at it via `DB_*` environment overrides. Default is MySQL — the switch is opt-in and data is not migrated between engines.
 | `redis` | `7-alpine` | Cache and queue backend |
 | `dependencytrack-postgres`/`-apiserver`/`-frontend` | `postgres:16-alpine` / `dependencytrack/apiserver` / `dependencytrack/frontend` | SBOM visualization; auto-provisioned by `dependencytrack-bootstrap` (team, API key, Trivy analyzer — stored in the credential vault) |
 | `trivy-token-init` / `trivy-server` | `appsec-scout:latest` / `aquasec/trivy:latest` | Self-hosted vulnerability source for Dependency-Track's Trivy analyzer; the shared token between them is generated once inside the stack, no manual setup |
@@ -71,7 +73,7 @@ Users interact with the environment through three PowerShell scripts:
 .\scripts\appsec-scout.ps1 [-Rebuild] [-Force]
 
 # Run CI checks inside the container
-.\scripts\invoke-check.ps1 [-Check {all|lint|test|test-sqlite|test-mysql|static-analysis|smoke|dependencies}]
+.\scripts\invoke-check.ps1 [-Check {all|lint|test|test-sqlite|test-mysql|test-pgsql|static-analysis|smoke|dependencies}]
 
 # Run automated fixes inside the container
 .\scripts\invoke-fix.ps1 [-Fix {all|lint-fix|dependencies-fix}]
@@ -96,6 +98,9 @@ Default for `-Check` and `-Fix` is `all`. Use direct `docker compose` commands o
 
 # Run tests on MySQL (closer to production)
 .\scripts\invoke-check.ps1 -Check test-mysql
+
+# Run tests on PostgreSQL (second real engine)
+.\scripts\invoke-check.ps1 -Check test-pgsql
 
 # PHPStan static analysis
 .\scripts\invoke-check.ps1 -Check static-analysis
@@ -207,6 +212,7 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 - **Framework**: Pest 4.7+ with Laravel plugin
 - **Default config** (`phpunit.xml`): SQLite in-memory — fast, used for most development
 - **MySQL config** (`phpunit.mysql.xml`): requires the `mysql` container; use `-Check test-mysql` or pass `--configuration phpunit.mysql.xml` directly
+- **PostgreSQL config** (`phpunit.pgsql.xml`): requires the `postgres` container (started automatically by `-Check test-pgsql`, which layers `docker-compose.pgsql.yml`)
 - Smoke tests live in `tests/Feature/Smoke/` and are a separate `-Check smoke` target
 
 ## CI vs Local Verification
@@ -217,7 +223,7 @@ This rule is about that workstation, not about Claude Code's own execution envir
 - If Docker is available there, still prefer the PowerShell scripts / `docker compose` — same reasoning applies.
 - If Docker is not available, running Pint/PHPStan/Pest directly is acceptable as a substitute — mirror what CI does (bare PHP, `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:`) rather than improvising a different setup, and say plainly that verification ran outside Docker so it's clear CI is still the authoritative gate.
 
-**CI (GitHub Actions)**: `.github/workflows/laravel-ci.yml` runs on a bare PHP 8.4 runner without Docker. It installs Composer dependencies, copies `.env.example`, generates an app key, then runs Pint, PHPStan, and Pest with `DB_CONNECTION=sqlite` / `DB_DATABASE=:memory:`. Do not assume `.env.testing` is present in CI.
+**CI (GitHub Actions)**: `.github/workflows/laravel-ci.yml` runs on a bare PHP 8.4 runner without Docker. It installs Composer dependencies, copies `.env.example`, generates an app key, then runs Pint, PHPStan, and Pest with `DB_CONNECTION=sqlite` / `DB_DATABASE=:memory:`, plus a second Pest run against a PostgreSQL 16 service container (`--configuration phpunit.pgsql.xml`). Do not assume `.env.testing` is present in CI.
 
 When running checks directly via `docker compose` (e.g. for a single file or narrower scope), the dev image must be active:
 
@@ -276,10 +282,10 @@ All three gates (Pint clean, PHPStan clean, Pest green) must pass before reporti
 
 - Prefer Eloquent, query builder methods, casts, relationships, scopes, and Schema builder APIs over raw SQL.
 - Do not use database-driver-specific SQL functions (`MATCH ... AGAINST`, `JSON_EXTRACT`, `JSON_UNQUOTE`, MySQL-specific casts) when a portable framework alternative exists.
-- Keep search and filter behavior portable across MySQL and SQLite. Use `LIKE`-based matching rather than vendor-specific fulltext expressions.
+- Keep search and filter behavior portable across MySQL, PostgreSQL, and SQLite. Use `LIKE`-based matching rather than vendor-specific fulltext expressions.
 - Use `Schema::hasIndex()`, `whenTableHasIndex()`, `whenTableDoesntHaveIndex()` for index inspection rather than raw SQL.
-- Production is MySQL 8. SQLite is for tests and portability verification only — never a production fallback.
-- Write reversible migrations and preserve MySQL 8 compatibility.
+- Production runs MySQL 8 by default, with PostgreSQL 16 as a supported opt-in engine. SQLite is for tests and portability verification only — never a production fallback.
+- Write reversible migrations and preserve both MySQL 8 and PostgreSQL 16 compatibility. Driver-guard genuinely engine-specific statements (see the LONGBLOB migration for the pattern).
 
 ## Story Writing
 
