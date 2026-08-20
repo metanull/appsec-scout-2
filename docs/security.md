@@ -39,6 +39,11 @@ encrypted on the model.
 
 Other controls:
 
+- Sessions are stored in the primary database (`SESSION_DRIVER=database`, `sessions` table).
+  Disabling a user deletes that user's session rows immediately — a real server-side
+  revocation, not just a client-side logout. Installs whose persisted `app-laravel/.env` still
+  says `SESSION_DRIVER=redis` should switch it to `database`; until they do, session deletion
+  on disable is inert and only the per-request middleware (below) locks the user out.
 - Disabled-user enforcement (`EnsureUserIsEnabled` middleware): a disabled user is logged out,
   their session is invalidated and its token regenerated, and they're redirected to login with an
   explanatory error — on every request, not just at login.

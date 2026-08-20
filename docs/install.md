@@ -102,7 +102,8 @@ Root `.env` (Docker Compose only — see `.env.example` for the full, commented 
 | `APP_KEY` | *(auto-generated)* | Set automatically by the entrypoint on first boot — no manual step. If supplied through the container environment instead (e.g. from a secret store), it takes precedence and no key is ever generated |
 | `APP_URL` | `http://localhost:8080` | External base URL |
 | `DB_CONNECTION`/`DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD` | `mysql` / `mysql` / `3306` / `appsec_scout` / `appsec_scout` / `password` | Must match the root `.env` values |
-| `SESSION_DRIVER`/`CACHE_STORE`/`QUEUE_CONNECTION` | `redis` | All three use the `redis` container |
+| `SESSION_DRIVER` | `database` | Sessions live in the primary database so that disabling a user revokes its live sessions immediately |
+| `CACHE_STORE`/`QUEUE_CONNECTION` | `redis` | Cache and queues use the `redis` container |
 | `BOOTSTRAP_ADMIN_NAME`/`BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` | `admin` / `admin@example.com` / `a-changeme-now` | First-admin bootstrap identity, consumed by the entrypoint |
 | `SKIP_APP_BOOTSTRAP` | unset | When `1`, skips the entrypoint's asset resync/migrate/seed/bootstrap block entirely — used by `invoke-check.ps1`/`invoke-fix.ps1` for one-off `docker compose run` invocations that shouldn't race the long-lived `app` container over shared volumes |
 
