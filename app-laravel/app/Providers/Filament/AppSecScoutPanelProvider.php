@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\ProfileIntegrationsPage;
@@ -61,7 +62,7 @@ class AppSecScoutPanelProvider extends PanelProvider
                     ->isActiveWhen(fn (): bool => request()->routeIs(ProfileIntegrationsPage::getRouteName()))
                     ->sort(0),
             ])
-            ->profile(isSimple: false)
+            ->profile(EditProfile::class, isSimple: false)
             ->userMenuItems([
                 'profile-integrations' => MenuItem::make()
                     ->label('Profile integrations')
