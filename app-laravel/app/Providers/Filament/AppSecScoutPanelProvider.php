@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Http\Middleware\EnsureUserIsEnabled;
@@ -33,7 +34,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->default()
             ->id('appsec-scout')
             ->path('')
-            ->login()
+            ->login(Login::class)
             ->colors(['primary' => Color::Amber])
             ->maxContentWidth(Width::Full)
             ->sidebarCollapsibleOnDesktop()

@@ -92,7 +92,7 @@ it('disables a user, deletes sessions, and blocks subsequent access', function (
 
     $response = $this->get('/');
 
-    $response->assertRedirect('/user/login');
+    $response->assertRedirect('/login');
     $this->assertGuest();
 });
 

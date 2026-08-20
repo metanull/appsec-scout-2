@@ -41,7 +41,6 @@ class FortifyServiceProvider extends ServiceProvider
 
             return $user;
         });
-        Fortify::loginView(fn () => view('auth.login'));
     }
 
     private function configureRateLimiters(): void
