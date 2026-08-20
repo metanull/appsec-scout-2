@@ -108,6 +108,11 @@ Upstream credentials and personal access tokens are stored in the `credentials` 
 Laravel's `encrypted` Eloquent cast (`Credential::$casts['value']`). Controls:
 
 - No secret is intentionally rendered back in plaintext in the UI.
+- Decryption failures are loud, never silent: a stored credential that can no longer be
+  decrypted (typically after an `APP_KEY` change) raises `CredentialDecryptionException` naming
+  the key — jobs fail into the error log instead of reporting "not configured", and the
+  credential pages flag the affected fields with a repair path (restore the original `APP_KEY`,
+  or Replace/re-enter each affected credential).
 - Connection tests update last-tested state without exposing secret values.
 - The Operations page redacts sensitive keys from failed-job payload previews.
 - Dependency-Track's own API key (`dependencytrack.apiKey`) is provisioned automatically by the

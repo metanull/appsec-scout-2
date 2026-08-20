@@ -3,6 +3,7 @@
 namespace App\Filament\Pages\Concerns;
 
 use App\Credentials\Credential;
+use App\Credentials\CredentialDecryptionException;
 use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\SourceControl\Contracts\SourceControlProvider;
@@ -20,8 +21,6 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
-use Illuminate\Contracts\Encryption\DecryptException;
-use Illuminate\Support\Facades\Crypt;
 
 trait ManagesIntegrationCredentials
 {
@@ -38,6 +37,9 @@ trait ManagesIntegrationCredentials
 
     /** @var array<string, bool> */
     public array $hasStored = [];
+
+    /** @var array<string, bool> */
+    public array $decryptFailed = [];
 
     /** @var array<string, array{ok: bool, error: ?string}|null> */
     public array $testResults = [];
@@ -225,6 +227,10 @@ trait ManagesIntegrationCredentials
             ->helperText($field->description)
             ->required($field->required)
             ->live()
+            ->hint(fn (): ?string => ($this->decryptFailed[$stateKey] ?? false)
+                ? 'Stored value cannot be decrypted (was APP_KEY changed?)'
+                : null)
+            ->hintColor('danger')
             ->extraInputAttributes($this->passwordManagerIgnoreAttributes());
 
         if (! $field->isSecret) {
@@ -267,6 +273,10 @@ trait ManagesIntegrationCredentials
 
     private function integrationStatusDescription(string $integrationId): ?string
     {
+        if ($this->integrationHasDecryptFailure($integrationId)) {
+            return 'Stored credentials cannot be decrypted (was APP_KEY changed?) — replace them to recover.';
+        }
+
         $result = $this->testResults[$integrationId] ?? null;
 
         if (! is_array($result)) {
@@ -274,6 +284,23 @@ trait ManagesIntegrationCredentials
         }
 
         return $result['ok'] ? 'Connected' : 'Connection failed';
+    }
+
+    private function integrationHasDecryptFailure(string $integrationId): bool
+    {
+        foreach ($this->integrations() as $integration) {
+            if ($integration['id'] !== $integrationId) {
+                continue;
+            }
+
+            foreach ($integration['credential_fields'] as $field) {
+                if ($this->decryptFailed[$field->stateKey()] ?? false) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string, string> */
@@ -302,7 +329,9 @@ trait ManagesIntegrationCredentials
         }
 
         if (! $get->boolean("replace.{$stateKey}")) {
-            return 'Stored secret. Click Replace to edit.';
+            return ($this->decryptFailed[$stateKey] ?? false)
+                ? 'Stored secret cannot be decrypted. Click Replace to store a new value.'
+                : 'Stored secret. Click Replace to edit.';
         }
 
         return 'Enter new value to replace stored secret';
@@ -385,7 +414,11 @@ trait ManagesIntegrationCredentials
 
             if ($field->isSecret) {
                 if ($existing instanceof Credential && ! $shouldReplace) {
-                    $existingValue = $this->credentialValue($existing);
+                    try {
+                        $existingValue = $this->credentialValue($existing);
+                    } catch (CredentialDecryptionException) {
+                        $existingValue = null;
+                    }
 
                     if ($existingValue === null) {
                         $this->addError("values.{$stateKey}", 'Stored credential cannot be decrypted. Click Replace and save a new value.');
@@ -426,7 +459,13 @@ trait ManagesIntegrationCredentials
                     return false;
                 }
 
-                $existingValue = $this->credentialValue($existing);
+                try {
+                    $existingValue = $this->credentialValue($existing);
+                } catch (CredentialDecryptionException) {
+                    // Undecryptable stored value: never equal to the new input, so fall
+                    // through and overwrite it.
+                    $existingValue = null;
+                }
 
                 if ($existing instanceof Credential && $existingValue !== null && $value === $existingValue && $description === $existing->description) {
                     continue;
@@ -470,9 +509,20 @@ trait ManagesIntegrationCredentials
 
                 $this->replace[$stateKey] = false;
                 $this->hasStored[$stateKey] = $credential instanceof Credential;
+                $this->decryptFailed[$stateKey] = false;
 
                 if ($credential instanceof Credential) {
-                    $credentialValue = $this->credentialValue($credential);
+                    try {
+                        $credentialValue = $this->credentialValue($credential);
+                    } catch (CredentialDecryptionException) {
+                        // Stored but undecryptable (APP_KEY changed?) — keep hasStored so the
+                        // Replace flow is offered as the repair path, and flag the failure.
+                        $this->decryptFailed[$stateKey] = true;
+                        $this->descriptions[$integration['id']] = $credential->description ?? '';
+                        $this->values[$stateKey] = '';
+
+                        continue;
+                    }
 
                     if ($credentialValue !== null) {
                         $this->descriptions[$integration['id']] = $credential->description ?? '';
@@ -560,24 +610,11 @@ trait ManagesIntegrationCredentials
             ->first();
     }
 
+    /**
+     * @throws CredentialDecryptionException when a stored value cannot be decrypted
+     */
     private function credentialValue(?Credential $credential): ?string
     {
-        if (! $credential instanceof Credential) {
-            return null;
-        }
-
-        $encrypted = $credential->getRawOriginal('value');
-
-        if (! is_string($encrypted) || $encrypted === '') {
-            return null;
-        }
-
-        try {
-            $decrypted = Crypt::decrypt($encrypted, false);
-
-            return is_string($decrypted) ? $decrypted : null;
-        } catch (DecryptException) {
-            return null;
-        }
+        return $credential instanceof Credential ? $credential->decryptedValue() : null;
     }
 }

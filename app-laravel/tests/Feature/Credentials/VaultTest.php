@@ -3,6 +3,7 @@
 use App\Audit\AuditLog;
 use App\Audit\Recorder;
 use App\Credentials\Credential;
+use App\Credentials\CredentialDecryptionException;
 use App\Credentials\Vault;
 use App\Models\User;
 use App\Sync\CredentialResolver;
@@ -36,14 +37,27 @@ it('returns null for missing credential', function () {
     expect($vault->get('missing.key', null))->toBeNull();
 });
 
-it('returns null when credential payload cannot be decrypted', function () {
+it('fails loudly when credential payload cannot be decrypted', function () {
     DB::table('credentials')->insert([
         'integration_key' => 'azdo.pat',
         'owner_user_id' => null,
         'value' => 'invalid-payload',
     ]);
 
-    expect(vault()->get('azdo.pat', null))->toBeNull();
+    expect(fn () => vault()->get('azdo.pat', null))
+        ->toThrow(CredentialDecryptionException::class);
+});
+
+it('replaces an undecryptable credential through set', function () {
+    DB::table('credentials')->insert([
+        'integration_key' => 'azdo.pat',
+        'owner_user_id' => null,
+        'value' => 'invalid-payload',
+    ]);
+
+    vault()->set('azdo.pat', null, 'fresh-token');
+
+    expect(vault()->get('azdo.pat', null))->toBe('fresh-token');
 });
 
 it('writes audit row on set with value redacted', function () {
