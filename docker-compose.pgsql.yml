@@ -1,0 +1,110 @@
+# PostgreSQL engine override — opt-in alternative to the default MySQL database.
+#
+# Activate it by adding this line to the root .env (or setting the same variable in
+# the shell environment) so that every `docker compose` invocation — the PowerShell
+# scripts included — picks it up automatically:
+#
+#     COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml
+#
+# The `;` path separator is the Docker Compose default on Windows. On Linux/macOS the
+# default separator is `:` (or set COMPOSE_PATH_SEPARATOR explicitly).
+#
+# What it changes, relative to docker-compose.yml:
+#   - starts a `postgres` service (PostgreSQL 16) instead of `mysql` (the mysql
+#     service is parked behind a never-activated profile so it neither starts nor
+#     needs to be present);
+#   - repoints every Laravel container (app, collector, static-analysis-collector,
+#     dependencytrack-bootstrap) at it via DB_* environment variables, which take
+#     precedence over the DB_* values in the persisted app-laravel .env;
+#   - reuses the same DB_DATABASE / DB_USERNAME / DB_PASSWORD variables from the
+#     root .env as the mysql service, so no new credentials are introduced.
+#
+# Existing MySQL data is NOT migrated — switching engines means starting from an
+# empty database (the postgres_data volume). Switching back to MySQL is just
+# removing the COMPOSE_FILE line again; the mysql_data volume is left untouched.
+#
+# This file must be listed AFTER docker-compose.yml, never used alone.
+
+services:
+    postgres:
+        image: postgres:16-alpine
+        environment:
+            POSTGRES_DB: "${DB_DATABASE:-appsec_scout}"
+            POSTGRES_USER: "${DB_USERNAME:-appsec_scout}"
+            POSTGRES_PASSWORD: "${DB_PASSWORD:-password}"
+        cpus: ${POSTGRES_CPUS:-1}
+        mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+            - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-test-db.sql:ro
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-appsec_scout} -d ${DB_DATABASE:-appsec_scout}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    # Parked behind a profile that is never activated: the service definition stays
+    # valid for compose config resolution, but the container never starts in pgsql mode.
+    mysql:
+        profiles:
+            - disabled-by-pgsql
+
+    app:
+        depends_on: !override
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_started
+        environment:
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: "5432"
+            DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
+            DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
+            DB_PASSWORD: "${DB_PASSWORD:-password}"
+
+    collector:
+        depends_on: !override
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_started
+            trivy-server:
+                condition: service_started
+            app:
+                condition: service_healthy
+        environment:
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: "5432"
+            DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
+            DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
+            DB_PASSWORD: "${DB_PASSWORD:-password}"
+
+    static-analysis-collector:
+        depends_on: !override
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_started
+            app:
+                condition: service_healthy
+        environment:
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: "5432"
+            DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
+            DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
+            DB_PASSWORD: "${DB_PASSWORD:-password}"
+
+    dependencytrack-bootstrap:
+        environment:
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: "5432"
+            DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
+            DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
+            DB_PASSWORD: "${DB_PASSWORD:-password}"
+
+volumes:
+    postgres_data:
