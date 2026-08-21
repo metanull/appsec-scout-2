@@ -60,6 +60,8 @@ Docker is the only environment for development and usage. `docker-compose.yml` s
 | `mysql` | `8.0` | Primary database (default engine); creates `appsec_scout_test` DB on init |
 
 The database engine is switchable: uncommenting `COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml` in the root `.env` replaces `mysql` with a `postgres` (16-alpine) service and repoints every Laravel container at it via `DB_*` environment overrides. Default is MySQL — the switch is opt-in and data is not migrated between engines.
+
+The image source is switchable the same way: `docker-compose.ghcr.yml` (opt-in via `COMPOSE_FILE`) runs `app`, `collector`, and `static-analysis-collector` from the published `ghcr.io/metanull/appsec-scout-2/<name>` images instead of building — image content authoritative, no `app-laravel` bind mount or vendor volumes. It is a pull-based install path for operators, never used for development. Corporate-proxy CA trust works without rebuilds in either mode: the entrypoint installs `.docker/certs/*.crt` (mounted at `/host-certs`) into the container trust stores at every start.
 | `redis` | `7-alpine` | Cache and queue backend |
 | `dependencytrack-postgres`/`-apiserver`/`-frontend` | `postgres:16-alpine` / `dependencytrack/apiserver` / `dependencytrack/frontend` | SBOM visualization; auto-provisioned by `dependencytrack-bootstrap` (team, API key, Trivy analyzer — stored in the credential vault) |
 | `trivy-token-init` / `trivy-server` | `appsec-scout:latest` / `aquasec/trivy:latest` | Self-hosted vulnerability source for Dependency-Track's Trivy analyzer; the shared token between them is generated once inside the stack, no manual setup |
