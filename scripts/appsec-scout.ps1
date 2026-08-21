@@ -12,6 +12,10 @@
     Trivy analyzer provisioning) to finish, and finally opens the application in the browser.
     Dependency-Track and Trivy require no manual setup: the shared secret between them is
     generated inside the stack on first start.
+    In prebuilt-image mode (the docker-compose.ghcr.yml override, activated through COMPOSE_FILE
+    in the root .env), the script pulls the published GHCR images instead of building, and
+    re-exports the host CA certificates on every run, since they are consumed at container start
+    rather than at image-build time. Everything else behaves the same.
 .PARAMETER Rebuild
     If specified, stops and removes existing containers, volumes, and orphans (wiping the
     database and all app state) and re-exports host CA certificates before rebuilding and
@@ -22,7 +26,7 @@
 .PARAMETER Force
     Skips Docker's build cache for the app, collector, and static-analysis-collector images on
     this run (`--no-cache`). Independent of -Rebuild — use it alone if you suspect a stale cache
-    layer, without wiping any data.
+    layer, without wiping any data. Has no effect in prebuilt-image mode (nothing is built).
 .EXAMPLE
     .\appsec-scout.ps1
     Rebuilds the app, collector, and static-analysis-collector images (cache permitting) and
@@ -68,6 +72,16 @@ Function Test-Docker {
     }
 }
 
+Function Test-PullMode {
+    # Prebuilt-image mode: the docker-compose.ghcr.yml override (activated through
+    # COMPOSE_FILE in the root .env) removes the app service's build section and
+    # repoints it at the published GHCR image. Detect it from the merged compose
+    # config rather than parsing COMPOSE_FILE, so any way of layering the override
+    # (env var, --file flags in COMPOSE_FILE, future renames) is recognized.
+    $config = (Invoke-Docker compose config --format json) -join "`n" | ConvertFrom-Json
+    return -not $config.services.app.PSObject.Properties['build']
+}
+
 Function Wait-AppReady {
     param(
         [int]$MaxRetries = 40,
@@ -106,16 +120,32 @@ if (-not (Test-Docker)) {
     throw "Docker does not seem to be available or running."
 }
 try {
+    $pullMode = Test-PullMode
+
     if ($Rebuild.IsPresent -and $Rebuild) {
         Invoke-Docker compose down --volumes --remove-orphans
+    }
+
+    # Build mode consumes the exported certificates at image-build time, so refreshing
+    # them only matters on -Rebuild. Pull mode never builds — the certificates are
+    # consumed at container start (see docker/entrypoint.sh, /host-certs) — so every
+    # run re-exports them to keep the runtime trust store current.
+    if ($pullMode -or ($Rebuild.IsPresent -and $Rebuild)) {
         Export-HostCertificates -OutputDir (Join-Path $ProjectRoot '.docker/certs')
     }
 
-    # Always rebuild the app, collector, and static-analysis-collector images (Docker's layer
-    # cache makes this a fast no-op when nothing changed) so a plain run never silently starts a
-    # stale image after a `git pull` — `docker compose up` alone only builds an image the first
-    # time it's missing, it never rebuilds an existing one just because its Dockerfile changed.
-    if ($Force.IsPresent -and $Force) {
+    # Build mode: always rebuild the app, collector, and static-analysis-collector images
+    # (Docker's layer cache makes this a fast no-op when nothing changed) so a plain run never
+    # silently starts a stale image after a `git pull` — `docker compose up` alone only builds
+    # an image the first time it's missing, it never rebuilds an existing one just because its
+    # Dockerfile changed. Pull mode: pull instead, so a moving tag (e.g. latest) is refreshed
+    # the same way; pinned sha- tags resolve to a fast no-op.
+    if ($pullMode) {
+        if ($Force.IsPresent -and $Force) {
+            Write-Host "-Force has no effect in prebuilt-image mode (nothing is built); ignoring it."
+        }
+        Invoke-Docker compose pull app collector static-analysis-collector
+    } elseif ($Force.IsPresent -and $Force) {
         Invoke-Docker compose build app collector static-analysis-collector --no-cache
     } else {
         Invoke-Docker compose build app collector static-analysis-collector

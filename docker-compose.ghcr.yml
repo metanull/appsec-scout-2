@@ -1,0 +1,82 @@
+# Prebuilt-image override — opt-in alternative to building the images locally.
+#
+# Runs the stack from the images CI publishes to the GitHub Container Registry
+# (.github/workflows/image-publish.yml: Trivy-gated, pushed on every merge to main)
+# instead of building from the Dockerfiles. Activate it by adding this line to the
+# root .env (or setting the same variable in the shell environment) so that every
+# `docker compose` invocation — the PowerShell scripts included — picks it up
+# automatically:
+#
+#     COMPOSE_FILE=docker-compose.yml;docker-compose.ghcr.yml
+#
+# The `;` path separator is the Docker Compose default on Windows. On Linux/macOS the
+# default separator is `:` (or set COMPOSE_PATH_SEPARATOR explicitly). To combine with
+# the PostgreSQL engine override, list all three files (docker-compose.pgsql.yml last
+# or between — the two overrides touch disjoint keys).
+#
+# APPSEC_IMAGE_TAG selects the tag (default: latest). Deployments should pin the
+# immutable sha-<short-commit> tag of a vetted build instead of tracking latest.
+# Only tags built from commits that include the runtime-CA entrypoint (see
+# docker/entrypoint.sh, /host-certs) support corporate-proxy CA trust; older tags
+# still run, but ignore .docker/certs.
+#
+# What it changes, relative to docker-compose.yml:
+#   - app, collector, and static-analysis-collector run the published
+#     ghcr.io/metanull/appsec-scout-2/<name> images; their build: sections are
+#     removed, so nothing is ever compiled or built locally (trivy-token-init and
+#     dependencytrack-bootstrap, which reuse the app image, are repointed too);
+#   - the image content is authoritative: the ./app-laravel bind mount and the
+#     *_vendor / *_bootstrap_cache named volumes are dropped, because a named
+#     volume is seeded from image content only when first created and would
+#     permanently shadow a newer pulled image's code with stale content;
+#   - data and state volumes are unchanged: app_storage (persisted .env/APP_KEY),
+#     the app_public_* asset volumes (resynced from the image on every start by
+#     the entrypoint), workspace scratch volumes, and trivy_token — so switching
+#     between built and pulled images preserves all application state.
+#
+# The ops and claude profile images are workstation-side dev tools, never published;
+# they keep building locally and are not part of this override.
+#
+# This file must be listed AFTER docker-compose.yml, never used alone.
+
+services:
+    app:
+        image: ghcr.io/metanull/appsec-scout-2/app:${APPSEC_IMAGE_TAG:-latest}
+        build: !reset null
+        volumes: !override
+            - app_storage:/var/www/html/storage
+            - app_public_build:/var/www/html/public/build
+            - app_public_css:/var/www/html/public/css
+            - app_public_js:/var/www/html/public/js
+            - ${SBOM_OUTPUT_DIR:-./output/sbom-scan}:/var/www/html/sbom-import:ro
+            - ${STATIC_ANALYSIS_OUTPUT_DIR:-./output/static-analysis-scan}:/var/www/html/static-analysis-import:ro
+            - ./.docker/certs:/host-certs:ro
+
+    trivy-token-init:
+        image: ghcr.io/metanull/appsec-scout-2/app:${APPSEC_IMAGE_TAG:-latest}
+
+    dependencytrack-bootstrap:
+        image: ghcr.io/metanull/appsec-scout-2/app:${APPSEC_IMAGE_TAG:-latest}
+        volumes: !override
+            - app_storage:/var/www/html/storage
+            - app_public_build:/var/www/html/public/build
+            - app_public_css:/var/www/html/public/css
+            - app_public_js:/var/www/html/public/js
+            - trivy_token:/var/lib/trivy-token:ro
+
+    collector:
+        image: ghcr.io/metanull/appsec-scout-2/collector:${APPSEC_IMAGE_TAG:-latest}
+        build: !reset null
+        volumes: !override
+            - app_storage:/var/www/html/storage
+            - collector_workspace:/workspace-scratch
+            - trivy_token:/var/lib/trivy-token:ro
+            - ./.docker/certs:/host-certs:ro
+
+    static-analysis-collector:
+        image: ghcr.io/metanull/appsec-scout-2/static-analysis-collector:${APPSEC_IMAGE_TAG:-latest}
+        build: !reset null
+        volumes: !override
+            - app_storage:/var/www/html/storage
+            - static_analysis_collector_workspace:/workspace-scratch
+            - ./.docker/certs:/host-certs:ro
