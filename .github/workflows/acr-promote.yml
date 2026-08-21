@@ -1,0 +1,82 @@
+# Promotes already-published GHCR images into Azure Container Registry — prepared ahead
+# of Azure access and NOT yet exercised against a real ACR.
+#
+# Build-once/deploy-many: ACR receives the exact images that were built and Trivy-gated
+# by .github/workflows/image-publish.yml. `az acr import` copies them server-side by
+# digest — nothing is rebuilt or pulled through the runner.
+#
+# Azure prerequisites (to provision before the first run):
+#   1. An ACR instance (its short name goes into the ACR_NAME repository variable).
+#   2. An Entra app registration (or user-assigned managed identity) with a federated
+#      credential for this repository, subject `repo:metanull/appsec-scout-2:ref:refs/heads/main`
+#      (or an environment-scoped subject if a GitHub Environment gate is added later).
+#   3. The `AcrPush` role for that identity on the ACR (the `Importer` data action set,
+#      or `Contributor` on the registry, is required for `az acr import`).
+#   4. Repository variables: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_NAME.
+#
+# The GHCR packages are public, so `az acr import` needs no source registry credentials.
+# If they are ever made private, add to each import command:
+#   --username <github-username> --password <PAT with read:packages>
+
+name: Promote Images to ACR
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "GHCR tag to promote (e.g. sha-abc1234) — promoted verbatim and re-tagged latest in ACR"
+        required: true
+        type: string
+
+jobs:
+  promote:
+    name: Import into ACR
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check required repository variables
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          missing=""
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ACR_NAME; do
+            [ -n "$(eval "echo \$$v")" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository variable(s):$missing — see the header of this workflow for the Azure prerequisites."
+            exit 1
+          fi
+
+      - name: Azure login (OIDC)
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Import images
+        env:
+          TAG: ${{ inputs.tag }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          SOURCE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for name in app collector static-analysis-collector; do
+            echo "Importing ${SOURCE}/${name}:${TAG} -> ${ACR_NAME}/appsec-scout/${name}:{${TAG},latest}"
+            az acr import \
+              --name "$ACR_NAME" \
+              --source "${SOURCE}/${name}:${TAG}" \
+              --image "appsec-scout/${name}:${TAG}" \
+              --image "appsec-scout/${name}:latest" \
+              --force
+          done

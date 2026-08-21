@@ -1,0 +1,136 @@
+# Builds the three deployable container images (app, collector, static-analysis-collector),
+# gates each on a Trivy vulnerability scan, and publishes them to GHCR as
+# ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the Trivy gate
+# fails: the push step runs strictly after the scan steps in the same job.
+#
+# - Pull requests touching the image definitions get a build + scan only (no publish).
+# - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
+# - The ops and claude images are workstation-side dev profiles and are never published.
+#
+# Azure note: ACR receives these exact images later via .github/workflows/acr-promote.yml
+# (server-side import by tag) — images are never rebuilt for ACR.
+
+name: Container Images
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: ["main"]
+
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "docker/**"
+      - ".dockerignore"
+      - ".github/workflows/image-publish.yml"
+
+  workflow_dispatch:
+
+concurrency:
+  group: image-publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: ${{ matrix.image.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: app
+            dockerfile: docker/Dockerfile
+          - name: collector
+            dockerfile: docker/collector/Dockerfile
+          - name: static-analysis-collector
+            dockerfile: docker/static-analysis-collector/Dockerfile
+
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image.name }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
+
+      - name: Trivy scan (SARIF report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          format: sarif
+          output: trivy-${{ matrix.image.name }}.sarif
+          scanners: vuln
+
+      - name: Upload scan results to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.image.name }}.sarif
+          category: trivy-${{ matrix.image.name }}
+
+      # The publish gate: fixable HIGH/CRITICAL vulnerabilities fail the job here,
+      # before the push step below can run. Unfixed CVEs (no patched package released
+      # yet) are reported in the SARIF above but do not block — there is no action to
+      # take on them beyond waiting for the upstream fix.
+      - name: Trivy gate (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          format: table
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          # The SARIF step above already downloaded today's vulnerability database.
+          TRIVY_SKIP_DB_UPDATE: "true"
+
+      - name: Publish to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}

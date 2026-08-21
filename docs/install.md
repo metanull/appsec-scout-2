@@ -198,6 +198,38 @@ Migrations in immutable mode are expected to run as a dedicated one-shot job exe
 container command). Alternatively, a deployment that guarantees a single replica can set
 `APP_BOOT_MIGRATE=1` to run migrations on boot before the application starts.
 
+## Prebuilt Container Images
+
+Every push to `main` builds the three deployable images in CI
+(`.github/workflows/image-publish.yml`), scans each with Trivy, and publishes them to the
+GitHub Container Registry. Publishing is gated on the scan: an image with a fixable
+HIGH or CRITICAL vulnerability is never pushed. Scan results (including unfixed CVEs,
+which are reported but do not block) appear under the repository's Security > Code
+scanning tab.
+
+| Image | Contents |
+| --- | --- |
+| `ghcr.io/metanull/appsec-scout-2/app` | Laravel app (nginx + php-fpm + scheduler + queue worker) |
+| `ghcr.io/metanull/appsec-scout-2/collector` | Repository-collection queue worker (git + Trivy client) |
+| `ghcr.io/metanull/appsec-scout-2/static-analysis-collector` | Static-analysis queue worker (.NET/Java toolchain) |
+
+Tags: `latest` (current `main`), `main`, and an immutable `sha-<short-commit>` per build —
+deployments should pin the `sha-` tag. Pull example:
+
+```bash
+docker pull ghcr.io/metanull/appsec-scout-2/app:latest
+```
+
+Local development does not use these images — `docker-compose.yml` builds from the
+Dockerfiles as before. The `ops` and `claude` profile images are workstation-side only and
+are never published.
+
+For the future Azure deployment, `.github/workflows/acr-promote.yml` (manual trigger)
+imports a chosen `sha-` tag from GHCR into Azure Container Registry server-side, so ACR
+receives the exact digests that passed the Trivy gate — images are never rebuilt for ACR.
+It is prepared but untested until Azure access exists; its header comment lists the Azure
+prerequisites (ACR, OIDC federated credential, repository variables).
+
 ## Corporate Proxy and SSL Inspection
 
 If outbound HTTPS is intercepted by a corporate proxy, `.\scripts\appsec-scout.ps1 -Rebuild`

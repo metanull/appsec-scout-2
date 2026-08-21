@@ -103,7 +103,10 @@ COPY .docker/certs/ /tmp/appsec-scout-certs/
 
 COPY --from=composer-deps /usr/bin/composer /usr/local/bin/composer
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The upgrade applies Debian security updates the base image predates — the CI Trivy
+# gate fails the build on any fixable HIGH/CRITICAL, so lagging base-image packages
+# must be patched at build time.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
         nginx \
         supervisor \
         curl \
@@ -127,6 +130,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && docker-php-ext-enable imagick \
     && pecl install redis \
     && docker-php-ext-enable redis \
+    # Every PHP extension is compiled at this point. Purge linux-libc-dev — the kernel
+    # headers the base image ships for phpize. Its weekly kernel CVEs are meaningless in
+    # a container (no kernel runs here) and would permanently trip the CI Trivy publish
+    # gate. The purge cascades to the C build toolchain (g++, libc6-dev, *-dev headers);
+    # the runtime shared libraries the compiled extensions link against are unaffected.
+    && apt-get purge -y linux-libc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN printf "[global]\ndaemonize = no\nerror_log = /proc/self/fd/2\npid = /tmp/php-fpm.pid\n\n[www]\nclear_env = no\nlisten = 127.0.0.1:9000\naccess.log = /proc/self/fd/2\ncatch_workers_output = yes\ndecorate_workers_output = no\n" > /usr/local/etc/php-fpm.d/zz-appsec-runtime.conf
