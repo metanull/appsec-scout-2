@@ -85,8 +85,14 @@ it('imports system credentials from a valid exported structure', function () {
         ->toBe('imported-tracker-token');
 });
 
-it('fails import when json structure is invalid', function () {
-    $path = storage_path('app/testing/system-credentials-invalid.json');
+it('imports an export missing an integration block, treating it as all-null', function () {
+    Credential::query()->create([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => null,
+        'value' => 'stale-tracker-token',
+    ]);
+
+    $path = storage_path('app/testing/system-credentials-partial.json');
 
     $payload = [
         'version' => 1,
@@ -98,7 +104,40 @@ it('fails import when json structure is invalid', function () {
                     'fake.apiKey' => 'source-key',
                 ],
             ],
-            // missing fake-tracker block should fail strict validation
+            // fake-tracker block absent: valid, imports as all-null (credentials cleared)
+        ],
+    ];
+
+    File::ensureDirectoryExists(dirname($path));
+    File::put($path, json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    $exitCode = Artisan::call('credentials:system:import', ['path' => $path]);
+
+    expect($exitCode)->toBe(0, Artisan::output());
+
+    expect(Credential::query()->where('integration_key', 'fake.apiKey')->whereNull('owner_user_id')->first()?->value)
+        ->toBe('source-key')
+        ->and(Credential::query()->where('integration_key', 'fake-tracker.token')->whereNull('owner_user_id')->exists())
+        ->toBeFalse();
+});
+
+it('fails import when an unknown integration block is present', function () {
+    $path = storage_path('app/testing/system-credentials-unknown.json');
+
+    $payload = [
+        'version' => 1,
+        'owner' => 'system',
+        'integrations' => [
+            'fake' => [
+                'type' => 'source',
+                'fields' => [
+                    'fake.apiKey' => 'source-key',
+                ],
+            ],
+            'not-a-registered-integration' => [
+                'type' => 'source',
+                'fields' => [],
+            ],
         ],
     ];
 
@@ -107,6 +146,9 @@ it('fails import when json structure is invalid', function () {
 
     $this->artisan('credentials:system:import', ['path' => $path])
         ->assertFailed();
+
+    expect(Credential::query()->where('integration_key', 'fake.apiKey')->whereNull('owner_user_id')->exists())
+        ->toBeFalse();
 });
 
 function bindFakeCredentialIntegrationsForJsonCommands(): void

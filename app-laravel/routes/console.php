@@ -774,9 +774,24 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
         return self::FAILURE;
     }
 
+    foreach (array_keys($incoming) as $integrationId) {
+        if (! array_key_exists($integrationId, $known)) {
+            $this->error(sprintf('Invalid structure: unknown integration %s.', $integrationId));
+
+            return self::FAILURE;
+        }
+    }
+
     foreach ($known as $integrationId => $meta) {
-        if (! array_key_exists($integrationId, $incoming) || ! is_array($incoming[$integrationId])) {
-            $this->error(sprintf('Invalid structure: missing integration block for %s.', $integrationId));
+        // An absent block is treated exactly like a present all-null block: the atomic
+        // wipe below clears the integration's system credentials and nothing is set —
+        // so exports taken before an integration existed remain importable.
+        if (! array_key_exists($integrationId, $incoming)) {
+            continue;
+        }
+
+        if (! is_array($incoming[$integrationId])) {
+            $this->error(sprintf('Invalid structure: integration %s block must be an object.', $integrationId));
 
             return self::FAILURE;
         }
@@ -817,12 +832,6 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
         }
     }
 
-    if (count($incoming) !== count($known)) {
-        $this->error('Invalid structure: integration set does not match known integrations.');
-
-        return self::FAILURE;
-    }
-
     $vault = app(Vault::class);
 
     $knownFieldKeys = [];
@@ -843,6 +852,10 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
         ->delete();
 
     foreach ($known as $integrationId => $meta) {
+        if (! array_key_exists($integrationId, $incoming)) {
+            continue;
+        }
+
         /** @var array<string, string|null> $fields */
         $fields = $incoming[$integrationId]['fields'];
 
