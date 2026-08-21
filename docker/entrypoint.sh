@@ -3,6 +3,27 @@ set -e
 
 cd /var/www/html
 
+# Runtime CA trust: images pulled from GHCR can never be rebuilt, so a corporate/
+# TLS-inspecting proxy CA must be installable when the container starts, not only
+# when the image is built (the Dockerfiles still bake certs for local builds —
+# the build itself needs them for Composer/npm/apt). docker-compose.yml mounts
+# ./.docker/certs (populated by Export-HostCertificates, scripts/lib/
+# Certificates.psm1) at /host-certs; this is a silent no-op when the mount is
+# absent or empty. host-ca-bundle.crt is excluded because it is the combined
+# bundle of the per-certificate files alongside it and would only duplicate
+# every trust entry — the same exclusion the Dockerfiles apply at build time.
+# The static-analysis-collector's Temurin JDK truststore needs no separate
+# handling here: its $JAVA_HOME/lib/security/cacerts symlinks to the store the
+# adoptium-ca-certificates package maintains through an update-ca-certificates
+# hook (/etc/ca-certificates/update.d/adoptium-cacerts), so the invocation
+# below regenerates the JVM store too — verified empirically, a runtime-added
+# CA shows up in `keytool -list` right after.
+if [ -d /host-certs ] && [ -n "$(find /host-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' -print -quit 2>/dev/null)" ]; then
+    find /host-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
+        -exec cp {} /usr/local/share/ca-certificates/ \;
+    update-ca-certificates
+fi
+
 # Immutable cloud boot: the image content is authoritative and configuration
 # comes exclusively from the real environment. Skips the persisted-.env dance,
 # runtime composer install, asset resync, migrate/seed/admin bootstrap, and

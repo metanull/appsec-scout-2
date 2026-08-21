@@ -30,6 +30,11 @@ services:
             - app_bootstrap_cache:/var/www/html/bootstrap/cache
             - ${SBOM_OUTPUT_DIR:-./output/sbom-scan}:/var/www/html/sbom-import:ro
             - ${STATIC_ANALYSIS_OUTPUT_DIR:-./output/static-analysis-scan}:/var/www/html/static-analysis-import:ro
+            # Runtime CA trust — the entrypoint installs any corporate/TLS-inspecting
+            # proxy CA found here at every start (see docker/entrypoint.sh), so pulled
+            # GHCR images trust the proxy without a rebuild. Same source directory the
+            # trivy-server service already consumes at runtime.
+            - ./.docker/certs:/host-certs:ro
         healthcheck:
             test: ["CMD-SHELL", "curl -fsS http://localhost:8080/up || exit 1"]
             interval: 30s
@@ -280,6 +285,8 @@ services:
             - collector_bootstrap_cache:/var/www/html/bootstrap/cache
             - collector_workspace:/workspace-scratch
             - trivy_token:/var/lib/trivy-token:ro
+            # Runtime CA trust — see the app service's /host-certs mount.
+            - ./.docker/certs:/host-certs:ro
         environment:
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -331,6 +338,10 @@ services:
             - static_analysis_collector_vendor:/var/www/html/vendor
             - static_analysis_collector_bootstrap_cache:/var/www/html/bootstrap/cache
             - static_analysis_collector_workspace:/workspace-scratch
+            # Runtime CA trust — see the app service's /host-certs mount. The Temurin
+            # JDK's truststore is covered too: update-ca-certificates regenerates it
+            # via the adoptium-ca-certificates hook (see docker/entrypoint.sh).
+            - ./.docker/certs:/host-certs:ro
         environment:
             HTTP_PROXY: "${HTTP_PROXY:-}"
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
