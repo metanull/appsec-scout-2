@@ -21,6 +21,23 @@ Relevant follow-up guides:
 No host PHP, Composer, Node.js, Java, Trivy, or BFG installation is required — everything runs
 inside containers.
 
+## Choosing an Install Track
+
+There are two supported ways to obtain the application images; everything else (services,
+volumes, configuration, first login) is identical between them:
+
+- **Build from source** (default, and the only mode for development): the Quick Start below —
+  `docker compose` builds the `app`, `collector`, and `static-analysis-collector` images from
+  the Dockerfiles in this repository.
+- **Run prebuilt images**: the stack runs the exact Trivy-gated images CI publishes to the
+  GitHub Container Registry — no build toolchain, no compilation, faster first start. See
+  [Prebuilt Container Images](#prebuilt-container-images) for the one-line switch.
+
+Both tracks start from a clone of this repository (it carries the compose files, helper
+scripts, and `.env.example`) and support the same corporate proxy setup — see
+[Corporate Proxy and SSL Inspection](#corporate-proxy-and-ssl-inspection) for which steps
+apply to which track.
+
 ## Two `.env` Files
 
 There are two separate environment files, read by two different things:
@@ -214,15 +231,36 @@ scanning tab.
 | `ghcr.io/metanull/appsec-scout-2/static-analysis-collector` | Static-analysis queue worker (.NET/Java toolchain) |
 
 Tags: `latest` (current `main`), `main`, and an immutable `sha-<short-commit>` per build —
-deployments should pin the `sha-` tag. Pull example:
+deployments should pin the `sha-` tag.
 
-```bash
-docker pull ghcr.io/metanull/appsec-scout-2/app:latest
+### Running the stack from the prebuilt images
+
+To run the whole stack from these images instead of building locally, uncomment this line
+in the root `.env` (see `.env.example`; the same `COMPOSE_FILE` mechanism as the database
+engine switch — combining both means listing all three files):
+
+```
+COMPOSE_FILE=docker-compose.yml;docker-compose.ghcr.yml
 ```
 
-Local development does not use these images — `docker-compose.yml` builds from the
-Dockerfiles as before. The `ops` and `claude` profile images are workstation-side only and
-are never published.
+then start the stack as usual — `.\scripts\appsec-scout.ps1` (which detects the override,
+skips the build, and pulls instead) or plain `docker compose up -d`. Optionally pin the
+image tag with `APPSEC_IMAGE_TAG=sha-<short-commit>` in the same `.env` (default:
+`latest`).
+
+What changes relative to the source track (full details in the header comment of
+`docker-compose.ghcr.yml`):
+
+- Nothing is built: `app`, `collector`, and `static-analysis-collector` (and the two
+  helper services that reuse the app image) run the published GHCR images.
+- The image content is authoritative: the `./app-laravel` bind mount and the vendor/cache
+  volumes are dropped, so the running code is exactly what CI built and scanned.
+- Data and state volumes are unchanged — switching a stack between built and pulled
+  images preserves the database, credentials, and `APP_KEY`.
+- The `ops` and `claude` profile images are workstation-side dev tools, never published,
+  and not part of this mode.
+
+### Immutable cloud deployments
 
 For the future Azure deployment, `.github/workflows/acr-promote.yml` (manual trigger)
 imports a chosen `sha-` tag from GHCR into Azure Container Registry server-side, so ACR
@@ -230,13 +268,60 @@ receives the exact digests that passed the Trivy gate — images are never rebui
 It is prepared but untested until Azure access exists; its header comment lists the Azure
 prerequisites (ACR, OIDC federated credential, repository variables).
 
+Where egress is TLS-inspected but mounting certificates at runtime (see
+[Corporate Proxy and SSL Inspection](#corporate-proxy-and-ssl-inspection)) is impractical —
+or trust is required to live inside the scanned, pinned artifact — extend the published
+image with a derived Dockerfile instead:
+
+```dockerfile
+FROM ghcr.io/metanull/appsec-scout-2/app:sha-<short-commit>
+COPY certs/ /usr/local/share/ca-certificates/
+RUN update-ca-certificates
+```
+
+This is a recipe, not repo tooling: a seconds-long build with no source checkout, producing
+a deployment-owned image whose digest embeds the corporate trust chain.
+
 ## Corporate Proxy and SSL Inspection
 
-If outbound HTTPS is intercepted by a corporate proxy, `.\scripts\appsec-scout.ps1 -Rebuild`
-exports the host's trusted CA certificates into `.docker/certs/` automatically (via
-`Export-HostCertificates` in `scripts/lib/Certificates.psm1`) before rebuilding — there is no
-separate script to run by hand. Set the proxy variables in the root `.env` (or the shell
-environment used for the build) alongside it:
+Corporate proxy support has two independent halves. The **runtime half applies to both
+install tracks** — it is all a prebuilt-image install needs, since pulled images are never
+rebuilt. The **build-time half applies only to the build-from-source track**, because the
+image build itself (Composer, npm, apt) must also reach the internet through the proxy.
+
+### Runtime settings (both install tracks)
+
+The proxy variables are plain runtime configuration: set them in the root `.env` and every
+container in the stack receives them through its environment — no image rebuild involved.
+
+```
+HTTP_PROXY=http://proxy.corp.example.com:3128
+HTTPS_PROXY=http://proxy.corp.example.com:3128
+NO_PROXY=localhost,127.0.0.1,mysql,redis
+```
+
+When the proxy TLS-inspects outbound HTTPS, the corporate CA chain is also a runtime
+concern: every `.crt` file in `.docker/certs/` is installed into the `app`, `collector`,
+and `static-analysis-collector` containers' trust stores at each container start (the
+`/host-certs` mount — see `docker/entrypoint.sh`; the static-analysis JDK's own truststore
+is regenerated in the same step). `trivy-server` and Dependency-Track consume the same
+directory at start as well. Populate `.docker/certs/` from the host's trusted CA store:
+
+- `.\scripts\appsec-scout.ps1` does it automatically — on every run in prebuilt-image
+  mode, and on `-Rebuild` in build mode (via `Export-HostCertificates` in
+  `scripts/lib/Certificates.psm1`; there is no separate script to run by hand);
+- without PowerShell, run `Export-HostCertificates` manually
+  (`Import-Module scripts/lib/Certificates.psm1; Export-HostCertificates -OutputDir .docker/certs`)
+  or drop PEM-encoded `.crt` files into `.docker/certs/` yourself.
+
+Only set `SSL_CERT_FILE` when a custom CA bundle needs to be pointed to explicitly inside
+the container; if unset or empty, outbound HTTPS uses the default CA store.
+
+### Build-time settings (build-from-source track only)
+
+The image build reads the same values: the proxy variables are passed as build arguments,
+and the build copies the exported `.crt` files into every stage so Composer, npm, and apt
+trust the proxy during the build. A clean rebuild re-exports the certificates first:
 
 ```powershell
 $env:HTTP_PROXY = 'http://proxy.corp.example.com:3128'
@@ -245,10 +330,9 @@ $env:NO_PROXY = 'localhost,127.0.0.1,mysql,redis'
 .\scripts\appsec-scout.ps1 -Rebuild
 ```
 
-The build copies exported `.crt` files into every stage so Composer, npm, apt, curl, `trivy-server`
-(at container start, not build time), and the running app all trust the same CA chain. Only set
-`SSL_CERT_FILE` when a custom CA bundle needs to be pointed to explicitly inside the container; if
-unset or empty, outbound HTTPS uses the default CA store.
+Prebuilt-image installs never need this section; for immutable cloud deployments where the
+runtime mount is impractical, bake the chain into a derived image instead — see
+[Immutable cloud deployments](#immutable-cloud-deployments).
 
 ## Integration Credential Fields
 
