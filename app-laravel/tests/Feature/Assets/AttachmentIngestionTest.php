@@ -51,6 +51,36 @@ it('re-scanning updates the same software component row instead of duplicating i
     expect(SoftwareComponent::query()->where('owner_id', $container->id)->count())->toBe(4);
 });
 
+// SQLite applies in-statement duplicates row by row, so this guards the batch-dedup
+// behavior that PostgreSQL enforces (see the phpunit.pgsql.xml CI run) — without it,
+// the upsert fails there with "ON CONFLICT DO UPDATE command cannot affect row a second time".
+it('ingests an sbom that lists the same purl twice, keeping the last occurrence', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $payload = json_decode(trivyFixture('cyclonedx-sample.json'), true, 512, JSON_THROW_ON_ERROR);
+    $duplicate = $payload['components'][0];
+    $duplicate['licenses'] = [['license' => ['id' => 'Apache-2.0']]];
+    $payload['components'][] = $duplicate;
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'sbom',
+        'application/json',
+        'sbom-duplicate-purl.cdx.json',
+        json_encode($payload, JSON_THROW_ON_ERROR),
+    );
+
+    $rows = SoftwareComponent::query()
+        ->where('owner_type', SecurityContainer::class)
+        ->where('owner_id', $container->id)
+        ->where('purl', $duplicate['purl'])
+        ->get();
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()?->license)->toBe('Apache-2.0')
+        ->and(SoftwareComponent::query()->where('owner_id', $container->id)->count())->toBe(4);
+});
+
 it('parses a vulnerabilities attachment into local findings', function () {
     $container = SecurityContainer::factory()->create();
 
@@ -68,6 +98,30 @@ it('parses a vulnerabilities attachment into local findings', function () {
         ->and($finding->rule_id)->toBe('CVE-2024-56201')
         ->and($finding->package_name)->toBe('Jinja2')
         ->and($finding->attachment)->not()->toBeNull();
+});
+
+// Same PostgreSQL batch-dedup guard as the duplicate-purl sbom test above: two SARIF
+// results sharing (rule_id, file_path, start_line) collapse to one finding row.
+it('ingests a sarif report containing two results with the same dedup identity', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $payload = json_decode(trivyFixture('vuln-sarif-sample.json'), true, 512, JSON_THROW_ON_ERROR);
+    $payload['runs'][0]['results'][] = $payload['runs'][0]['results'][0];
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'vulnerabilities',
+        'application/json',
+        'vuln-duplicate-result.sarif.json',
+        json_encode($payload, JSON_THROW_ON_ERROR),
+    );
+
+    expect(
+        LocalFinding::query()
+            ->where('owner_id', $container->id)
+            ->where('rule_id', 'CVE-2024-56201')
+            ->count(),
+    )->toBe(1);
 });
 
 it('populates dedup_hash on every ingested finding', function () {

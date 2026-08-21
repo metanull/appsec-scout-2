@@ -107,6 +107,13 @@ final class AttachmentIngestionService
             ...$hierarchy,
         ], $components);
 
+        // PostgreSQL rejects an upsert whose batch hits the same conflict key twice
+        // ("ON CONFLICT DO UPDATE command cannot affect row a second time"), while
+        // MySQL and SQLite apply the rows in order. An SBOM can list the same purl
+        // more than once, so collapse duplicates to the last occurrence up front —
+        // owner_type/owner_id are constant here, leaving purl as the effective key.
+        $rows = array_values(array_column($rows, null, 'purl'));
+
         foreach (array_chunk($rows, 500) as $chunk) {
             // first_seen_at/created_at are deliberately excluded from the update-columns list
             // so they are only ever set on insert — first_seen_at must survive re-scans.
@@ -222,6 +229,14 @@ final class AttachmentIngestionService
             'updated_at' => $now,
             ...$hierarchy,
         ], $findings);
+
+        // PostgreSQL rejects an upsert whose batch hits the same conflict key twice
+        // ("ON CONFLICT DO UPDATE command cannot affect row a second time"), while
+        // MySQL and SQLite apply the rows in order. A SARIF report can contain two
+        // results sharing (rule_id, file_path, start_line) — the same dedup_hash —
+        // so collapse duplicates to the last occurrence up front; owner_type/
+        // owner_id/kind are constant here, leaving dedup_hash as the effective key.
+        $rows = array_values(array_column($rows, null, 'dedup_hash'));
 
         foreach (array_chunk($rows, 500) as $chunk) {
             // first_seen_at/created_at, and the identity columns (rule_id/file_path/start_line,
