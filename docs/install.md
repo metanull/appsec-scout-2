@@ -224,6 +224,12 @@ Local development does not use these images — `docker-compose.yml` builds from
 Dockerfiles as before. The `ops` and `claude` profile images are workstation-side only and
 are never published.
 
+For the future Azure deployment, `.github/workflows/acr-promote.yml` (manual trigger)
+imports a chosen `sha-` tag from GHCR into Azure Container Registry server-side, so ACR
+receives the exact digests that passed the Trivy gate — images are never rebuilt for ACR.
+It is prepared but untested until Azure access exists; its header comment lists the Azure
+prerequisites (ACR, OIDC federated credential, repository variables).
+
 ## Corporate Proxy and SSL Inspection
 
 If outbound HTTPS is intercepted by a corporate proxy, `.\scripts\appsec-scout.ps1 -Rebuild`
