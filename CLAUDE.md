@@ -225,6 +225,8 @@ This rule is about that workstation, not about Claude Code's own execution envir
 
 **CI (GitHub Actions)**: `.github/workflows/laravel-ci.yml` runs on a bare PHP 8.4 runner without Docker. It installs Composer dependencies, copies `.env.example`, generates an app key, then runs Pint, PHPStan, and Pest with `DB_CONNECTION=sqlite` / `DB_DATABASE=:memory:`, plus a second Pest run against a PostgreSQL 16 service container (`--configuration phpunit.pgsql.xml`). Do not assume `.env.testing` is present in CI.
 
+**Image publishing**: `.github/workflows/image-publish.yml` builds the three deployable images (app, collector, static-analysis-collector) on every push to `main`, gates each on a Trivy scan (fixable HIGH/CRITICAL fail the build), and publishes to `ghcr.io/metanull/appsec-scout-2/<name>`; PRs touching `docker/**` get a build+scan without publish.
+
 When running checks directly via `docker compose` (e.g. for a single file or narrower scope), the dev image must be active:
 
 ```powershell
