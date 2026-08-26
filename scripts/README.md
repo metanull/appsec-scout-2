@@ -11,6 +11,7 @@ PowerShell entry points for developing, running, and operating AppSec Scout. All
 | [test-GitHubToken.ps1](#test-githubtokenps1) | Validate a GitHub PAT |
 | [test-AzureDevOpsToken.ps1](#test-azuredevopstokenps1) | Validate an Azure DevOps PAT |
 | [validate-workflows.cjs](#validate-workflowscjs) | Lint GitHub Actions workflow YAML |
+| [github-packages.cjs](#github-packagescjs) | List owned GitHub repos with their packages, visibility, and storage size |
 
 ## appsec-scout.ps1
 
@@ -120,6 +121,35 @@ Validates an Azure DevOps PAT with a single lightweight call (`GET _apis/project
 ```powershell
 .\scripts\test-AzureDevOpsToken.ps1 -Credential (Get-Credential -UserName 'PAT' -Message 'Enter your Azure DevOps PAT')
 .\scripts\test-AzureDevOpsToken.ps1 -Credential (Get-Secret -Name 'AzureDevOps') -Organization 'EESC-CoR'
+```
+
+## github-packages.cjs
+
+Node script (admin terminal tool, not wired into the web UI) that enumerates the GitHub repositories owned by the authenticated account and, for each one, the packages published from it: package type, `public`/`private` visibility, storage size, and per-repository totals (public, private, cumulated), plus a grand total. Repositories without packages, and packages whose repository isn't an owned one, are listed separately.
+
+The GitHub packages API reports no size at all, so sizes are read from the registries themselves:
+
+- **`container`** — every distinct blob (config + layers) from the GHCR manifests, following multi-arch index entries. Blobs are deduplicated by digest, within a version and across the whole package, so the package total is the storage actually occupied; `--versions` also prints the naive sum of all versions for comparison.
+- **`npm`** — the `Content-Length` of each version's tarball on `npm.pkg.github.com` (the registry rejects `HEAD`, so the script issues a `GET` and drops the body without downloading it). npm versions share nothing, so the package total is their sum.
+- **`maven`, `nuget`, `rubygems`** — no size source; these show `n/a` and are counted separately in the totals instead of silently as zero.
+
+Only **private** packages count against the GitHub Packages storage quota, so the totals keep public and private apart.
+
+The GitHub PAT is read from the appsec-scout credential vault (`github-repos.token`, the GitHub Repos source control credential) via the running `app` container, so it doesn't have to be re-entered. The PAT needs `read:packages`, plus `repo` to see private repositories and packages; a missing `read:packages` scope is reported per package type instead of failing the whole run.
+
+**Parameters**
+- `--repo <name>` — restrict the report to a single owned repository.
+- `--versions` — list every version of every package (digest/version, date, size, container tags) instead of package totals only.
+- `--token <pat>` — use this PAT instead of the vault (the `GITHUB_TOKEN` environment variable is honoured too). Useful when the stack isn't running.
+- `--json` — emit the full result as JSON instead of the text report.
+- `--no-sizes` — skip the registry calls; much faster, every size shows `n/a`.
+
+```powershell
+node .\scripts\github-packages.cjs
+```
+
+```powershell
+node .\scripts\github-packages.cjs --repo inventory-app --versions
 ```
 
 ## validate-workflows.cjs
