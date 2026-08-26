@@ -158,8 +158,19 @@ async function containerSizes(pat, owner, packageName, versions) {
 // --- npm sizes -----------------------------------------------------------------------
 
 async function packument(pat, owner, packageName) {
-  for (const name of [`@${owner}/${packageName}`, packageName]) {
-    const res = await fetch(`${NPM_REGISTRY}/${name.replace('/', '%2f')}`, {
+  // A scoped name is a single path segment, so the slash separating scope from name has
+  // to be percent-encoded. The segment is assembled from already-encoded parts rather
+  // than escaped after the fact, which would leave any further separator untouched.
+  const candidates = [
+    {
+      name: `@${owner}/${packageName}`,
+      segment: `@${encodeURIComponent(owner)}%2F${encodeURIComponent(packageName)}`,
+    },
+    { name: packageName, segment: encodeURIComponent(packageName) },
+  ]
+
+  for (const { name, segment } of candidates) {
+    const res = await fetch(`${NPM_REGISTRY}/${segment}`, {
       headers: { Authorization: `Bearer ${pat}`, Accept: 'application/json' },
     })
 
