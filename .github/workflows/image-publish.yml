@@ -92,10 +92,15 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image.name }}
           cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
 
+      # The action tag pins the action; `version` pins the Trivy binary it installs.
+      # Without it the action installs its own default (v0.70.0 as of v0.36.0), which
+      # lags the current Trivy release and makes every scan report an outdated engine.
+      # Both Trivy steps must ask for the same version so they share the scan cache.
       - name: Trivy scan (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          version: v0.74.0
           format: sarif
           output: trivy-${{ matrix.image.name }}.sarif
           scanners: vuln
@@ -114,6 +119,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          version: v0.74.0
           format: table
           scanners: vuln
           severity: CRITICAL,HIGH
