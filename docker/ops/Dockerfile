@@ -247,6 +247,11 @@ RUN wget -q \
 # detection) is deliberately excluded, since Trivy already covers secrets in the
 # repository-collection pipeline.
 #
+# Only the *.yaml/*.yml rule definitions are kept from those directories — opengrep's -f
+# directory loader ignores everything else, and the accompanying *.test.* fixtures are
+# intentionally-vulnerable example code (the thing each rule is meant to catch), which some
+# corporate TLS-inspecting proxies flag as malicious content when this layer is pulled.
+#
 # Guarded by OPENGREP_ENABLED (see its ARG declaration above) — when "false", none of this
 # runs and /usr/local/bin/opengrep is never created.
 ARG OPENGREP_SHA256=58053da76672bbeb5b0a5441021c58338707052e10f81d777140ca879bd491ce
@@ -265,6 +270,7 @@ RUN if [ "$OPENGREP_ENABLED" = "true" ]; then \
         && cp -r /tmp/opengrep-rules-extract/csharp /tmp/opengrep-rules-extract/java \
             /tmp/opengrep-rules-extract/javascript /tmp/opengrep-rules-extract/typescript \
             /opt/opengrep-rules/ \
+        && find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' -delete \
         && rm -rf /tmp/opengrep-rules.tar.gz /tmp/opengrep-rules-extract; \
     else \
         echo "OPENGREP_ENABLED=false — skipping Opengrep binary/rules install."; \

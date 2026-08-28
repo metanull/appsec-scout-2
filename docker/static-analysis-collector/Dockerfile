@@ -248,6 +248,7 @@ RUN if [ "$OPENGREP_ENABLED" = "true" ]; then \
         && cp -r /tmp/opengrep-rules-extract/csharp /tmp/opengrep-rules-extract/java \
             /tmp/opengrep-rules-extract/javascript /tmp/opengrep-rules-extract/typescript \
             /opt/opengrep-rules/ \
+        && find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' -delete \
         && rm -rf /tmp/opengrep-rules.tar.gz /tmp/opengrep-rules-extract; \
     else \
         echo "OPENGREP_ENABLED=false — skipping Opengrep binary/rules install."; \
