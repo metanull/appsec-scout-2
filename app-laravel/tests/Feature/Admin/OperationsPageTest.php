@@ -21,8 +21,8 @@ use App\Trackers\Registry;
 use Database\Seeders\RolePermissionSeeder;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Fakes\FakeSource;
@@ -292,13 +292,55 @@ it('does not dispatch global reconciliation when it is already queued', function
 it('shows reconciliation last-run summary on operations page', function () {
     $admin = operationsAdmin();
 
-    Cache::put('reconciliation:last_run_at', now()->toIso8601String());
-    Cache::put('reconciliation:last_run_new_links', 3);
+    reconciliationRun('success', now(), ['links_created' => 3, 'links_existing' => 1]);
 
     Livewire::actingAs($admin)
         ->test(OperationsPage::class)
         ->assertSee('Reconciliation')
         ->assertSee('3 new link(s) created');
+});
+
+it('shows the reconciliation stat as never run when no reconciliation run exists', function () {
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Reconciliation')
+        ->assertSee('Never')
+        ->assertSee('0 new link(s) created');
+});
+
+it('shows a failed reconciliation sweep as failed on the operations page', function () {
+    $admin = operationsAdmin();
+
+    reconciliationRun('failure', now(), ['links_created' => 0, 'links_existing' => 0], 'Tracker unreachable');
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Last run failed');
+});
+
+it('prefers the most recently finished reconciliation run when a failure follows a success', function () {
+    $admin = operationsAdmin();
+
+    reconciliationRun('success', now()->subHour(), ['links_created' => 7, 'links_existing' => 0]);
+    reconciliationRun('failure', now(), ['links_created' => 0, 'links_existing' => 0], 'Tracker unreachable');
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('Last run failed')
+        ->assertDontSee('7 new link(s) created');
+});
+
+it('ignores an unfinished reconciliation run when reporting the last sweep', function () {
+    $admin = operationsAdmin();
+
+    reconciliationRun('success', now()->subHour(), ['links_created' => 4, 'links_existing' => 2]);
+    reconciliationRun('running', null, []);
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('4 new link(s) created');
 });
 
 it('shows only the reconciliation stat to a work-items.sync-only user', function () {
@@ -652,5 +694,18 @@ function operationsUser(): User
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
         'two_factor_confirmed_at' => now(),
+    ]);
+}
+
+/** @param array<string, int> $counts */
+function reconciliationRun(string $status, ?Carbon $finishedAt, array $counts, ?string $errorMessage = null): SyncRun
+{
+    return SyncRun::query()->create([
+        'source_id' => ReconcileAllJob::RUN_SOURCE_ID,
+        'started_at' => now()->subMinutes(5),
+        'finished_at' => $finishedAt,
+        'status' => $status,
+        'counts_json' => $counts,
+        'error_message' => $errorMessage,
     ]);
 }
