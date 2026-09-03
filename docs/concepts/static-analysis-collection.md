@@ -80,6 +80,72 @@ This is the same isolation mechanism Repository Collection uses, not `docker/ops
 dedicated queue name consumed by a dedicated worker image/container, both standard Laravel/Docker
 Compose primitives.
 
+## Skipping Unchanged Repositories
+
+Static analysis findings are a pure function of the code plus the analyser toolchain: unchanged
+code analysed by an unchanged toolchain yields the same SARIF, so re-running it buys nothing. Each
+`AnalyzeRepositoryJob` therefore compares the repository's remote head against the commit its last
+clean pass recorded, **before cloning anything**:
+
+1. The job writes its per-job-scoped `.netrc`/`.git-credentials` (`prepareGitCredentials()`).
+2. `git ls-remote --quiet <clone-url> HEAD` returns the tip of the remote default branch — exactly
+   the commit a `--depth 1` clone would check out — in one cheap network round trip.
+3. If a `App\Models\StaticAnalysisRepositoryState` row exists for the repository's
+   `SecurityContainer` and its `commit_sha` equals that head (compared case-insensitively), the
+   repository is **skipped**: not cloned, not built, not analysed.
+4. Otherwise the repository is cloned and analysed as before, and afterwards `git rev-parse HEAD`
+   inside the clone records the commit that was *actually* analysed — read from the clone rather
+   than reused from `ls-remote`, so a branch that moved in between is recorded correctly.
+
+The analysed commit is persisted **only after a pass in which no stage logged a failure**. A
+partially failed pass leaves the state untouched, so the next sweep retries the repository instead
+of freezing it out until someone happens to push a commit.
+
+Three cases deliberately fall through to a full analysis rather than skipping: a repository with no
+recorded state, a head that has moved, and a remote that answers but exposes no usable head (an
+empty repository legitimately reports none). A wasted pass costs time; a missed one costs
+findings. A remote that is *unreachable* is different — `ls-remote` exiting non-zero is logged as
+an `ls-remote` stage failure on the `static-analysis` channel and counted as a failed repository,
+exactly like a clone failure, and the repository is not cloned.
+
+Skipping is safe with respect to existing findings because `StaleRecordSweeper` only resolves
+records as part of ingesting an attachment for one specific owner and kind. A skipped repository
+produces no attachment, so no sweep runs for it and its existing `LocalFinding` rows are left
+exactly as they are — the correct outcome, since the code that produced them has not changed. The
+sweeper's inventory half (`sweepContainers()`) is driven by inventory sync, not by static analysis,
+so a skipped repository is not marked removed either.
+
+The scratch directory — which by this point already holds the PAT — is deleted on **every** exit
+path, the skip path included; the credential files never survive the job.
+
+### Force full re-analysis
+
+A commit hash captures the code, not the analyser. When the `static-analysis-collector` image ships
+new Opengrep rules, a newer Roslynator or SpotBugs, or a changed Find Security Bugs plugin,
+unchanged repositories would keep being skipped and would silently never pick up the new rules.
+There is no toolchain version or build identifier to fingerprint against, so the mitigation is
+explicit: the "Run static analysis" action carries a **Force full re-analysis** toggle that
+bypasses every skip for that sweep.
+
+**Run one forced sweep after upgrading the collector image.** The toggle's state is dispatched
+through `DispatchStaticAnalysisRunsJob(force: ...)` to every `AnalyzeRepositoryJob`, and is recorded
+in the `operations.run_static_analysis` audit entry's payload, so the audit trail says which mode
+ran.
+
+### Scan state storage
+
+State lives in its own `static_analysis_repository_states` table (one row per `SecurityContainer`,
+unique on `security_container_id`, cascade-deleted with the container), not in
+`security_containers.metadata` — `SystemContainerUpserter::upsertContainer()` assigns `metadata`
+wholesale on every inventory sync, so anything stored there would be silently overwritten.
+`analyzed_run_id` deliberately carries no foreign key to `static_analysis_runs`: run rows are
+operational history that may be pruned, and the scan state must outlive them.
+
+This applies to static analysis only. [Repository Collection](repository-collection.md) keeps
+scanning every repository on every run by design — an unchanged dependency set can still become
+newly vulnerable overnight, so skipping there would be wrong. The `invoke-ops.ps1 -StaticAnalysis`
+offline path is likewise unaffected and keeps rescanning everything.
+
 ## From Repository to Attachment
 
 `AnalyzeRepositoryJob` clones the repository (identical mechanics to `CollectRepositoryJob`'s own
@@ -156,6 +222,13 @@ describes in detail (not `Illuminate\Bus\Batch`'s own callbacks, found unreliabl
 workload). `allowFailures()` on the batch means one repository's clone or analysis failure never
 stops the rest of the sweep or the run's own eventual `success`/`partial` status — it only shows
 up as a non-zero `repositories_failed` count in `counts_json`.
+
+`counts_json` also carries `repositories_skipped`, incremented by every repository skipped as
+unchanged (see [Skipping Unchanged Repositories](#skipping-unchanged-repositories)). A skipped
+repository still counts toward `repositories_completed`, so the run closes normally, and never
+toward `repositories_failed`. Run counts render as `12 / 40 · 0 failed · 28 skipped`; the
+`· N skipped` segment is appended only when the counter is present and greater than zero, so
+`RepositoryCollectionRun`'s own counts — which have no skip concept — render unchanged.
 
 Visible on `Operations -> Operations` via a "Recent static analysis runs" widget and a read-only
 `StaticAnalysisRunResource` drill-down (list/view only, no create), including a Force-finish

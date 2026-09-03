@@ -27,7 +27,13 @@ final class RunCounts
         $completed = (int) ($counts['repositories_completed'] ?? 0);
         $failed = (int) ($counts['repositories_failed'] ?? 0);
 
-        return "{$completed} / {$considered} · {$failed} failed";
+        $formatted = "{$completed} / {$considered} · {$failed} failed";
+
+        // Only StaticAnalysisRun skips repositories; RepositoryCollectionRun
+        // has no skip concept, so its output stays byte-identical.
+        $skipped = (int) ($counts['repositories_skipped'] ?? 0);
+
+        return $skipped > 0 ? "{$formatted} · {$skipped} skipped" : $formatted;
     }
 
     /**

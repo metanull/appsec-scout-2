@@ -446,6 +446,38 @@ it('admin users can trigger the run static analysis action', function () {
     expect(AuditLog::query()->where('action', 'operations.run_static_analysis')->exists())->toBeTrue();
 });
 
+it('dispatches an ordinary static analysis sweep with force off, and records it', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchRunStaticAnalysis', false);
+
+    Bus::assertDispatched(DispatchStaticAnalysisRunsJob::class, fn (DispatchStaticAnalysisRunsJob $job): bool => $job->force === false);
+
+    $audit = AuditLog::query()->where('action', 'operations.run_static_analysis')->firstOrFail();
+
+    expect($audit->payload_json['force'])->toBeFalse();
+});
+
+it('dispatches a forced static analysis sweep, and records that it was forced', function () {
+    Bus::fake();
+
+    $admin = operationsAdmin();
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->call('dispatchRunStaticAnalysis', true);
+
+    Bus::assertDispatched(DispatchStaticAnalysisRunsJob::class, fn (DispatchStaticAnalysisRunsJob $job): bool => $job->force === true);
+
+    $audit = AuditLog::query()->where('action', 'operations.run_static_analysis')->firstOrFail();
+
+    expect($audit->payload_json['force'])->toBeTrue();
+});
+
 it('does not dispatch static analysis when a run is already in progress', function () {
     Bus::fake();
 

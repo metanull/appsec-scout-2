@@ -10,11 +10,14 @@ use App\Assets\AzDoScanResultDtoFactory;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareSystem;
+use App\Models\StaticAnalysisRepositoryState;
 use App\Models\StaticAnalysisRun;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -39,6 +42,13 @@ use Throwable;
  * isolated `static-analysis-collector` container/image — never the app
  * container's own default-queue worker, and never `collector`'s
  * `repository-collection` queue.
+ *
+ * Before cloning anything, the remote head is compared against the commit
+ * recorded by the last clean pass (StaticAnalysisRepositoryState): an
+ * unchanged repository is skipped outright, since static analysis findings
+ * are a pure function of the code plus the analyser toolchain. Because the
+ * toolchain is not fingerprinted, a collector image whose analysers or rules
+ * changed needs one `force` sweep to pick them up.
  */
 final class AnalyzeRepositoryJob implements ShouldQueue
 {
@@ -57,9 +67,17 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      */
     public int $timeout = 10800;
 
+    /**
+     * Set by logFailure(): once any stage of this repository's pass has
+     * failed, the analysed commit is not persisted, so the next sweep retries
+     * the repository instead of freezing it out until someone pushes to it.
+     */
+    private bool $degraded = false;
+
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
         public readonly int $staticAnalysisRunId,
+        public readonly bool $force = false,
     ) {}
 
     public function handle(
@@ -76,8 +94,28 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         $workDir = $scratchRoot . '/work';
         $cloned = false;
 
+        // The whole block is guarded so that every exit — including the skip
+        // path, which never clones — still deletes the scratch root the PAT
+        // was just written into. The credential files must never survive.
         try {
-            $cloned = $this->cloneRepository($pat, $homeDir, $workDir);
+            $this->prepareGitCredentials($pat, $homeDir);
+
+            $remoteHead = $this->remoteHeadSha($homeDir);
+
+            // An unreachable remote is a failure, exactly like a clone failure.
+            if ($remoteHead->unreachable) {
+                $this->recordCompletion(failed: true);
+
+                return;
+            }
+
+            if (! $this->force && $this->isUnchangedSinceLastAnalysis($remoteHead->sha)) {
+                $this->recordCompletion(failed: false, skipped: true);
+
+                return;
+            }
+
+            $cloned = $this->cloneRepository($homeDir, $workDir);
 
             if ($cloned) {
                 $securityContainer = $this->resolveOwner($resolver);
@@ -87,6 +125,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
                 }
                 $this->analyzeDotnet($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
                 $this->analyzeJava($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
+
+                $this->persistAnalyzedCommit($securityContainer, $workDir, $homeDir);
             }
         } finally {
             File::deleteDirectory($scratchRoot);
@@ -113,27 +153,31 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      * an increment to a race. Mirrors CollectRepositoryJob::recordCompletion()
      * exactly, scoped to StaticAnalysisRun.
      */
-    private function recordCompletion(bool $failed): void
+    private function recordCompletion(bool $failed, bool $skipped = false): void
     {
-        DB::transaction(function () use ($failed): void {
+        DB::transaction(function () use ($failed, $skipped): void {
             $run = StaticAnalysisRun::query()->lockForUpdate()->find($this->staticAnalysisRunId);
 
             if (! $run instanceof StaticAnalysisRun || $run->status !== 'running') {
                 return;
             }
 
-            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int} $storedCounts */
+            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int, repositories_skipped?: int} $storedCounts */
             $storedCounts = (array) $run->counts_json;
 
             $considered = (int) ($storedCounts['repositories_considered'] ?? 0);
+            // A skipped repository still counts as completed: the run's own
+            // completion condition below must keep working untouched.
             $completed = (int) ($storedCounts['repositories_completed'] ?? 0) + 1;
             $failedCount = (int) ($storedCounts['repositories_failed'] ?? 0) + ($failed ? 1 : 0);
+            $skippedCount = (int) ($storedCounts['repositories_skipped'] ?? 0) + ($skipped ? 1 : 0);
 
             $update = [
                 'counts_json' => [
                     'repositories_considered' => $considered,
                     'repositories_completed' => $completed,
                     'repositories_failed' => $failedCount,
+                    'repositories_skipped' => $skippedCount,
                 ],
             ];
 
@@ -150,7 +194,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         });
     }
 
-    private function cloneRepository(string $pat, string $homeDir, string $workDir): bool
+    private function prepareGitCredentials(string $pat, string $homeDir): void
     {
         File::makeDirectory($homeDir, 0700, true, true);
 
@@ -167,7 +211,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             ->timeout(60)
             ->run(['git', 'config', '--global', 'credential.helper', 'store'])
             ->throw();
+    }
 
+    private function cloneRepository(string $homeDir, string $workDir): bool
+    {
         $result = Process::env(['HOME' => $homeDir])
             ->timeout(600)
             ->run(['git', 'clone', '--quiet', '--depth', '1', '--no-tags', '--shallow-submodules', $this->target->repositoryCloneUrl, $workDir]);
@@ -179,6 +226,115 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         }
 
         return true;
+    }
+
+    /**
+     * One cheap credentialed round trip against the remote, before anything
+     * is cloned: `ls-remote <url> HEAD` returns the tip of the remote default
+     * branch, which is exactly the commit a `--depth 1` clone would check
+     * out. Cloning first and comparing afterwards would still pay the clone
+     * for every repository.
+     */
+    private function remoteHeadSha(string $homeDir): RemoteHead
+    {
+        $result = Process::env(['HOME' => $homeDir])
+            ->timeout(120)
+            ->run(['git', 'ls-remote', '--quiet', $this->target->repositoryCloneUrl, 'HEAD']);
+
+        if ($result->failed()) {
+            $this->logFailure('ls-remote', $this->tail($result->errorOutput()));
+
+            return RemoteHead::unreachable();
+        }
+
+        $sha = $this->parseSha($result->output());
+
+        // An empty repository legitimately reports no head. Falling through to
+        // the full analysis costs a wasted pass, never a missed one.
+        return $sha === null ? RemoteHead::none() : RemoteHead::at($sha);
+    }
+
+    /**
+     * The first whitespace-separated field of the first non-empty line,
+     * accepted only when it is a full 40-character hexadecimal object name.
+     */
+    private function parseSha(string $output): ?string
+    {
+        foreach (explode("\n", $output) as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            $candidate = explode(' ', str_replace("\t", ' ', $line), 2)[0];
+
+            return strlen($candidate) === 40 && ctype_xdigit($candidate) ? $candidate : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolves the container read-only — deliberately not via resolveOwner(),
+     * which creates rows — on the same natural keys that resolver uses.
+     */
+    private function isUnchangedSinceLastAnalysis(?string $remoteSha): bool
+    {
+        if ($remoteSha === null) {
+            return false;
+        }
+
+        $container = SecurityContainer::query()
+            ->whereHas('softwareSystem', function (Builder $query): void {
+                /** @var Builder<SoftwareSystem> $query */
+                $query->where('source_id', AzDoNormalizer::SOURCE_ID)
+                    ->where('source_system_id', $this->target->projectId);
+            })
+            ->where('source_container_id', $this->target->repositoryId)
+            ->first();
+
+        $state = $container?->staticAnalysisState;
+
+        return $state instanceof StaticAnalysisRepositoryState
+            && strcasecmp($state->commit_sha, $remoteSha) === 0;
+    }
+
+    /**
+     * Read from the clone rather than reusing the ls-remote value: this is
+     * the commit that was actually analysed, even if the branch moved in
+     * between. Persisted only after a pass in which no stage logged a
+     * failure — see $degraded.
+     */
+    private function persistAnalyzedCommit(SecurityContainer $container, string $workDir, string $homeDir): void
+    {
+        if ($this->degraded) {
+            return;
+        }
+
+        $result = Process::path($workDir)
+            ->env(['HOME' => $homeDir])
+            ->timeout(60)
+            ->run(['git', 'rev-parse', 'HEAD']);
+
+        if ($result->failed()) {
+            return;
+        }
+
+        $sha = $this->parseSha($result->output());
+
+        if ($sha === null) {
+            return;
+        }
+
+        StaticAnalysisRepositoryState::query()->updateOrCreate(
+            ['security_container_id' => $container->id],
+            [
+                'commit_sha' => $sha,
+                'analyzed_at' => now(),
+                'analyzed_run_id' => $this->staticAnalysisRunId,
+            ],
+        );
     }
 
     private function resolveOwner(AttachmentTargetResolver $resolver): SecurityContainer
@@ -522,6 +678,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
     private function logFailure(string $stage, string $message, ?string $subject = null, ?Throwable $exception = null): void
     {
+        $this->degraded = true;
+
         ErrorLog::query()->create([
             'level' => 'error',
             'channel' => 'static-analysis',

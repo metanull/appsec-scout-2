@@ -145,6 +145,23 @@ it('renders counts via the shared RunCounts formatter', function () {
     expect(RunCounts::format($run->counts_json))->toBe('2 / 3 · 1 failed');
 });
 
+it('appends a skipped segment only when repositories were actually skipped', function () {
+    // RepositoryCollectionRun's counts carry no repositories_skipped key at
+    // all, so its rendering must stay byte-identical to the line above.
+    expect(RunCounts::format([
+        'repositories_considered' => 40,
+        'repositories_completed' => 12,
+        'repositories_failed' => 0,
+        'repositories_skipped' => 28,
+    ]))->toBe('12 / 40 · 0 failed · 28 skipped')
+        ->and(RunCounts::format([
+            'repositories_considered' => 40,
+            'repositories_completed' => 12,
+            'repositories_failed' => 0,
+            'repositories_skipped' => 0,
+        ]))->toBe('12 / 40 · 0 failed');
+});
+
 it('builds a failures URL pre-filtered to the run and the static-analysis channel', function () {
     $run = StaticAnalysisRun::query()->create([
         'source_control_id' => 'azdo-repos',

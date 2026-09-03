@@ -26,6 +26,7 @@ use App\Trackers\Registry as TrackerRegistry;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Tabs;
@@ -148,8 +149,14 @@ class OperationsPage extends Page
                 ->icon('heroicon-o-magnifying-glass-circle')
                 ->visible(fn (): bool => Gate::allows('admin.queue'))
                 ->requiresConfirmation()
-                ->modalDescription('Queue a static analysis sweep (Roslynator for .NET, SpotBugs + Find Security Bugs for Java, Opengrep for C#/Java/JavaScript/TypeScript sources) across every Azure DevOps repository the azdo-repos credential can see.')
-                ->action(fn () => $this->dispatchRunStaticAnalysis()),
+                ->modalDescription('Queue a static analysis sweep (Roslynator for .NET, SpotBugs + Find Security Bugs for Java, Opengrep for C#/Java/JavaScript/TypeScript sources) across every Azure DevOps repository the azdo-repos credential can see. Repositories whose head commit has not moved since their last clean analysis are skipped.')
+                ->form([
+                    Toggle::make('force')
+                        ->label('Force full re-analysis')
+                        ->helperText('Re-analyses every repository even when its head commit is unchanged. Run one forced sweep after upgrading the collector image, since an unchanged commit alone cannot tell that its analysers or rules changed.')
+                        ->default(false),
+                ])
+                ->action(fn (array $data) => $this->dispatchRunStaticAnalysis((bool) ($data['force'] ?? false))),
 
             ActionGroup::make([
                 Action::make('pruneAuditLogs')
@@ -291,7 +298,7 @@ class OperationsPage extends Page
         Notification::make()->title('Repository collection started. Progress appears in "Recent repository collection runs" below.')->success()->send();
     }
 
-    public function dispatchRunStaticAnalysis(): void
+    public function dispatchRunStaticAnalysis(bool $force = false): void
     {
         Gate::authorize('admin.queue');
 
@@ -301,8 +308,8 @@ class OperationsPage extends Page
             return;
         }
 
-        DispatchStaticAnalysisRunsJob::dispatch();
-        app(Recorder::class)->recordAdminAction('operations.run_static_analysis');
+        DispatchStaticAnalysisRunsJob::dispatch($force);
+        app(Recorder::class)->recordAdminAction('operations.run_static_analysis', ['force' => $force]);
 
         Notification::make()->title('Static analysis started. Progress appears in "Recent static analysis runs" below.')->success()->send();
     }
