@@ -116,7 +116,8 @@ for background activity. It shows:
 - Recent sync runs, recent repository collection runs, recent static analysis runs, and recent
   error records.
 - Reconciliation and inventory-sync last-run summaries (new links created; systems/containers
-  synced).
+  synced), both read from the durable run history rather than the cache — a failed reconciliation
+  sweep is shown as such.
 
 Actions:
 
@@ -124,7 +125,7 @@ Actions:
 | --- | --- | --- |
 | Fetch source | `admin.queue` or `work-items.sync` | Dispatches `FetchSourceJob` for one chosen Source right now |
 | Refresh tracker | `admin.queue` or `work-items.sync` | Dispatches `RefreshWorkItemsJob` for one chosen Tracker right now |
-| Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links |
+| Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links; each sweep is recorded on the Sync Runs page under the `reconciliation` source, with its links-created/already-linked counts, and a failed sweep is recorded there too with its error message |
 | Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every registered Source and every Source Control provider that supports it; each run is recorded on the Sync Runs page under the `inventory` source, and a completed run writes an `inventory_sync_completed` audit entry with the counts and created systems/containers |
 | Collect repositories | `admin.queue` | Dispatches `DispatchRepositoryCollectionRunsJob`, queuing a batched SBOM/vulnerability/secret Trivy scan of every Azure DevOps repository, run by the isolated `collector` container on the `repository-collection` queue |
 | Run static analysis | `admin.queue` | Dispatches `DispatchStaticAnalysisRunsJob`, queuing a batched Roslynator/SpotBugs static analysis sweep of every Azure DevOps repository, run by the isolated `static-analysis-collector` container on the `static-analysis` queue. Repositories whose default-branch head commit has not moved since their last clean analysis are skipped without being cloned, and reported as `repositories_skipped` in the run counts. A **Force full re-analysis** toggle on the action bypasses every skip for that sweep — run one forced sweep after upgrading the collector image, since an unchanged commit alone cannot tell that the analysers or rules changed. The audit entry records which mode ran. See [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md#skipping-unchanged-repositories) |
@@ -191,7 +192,9 @@ places:
   synchronously, scoped to the alert's own Tracker Project Links when one exists (falling back to
   every configured project, with a warning, when it doesn't).
 - **Operations page** — "Reconcile all tracker links" dispatches `ReconcileAllJob`, sweeping every
-  alert in the background.
+  alert in the background. The sweep records a `SyncRun` under the `reconciliation` source, so its
+  last-run time, outcome and link counts survive a container restart; a per-alert reconciliation
+  from the alert detail page deliberately records no run.
 
 Both require `work-items.link` or `work-items.sync`. Every new link produces an audit row. Full
 detail in [docs/concepts/triage.md](concepts/triage.md#reconciliation-the-same-linking-mechanism-two-triggers).

@@ -8,11 +8,11 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Queue\QueueRuntimeInspector;
 use App\Sync\InventorySyncService;
+use App\Trackers\ReconcileAllJob;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class OperationsHealthStatsWidget extends StatsOverviewWidget
@@ -65,20 +65,35 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 
     private function reconciliationStat(): Stat
     {
-        $timestampRaw = Cache::get('reconciliation:last_run_at');
-        $linksCreated = (int) Cache::get('reconciliation:last_run_new_links', 0);
+        $run = SyncRun::query()
+            ->where('source_id', ReconcileAllJob::RUN_SOURCE_ID)
+            ->whereNotNull('finished_at')
+            ->orderByDesc('finished_at')
+            ->first();
 
-        if (! is_string($timestampRaw) || trim($timestampRaw) === '') {
+        if ($run === null || $run->getRawOriginal('finished_at') === null) {
             return Stat::make('Reconciliation', 'Never')
-                ->description(sprintf('%d new link(s) created', $linksCreated))
+                ->description('0 new link(s) created')
                 ->color('gray')
                 ->icon('heroicon-o-arrow-path');
         }
 
-        $timestamp = Carbon::parse($timestampRaw);
+        $finishedAt = Carbon::parse((string) $run->finished_at)->toDayDateTimeString();
 
-        return Stat::make('Reconciliation', $timestamp->toDayDateTimeString())
-            ->description(sprintf('%d new link(s) created', $linksCreated))
+        // A failed sweep must be visible as such — the error message itself stays on the
+        // run row and its ErrorLog rather than in the stat.
+        if ($run->status === 'failure') {
+            return Stat::make('Reconciliation', $finishedAt)
+                ->description('Last run failed')
+                ->color('danger')
+                ->icon('heroicon-o-arrow-path');
+        }
+
+        $counts = $run->getAttribute('counts_json');
+        $counts = is_array($counts) ? $counts : [];
+
+        return Stat::make('Reconciliation', $finishedAt)
+            ->description(sprintf('%d new link(s) created', (int) ($counts['links_created'] ?? 0)))
             ->color('success')
             ->icon('heroicon-o-arrow-path');
     }

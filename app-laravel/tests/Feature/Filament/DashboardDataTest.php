@@ -149,6 +149,16 @@ it('formats a push run using its succeeded/local-only/failed counts', function (
     expect(DashboardData::formatCounts($run))->toBe('5 alerts retrieved, 2 warning(s), 1 error(s)');
 });
 
+it('formats a reconciliation sweep using its work-item link counts', function () {
+    $run = new SyncRun([
+        'source_id' => 'reconciliation',
+        'status' => 'success',
+        'counts_json' => ['links_created' => 2, 'links_existing' => 5],
+    ]);
+
+    expect(DashboardData::formatCounts($run))->toBe('2 link(s) created, 5 already linked');
+});
+
 it('formats an inventory sync run using its systems/containers counts', function () {
     $run = new SyncRun([
         'source_id' => 'inventory',

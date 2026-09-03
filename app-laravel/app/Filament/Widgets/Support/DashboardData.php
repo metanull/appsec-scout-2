@@ -43,6 +43,10 @@ final class DashboardData
      * events created+updated, with an error only when the whole run failed; a push run (staged
      * alert changes sent upstream) reports its own events_succeeded/events_resolved_local_only/
      * events_failed counts directly.
+     *
+     * Two pseudo-source runs share the table and carry their own shapes instead: an inventory
+     * sync reports systems/containers synced, and a reconciliation sweep reports work-item
+     * links created versus already linked.
      */
     public static function formatCounts(SyncRun $run): string
     {
@@ -54,6 +58,13 @@ final class DashboardData
             $containers = (int) ($counts['containers_created'] ?? 0) + (int) ($counts['containers_updated'] ?? 0);
 
             return "{$systems} system(s), {$containers} container(s) synced";
+        }
+
+        if (array_key_exists('links_created', $counts)) {
+            $created = (int) ($counts['links_created'] ?? 0);
+            $existing = (int) ($counts['links_existing'] ?? 0);
+
+            return "{$created} link(s) created, {$existing} already linked";
         }
 
         if (array_key_exists('events_succeeded', $counts)) {
