@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * The commit of a repository that static analysis last completed cleanly
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * @property int $security_container_id
  * @property string $commit_sha
- * @property \Illuminate\Support\Carbon $analyzed_at
+ * @property Carbon $analyzed_at
  * @property int|null $analyzed_run_id
  */
 #[Fillable([
