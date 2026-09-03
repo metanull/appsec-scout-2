@@ -8,6 +8,7 @@ use App\Models\Attachment;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
+use App\Models\StaticAnalysisRepositoryState;
 use App\Models\StaticAnalysisRun;
 use App\SourceControl\Collection\AnalyzeRepositoryJob;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
@@ -728,4 +729,283 @@ it('logs an opengrep-analyze failure and still runs the dotnet and java analyzer
 
     $run->refresh();
     expect($run->status)->toBe('success');
+});
+
+// ---------------------------------------------------------------------------
+// Skipping repositories whose head commit has not moved
+// ---------------------------------------------------------------------------
+
+const UNCHANGED_HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4';
+const MOVED_HEAD_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c';
+
+function seedAnalyzedRepository(?string $commitSha): SecurityContainer
+{
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => 'azdo',
+        'source_system_id' => 'project-001',
+    ]);
+
+    $container = SecurityContainer::factory()->create([
+        'software_system_id' => $system->id,
+        'source_container_id' => 'repo-001',
+    ]);
+
+    if ($commitSha !== null) {
+        StaticAnalysisRepositoryState::query()->create([
+            'security_container_id' => $container->id,
+            'commit_sha' => $commitSha,
+            'analyzed_at' => now()->subDay(),
+            'analyzed_run_id' => null,
+        ]);
+    }
+
+    return $container;
+}
+
+/**
+ * A fake in which every stage succeeds: the clone plants a .sln and a .class
+ * directory, and all three analysers write their zero-result fixture. The two
+ * git revision queries answer with the shas given (null = empty output, i.e.
+ * a remote or clone that exposes no usable head).
+ */
+function staticAnalysisCleanPassFake(?string $remoteSha, ?string $analyzedSha = null): Closure
+{
+    return function ($process) use ($remoteSha, $analyzedSha) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: $remoteSha === null ? '' : "{$remoteSha}\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'rev-parse') {
+            return Process::result(exitCode: 0, output: $analyzedSha === null ? '' : "{$analyzedSha}\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['App.sln' => '', 'build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    };
+}
+
+function assertClonedRepository(): void
+{
+    Process::assertRan(fn ($process) => (commandParts($process->command)[0] ?? null) === 'git'
+        && (commandParts($process->command)[1] ?? null) === 'clone');
+}
+
+it('skips a repository whose remote head equals the commit last analysed', function () {
+    seedAnalyzedRepository(UNCHANGED_HEAD_SHA);
+
+    Process::fake(staticAnalysisCleanPassFake(UNCHANGED_HEAD_SHA));
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    Process::assertDidntRun(fn ($process) => (commandParts($process->command)[0] ?? null) === 'git'
+        && (commandParts($process->command)[1] ?? null) === 'clone');
+
+    expect(Attachment::query()->count())->toBe(0);
+
+    $run->refresh();
+    expect($run->status)->toBe('success')
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_skipped'])->toBe(1)
+        ->and($run->counts_json['repositories_failed'])->toBe(0);
+});
+
+it('analyses a repository whose remote head has moved since the last analysis', function () {
+    seedAnalyzedRepository(UNCHANGED_HEAD_SHA);
+
+    Process::fake(staticAnalysisCleanPassFake(MOVED_HEAD_SHA, MOVED_HEAD_SHA));
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    assertClonedRepository();
+
+    expect(Attachment::query()->count())->toBe(3);
+
+    $run->refresh();
+    expect($run->counts_json['repositories_skipped'])->toBe(0);
+});
+
+it('analyses a repository that has no recorded scan state at all', function () {
+    Process::fake(staticAnalysisCleanPassFake(UNCHANGED_HEAD_SHA, UNCHANGED_HEAD_SHA));
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    assertClonedRepository();
+
+    $run->refresh();
+    expect($run->counts_json['repositories_skipped'])->toBe(0);
+});
+
+it('re-analyses a repository with an unchanged head when the sweep is forced', function () {
+    seedAnalyzedRepository(UNCHANGED_HEAD_SHA);
+
+    Process::fake(staticAnalysisCleanPassFake(UNCHANGED_HEAD_SHA, UNCHANGED_HEAD_SHA));
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id, force: true))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    assertClonedRepository();
+
+    expect(Attachment::query()->count())->toBe(3);
+
+    $run->refresh();
+    expect($run->counts_json['repositories_skipped'])->toBe(0)
+        ->and($run->counts_json['repositories_completed'])->toBe(1);
+});
+
+it('persists the analysed commit read from the clone after a clean pass', function () {
+    Process::fake(staticAnalysisCleanPassFake(UNCHANGED_HEAD_SHA, MOVED_HEAD_SHA));
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-001')->firstOrFail();
+    $states = StaticAnalysisRepositoryState::query()->get();
+
+    // The clone's own HEAD, not the ls-remote value: that is the commit the
+    // analysers actually saw, even if the branch moved in between.
+    expect($states)->toHaveCount(1)
+        ->and($states->first()->security_container_id)->toBe($container->id)
+        ->and($states->first()->commit_sha)->toBe(MOVED_HEAD_SHA)
+        ->and($states->first()->analyzed_run_id)->toBe($run->id)
+        ->and($states->first()->analyzed_at)->not->toBeNull();
+});
+
+it('does not persist the analysed commit when a stage failed, so the next sweep retries', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'rev-parse') {
+            return Process::result(exitCode: 0, output: MOVED_HEAD_SHA . "\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['App.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            return Process::result(exitCode: 1, errorOutput: 'fatal: could not load MSBuild workspace');
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(ErrorLog::query()->where('context_json->stage', 'dotnet-analyze')->exists())->toBeTrue()
+        ->and(StaticAnalysisRepositoryState::query()->count())->toBe(0);
+});
+
+it('updates the existing scan state rather than adding a second row', function () {
+    Process::fake(staticAnalysisCleanPassFake(UNCHANGED_HEAD_SHA, UNCHANGED_HEAD_SHA));
+
+    $firstRun = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $firstRun->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    Process::fake(staticAnalysisCleanPassFake(MOVED_HEAD_SHA, MOVED_HEAD_SHA));
+
+    $secondRun = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $secondRun->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $states = StaticAnalysisRepositoryState::query()->get();
+
+    expect($states)->toHaveCount(1)
+        ->and($states->first()->commit_sha)->toBe(MOVED_HEAD_SHA)
+        ->and($states->first()->analyzed_run_id)->toBe($secondRun->id);
+});
+
+it('counts an unreachable remote as a failed repository and never clones it', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 128, errorOutput: 'fatal: could not read from remote repository');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    Process::assertDidntRun(fn ($process) => (commandParts($process->command)[0] ?? null) === 'git'
+        && (commandParts($process->command)[1] ?? null) === 'clone');
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'ls-remote')->first();
+
+    expect($errorLog)->not->toBeNull();
+
+    $run->refresh();
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1)
+        ->and($run->counts_json['repositories_skipped'])->toBe(0);
+});
+
+it('deletes the PAT-bearing scratch directory on the skip path too', function () {
+    $workspace = storage_path('app/private/static-analysis-skip-path-test');
+    File::deleteDirectory($workspace);
+    config(['static_analysis_collection.workspace_path' => $workspace]);
+
+    seedAnalyzedRepository(UNCHANGED_HEAD_SHA);
+
+    Process::fake(staticAnalysisCleanPassFake(UNCHANGED_HEAD_SHA));
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    // The job wrote .netrc/.git-credentials under $workspace/<uuid>/home before
+    // deciding to skip; nothing of it may survive the job.
+    expect(File::directories($workspace))->toBe([]);
+
+    File::deleteDirectory($workspace);
 });

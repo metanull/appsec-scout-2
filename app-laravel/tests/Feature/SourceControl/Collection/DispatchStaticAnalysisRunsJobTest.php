@@ -4,12 +4,14 @@ use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\StaticAnalysisRun;
 use App\SourceControl\AzDo\AzDoRepos;
+use App\SourceControl\Collection\AnalyzeRepositoryJob;
 use App\SourceControl\Collection\DispatchStaticAnalysisRunsJob;
 use App\Sources\AzDo\AzDoClient;
 use App\Sync\SystemIntegrationRuntime;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Bus\PendingBatch;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\File;
@@ -169,4 +171,54 @@ it('dispatches the batch onto the static-analysis queue, not repository-collecti
 
     expect($batch)->not->toBeNull();
     expect($batch->options['queue'] ?? null)->toBe('static-analysis');
+});
+
+it('initialises counts_json with a zero repositories_skipped counter', function () {
+    Bus::fake();
+
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], staticAnalysisDispatcherFixture('projects.json')),
+        new Response(200, [], staticAnalysisDispatcherFixture('repositories.json')),
+        new Response(200, [], '{"value":[]}'),
+    ]);
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    $run = StaticAnalysisRun::query()->latest('id')->first();
+
+    expect($run->counts_json['repositories_skipped'])->toBe(0);
+});
+
+it('passes the force flag through to every batched AnalyzeRepositoryJob', function () {
+    Bus::fake();
+
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], staticAnalysisDispatcherFixture('projects.json')),
+        new Response(200, [], staticAnalysisDispatcherFixture('repositories.json')),
+        new Response(200, [], '{"value":[]}'),
+    ]);
+
+    (new DispatchStaticAnalysisRunsJob(force: true))->handle(app(SystemIntegrationRuntime::class));
+
+    Bus::assertBatched(function (PendingBatch $batch): bool {
+        return $batch->jobs->isNotEmpty()
+            && $batch->jobs->every(fn (AnalyzeRepositoryJob $job): bool => $job->force === true);
+    });
+});
+
+it('leaves force off for an ordinary sweep', function () {
+    Bus::fake();
+
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], staticAnalysisDispatcherFixture('projects.json')),
+        new Response(200, [], staticAnalysisDispatcherFixture('repositories.json')),
+        new Response(200, [], '{"value":[]}'),
+    ]);
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    Bus::assertBatched(function (PendingBatch $batch): bool {
+        return $batch->jobs->isNotEmpty()
+            && $batch->jobs->every(fn (AnalyzeRepositoryJob $job): bool => $job->force === false);
+    });
 });

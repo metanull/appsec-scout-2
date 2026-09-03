@@ -7,6 +7,7 @@ use App\Models\LocalFinding;
 use App\Models\RepositoryCollectionRun;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
+use App\Models\StaticAnalysisRepositoryState;
 use App\Models\StaticAnalysisRun;
 use App\SourceControl\AzDo\AzDoRepos;
 use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
@@ -279,4 +280,116 @@ it('never overwrites a SoftwareSystem/SecurityContainer already created by a liv
         ->and($container->name)->toBe('Live-synced repo name');
 
     expect(Attachment::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(3);
+});
+
+/**
+ * Same process fake as fakeStaticAnalysisPipelineProcesses(), except that the
+ * two git revision queries answer with a real commit sha, so the skip check
+ * has something to compare against. Both repositories report the same head:
+ * `git rev-parse` runs inside the anonymous clone directory, which carries no
+ * repository name to key a per-repository answer off.
+ */
+function fakeStaticAnalysisPipelineProcessesAtCommit(string $sha): void
+{
+    Process::fake(function ($process) use ($sha) {
+        $parts = staticAnalysisPipelineCommandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: "{$sha}\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'rev-parse') {
+            return Process::result(exitCode: 0, output: "{$sha}\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $workDir = end($parts);
+            File::ensureDirectoryExists($workDir . '/build');
+            File::put($workDir . '/App.sln', '');
+            File::put($workDir . '/build/Main.class', '');
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(staticAnalysisPipelineArgAfter($parts, '--output'), staticAnalysisPipelineFixture('StaticAnalysis/roslynator-sample.json'));
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(staticAnalysisPipelineArgAfter($parts, '-output'), staticAnalysisPipelineFixture('StaticAnalysis/spotbugs-sample.json'));
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(staticAnalysisPipelineArgAfter($parts, '--output'), staticAnalysisPipelineFixture('StaticAnalysis/opengrep-sample.json'));
+        }
+
+        return Process::result(exitCode: 0);
+    });
+}
+
+function bindStaticAnalysisPipelineAzDoReposWithTwoRepositories(): void
+{
+    $http = new Client(['handler' => new MockHandler([
+        new Response(200, [], '{"count":1,"value":[{"id":"project-001","name":"SecurityProject","url":"https://dev.azure.com/testorg/_apis/projects/project-001"}]}'),
+        new Response(200, [], '{"count":2,"value":[
+            {"id":"repo-001","name":"backend-api","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-001","project":{"id":"project-001","name":"SecurityProject"},"defaultBranch":"refs/heads/main","remoteUrl":"https://testorg@dev.azure.com/testorg/SecurityProject/_git/backend-api","webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/backend-api"},
+            {"id":"repo-002","name":"frontend-app","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-002","project":{"id":"project-001","name":"SecurityProject"},"defaultBranch":"refs/heads/main","remoteUrl":"https://testorg@dev.azure.com/testorg/SecurityProject/_git/frontend-app","webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/frontend-app"}
+        ]}'),
+    ])]);
+    $advSec = new Client(['handler' => new MockHandler([])]);
+
+    $provider = new AzDoRepos(app(Vault::class));
+
+    $reflection = new ReflectionClass($provider);
+    $property = $reflection->getProperty('client');
+    $property->setAccessible(true);
+    $property->setValue($provider, new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec));
+
+    app()->instance(AzDoRepos::class, $provider);
+}
+
+it('analyses two repositories on the first sweep and skips both on a second, unchanged sweep', function () {
+    $sha = 'c0ffee11223344556677889900aabbccddeeff01';
+
+    fakeStaticAnalysisPipelineProcessesAtCommit($sha);
+    bindStaticAnalysisPipelineAzDoReposWithTwoRepositories();
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    $firstRun = StaticAnalysisRun::query()->latest('id')->first();
+
+    expect($firstRun->status)->toBe('success')
+        ->and($firstRun->counts_json['repositories_completed'])->toBe(2)
+        ->and($firstRun->counts_json['repositories_skipped'])->toBe(0)
+        ->and(StaticAnalysisRepositoryState::query()->count())->toBe(2);
+
+    $attachmentsAfterFirstSweep = Attachment::query()->count();
+    expect($attachmentsAfterFirstSweep)->toBe(6);
+
+    fakeStaticAnalysisPipelineProcessesAtCommit($sha);
+    bindStaticAnalysisPipelineAzDoReposWithTwoRepositories();
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    $secondRun = StaticAnalysisRun::query()->latest('id')->first();
+
+    expect($secondRun->id)->not->toBe($firstRun->id)
+        ->and($secondRun->status)->toBe('success')
+        ->and($secondRun->counts_json['repositories_considered'])->toBe(2)
+        ->and($secondRun->counts_json['repositories_completed'])->toBe(2)
+        ->and($secondRun->counts_json['repositories_skipped'])->toBe(2)
+        ->and($secondRun->counts_json['repositories_failed'])->toBe(0);
+
+    // Two clones in total across both sweeps — the second sweep cloned nothing.
+    // (Process::fake() does not reset the recorded invocations, so this counts
+    // both sweeps rather than asserting the second ran no clone at all.)
+    Process::assertRanTimes(fn ($process) => (staticAnalysisPipelineCommandParts($process->command)[0] ?? null) === 'git'
+        && (staticAnalysisPipelineCommandParts($process->command)[1] ?? null) === 'clone', 2);
+
+    // The skipped repositories keep the findings the first sweep produced —
+    // no new attachment, and nothing resolved, since StaleRecordSweeper only
+    // runs as part of ingesting an attachment for that owner.
+    expect(Attachment::query()->count())->toBe($attachmentsAfterFirstSweep)
+        ->and(StaticAnalysisRepositoryState::query()->count())->toBe(2)
+        ->and(LocalFinding::query()->where('kind', LocalFinding::KIND_CODE_QUALITY)->count())->toBeGreaterThan(0);
 });

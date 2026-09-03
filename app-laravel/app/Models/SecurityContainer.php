@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
@@ -28,6 +29,7 @@ class SecurityContainer extends Model
             $container->attachments()->delete();
             $container->softwareComponents()->delete();
             $container->localFindings()->delete();
+            $container->staticAnalysisState()->delete();
         });
     }
 
@@ -89,5 +91,11 @@ class SecurityContainer extends Model
     public function localFindings(): MorphMany
     {
         return $this->morphMany(LocalFinding::class, 'owner');
+    }
+
+    /** @return HasOne<StaticAnalysisRepositoryState, $this> */
+    public function staticAnalysisState(): HasOne
+    {
+        return $this->hasOne(StaticAnalysisRepositoryState::class);
     }
 }

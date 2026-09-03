@@ -41,6 +41,13 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
 
     private const SOURCE_CONTROL_ID = 'azdo-repos';
 
+    /**
+     * Bypasses every per-repository skip for this sweep. The mitigation for
+     * the one thing an analysed-commit comparison cannot see: a
+     * static-analysis-collector image shipping new analysers or rules.
+     */
+    public function __construct(public readonly bool $force = false) {}
+
     public function uniqueId(): string
     {
         return 'static-analysis';
@@ -86,6 +93,7 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
                     'repositories_considered' => count($targets),
                     'repositories_completed' => 0,
                     'repositories_failed' => 0,
+                    'repositories_skipped' => 0,
                 ],
             ]);
 
@@ -93,7 +101,7 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
 
             try {
                 $batch = Bus::batch(array_map(
-                    fn (RepositoryCollectionTarget $target): AnalyzeRepositoryJob => new AnalyzeRepositoryJob($target, $run->id),
+                    fn (RepositoryCollectionTarget $target): AnalyzeRepositoryJob => new AnalyzeRepositoryJob($target, $run->id, $this->force),
                     $targets,
                 ))
                     ->name($batchName)
