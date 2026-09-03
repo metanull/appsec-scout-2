@@ -3,17 +3,27 @@
 namespace App\Trackers\Reconciliation;
 
 use App\Models\SecurityEvent;
+use App\Sources\Context\SourceContextFacts;
 
+/**
+ * Lookup index used by reconciliation to resolve a URL found in a tracker issue body
+ * back to the security events it identifies.
+ *
+ * Matching is deterministic: only URLs that identify a single alert are indexed, and a
+ * candidate URL matches either literally or through the canonical Azure DevOps alert
+ * identity. Container URLs (project roots, repository roots) and shared URLs (source
+ * files, rule documentation, advisories) are deliberately never indexed.
+ */
 final class EventUrlIndex
 {
-    /** @var array<string, list<int>> */
-    private array $index;
-
-    /** @param array<string, list<int>> $index */
-    private function __construct(array $index)
-    {
-        $this->index = $index;
-    }
+    /**
+     * @param  array<string, list<int>>  $index
+     * @param  array<string, list<int>>  $alertKeyIndex
+     */
+    private function __construct(
+        private array $index,
+        private array $alertKeyIndex,
+    ) {}
 
     /**
      * @param  iterable<SecurityEvent>  $events
@@ -21,26 +31,34 @@ final class EventUrlIndex
     public static function build(iterable $events): self
     {
         $index = [];
+        $alertKeyIndex = [];
 
         foreach ($events as $event) {
             $eventId = (int) $event->id;
+            $metadata = self::arrayFromMixed($event->getAttribute('metadata'));
 
-            foreach (self::urlsForEvent($event) as $url) {
+            foreach (self::alertUrlsForEvent($event, $metadata) as $url) {
                 $normalized = self::normalizeUrl($url);
 
                 if ($normalized === null) {
                     continue;
                 }
 
-                $index[$normalized] ??= [];
+                self::register($index, $normalized, $eventId);
 
-                if (! in_array($eventId, $index[$normalized], true)) {
-                    $index[$normalized][] = $eventId;
+                $reference = AzDoAlertReference::fromUrl($url);
+
+                if ($reference === null) {
+                    continue;
+                }
+
+                foreach (self::alertKeysForReference($reference, $metadata) as $key) {
+                    self::register($alertKeyIndex, $key, $eventId);
                 }
             }
         }
 
-        return new self($index);
+        return new self($index, $alertKeyIndex);
     }
 
     /** @return list<int> */
@@ -55,31 +73,21 @@ final class EventUrlIndex
         return $this->index[$normalized] ?? [];
     }
 
-    /** @return list<int> */
-    public function findByPrefix(string $url): array
+    /**
+     * Match on canonical Azure DevOps alert identity, so an issue written with the GUID
+     * form of an alert URL resolves to an event indexed under the name form and vice versa.
+     *
+     * @return list<int>
+     */
+    public function findByAlertIdentity(string $url): array
     {
-        $normalized = self::normalizeUrl($url);
+        $reference = AzDoAlertReference::fromUrl($url);
 
-        if ($normalized === null) {
+        if ($reference === null) {
             return [];
         }
 
-        $prefix = rtrim($normalized, '/') . '/';
-        $matches = [];
-
-        foreach ($this->index as $indexedUrl => $eventIds) {
-            if (! str_starts_with($indexedUrl, $prefix)) {
-                continue;
-            }
-
-            foreach ($eventIds as $eventId) {
-                if (! in_array($eventId, $matches, true)) {
-                    $matches[] = $eventId;
-                }
-            }
-        }
-
-        return $matches;
+        return $this->alertKeyIndex[$reference->key()] ?? [];
     }
 
     /** @return list<int> */
@@ -87,24 +95,31 @@ final class EventUrlIndex
     {
         $combined = array_merge(
             $this->findExact($url),
-            $this->findByPrefix($url),
+            $this->findByAlertIdentity($url),
         );
 
         return array_values(array_unique($combined));
     }
 
-    /** @return list<string> */
-    private static function urlsForEvent(SecurityEvent $event): array
+    /**
+     * URLs that identify this event's alert and nothing broader.
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return list<string>
+     */
+    private static function alertUrlsForEvent(SecurityEvent $event, array $metadata): array
     {
         $urls = [];
 
-        foreach ([(string) ($event->url ?? ''), (string) ($event->version_control_url ?? '')] as $candidate) {
-            if ($candidate !== '') {
-                $urls[] = $candidate;
-            }
+        $eventUrl = (string) ($event->url ?? '');
+        if (trim($eventUrl) !== '') {
+            $urls[] = $eventUrl;
         }
 
-        $metadata = self::arrayFromMixed($event->getAttribute('metadata'));
+        $alertWebUrl = SourceContextFacts::getString($metadata, SourceContextFacts::SOURCE_ALERT_WEB_URL);
+        if ($alertWebUrl !== null) {
+            $urls[] = $alertWebUrl;
+        }
 
         $links = $metadata['links'] ?? null;
         if (is_array($links)) {
@@ -113,7 +128,13 @@ final class EventUrlIndex
                     continue;
                 }
 
+                $label = $link['label'] ?? null;
                 $linkUrl = $link['url'] ?? null;
+
+                if (! is_string($label) || strtolower(trim($label)) !== 'source alert') {
+                    continue;
+                }
+
                 if (is_string($linkUrl) && trim($linkUrl) !== '') {
                     $urls[] = $linkUrl;
                 }
@@ -121,17 +142,115 @@ final class EventUrlIndex
         }
 
         $sourceData = self::arrayFromMixed($event->getAttribute('source_data'));
-        $alertUri = $sourceData['alertUri'] ?? ($metadata['azdo']['alertUri'] ?? null);
+        $alertUri = $sourceData['alertUri'] ?? null;
 
         if (is_string($alertUri) && trim($alertUri) !== '') {
             $urls[] = $alertUri;
+        }
 
-            foreach (self::synthesizeAzdoPortalUrls($alertUri) as $synthesizedUrl) {
-                $urls[] = $synthesizedUrl;
+        return self::withoutSharedArticleUrl(array_values(array_unique($urls)), $metadata);
+    }
+
+    /**
+     * ASoC exposes no per-issue web URL: its article URL is shared by every issue of that
+     * type, and it is also the value stored as the event url. Drop it by value.
+     *
+     * @param  list<string>  $urls
+     * @param  array<string, mixed>  $metadata
+     * @return list<string>
+     */
+    private static function withoutSharedArticleUrl(array $urls, array $metadata): array
+    {
+        $articleUrl = SourceContextFacts::getString($metadata, 'asoc.article.url');
+
+        if ($articleUrl === null) {
+            return $urls;
+        }
+
+        $normalizedArticleUrl = self::normalizeUrl($articleUrl);
+
+        if ($normalizedArticleUrl === null) {
+            return $urls;
+        }
+
+        return array_values(array_filter(
+            $urls,
+            static fn (string $url): bool => self::normalizeUrl($url) !== $normalizedArticleUrl,
+        ));
+    }
+
+    /**
+     * Every canonical key for one parsed alert reference: the cross-product of the project
+     * and repository refs the event itself carries, so GUID and name forms collapse to one
+     * identity without any lookup table or cross-event inference.
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return list<string>
+     */
+    private static function alertKeysForReference(AzDoAlertReference $reference, array $metadata): array
+    {
+        $projectRefs = self::refCandidates([
+            $reference->projectRef,
+            SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_PROJECT_ID),
+            SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_PROJECT_NAME),
+        ]);
+
+        $repositoryRefs = self::refCandidates([
+            $reference->repositoryRef,
+            SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_REPOSITORY_ID),
+            SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_REPOSITORY_NAME),
+        ]);
+
+        $keys = [];
+
+        foreach ($projectRefs as $projectRef) {
+            foreach ($repositoryRefs as $repositoryRef) {
+                $key = $reference->withRefs($projectRef, $repositoryRef)->key();
+
+                if (! in_array($key, $keys, true)) {
+                    $keys[] = $key;
+                }
             }
         }
 
-        return array_values(array_unique($urls));
+        return $keys;
+    }
+
+    /**
+     * @param  list<string|null>  $refs
+     * @return list<string>
+     */
+    private static function refCandidates(array $refs): array
+    {
+        $candidates = [];
+
+        foreach ($refs as $ref) {
+            if (! is_string($ref)) {
+                continue;
+            }
+
+            $normalized = AzDoAlertReference::normalizeRef($ref);
+
+            if ($normalized === '' || in_array($normalized, $candidates, true)) {
+                continue;
+            }
+
+            $candidates[] = $normalized;
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param  array<string, list<int>>  $index
+     */
+    private static function register(array &$index, string $key, int $eventId): void
+    {
+        $index[$key] ??= [];
+
+        if (! in_array($eventId, $index[$key], true)) {
+            $index[$key][] = $eventId;
+        }
     }
 
     /**
@@ -150,60 +269,6 @@ final class EventUrlIndex
         $decoded = json_decode($value, true);
 
         return is_array($decoded) ? $decoded : [];
-    }
-
-    /** @return list<string> */
-    private static function synthesizeAzdoPortalUrls(string $alertUri): array
-    {
-        $parts = parse_url($alertUri);
-
-        if (! is_array($parts)) {
-            return [];
-        }
-
-        $host = $parts['host'] ?? null;
-
-        if (! is_string($host) || ! str_starts_with(strtolower($host), 'advsec.')) {
-            return [];
-        }
-
-        $path = $parts['path'] ?? null;
-
-        if (! is_string($path) || trim($path) === '') {
-            return [];
-        }
-
-        $segments = array_values(array_filter(explode('/', trim($path, '/')), static fn (string $segment): bool => $segment !== ''));
-
-        if (count($segments) < 8) {
-            return [];
-        }
-
-        if (strtolower($segments[2]) !== '_apis' || strtolower($segments[4]) !== 'repositories') {
-            return [];
-        }
-
-        $organization = $segments[0];
-        $projectGuid = $segments[1];
-        $repoGuid = $segments[5];
-        $alertId = $segments[7];
-
-        $alertUrl = sprintf(
-            'https://dev.azure.com/%s/%s/_git/%s/alerts/%s',
-            $organization,
-            $projectGuid,
-            $repoGuid,
-            $alertId,
-        );
-
-        $repoRootUrl = sprintf(
-            'https://dev.azure.com/%s/%s/_git/%s',
-            $organization,
-            $projectGuid,
-            $repoGuid,
-        );
-
-        return [$alertUrl, $repoRootUrl];
     }
 
     private static function normalizeUrl(string $url): ?string

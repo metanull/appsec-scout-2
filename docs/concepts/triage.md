@@ -119,9 +119,12 @@ chain and an auto-learning mechanism that records one after every create/link ac
 
 ### Reconciliation: the same linking mechanism, two triggers
 
-Reconciliation heuristically finds tracker issues that already reference an alert (by matching
-its URL against text mined from candidate issues) and links them automatically, without an
-operator manually searching:
+Reconciliation finds tracker issues that already reference an alert and links them automatically,
+without an operator manually searching. Matching is deterministic: only URLs that identify a single
+alert are indexed (the alert's own URL, never a project root, repository root, source file, rule
+doc or advisory link), and a candidate URL must match one of them literally — the only tolerated
+non-literal step is canonicalising Azure DevOps alert URLs, which address one alert under both GUID
+and name forms:
 
 - **Per-alert, on demand** — the alert detail page's "Find existing work items" action runs
   `ReconciliationService::reconcileEvent()` synchronously, scoped to the tracker projects linked

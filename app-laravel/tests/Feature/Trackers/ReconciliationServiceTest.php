@@ -1,6 +1,7 @@
 <?php
 
 use App\Credentials\Vault;
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
@@ -245,7 +246,7 @@ it('creates links for multiple events matching one work item', function () {
         ->toContain($first->id, $second->id);
 });
 
-it('matches by prefix when work item links to repository root', function () {
+it('creates no link when a work item only references the repository root', function () {
     $repoRoot = 'https://dev.azure.com/acme/proj/_git/repo';
 
     $tracker = (new FakeTracker)->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
@@ -266,9 +267,81 @@ it('matches by prefix when work item links to repository root', function () {
 
     attachTrackerProject($event->softwareSystem, 'fake-tracker', 'APP');
 
+    $results = app(ReconciliationService::class)->reconcileAll();
+
+    expect($results)->toBe([])
+        ->and(WorkItemLink::query()->where('event_id', $event->id)->exists())->toBeFalse();
+});
+
+it('regression SEC-816: does not link a grouped issue to alerts of a sibling repository in the same project', function () {
+    $projectRoot = 'https://dev.azure.com/acme/Agora';
+    $pocAlertOne = 'https://dev.azure.com/acme/Agora/_git/agora-event-grid-poc/alerts/194';
+    $pocAlertTwo = 'https://dev.azure.com/acme/Agora/_git/agora-event-grid-poc/alerts/398';
+    $siblingAlert = 'https://dev.azure.com/acme/Agora/_git/Agora/alerts/11908';
+
+    $tracker = (new FakeTracker)->withReconciliationCandidates('SEC', new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: 'SEC-816',
+        workItemUrl: 'https://tracker.test/SEC-816',
+        title: 'Agora: agora-event-grid-poc: Secret (2 alerts, 2 files)',
+        state: 'Open',
+        labels: ['security'],
+        // A grouped issue body renders alert, project root and repository root per occurrence.
+        extractedUrls: [
+            $pocAlertOne,
+            $projectRoot,
+            'https://dev.azure.com/acme/Agora/_git/agora-event-grid-poc',
+            $pocAlertTwo,
+        ],
+        searchStrategy: 'project=SEC',
+    ));
+    bindFakeWorkItemTracker($tracker);
+
+    $system = SoftwareSystem::factory()->create();
+    $pocContainer = SecurityContainer::factory()->forSystem($system)->create(['name' => 'agora-event-grid-poc']);
+    $agoraContainer = SecurityContainer::factory()->forSystem($system)->create(['name' => 'Agora']);
+
+    $firstPocEvent = azdoAlertEvent($pocContainer, $pocAlertOne, 'agora-event-grid-poc', 'repo-guid-poc');
+    $secondPocEvent = azdoAlertEvent($pocContainer, $pocAlertTwo, 'agora-event-grid-poc', 'repo-guid-poc');
+    $siblingEvent = azdoAlertEvent($agoraContainer, $siblingAlert, 'Agora', 'repo-guid-agora');
+
+    attachTrackerProject($system, 'fake-tracker', 'SEC');
+
     app(ReconciliationService::class)->reconcileAll();
 
-    expect(WorkItemLink::query()->where('event_id', $event->id)->where('work_item_id', 'APP#90')->exists())->toBeTrue();
+    expect(WorkItemLink::query()->where('work_item_id', 'SEC-816')->pluck('event_id')->map(fn ($id): int => (int) $id)->sort()->values()->all())
+        ->toBe([(int) $firstPocEvent->id, (int) $secondPocEvent->id])
+        ->and(WorkItemLink::query()->where('event_id', $siblingEvent->id)->exists())->toBeFalse();
+});
+
+it('links a candidate carrying the guid form of an alert url to an event stored in name form', function () {
+    $tracker = (new FakeTracker)->withReconciliationCandidates('SEC', new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: 'SEC-900',
+        workItemUrl: 'https://tracker.test/SEC-900',
+        title: 'Guid form reference',
+        state: 'Open',
+        labels: ['security'],
+        extractedUrls: ['https://dev.azure.com/acme/project-guid-agora/_git/repo-guid-poc/alerts/398'],
+        searchStrategy: 'project=SEC',
+    ));
+    bindFakeWorkItemTracker($tracker);
+
+    $system = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->forSystem($system)->create(['name' => 'agora-event-grid-poc']);
+
+    $event = azdoAlertEvent(
+        $container,
+        'https://dev.azure.com/acme/Agora/_git/agora-event-grid-poc/alerts/398',
+        'agora-event-grid-poc',
+        'repo-guid-poc',
+    );
+
+    attachTrackerProject($system, 'fake-tracker', 'SEC');
+
+    app(ReconciliationService::class)->reconcileAll();
+
+    expect(WorkItemLink::query()->where('work_item_id', 'SEC-900')->pluck('event_id')->map(fn ($id): int => (int) $id)->all())->toBe([(int) $event->id]);
 });
 
 function reconciliationOperator(): User
@@ -287,5 +360,25 @@ function attachTrackerProject(SoftwareSystem $system, string $trackerId, string 
         'is_default' => false,
         'created_by_user_id' => null,
         'metadata' => null,
+    ]);
+}
+
+function azdoAlertEvent(SecurityContainer $container, string $alertUrl, string $repositoryName, string $repositoryId): SecurityEvent
+{
+    return SecurityEvent::factory()->forContainer($container)->create([
+        'source_id' => 'azdo',
+        'url' => $alertUrl,
+        'version_control_url' => 'https://dev.azure.com/acme/Agora/_git/' . $repositoryName . '?path=/src/Main.java',
+        'metadata' => [
+            'source' => ['alert' => ['web_url' => $alertUrl]],
+            'azdo' => [
+                'project' => ['id' => 'project-guid-agora', 'name' => 'Agora'],
+                'repository' => ['id' => $repositoryId, 'name' => $repositoryName],
+            ],
+            'links' => [
+                ['label' => 'Source alert', 'url' => $alertUrl],
+                ['label' => 'Rule documentation', 'url' => 'https://docs.example.com/rules/java-ssrf'],
+            ],
+        ],
     ]);
 }
