@@ -165,9 +165,8 @@ WORKDIR /var/www/html
 COPY --from=composer-deps /app ./
 
 # Remove the build-time .env; runtime .env is managed by the entrypoint via app_storage volume.
-RUN rm -f .env
-
-RUN mkdir -p \
+RUN rm -f .env \
+    && mkdir -p \
         bootstrap/cache \
         storage/app/private \
         storage/app/public \
@@ -341,6 +340,13 @@ CMD ["php", "artisan", "queue:work", "--queue=static-analysis", "--tries=3", "--
 # node:22-slim image with PHP bolted on via a different apt repo. ---
 FROM php-runtime AS ops
 
+# Every RUN below that pipes a download into another command (curl|dd, curl|bash, a
+# checksum piped through sha1sum -c) needs this: POSIX sh (dash on Debian) has no
+# pipefail, so a failed download upstream of a pipe would otherwise let the RUN exit 0
+# on whatever the last command in the pipe reports. bash is already a hard runtime
+# dependency of this target (docker/ops/entrypoint.sh's own shebang).
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ARG BFG_VERSION
 ARG NODE_VERSION
 ARG OPENGREP_ENABLED
@@ -424,12 +430,8 @@ USER root
 RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    sh /tmp/lib/install-trivy.sh
-
-RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    OPENGREP_ENABLED=${OPENGREP_ENABLED} sh /tmp/lib/install-static-analysis-toolchain.sh
+    sh /tmp/lib/install-trivy.sh \
+    && OPENGREP_ENABLED=${OPENGREP_ENABLED} sh /tmp/lib/install-static-analysis-toolchain.sh
 
 ENV PATH="${PATH}:/usr/local/dotnet-tools" \
     JAVA_HOME=/opt/java-home

@@ -3,6 +3,8 @@
 # ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the Trivy gate
 # fails: the push step runs strictly after the scan steps in the same job. All three are
 # targets of the single docker/Dockerfile — the matrix below selects which target to build.
+# Every build job (including the ops/dev smoke builds) depends on the lint job, which runs
+# hadolint against docker/Dockerfile first — see .hadolint.yaml for the ignored rules.
 #
 # - Pull requests touching the image definitions get a build + scan only (no publish).
 # - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
@@ -37,8 +39,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  lint:
+    name: Lint Dockerfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: docker/Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: warning
+
   build:
     name: ${{ matrix.image.name }}
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -152,6 +172,7 @@ jobs:
   # image. Runs on pull_request only, plus workflow_dispatch for a manual check.
   build-ops:
     name: ops (smoke build)
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
@@ -180,6 +201,7 @@ jobs:
   # on every docker/**-touching PR, since nothing else in this workflow ever selects it.
   build-dev:
     name: dev (smoke build)
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'

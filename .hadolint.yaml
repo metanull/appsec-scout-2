@@ -1,0 +1,23 @@
+# hadolint (.github/workflows/image-publish.yml, `lint` job) lints docker/Dockerfile on
+# every PR that touches docker/**. Every ignore below is deliberate — see the reason next
+# to each. Do not add an ignore without one.
+ignored:
+  # Pin versions in apt-get/apk install. Every Debian stage in docker/Dockerfile runs
+  # `apt-get upgrade -y` before its own installs specifically so the CI Trivy publish gate
+  # (fixable HIGH/CRITICAL fails the build) sees patched packages — that is incompatible
+  # with pinning exact apt versions, which would either drift stale (defeating the upgrade)
+  # or break the build the moment a pinned version ages out of the Debian/Alpine mirror's
+  # retained package set. The apk add in composer-deps (Alpine) has the same problem: old
+  # Alpine package versions are pruned from the index quickly, so pinning would make the
+  # build fail intermittently on a routine rebuild rather than pick up a security fix.
+  - DL3008
+  - DL3018
+  # Either use Wget or Curl but not both. hadolint flags this once, wherever the first
+  # `wget` call appears in a stage that also uses `curl` elsewhere (the ops target's BFG
+  # install step) — not a real inconsistency: this repo already uses curl -fsSL when the
+  # output is piped or captured via command substitution (its -f flag turns an HTTP error
+  # into a non-zero exit; wget's quiet-mode equivalent does not) and wget -q -O when the
+  # output is a binary file written straight to a path. Both conventions are used
+  # side-by-side throughout docker/lib/*.sh, which hadolint cannot see since it only lints
+  # the Dockerfile itself; the Dockerfile's own BFG step follows the same split.
+  - DL4001
