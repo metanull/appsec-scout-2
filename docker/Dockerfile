@@ -149,10 +149,14 @@ RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
     --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
     sh /tmp/lib/install-ca-certs.sh
 
+# pecl versions are pinned. An unpinned `pecl install` resolves "latest" against
+# pecl.php.net at build time, which has failed the CI image build with "No releases
+# available for package" when that lookup misbehaved; a pin also keeps every image
+# reproducible across rebuilds. Bump them here deliberately, like any other version.
 RUN --mount=type=cache,target=/tmp/pear \
     docker-php-ext-install -j"$(nproc)" pdo_mysql pdo_pgsql intl bcmath zip pcntl opcache \
     && printf 'memory_limit=512M\n' > /usr/local/etc/php/conf.d/appsec-scout-memory-limit.ini \
-    && pecl install redis \
+    && pecl install redis-6.3.0 \
     && docker-php-ext-enable redis \
     && rm -rf /var/lib/apt/lists/*
 
@@ -205,7 +209,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         supervisor \
         imagemagick \
         libmagickwand-dev \
-    && pecl install imagick \
+    && pecl install imagick-3.8.1 \
     && docker-php-ext-enable imagick \
     # Every PHP extension is compiled at this point. Purge linux-libc-dev — the kernel
     # headers the base image ships for phpize. Its weekly kernel CVEs are meaningless in
@@ -406,7 +410,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         imagemagick \
         libmagickwand-dev \
-    && pecl install imagick pcov \
+    && pecl install imagick-3.8.1 pcov-1.0.12 \
     && docker-php-ext-enable imagick pcov \
     # Every PHP extension is compiled at this point. Purge linux-libc-dev — see app's
     # own purge step for the full rationale. node:22-slim never had a C toolchain either,
