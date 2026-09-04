@@ -111,7 +111,7 @@ Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{cdx,vuln.sarif
 4. Java: builds the topmost `pom.xml`/`build.gradle[.kts]` in the tree — the repo's own `mvnw`/`gradlew` wrapper if present, else the image's Maven/Gradle install — then runs SpotBugs (with the Find Security Bugs plugin) against every directory that ends up containing compiled `.class` files.
 5. Deletes the clone immediately after analysis.
 
-Controlled by `STATIC_ANALYSIS_TYPES` (default `dotnet,java,opengrep`). Build failures are non-fatal for either language — the corresponding report is simply not generated for that repo, mirroring how `collect-sboms.sh` already treats `dotnet restore`/`build` failures. Opengrep is additionally skipped on its own, independent of `STATIC_ANALYSIS_TYPES`, whenever the image was built with `OPENGREP_ENABLED=false` (see [Configuration](#configuration) below) — the script detects the missing binary rather than failing per repository.
+Controlled by `STATIC_ANALYSIS_TYPES` (default `dotnet,java,opengrep`). Build failures are non-fatal for either language — the corresponding report is simply not generated for that repo, mirroring how `collect-sboms.sh` already treats `dotnet restore`/`build` failures.
 
 Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{dotnet,java}.sarif`, plus a `run.jsonl` and `summary.json` with the same shape and semantics as the SBOM scan's (including `-Resume` support). Reports are picked up into appsec-scout incrementally via a scheduled `staticanalysis:import-pending-scans` tick, exactly like `sbom:import-pending-scans` — see the SBOM scan section above for the exact mechanics, which this mirrors.
 
@@ -125,5 +125,3 @@ Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{dotnet,java}.s
 | `JAVA_BUILD_TIMEOUT` | `900` (seconds) | Timeout for the Maven/Gradle build. |
 | `ANALYSIS_TIMEOUT` | `900` (seconds) | Timeout for each Roslynator/SpotBugs invocation. |
 | `OPENGREP_TIMEOUT` | `900` (seconds) | Timeout for each Opengrep invocation. |
-
-**Build-time toggle**: `OPENGREP_ENABLED` (root `.env`, default `true`) is a Docker build arg, not a runtime env var — set it to `false` to skip downloading the pinned Opengrep binary/ruleset when building this image (e.g. where corporate network/DLP policy blocks that download), then rebuild with `.\scripts\appsec-scout.ps1 -Rebuild` or `invoke-ops.ps1 -Rebuild`. No other change is needed: `collect-static-analysis.sh` detects the missing binary at runtime and skips Opengrep on its own.
