@@ -28,11 +28,6 @@ set -eu
 : "${OPENGREP_VERSION:=1.27.1}"
 : "${OPENGREP_SHA256:=58053da76672bbeb5b0a5441021c58338707052e10f81d777140ca879bd491ce}"
 : "${OPENGREP_RULES_REF:=f1d2b562b414783763fd02a6ed2736eaed622efa}"
-# Set to "false" where corporate network policy blocks fetching the pinned binary from
-# GitHub releases (e.g. Netskope file-type/DLP rules) — the Opengrep install below is
-# then skipped entirely and collect-static-analysis.sh detects the missing binary at
-# runtime and skips the Opengrep step on its own, no other flag needed.
-: "${OPENGREP_ENABLED:=true}"
 
 # --- .NET SDK — Microsoft's official install script (served over HTTPS from
 # Microsoft's own CDN), not the packages.microsoft.com apt repo: that repo's signing
@@ -132,31 +127,35 @@ rm /tmp/findsecbugs.jar.asc
 # (secret detection) is deliberately excluded, since Trivy already covers secrets in
 # the repository-collection pipeline.
 #
-# Only the *.yaml/*.yml rule definitions are kept from those directories — opengrep's
+# Only the *.yaml/*.yml rule definitions are taken from those directories — opengrep's
 # -f directory loader ignores everything else, and the accompanying *.test.* fixtures
 # are intentionally-vulnerable example code (the thing each rule is meant to catch),
-# which some corporate TLS-inspecting proxies flag as malicious content when this
-# layer is pulled.
-#
-# Guarded by OPENGREP_ENABLED — when "false", none of this runs and
-# /usr/local/bin/opengrep is never created.
-if [ "$OPENGREP_ENABLED" = "true" ]; then
-    wget -q \
-        "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
-        -O /usr/local/bin/opengrep
-    echo "${OPENGREP_SHA256}  /usr/local/bin/opengrep" | sha256sum -c -
-    chmod +x /usr/local/bin/opengrep
-    opengrep --version
-    wget -q \
-        "https://github.com/opengrep/opengrep-rules/archive/${OPENGREP_RULES_REF}.tar.gz" \
-        -O /tmp/opengrep-rules.tar.gz
-    mkdir -p /tmp/opengrep-rules-extract /opt/opengrep-rules
-    tar -xzf /tmp/opengrep-rules.tar.gz -C /tmp/opengrep-rules-extract --strip-components=1
-    cp -r /tmp/opengrep-rules-extract/csharp /tmp/opengrep-rules-extract/java \
-        /tmp/opengrep-rules-extract/javascript /tmp/opengrep-rules-extract/typescript \
-        /opt/opengrep-rules/
-    find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' -delete
-    rm -rf /tmp/opengrep-rules.tar.gz /tmp/opengrep-rules-extract
-else
-    echo "OPENGREP_ENABLED=false — skipping Opengrep binary/rules install."
-fi
+# which corporate TLS-inspecting proxies (e.g. Netskope) refuse in transit. Fetching
+# the repository's release archive and pruning the fixtures afterwards is not enough
+# for such a proxy: the archive is refused before it can be pruned. So the rules are
+# fetched with git instead, as a blob-filtered (--filter=blob:none) sparse checkout of
+# the pinned commit restricted to the YAML files — git then requests only the blobs the
+# sparse-checkout patterns select, so the fixtures never cross the network at all, and
+# nothing else has to be pruned. The .git directory is dropped afterwards; the image
+# carries just the rule files, exactly as the release archive approach produced.
+wget -q \
+    "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
+    -O /usr/local/bin/opengrep
+echo "${OPENGREP_SHA256}  /usr/local/bin/opengrep" | sha256sum -c -
+chmod +x /usr/local/bin/opengrep
+opengrep --version
+mkdir -p /opt/opengrep-rules
+git -C /opt/opengrep-rules init -q
+git -C /opt/opengrep-rules remote add origin https://github.com/opengrep/opengrep-rules.git
+git -C /opt/opengrep-rules sparse-checkout set --no-cone \
+    '/csharp/**/*.yaml' '/csharp/**/*.yml' \
+    '/java/**/*.yaml' '/java/**/*.yml' \
+    '/javascript/**/*.yaml' '/javascript/**/*.yml' \
+    '/typescript/**/*.yaml' '/typescript/**/*.yml'
+git -C /opt/opengrep-rules fetch -q --depth 1 --filter=blob:none origin "${OPENGREP_RULES_REF}"
+git -C /opt/opengrep-rules checkout -q FETCH_HEAD
+rm -rf /opt/opengrep-rules/.git
+# Guard the sparse patterns against a silent mismatch: an empty or non-YAML result
+# would otherwise only surface as an Opengrep scan with zero rules loaded.
+test "$(find /opt/opengrep-rules -type f -name '*.y*ml' | wc -l)" -gt 0
+test "$(find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' | wc -l)" -eq 0

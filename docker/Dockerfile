@@ -4,11 +4,6 @@ ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
 ARG BUILD_APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-# Set to "false" where corporate network policy blocks fetching the pinned Opengrep binary
-# from GitHub releases (e.g. Netskope file-type/DLP rules) — see
-# docker/lib/install-static-analysis-toolchain.sh, which owns every other toolchain
-# version pin, for what this disables and why it's the one pin surfaced as a build arg.
-ARG OPENGREP_ENABLED=true
 # BFG is not part of the shared static-analysis toolchain script — it's a Git-history
 # tool, ops-only, so its pin lives here rather than in a script.
 ARG BFG_VERSION=1.14.0
@@ -117,6 +112,15 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     http_proxy=${HTTP_PROXY} \
     https_proxy=${HTTPS_PROXY} \
     no_proxy=${NO_PROXY}
+
+# The official php image sets no locale, so any child process that derives its text
+# encoding from the locale falls back to ASCII. Opengrep's bundled Python is one such
+# process: it reads the vendored rule files with the locale encoding and aborts on the
+# first non-ASCII byte ("'ascii' codec can't decode byte 0xc2"), which makes every
+# `opengrep scan` in the static-analysis-collector and ops targets fail before a single
+# rule is loaded. C.UTF-8 is built into Debian's libc (no locales package needed) and is
+# inherited by every target below, so the same trap cannot recur in a new one.
+ENV LANG=C.UTF-8
 
 # Keep downloaded .deb packages instead of letting the base image's default apt config
 # delete them after install — that default exists for image size (irrelevant to a cache
@@ -298,8 +302,6 @@ CMD ["php", "artisan", "queue:work", "--queue=repository-collection", "--tries=3
 # — this is a queue worker, not an operator shell. ---
 FROM laravel-base AS static-analysis-collector
 
-ARG OPENGREP_ENABLED
-
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -315,7 +317,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    OPENGREP_ENABLED=${OPENGREP_ENABLED} sh /tmp/lib/install-static-analysis-toolchain.sh
+    sh /tmp/lib/install-static-analysis-toolchain.sh
 
 # PATH/JAVA_HOME can't be set from inside the script — it only affects the RUN step's
 # own shell, not the image config — so the caller sets them here.
@@ -349,7 +351,6 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG BFG_VERSION
 ARG NODE_VERSION
-ARG OPENGREP_ENABLED
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -431,7 +432,7 @@ RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     sh /tmp/lib/install-trivy.sh \
-    && OPENGREP_ENABLED=${OPENGREP_ENABLED} sh /tmp/lib/install-static-analysis-toolchain.sh
+    && sh /tmp/lib/install-static-analysis-toolchain.sh
 
 ENV PATH="${PATH}:/usr/local/dotnet-tools" \
     JAVA_HOME=/opt/java-home
