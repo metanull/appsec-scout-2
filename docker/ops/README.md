@@ -2,12 +2,14 @@
 
 A sandboxed, ephemeral container for hands-on appsec investigation against any repository — code analysis, secret scanning, dependency auditing, SBOM generation, Git history cleaning, and running Claude Code itself, interactively or as an autonomous task. It has no access to the host filesystem beyond what is explicitly bind-mounted, and is driven exclusively via [scripts/invoke-ops.ps1](../../scripts/README.md#invoke-opsps1) — never `docker compose` directly.
 
+The image itself is the `ops` target of the single `docker/Dockerfile` (`docker-compose.yml` builds it with `target: ops`), `FROM` the same `php-runtime` stage the `app`, `collector`, and `static-analysis-collector` targets share — so PHP 8.4 here is the exact same official build, extension set, and 512M memory limit the app runs on, and Pint/PHPStan/Pest results are directly comparable to CI. It stays local-only by design (never scanned or published): CI builds it as a smoke check on every pull request that touches `docker/**`, but it never runs in a hosted environment.
+
 `-SbomScan` and `-StaticAnalysis` both depend on the core stack (`appsec-scout.ps1`) already being up: they reuse the AzDO PAT already configured in appsec-scout's credential vault. `-SbomScan` additionally runs every Trivy scan against the shared `trivy-server` container rather than downloading its own vulnerability database. Neither is meant to run standalone — start `appsec-scout.ps1` first.
 
 ## What's inside
 
 - **git**, **gh** (GitHub CLI), **jq**, **curl** — repo/API access
-- **PHP 8.4 CLI** + Composer, with Pint, PHPStan, and Pest installed globally — audit any PHP repo without a project-specific vendor/ install
+- **PHP 8.4** (the same official `php-runtime` build the app runs on, plus `pcov` for coverage) + Composer, with Pint, PHPStan, and Pest installed globally — audit any PHP repo without a project-specific vendor/ install
 - **.NET 10 SDK** + Roslynator CLI — restore/build/analyze .NET solutions
 - **Eclipse Temurin JDK (current LTS)** + **Maven** + **Gradle** + **SpotBugs** with the **Find Security Bugs** plugin (checksum-verified at build time) — build and statically analyze any Java repo (its own `mvnw`/`gradlew` wrapper is preferred when present); also the JVM `bfg` runs on
 - **Trivy** — SBOM (CycloneDX), vulnerability, and secret scanning

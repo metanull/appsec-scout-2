@@ -49,10 +49,11 @@ A second, dedicated Docker image/Compose service, `static-analysis-collector`
 carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, Roslynator, Eclipse Temurin JDK,
 Maven, Gradle, SpotBugs + Find Security Bugs, plus — unless built with `OPENGREP_ENABLED=false` —
 the Opengrep binary and its vendored csharp/java/javascript/typescript ruleset
-(`/opt/opengrep-rules`) — copied from `docker/ops/Dockerfile`'s own pinned versions, minus that
-image's interactive-shell-only layers (GitHub CLI, Claude Code, BFG Repo Cleaner, global
-Pest/PHPStan/Pint) and Trivy, which this
-container never calls. It has its own
+(`/opt/opengrep-rules`) — installed by `docker/lib/install-static-analysis-toolchain.sh`, the
+single source of every pin in this toolchain, shared with the `ops` target (which carries the
+same toolchain plus its own interactive-shell-only layers: GitHub CLI, Claude Code, BFG Repo
+Cleaner, global Pest/PHPStan/Pint). No Trivy here, unlike `ops` and `collector` — this
+container never calls it. It has its own
 scratch volume (`static_analysis_collector_workspace`, mounted at `/workspace-scratch`), separate
 from `collector`'s own `collector_workspace` — the two containers' disk usage is never shared or
 conflated, even though neither ever collides today. `static-analysis-collector` shares `app`'s

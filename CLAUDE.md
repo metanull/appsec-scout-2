@@ -66,7 +66,7 @@ The image source is switchable the same way: `docker-compose.ghcr.yml` (opt-in v
 | `dependencytrack-postgres`/`-apiserver`/`-frontend` | `postgres:16-alpine` / `dependencytrack/apiserver` / `dependencytrack/frontend` | SBOM visualization; auto-provisioned by `dependencytrack-bootstrap` (team, API key, Trivy analyzer — stored in the credential vault) |
 | `trivy-token-init` / `trivy-server` | `appsec-scout:latest` / `aquasec/trivy:latest` | Self-hosted vulnerability source for Dependency-Track's Trivy analyzer; the shared token between them is generated once inside the stack, no manual setup |
 
-`node` (`profiles: tools`), `claude` (`profiles: claude`), and `ops` (`profiles: ops`) are opt-in profiles, not started by a plain `docker compose up`.
+`node` (`profiles: tools`), `claude` (`profiles: claude`), and `ops` (`profiles: ops`) are opt-in profiles, not started by a plain `docker compose up`. `ops` is a local-only, Docker-Desktop sandbox — never used in a hosted environment — but it is the fourth target of the same `docker/Dockerfile` (`FROM php-runtime`, so it runs Pint/PHPStan/Pest on the exact PHP build the app runs on), built and smoke-tested by CI on every PR but never scanned or published.
 
 Users interact with the environment through three PowerShell scripts:
 

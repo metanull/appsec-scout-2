@@ -9,6 +9,12 @@ ARG BUILD_APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 # docker/lib/install-static-analysis-toolchain.sh, which owns every other toolchain
 # version pin, for what this disables and why it's the one pin surfaced as a build arg.
 ARG OPENGREP_ENABLED=true
+# BFG is not part of the shared static-analysis toolchain script — it's a Git-history
+# tool, ops-only, so its pin lives here rather than in a script.
+ARG BFG_VERSION=1.14.0
+# The current Node 22 LTS ("Jod") patch at implementation time — bump alongside a
+# routine review, not on any particular schedule.
+ARG NODE_VERSION=22.23.2
 
 FROM composer:2 AS composer-deps
 
@@ -278,3 +284,131 @@ ENV PATH="${PATH}:/usr/local/dotnet-tools" \
 RUN apt-get purge -y linux-libc-dev
 
 CMD ["php", "artisan", "queue:work", "--queue=static-analysis", "--tries=3", "--timeout=1800", "--max-time=3600"]
+
+# --- ops (local only, never published): a sandboxed, ephemeral container for hands-on
+# appsec investigation — code analysis, secret scanning, dependency auditing, SBOM
+# generation, Git history cleaning, and running Claude Code, driven exclusively via
+# scripts/invoke-ops.ps1. FROM php-runtime, not laravel-base: it carries no application
+# code and must not inherit laravel-base's entrypoint. Inheriting php-runtime gives it
+# the same official PHP build, compiled extension set, and 512M memory limit the app
+# runs on, so Pint/PHPStan/Pest results here are directly comparable to CI and the app
+# container — the whole reason this target exists instead of staying its own
+# node:22-slim image with PHP bolted on via a different apt repo. ---
+FROM php-runtime AS ops
+
+ARG BFG_VERSION
+ARG NODE_VERSION
+ARG OPENGREP_ENABLED
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        jq \
+        gnupg \
+        lsb-release \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Node.js (official release tarball, checksum-verified) — Claude Code and audited
+# JavaScript repositories need it. Installed from the tarball rather than an apt repo
+# for the same reason the toolchain script installs .NET from a script: no third-party
+# apt key to trust. ---
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+        -o "/tmp/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    && NODE_SHA256=$(curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+        | grep "node-v${NODE_VERSION}-linux-x64.tar.xz" | awk '{print $1}') \
+    && echo "${NODE_SHA256}  /tmp/node-v${NODE_VERSION}-linux-x64.tar.xz" | sha256sum -c - \
+    && tar -xJf "/tmp/node-v${NODE_VERSION}-linux-x64.tar.xz" -C /usr/local --strip-components=1 \
+    && rm "/tmp/node-v${NODE_VERSION}-linux-x64.tar.xz"
+
+# --- GitHub CLI (signed apt repo) ---
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- ops user (must exist before Claude Code/Composer run as non-root) ---
+RUN useradd -m -s /bin/bash ops \
+    && mkdir -p /home/ops/.claude /workspace \
+    && chown ops:ops /home/ops/.claude /workspace
+
+# --- Claude Code (native installer, installed as ops) ---
+USER ops
+WORKDIR /home/ops
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/home/ops/.local/bin:${PATH}"
+USER root
+WORKDIR /
+
+# mbstring, xml and curl are compiled into the official php-runtime image already —
+# confirmed with `php -m`, not reinstalled. imagick and pcov are ops-specific (the app
+# needs imagick too, but compiles it itself in the app target; pcov is test-coverage
+# tooling no published image needs).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        imagemagick \
+        libmagickwand-dev \
+    && pecl install imagick pcov \
+    && docker-php-ext-enable imagick pcov \
+    # Every PHP extension is compiled at this point. Purge linux-libc-dev — see app's
+    # own purge step for the full rationale. node:22-slim never had a C toolchain either,
+    # so npm native builds are no worse off than before this target existed.
+    && apt-get purge -y linux-libc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer-deps /usr/bin/composer /usr/local/bin/composer
+
+# --- Global PHP tools (run as ops — Pest plugin hooks require non-root) ---
+USER ops
+ENV COMPOSER_HOME=/home/ops/.config/composer
+RUN composer global config allow-plugins.pestphp/pest-plugin true \
+    && composer global require --no-interaction \
+        phpstan/phpstan \
+        laravel/pint \
+        pestphp/pest
+ENV PATH="${PATH}:/home/ops/.config/composer/vendor/bin"
+
+USER root
+
+RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    sh /tmp/lib/install-trivy.sh
+
+RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    OPENGREP_ENABLED=${OPENGREP_ENABLED} sh /tmp/lib/install-static-analysis-toolchain.sh
+
+ENV PATH="${PATH}:/usr/local/dotnet-tools" \
+    JAVA_HOME=/opt/java-home
+
+# --- BFG Repo Cleaner (checksum- and signature-verified) — a Git-history tool, not
+# part of the shared static-analysis toolchain. ---
+RUN gpg --keyserver hkps://keys.openpgp.org \
+        --recv-keys 7305AE1B6772AA1C2D3B4E5DB21602FA2D5CC13C \
+    && wget -q \
+        "https://repo1.maven.org/maven2/com/madgag/bfg/${BFG_VERSION}/bfg-${BFG_VERSION}.jar" \
+        -O /usr/local/lib/bfg.jar \
+    && BFG_SHA1=$(curl -fsSL \
+        "https://repo1.maven.org/maven2/com/madgag/bfg/${BFG_VERSION}/bfg-${BFG_VERSION}.jar.sha1") \
+    && echo "${BFG_SHA1}  /usr/local/lib/bfg.jar" | sha1sum -c - \
+    && wget -q \
+        "https://repo1.maven.org/maven2/com/madgag/bfg/${BFG_VERSION}/bfg-${BFG_VERSION}.jar.asc" \
+        -O /tmp/bfg.jar.asc \
+    && gpg --verify /tmp/bfg.jar.asc /usr/local/lib/bfg.jar \
+    && rm /tmp/bfg.jar.asc \
+    && printf '#!/bin/sh\nexec java -jar /usr/local/lib/bfg.jar "$@"\n' \
+        > /usr/local/bin/bfg \
+    && chmod +x /usr/local/bin/bfg
+
+RUN git config --global --add safe.directory /workspace \
+    && su ops -c "git config --global --add safe.directory /workspace"
+
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
+WORKDIR /workspace
+COPY docker/ops/entrypoint.sh /entrypoint.sh
+COPY docker/ops/collect-sboms.sh /usr/local/bin/collect-sboms.sh
+COPY docker/ops/collect-static-analysis.sh /usr/local/bin/collect-static-analysis.sh
+
+RUN dos2unix /entrypoint.sh /usr/local/bin/collect-sboms.sh /usr/local/bin/collect-static-analysis.sh && \
+    chmod +x /entrypoint.sh /usr/local/bin/collect-sboms.sh /usr/local/bin/collect-static-analysis.sh
+
+USER ops
+ENTRYPOINT ["/entrypoint.sh"]

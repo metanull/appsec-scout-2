@@ -359,7 +359,8 @@ services:
     ops:
         build:
             context: .
-            dockerfile: docker/ops/Dockerfile
+            dockerfile: docker/Dockerfile
+            target: ops
             args:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"

@@ -6,7 +6,10 @@
 #
 # - Pull requests touching the image definitions get a build + scan only (no publish).
 # - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
-# - The ops and claude images are workstation-side dev profiles and are never published.
+# - The ops target is a workstation-only image (never runs in a hosted environment) and is
+#   never published or scanned — build-ops below only proves the shared php-runtime/
+#   toolchain stages it depends on still produce a working image, on every PR that touches
+#   docker/**.
 #
 # Azure note: ACR receives these exact images later via .github/workflows/acr-promote.yml
 # (server-side import by tag) — images are never rebuilt for ACR.
@@ -143,3 +146,30 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image.name }}
+
+  # ops is never published or scanned (see the header comment): this job only proves the
+  # shared php-runtime and toolchain-script stages it depends on still produce a working
+  # image. Runs on pull_request only, plus workflow_dispatch for a manual check.
+  build-ops:
+    name: ops (smoke build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build ops image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ops
+          push: false
+          cache-from: type=gha,scope=ops
+          cache-to: type=gha,scope=ops,mode=max
