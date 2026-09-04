@@ -1,7 +1,8 @@
 # Builds the three deployable container images (app, collector, static-analysis-collector),
 # gates each on a Trivy vulnerability scan, and publishes them to GHCR as
 # ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the Trivy gate
-# fails: the push step runs strictly after the scan steps in the same job.
+# fails: the push step runs strictly after the scan steps in the same job. All three are
+# targets of the single docker/Dockerfile — the matrix below selects which target to build.
 #
 # - Pull requests touching the image definitions get a build + scan only (no publish).
 # - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
@@ -47,11 +48,11 @@ jobs:
       matrix:
         image:
           - name: app
-            dockerfile: docker/Dockerfile
+            target: app
           - name: collector
-            dockerfile: docker/collector/Dockerfile
+            target: collector
           - name: static-analysis-collector
-            dockerfile: docker/static-analysis-collector/Dockerfile
+            target: static-analysis-collector
 
     env:
       IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image.name }}
@@ -85,7 +86,8 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: ${{ matrix.image.dockerfile }}
+          file: docker/Dockerfile
+          target: ${{ matrix.image.target }}
           load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -134,7 +136,8 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: ${{ matrix.image.dockerfile }}
+          file: docker/Dockerfile
+          target: ${{ matrix.image.target }}
           push: true
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}

@@ -3,8 +3,8 @@
     This script manages the lifecycle of the AppSec Scout application using Docker Compose. It can start the application, rebuild it from scratch, and ensure that it's up and running before opening it in the browser.
 .DESCRIPTION
     The script checks if Docker Compose is available, exports trusted host CA certificates into
-    .docker/certs when present, builds the app, collector, and static-analysis-collector images,
-    starts the containers —
+    .docker/certs when present, builds the app, collector, and static-analysis-collector images
+    (three named targets of the single docker/Dockerfile), starts the containers —
     including Dependency-Track and its bundled Trivy analyzer server, which start with the app
     by default, not as an opt-in profile — runs database migrations and seeds the database,
     bootstraps an admin user with known credentials for testing purposes, imports system

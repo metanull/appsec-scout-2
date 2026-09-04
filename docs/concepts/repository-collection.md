@@ -47,7 +47,8 @@ that the app container's own `queue:work` process never listens to (see `docker/
 — it runs `queue:work` with no `--queue` flag, so it only consumes the connection's default
 queue).
 
-A second, lean Docker image/Compose service, `collector` (`docker/collector/Dockerfile`), runs
+A second, lean Docker image/Compose service, `collector` (the `collector` target of
+`docker/Dockerfile`), runs
 `php artisan queue:work --queue=repository-collection` as its only process. It has git and Trivy
 but no nginx/php-fpm/build toolchain, and its own scratch volume (`collector_workspace`, mounted
 at `/workspace-scratch`) for repository checkouts — a `CollectRepositoryJob` clones into a

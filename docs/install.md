@@ -27,8 +27,9 @@ There are two supported ways to obtain the application images; everything else (
 volumes, configuration, first login) is identical between them:
 
 - **Build from source** (default, and the only mode for development): the Quick Start below —
-  `docker compose` builds the `app`, `collector`, and `static-analysis-collector` images from
-  the Dockerfiles in this repository.
+  `docker compose` builds the `app`, `collector`, and `static-analysis-collector` images as
+  three named targets (`app`, `collector`, `static-analysis-collector`) of the single
+  `docker/Dockerfile` in this repository.
 - **Run prebuilt images**: the stack runs the exact Trivy-gated images CI publishes to the
   GitHub Container Registry — no build toolchain, no compilation, faster first start. See
   [Prebuilt Container Images](#prebuilt-container-images) for the one-line switch.

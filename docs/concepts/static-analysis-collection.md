@@ -44,7 +44,7 @@ explicitly placed on a dedicated `static-analysis` queue — separate from Repos
 own `repository-collection` queue, and from the app container's own default queue.
 
 A second, dedicated Docker image/Compose service, `static-analysis-collector`
-(`docker/static-analysis-collector/Dockerfile`), runs `php artisan queue:work
+(the `static-analysis-collector` target of `docker/Dockerfile`), runs `php artisan queue:work
 --queue=static-analysis` as its only process. Unlike `collector` (git + Trivy only), this image
 carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, Roslynator, Eclipse Temurin JDK,
 Maven, Gradle, SpotBugs + Find Security Bugs, plus — unless built with `OPENGREP_ENABLED=false` —
