@@ -113,6 +113,15 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     https_proxy=${HTTPS_PROXY} \
     no_proxy=${NO_PROXY}
 
+# The official php image sets no locale, so any child process that derives its text
+# encoding from the locale falls back to ASCII. Opengrep's bundled Python is one such
+# process: it reads the vendored rule files with the locale encoding and aborts on the
+# first non-ASCII byte ("'ascii' codec can't decode byte 0xc2"), which makes every
+# `opengrep scan` in the static-analysis-collector and ops targets fail before a single
+# rule is loaded. C.UTF-8 is built into Debian's libc (no locales package needed) and is
+# inherited by every target below, so the same trap cannot recur in a new one.
+ENV LANG=C.UTF-8
+
 # Keep downloaded .deb packages instead of letting the base image's default apt config
 # delete them after install — that default exists for image size (irrelevant to a cache
 # mount, which never ships in the image), and keeping them is what lets the
