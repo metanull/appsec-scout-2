@@ -41,6 +41,15 @@ services:
             interval: 30s
             timeout: 5s
             retries: 3
+            # A fresh app_vendor volume shadows the image's baked-in vendor and forces
+            # the entrypoint into a full `composer install` (with dev packages) before
+            # migrations and seeding even start — on a cold first boot that easily
+            # outlasts 3 retries at 30s, marking the container unhealthy (and failing
+            # any dependent service's `condition: service_healthy` wait) before nginx
+            # has even started. start_period exempts that one-time bootstrap window
+            # from counting against retries; a successful check still ends it early, so
+            # a warm restart is not slowed down.
+            start_period: 180s
 
     mysql:
         image: mysql:8.0
