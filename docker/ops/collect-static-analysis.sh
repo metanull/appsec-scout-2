@@ -46,10 +46,11 @@ SCAN_TYPES=" ${STATIC_ANALYSIS_TYPES:-dotnet,java,opengrep} "
 SCAN_TYPES="${SCAN_TYPES//,/ }"
 FINDSECBUGS_JAR=$(find /opt/spotbugs-plugins -maxdepth 1 -iname 'findsecbugs-plugin-*.jar' 2>/dev/null | head -1)
 
-# opengrep is additionally gated on the binary actually being present in the image — a
-# defensive check, not an expected case: docker/lib/install-static-analysis-toolchain.sh
-# always installs it, so this only matters if STATIC_ANALYSIS_TYPES lists "opengrep" (its
-# own default) against an image built from an older Dockerfile.
+# opengrep is additionally gated on the binary actually being present in the image —
+# docker/ops/Dockerfile skips installing it entirely when built with OPENGREP_ENABLED=false
+# (e.g. where corporate network/DLP policy blocks fetching it from GitHub releases), so this
+# keeps the script from trying to invoke a binary that was never installed even if
+# STATIC_ANALYSIS_TYPES still lists "opengrep" (its own default).
 scan_enabled() {
     [[ "$SCAN_TYPES" == *" $1 "* ]] || return 1
     [ "$1" != "opengrep" ] || command -v opengrep >/dev/null 2>&1
@@ -340,7 +341,7 @@ process_repo() {
 }
 
 if [[ "$SCAN_TYPES" == *" opengrep "* ]] && ! command -v opengrep >/dev/null 2>&1; then
-    echo "Opengrep requested (STATIC_ANALYSIS_TYPES) but not installed in this image — skipping it for every repository."
+    echo "Opengrep requested (STATIC_ANALYSIS_TYPES) but not installed in this image (built with OPENGREP_ENABLED=false) — skipping it for every repository."
 fi
 
 echo "Enumerating projects in organization '$AZDO_ORG'..."

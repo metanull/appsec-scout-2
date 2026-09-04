@@ -69,4 +69,19 @@ return [
 
     'opengrep_timeout' => (int) env('STATIC_ANALYSIS_OPENGREP_TIMEOUT', 900),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Opengrep enabled
+    |--------------------------------------------------------------------------
+    |
+    | Must match whether docker/static-analysis-collector/Dockerfile was built
+    | with OPENGREP_ENABLED=true (docker-compose.yml derives this env var from
+    | that same build arg) — when false, AnalyzeRepositoryJob skips the
+    | Opengrep step entirely instead of invoking a binary that was never
+    | installed into the image.
+    |
+    */
+
+    'opengrep_enabled' => (bool) env('STATIC_ANALYSIS_OPENGREP_ENABLED', true),
+
 ];

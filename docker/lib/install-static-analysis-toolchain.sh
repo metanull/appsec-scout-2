@@ -28,6 +28,11 @@ set -eu
 : "${OPENGREP_VERSION:=1.27.1}"
 : "${OPENGREP_SHA256:=58053da76672bbeb5b0a5441021c58338707052e10f81d777140ca879bd491ce}"
 : "${OPENGREP_RULES_REF:=f1d2b562b414783763fd02a6ed2736eaed622efa}"
+# Set to "false" where corporate network policy blocks fetching the pinned binary from
+# GitHub releases (e.g. Netskope file-type/DLP rules) — the Opengrep install below is
+# then skipped entirely and collect-static-analysis.sh detects the missing binary at
+# runtime and skips the Opengrep step on its own, no other flag needed.
+: "${OPENGREP_ENABLED:=true}"
 
 # --- .NET SDK — Microsoft's official install script (served over HTTPS from
 # Microsoft's own CDN), not the packages.microsoft.com apt repo: that repo's signing
@@ -129,24 +134,29 @@ rm /tmp/findsecbugs.jar.asc
 #
 # Only the *.yaml/*.yml rule definitions are kept from those directories — opengrep's
 # -f directory loader ignores everything else, and the accompanying *.test.* fixtures
-# are intentionally-vulnerable example code (the thing each rule is meant to catch).
-# Deleting them here, rather than never fetching them, is the actual fix for corporate
-# TLS-inspecting proxies that flag them in transit: they are gone from the image and
-# from this build's own filesystem before the layer is committed, so nothing later in
-# the pipeline (a registry scanner, a later `docker save`/push) ever sees them either.
-wget -q \
-    "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
-    -O /usr/local/bin/opengrep
-echo "${OPENGREP_SHA256}  /usr/local/bin/opengrep" | sha256sum -c -
-chmod +x /usr/local/bin/opengrep
-opengrep --version
-wget -q \
-    "https://github.com/opengrep/opengrep-rules/archive/${OPENGREP_RULES_REF}.tar.gz" \
-    -O /tmp/opengrep-rules.tar.gz
-mkdir -p /tmp/opengrep-rules-extract /opt/opengrep-rules
-tar -xzf /tmp/opengrep-rules.tar.gz -C /tmp/opengrep-rules-extract --strip-components=1
-cp -r /tmp/opengrep-rules-extract/csharp /tmp/opengrep-rules-extract/java \
-    /tmp/opengrep-rules-extract/javascript /tmp/opengrep-rules-extract/typescript \
-    /opt/opengrep-rules/
-find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' -delete
-rm -rf /tmp/opengrep-rules.tar.gz /tmp/opengrep-rules-extract
+# are intentionally-vulnerable example code (the thing each rule is meant to catch),
+# which some corporate TLS-inspecting proxies flag as malicious content when this
+# layer is pulled.
+#
+# Guarded by OPENGREP_ENABLED — when "false", none of this runs and
+# /usr/local/bin/opengrep is never created.
+if [ "$OPENGREP_ENABLED" = "true" ]; then
+    wget -q \
+        "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
+        -O /usr/local/bin/opengrep
+    echo "${OPENGREP_SHA256}  /usr/local/bin/opengrep" | sha256sum -c -
+    chmod +x /usr/local/bin/opengrep
+    opengrep --version
+    wget -q \
+        "https://github.com/opengrep/opengrep-rules/archive/${OPENGREP_RULES_REF}.tar.gz" \
+        -O /tmp/opengrep-rules.tar.gz
+    mkdir -p /tmp/opengrep-rules-extract /opt/opengrep-rules
+    tar -xzf /tmp/opengrep-rules.tar.gz -C /tmp/opengrep-rules-extract --strip-components=1
+    cp -r /tmp/opengrep-rules-extract/csharp /tmp/opengrep-rules-extract/java \
+        /tmp/opengrep-rules-extract/javascript /tmp/opengrep-rules-extract/typescript \
+        /opt/opengrep-rules/
+    find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' -delete
+    rm -rf /tmp/opengrep-rules.tar.gz /tmp/opengrep-rules-extract
+else
+    echo "OPENGREP_ENABLED=false — skipping Opengrep binary/rules install."
+fi
