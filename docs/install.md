@@ -27,8 +27,9 @@ There are two supported ways to obtain the application images; everything else (
 volumes, configuration, first login) is identical between them:
 
 - **Build from source** (default, and the only mode for development): the Quick Start below —
-  `docker compose` builds the `app`, `collector`, and `static-analysis-collector` images from
-  the Dockerfiles in this repository.
+  `docker compose` builds the `app`, `collector`, and `static-analysis-collector` images as
+  three named targets (`app`, `collector`, `static-analysis-collector`) of the single
+  `docker/Dockerfile` in this repository.
 - **Run prebuilt images**: the stack runs the exact Trivy-gated images CI publishes to the
   GitHub Container Registry — no build toolchain, no compilation, faster first start. See
   [Prebuilt Container Images](#prebuilt-container-images) for the one-line switch.
@@ -303,9 +304,11 @@ NO_PROXY=localhost,127.0.0.1,mysql,redis
 When the proxy TLS-inspects outbound HTTPS, the corporate CA chain is also a runtime
 concern: every `.crt` file in `.docker/certs/` is installed into the `app`, `collector`,
 and `static-analysis-collector` containers' trust stores at each container start (the
-`/host-certs` mount — see `docker/entrypoint.sh`; the static-analysis JDK's own truststore
-is regenerated in the same step). `trivy-server` and Dependency-Track consume the same
-directory at start as well. Populate `.docker/certs/` from the host's trusted CA store:
+`/host-certs` mount, installed by `docker/lib/install-ca-certs.sh` — see
+`docker/entrypoint.sh`; the static-analysis JDK's own truststore is regenerated in the
+same step). `trivy-server` and Dependency-Track consume the same directory at start as
+well, `trivy-server` through the same script mounted directly into its command. Populate
+`.docker/certs/` from the host's trusted CA store:
 
 - `.\scripts\appsec-scout.ps1` does it automatically — on every run in prebuilt-image
   mode, and on `-Rebuild` in build mode (via `Export-HostCertificates` in

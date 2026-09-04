@@ -3,6 +3,7 @@ services:
         build:
             context: .
             dockerfile: docker/Dockerfile
+            target: ${APP_BUILD_TARGET:-app}
             args:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -40,6 +41,15 @@ services:
             interval: 30s
             timeout: 5s
             retries: 3
+            # A fresh app_vendor volume shadows the image's baked-in vendor and forces
+            # the entrypoint into a full `composer install` (with dev packages) before
+            # migrations and seeding even start — on a cold first boot that easily
+            # outlasts 3 retries at 30s, marking the container unhealthy (and failing
+            # any dependent service's `condition: service_healthy` wait) before nginx
+            # has even started. start_period exempts that one-time bootstrap window
+            # from counting against retries; a successful check still ends it early, so
+            # a warm restart is not slowed down.
+            start_period: 180s
 
     mysql:
         image: mysql:8.0
@@ -183,28 +193,17 @@ services:
             # trivy-server is an unmodified upstream image, so it never gets the corporate/
             # TLS-inspecting proxy CA that docker/Dockerfile bakes into appsec-scout:latest via
             # update-ca-certificates — without this it fails to fetch the vulnerability DB with
-            # "X509 certificate signed by unknown authority". Trust any certs
-            # Export-HostCertificates exported (scripts/lib/Certificates.psm1) the same way,
-            # just at runtime instead of build time; a no-op merge on a machine with no
-            # corporate CA (e.g. a home machine).
-            #
-            # The certs must be copied flat into /usr/local/share/ca-certificates itself, not
-            # mounted as a subdirectory: Alpine's update-ca-certificates (unlike Debian's, which
-            # docker/Dockerfile relies on) collapses an entire subdirectory into one combined
-            # "ca-cert-<subdir-name>.pem" entry and requires that to hold exactly one
-            # certificate — with more than one cert in the mounted dir (guaranteed here, since
-            # Export-HostCertificates always also writes a combined host-ca-bundle.crt alongside
-            # the per-cert files) it fails that check and silently discards every cert in the
-            # directory (confirmed empirically: "Cannot copy to bundle" / "does not contain
-            # exactly one certificate or CRL" warnings, and zero of the certs end up trusted).
-            # Excluding host-ca-bundle.crt and copying the rest to the top level, mirroring
-            # docker/Dockerfile's own working approach, avoids that path entirely.
+            # "X509 certificate signed by unknown authority". docker/lib/install-ca-certs.sh
+            # trusts any certs Export-HostCertificates exported (scripts/lib/Certificates.psm1)
+            # the same way, just at runtime instead of build time; a no-op when there is no
+            # corporate CA (e.g. a home machine). It also carries the Alpine-specific handling
+            # this image needs: Alpine's update-ca-certificates (unlike Debian's, which
+            # docker/Dockerfile relies on) collapses an entire mounted subdirectory into one
+            # combined "ca-cert-<subdir-name>.pem" entry and requires that to hold exactly one
+            # certificate, so the script copies each cert flat into
+            # /usr/local/share/ca-certificates instead of relying on the mount layout.
             - |
-              if [ -n "$$(ls -A /host-certs 2>/dev/null)" ]; then
-                  find /host-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
-                      -exec cp {} /usr/local/share/ca-certificates/ \;
-                  update-ca-certificates
-              fi
+              /usr/local/bin/install-ca-certs.sh /host-certs
               exec trivy server --listen 0.0.0.0:4954 --token "$$(cat /var/lib/trivy-token/token)"
         cpus: ${TRIVY_CPUS:-2}
         mem_limit: ${TRIVY_MEM_LIMIT:-3g}
@@ -213,6 +212,7 @@ services:
             - trivy_token:/var/lib/trivy-token:ro
             - trivy_data:/root/.cache
             - ./.docker/certs:/host-certs:ro
+            - ./docker/lib/install-ca-certs.sh:/usr/local/bin/install-ca-certs.sh:ro
 
     dependencytrack-bootstrap:
         image: appsec-scout:latest
@@ -258,7 +258,8 @@ services:
     collector:
         build:
             context: .
-            dockerfile: docker/collector/Dockerfile
+            dockerfile: docker/Dockerfile
+            target: collector
             args:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
@@ -309,20 +310,20 @@ services:
     # "Run static analysis"): consumes the static-analysis Redis queue only — separate
     # from collector's own repository-collection queue, since a compile-then-analyze job
     # runs far longer than a Trivy filesystem scan and must never starve or be starved by
-    # it. Carries the .NET/Java/Roslynator/SpotBugs+FindSecBugs toolchain docker/collector
-    # deliberately excludes; no Trivy (never called here) and no trivy-server dependency.
+    # it. Carries the .NET/Java/Roslynator/SpotBugs+FindSecBugs toolchain the collector
+    # target deliberately excludes; no Trivy (never called here) and no trivy-server dependency.
     # mem_limit defaults higher than collector's: compiling a real .sln/Maven/Gradle
     # project needs materially more memory than a trivy fs scan. No `profiles:` — starts
     # by default, since the feature does not work without it.
     static-analysis-collector:
         build:
             context: .
-            dockerfile: docker/static-analysis-collector/Dockerfile
+            dockerfile: docker/Dockerfile
+            target: static-analysis-collector
             args:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
                 NO_PROXY: "${NO_PROXY:-}"
-                OPENGREP_ENABLED: "${OPENGREP_ENABLED:-true}"
         image: appsec-scout-static-analysis-collector:latest
         restart: unless-stopped
         depends_on:
@@ -349,7 +350,6 @@ services:
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
             SKIP_APP_BOOTSTRAP: "1"
             STATIC_ANALYSIS_COLLECTION_WORKSPACE: /workspace-scratch
-            STATIC_ANALYSIS_OPENGREP_ENABLED: "${OPENGREP_ENABLED:-true}"
         cpus: ${STATIC_ANALYSIS_COLLECTOR_CPUS:-2}
         mem_limit: ${STATIC_ANALYSIS_COLLECTOR_MEM_LIMIT:-4g}
 
@@ -366,12 +366,12 @@ services:
     ops:
         build:
             context: .
-            dockerfile: docker/ops/Dockerfile
+            dockerfile: docker/Dockerfile
+            target: ops
             args:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"
                 NO_PROXY: "${NO_PROXY:-}"
-                OPENGREP_ENABLED: "${OPENGREP_ENABLED:-true}"
         image: appsec-scout-ops:latest
         profiles:
             - ops

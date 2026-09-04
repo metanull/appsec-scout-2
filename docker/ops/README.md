@@ -2,12 +2,14 @@
 
 A sandboxed, ephemeral container for hands-on appsec investigation against any repository — code analysis, secret scanning, dependency auditing, SBOM generation, Git history cleaning, and running Claude Code itself, interactively or as an autonomous task. It has no access to the host filesystem beyond what is explicitly bind-mounted, and is driven exclusively via [scripts/invoke-ops.ps1](../../scripts/README.md#invoke-opsps1) — never `docker compose` directly.
 
+The image itself is the `ops` target of the single `docker/Dockerfile` (`docker-compose.yml` builds it with `target: ops`), `FROM` the same `php-runtime` stage the `app`, `collector`, and `static-analysis-collector` targets share — so PHP 8.4 here is the exact same official build, extension set, and 512M memory limit the app runs on, and Pint/PHPStan/Pest results are directly comparable to CI. It stays local-only by design (never scanned or published): CI builds it as a smoke check on every pull request that touches `docker/**`, but it never runs in a hosted environment.
+
 `-SbomScan` and `-StaticAnalysis` both depend on the core stack (`appsec-scout.ps1`) already being up: they reuse the AzDO PAT already configured in appsec-scout's credential vault. `-SbomScan` additionally runs every Trivy scan against the shared `trivy-server` container rather than downloading its own vulnerability database. Neither is meant to run standalone — start `appsec-scout.ps1` first.
 
 ## What's inside
 
 - **git**, **gh** (GitHub CLI), **jq**, **curl** — repo/API access
-- **PHP 8.4 CLI** + Composer, with Pint, PHPStan, and Pest installed globally — audit any PHP repo without a project-specific vendor/ install
+- **PHP 8.4** (the same official `php-runtime` build the app runs on, plus `pcov` for coverage) + Composer, with Pint, PHPStan, and Pest installed globally — audit any PHP repo without a project-specific vendor/ install
 - **.NET 10 SDK** + Roslynator CLI — restore/build/analyze .NET solutions
 - **Eclipse Temurin JDK (current LTS)** + **Maven** + **Gradle** + **SpotBugs** with the **Find Security Bugs** plugin (checksum-verified at build time) — build and statically analyze any Java repo (its own `mvnw`/`gradlew` wrapper is preferred when present); also the JVM `bfg` runs on
 - **Trivy** — SBOM (CycloneDX), vulnerability, and secret scanning
@@ -15,6 +17,12 @@ A sandboxed, ephemeral container for hands-on appsec investigation against any r
 - **Claude Code** — run via `-Claude`, once authenticated via `-Claude -Login`; the plain shell never launches it automatically
 
 One image throughout — every mode (`-Shell`, `-Claude`, `-SbomScan`, `-StaticAnalysis`) runs in the same container with the full toolset above available, since Claude is mostly used to work on code and may need any of it. The image runs as a non-root `ops` user (falls back to root only for system package installs during build).
+
+The .NET/Java toolchain (.NET SDK, Roslynator, Temurin JDK, Maven, Gradle, SpotBugs + Find
+Security Bugs, Opengrep) and Trivy are installed by `docker/lib/install-static-analysis-toolchain.sh`
+and `docker/lib/install-trivy.sh` — the same scripts the `static-analysis-collector` and
+`collector` targets of `docker/Dockerfile` use, so this image gets the exact same tool
+versions. Bump a version there, not in this directory.
 
 ## Usage
 
@@ -103,7 +111,7 @@ Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{cdx,vuln.sarif
 4. Java: builds the topmost `pom.xml`/`build.gradle[.kts]` in the tree — the repo's own `mvnw`/`gradlew` wrapper if present, else the image's Maven/Gradle install — then runs SpotBugs (with the Find Security Bugs plugin) against every directory that ends up containing compiled `.class` files.
 5. Deletes the clone immediately after analysis.
 
-Controlled by `STATIC_ANALYSIS_TYPES` (default `dotnet,java,opengrep`). Build failures are non-fatal for either language — the corresponding report is simply not generated for that repo, mirroring how `collect-sboms.sh` already treats `dotnet restore`/`build` failures. Opengrep is additionally skipped on its own, independent of `STATIC_ANALYSIS_TYPES`, whenever the image was built with `OPENGREP_ENABLED=false` (see [Configuration](#configuration) below) — the script detects the missing binary rather than failing per repository.
+Controlled by `STATIC_ANALYSIS_TYPES` (default `dotnet,java,opengrep`). Build failures are non-fatal for either language — the corresponding report is simply not generated for that repo, mirroring how `collect-sboms.sh` already treats `dotnet restore`/`build` failures.
 
 Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{dotnet,java}.sarif`, plus a `run.jsonl` and `summary.json` with the same shape and semantics as the SBOM scan's (including `-Resume` support). Reports are picked up into appsec-scout incrementally via a scheduled `staticanalysis:import-pending-scans` tick, exactly like `sbom:import-pending-scans` — see the SBOM scan section above for the exact mechanics, which this mirrors.
 
@@ -117,5 +125,3 @@ Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{dotnet,java}.s
 | `JAVA_BUILD_TIMEOUT` | `900` (seconds) | Timeout for the Maven/Gradle build. |
 | `ANALYSIS_TIMEOUT` | `900` (seconds) | Timeout for each Roslynator/SpotBugs invocation. |
 | `OPENGREP_TIMEOUT` | `900` (seconds) | Timeout for each Opengrep invocation. |
-
-**Build-time toggle**: `OPENGREP_ENABLED` (root `.env`, default `true`) is a Docker build arg, not a runtime env var — set it to `false` to skip downloading the pinned Opengrep binary/ruleset when building this image (e.g. where corporate network/DLP policy blocks that download), then rebuild with `.\scripts\appsec-scout.ps1 -Rebuild` or `invoke-ops.ps1 -Rebuild`. No other change is needed: `collect-static-analysis.sh` detects the missing binary at runtime and skips Opengrep on its own.

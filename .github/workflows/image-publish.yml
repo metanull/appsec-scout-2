@@ -1,11 +1,17 @@
 # Builds the three deployable container images (app, collector, static-analysis-collector),
 # gates each on a Trivy vulnerability scan, and publishes them to GHCR as
 # ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the Trivy gate
-# fails: the push step runs strictly after the scan steps in the same job.
+# fails: the push step runs strictly after the scan steps in the same job. All three are
+# targets of the single docker/Dockerfile — the matrix below selects which target to build.
+# Every build job (including the ops/dev smoke builds) depends on the lint job, which runs
+# hadolint against docker/Dockerfile first — see .hadolint.yaml for the ignored rules.
 #
 # - Pull requests touching the image definitions get a build + scan only (no publish).
 # - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
-# - The ops and claude images are workstation-side dev profiles and are never published.
+# - The ops target is a workstation-only image (never runs in a hosted environment) and is
+#   never published or scanned — build-ops below only proves the shared php-runtime/
+#   toolchain stages it depends on still produce a working image, on every PR that touches
+#   docker/**.
 #
 # Azure note: ACR receives these exact images later via .github/workflows/acr-promote.yml
 # (server-side import by tag) — images are never rebuilt for ACR.
@@ -33,8 +39,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  lint:
+    name: Lint Dockerfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: docker/Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: warning
+
   build:
     name: ${{ matrix.image.name }}
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -47,11 +71,11 @@ jobs:
       matrix:
         image:
           - name: app
-            dockerfile: docker/Dockerfile
+            target: app
           - name: collector
-            dockerfile: docker/collector/Dockerfile
+            target: collector
           - name: static-analysis-collector
-            dockerfile: docker/static-analysis-collector/Dockerfile
+            target: static-analysis-collector
 
     env:
       IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image.name }}
@@ -85,7 +109,8 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: ${{ matrix.image.dockerfile }}
+          file: docker/Dockerfile
+          target: ${{ matrix.image.target }}
           load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -134,9 +159,67 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: ${{ matrix.image.dockerfile }}
+          file: docker/Dockerfile
+          target: ${{ matrix.image.target }}
           push: true
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image.name }}
+
+  # ops is never published or scanned (see the header comment): this job only proves the
+  # shared php-runtime and toolchain-script stages it depends on still produce a working
+  # image. Runs on pull_request only, plus workflow_dispatch for a manual check.
+  build-ops:
+    name: ops (smoke build)
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build ops image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ops
+          push: false
+          cache-from: type=gha,scope=ops
+          cache-to: type=gha,scope=ops,mode=max
+
+  # dev is also local-only (never published or scanned) — a developer's own opt-in via
+  # APP_BUILD_TARGET=dev, not part of the default `app` build the matrix above already
+  # covers. Smoke-built here for the same reason as build-ops: proving it still builds
+  # on every docker/**-touching PR, since nothing else in this workflow ever selects it.
+  build-dev:
+    name: dev (smoke build)
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build dev image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: dev
+          push: false
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=dev,mode=max

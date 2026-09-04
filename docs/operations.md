@@ -234,7 +234,11 @@ detail, including the Dependency-Track visualization pipeline, in
 .\scripts\invoke-fix.ps1 -Fix npm-update          # npm update
 ```
 
-Direct `docker compose` equivalent for a single tool, run against the dev image:
+Direct `docker compose` equivalent for a single tool, run against the dev image. `APP_BUILD_TARGET=dev`
+builds the `dev` target of `docker/Dockerfile` (the `app` target plus Composer dev dependencies
+baked in); without it, `docker compose run` still works against the plain `app` target because
+`docker/entrypoint.sh` installs dev dependencies at every container start in the local flow —
+setting it just avoids paying that install cost on every run:
 
 ```powershell
 $env:APP_BUILD_TARGET = 'dev'
