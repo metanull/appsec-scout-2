@@ -127,26 +127,35 @@ rm /tmp/findsecbugs.jar.asc
 # (secret detection) is deliberately excluded, since Trivy already covers secrets in
 # the repository-collection pipeline.
 #
-# Only the *.yaml/*.yml rule definitions are kept from those directories — opengrep's
+# Only the *.yaml/*.yml rule definitions are taken from those directories — opengrep's
 # -f directory loader ignores everything else, and the accompanying *.test.* fixtures
-# are intentionally-vulnerable example code (the thing each rule is meant to catch).
-# Deleting them here, rather than never fetching them, is the actual fix for corporate
-# TLS-inspecting proxies that flag them in transit: they are gone from the image and
-# from this build's own filesystem before the layer is committed, so nothing later in
-# the pipeline (a registry scanner, a later `docker save`/push) ever sees them either.
+# are intentionally-vulnerable example code (the thing each rule is meant to catch),
+# which corporate TLS-inspecting proxies (e.g. Netskope) refuse in transit. Fetching
+# the repository's release archive and pruning the fixtures afterwards is not enough
+# for such a proxy: the archive is refused before it can be pruned. So the rules are
+# fetched with git instead, as a blob-filtered (--filter=blob:none) sparse checkout of
+# the pinned commit restricted to the YAML files — git then requests only the blobs the
+# sparse-checkout patterns select, so the fixtures never cross the network at all, and
+# nothing else has to be pruned. The .git directory is dropped afterwards; the image
+# carries just the rule files, exactly as the release archive approach produced.
 wget -q \
     "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86" \
     -O /usr/local/bin/opengrep
 echo "${OPENGREP_SHA256}  /usr/local/bin/opengrep" | sha256sum -c -
 chmod +x /usr/local/bin/opengrep
 opengrep --version
-wget -q \
-    "https://github.com/opengrep/opengrep-rules/archive/${OPENGREP_RULES_REF}.tar.gz" \
-    -O /tmp/opengrep-rules.tar.gz
-mkdir -p /tmp/opengrep-rules-extract /opt/opengrep-rules
-tar -xzf /tmp/opengrep-rules.tar.gz -C /tmp/opengrep-rules-extract --strip-components=1
-cp -r /tmp/opengrep-rules-extract/csharp /tmp/opengrep-rules-extract/java \
-    /tmp/opengrep-rules-extract/javascript /tmp/opengrep-rules-extract/typescript \
-    /opt/opengrep-rules/
-find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' -delete
-rm -rf /tmp/opengrep-rules.tar.gz /tmp/opengrep-rules-extract
+mkdir -p /opt/opengrep-rules
+git -C /opt/opengrep-rules init -q
+git -C /opt/opengrep-rules remote add origin https://github.com/opengrep/opengrep-rules.git
+git -C /opt/opengrep-rules sparse-checkout set --no-cone \
+    '/csharp/**/*.yaml' '/csharp/**/*.yml' \
+    '/java/**/*.yaml' '/java/**/*.yml' \
+    '/javascript/**/*.yaml' '/javascript/**/*.yml' \
+    '/typescript/**/*.yaml' '/typescript/**/*.yml'
+git -C /opt/opengrep-rules fetch -q --depth 1 --filter=blob:none origin "${OPENGREP_RULES_REF}"
+git -C /opt/opengrep-rules checkout -q FETCH_HEAD
+rm -rf /opt/opengrep-rules/.git
+# Guard the sparse patterns against a silent mismatch: an empty or non-YAML result
+# would otherwise only surface as an Opengrep scan with zero rules loaded.
+test "$(find /opt/opengrep-rules -type f -name '*.y*ml' | wc -l)" -gt 0
+test "$(find /opt/opengrep-rules -type f ! -name '*.yaml' ! -name '*.yml' | wc -l)" -eq 0
