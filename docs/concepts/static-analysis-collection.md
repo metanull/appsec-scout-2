@@ -47,8 +47,8 @@ A second, dedicated Docker image/Compose service, `static-analysis-collector`
 (the `static-analysis-collector` target of `docker/Dockerfile`), runs `php artisan queue:work
 --queue=static-analysis` as its only process. Unlike `collector` (git + Trivy only), this image
 carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, Roslynator, Eclipse Temurin JDK,
-Maven, Gradle, SpotBugs + Find Security Bugs, plus the Opengrep binary and its vendored
-csharp/java/javascript/typescript ruleset
+Maven, Gradle, SpotBugs + Find Security Bugs, plus — unless built with `OPENGREP_ENABLED=false` —
+the Opengrep binary and its vendored csharp/java/javascript/typescript ruleset
 (`/opt/opengrep-rules`) — installed by `docker/lib/install-static-analysis-toolchain.sh`, the
 single source of every pin in this toolchain, shared with the `ops` target (which carries the
 same toolchain plus its own interactive-shell-only layers: GitHub CLI, Claude Code, BFG Repo
@@ -159,7 +159,12 @@ three-ecosystem analysis `docker/ops/collect-static-analysis.sh` runs today:
   /opt/opengrep-rules <clone>` is run once per repository against the vendored, version-pinned
   csharp/java/javascript/typescript ruleset. The resulting SARIF is attached as
   `code-quality-opengrep` **even when it carries zero results**, so a later `StaleRecordSweeper`
-  pass can still resolve previously reported Opengrep findings that no longer occur.
+  pass can still resolve previously reported Opengrep findings that no longer occur. Gated on
+  `static_analysis_collection.opengrep_enabled` (`STATIC_ANALYSIS_OPENGREP_ENABLED`, default
+  `true`) — set to `false` (matching the image's own `OPENGREP_ENABLED=false` build arg, see
+  [Isolation](#isolation-the-static-analysis-collector-container) above) to skip this step
+  entirely, e.g. where corporate network/DLP policy blocks fetching the pinned Opengrep binary
+  from GitHub releases at build time.
 - **`.NET`**: every `*.sln` found anywhere in the clone is restored, then — regardless of the
   build's own result — built and analyzed with Roslynator (`--severity-level info`). Every
   solution that produces a non-empty SARIF file has its `runs` merged into a single
