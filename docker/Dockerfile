@@ -40,7 +40,8 @@ RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
 RUN apk add --no-cache icu-dev \
     && docker-php-ext-install intl
 
-RUN composer install \
+RUN --mount=type=cache,target=/tmp/composer-cache \
+    COMPOSER_CACHE_DIR=/tmp/composer-cache composer install \
         --no-dev \
         --prefer-dist \
         --no-interaction \
@@ -77,6 +78,7 @@ WORKDIR /app
 
 COPY app-laravel/package.json app-laravel/package-lock.json* ./
 RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
+    --mount=type=cache,target=/root/.npm \
     if [ -f /host-certs/host-ca-bundle.crt ]; then \
         export SSL_CERT_FILE=/host-certs/host-ca-bundle.crt; \
         export NODE_EXTRA_CA_CERTS=/host-certs/host-ca-bundle.crt; \
@@ -88,6 +90,7 @@ COPY app-laravel/ ./
 COPY --from=composer-deps /app/vendor ./vendor
 
 RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
+    --mount=type=cache,target=/root/.npm \
     if [ -f /host-certs/host-ca-bundle.crt ]; then \
         export SSL_CERT_FILE=/host-certs/host-ca-bundle.crt; \
         export NODE_EXTRA_CA_CERTS=/host-certs/host-ca-bundle.crt; \
@@ -115,10 +118,19 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     https_proxy=${HTTPS_PROXY} \
     no_proxy=${NO_PROXY}
 
+# Keep downloaded .deb packages instead of letting the base image's default apt config
+# delete them after install — that default exists for image size (irrelevant to a cache
+# mount, which never ships in the image), and keeping them is what lets the
+# /var/cache/apt cache mount below actually save re-downloads across builds.
+RUN rm -f /etc/apt/apt.conf.d/docker-clean \
+    && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+
 # The upgrade applies Debian security updates the base image predates — the CI Trivy
 # gate fails the build on any fixable HIGH/CRITICAL, so lagging base-image packages
 # must be patched at build time.
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         dos2unix \
@@ -133,7 +145,8 @@ RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
     --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
     sh /tmp/lib/install-ca-certs.sh
 
-RUN docker-php-ext-install -j"$(nproc)" pdo_mysql pdo_pgsql intl bcmath zip pcntl opcache \
+RUN --mount=type=cache,target=/tmp/pear \
+    docker-php-ext-install -j"$(nproc)" pdo_mysql pdo_pgsql intl bcmath zip pcntl opcache \
     && printf 'memory_limit=512M\n' > /usr/local/etc/php/conf.d/appsec-scout-memory-limit.ini \
     && pecl install redis \
     && docker-php-ext-enable redis \
@@ -181,7 +194,10 @@ FROM laravel-base AS app
 # image and is inherited automatically through laravel-base.
 ARG BUILD_APP_KEY
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,target=/tmp/pear \
+    apt-get update && apt-get install -y --no-install-recommends \
         nginx \
         supervisor \
         imagemagick \
@@ -241,8 +257,9 @@ WORKDIR /var/www/html
 
 RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
     --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    --mount=type=cache,target=/tmp/composer-cache \
     sh /tmp/lib/install-ca-certs.sh \
-    && composer install \
+    && COMPOSER_CACHE_DIR=/tmp/composer-cache composer install \
         --prefer-dist \
         --no-interaction \
         --no-progress \
@@ -255,12 +272,16 @@ RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
 # clone, matching invoke-ops.ps1 -SbomScan's scope, not -StaticAnalysis's. ---
 FROM laravel-base AS collector
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         wget \
         gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     sh /tmp/lib/install-trivy.sh
 
 # Every PHP extension is compiled in php-runtime. Purge linux-libc-dev — see app's
@@ -280,7 +301,9 @@ FROM laravel-base AS static-analysis-collector
 
 ARG OPENGREP_ENABLED
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         wget \
         gnupg \
         lsb-release \
@@ -291,6 +314,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # docker/lib/install-static-analysis-toolchain.sh for the full rationale on each one,
 # including why .NET is installed from Microsoft's script rather than its apt repo.
 RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     OPENGREP_ENABLED=${OPENGREP_ENABLED} sh /tmp/lib/install-static-analysis-toolchain.sh
 
 # PATH/JAVA_HOME can't be set from inside the script — it only affects the RUN step's
@@ -320,7 +345,9 @@ ARG BFG_VERSION
 ARG NODE_VERSION
 ARG OPENGREP_ENABLED
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         jq \
         gnupg \
         lsb-release \
@@ -340,7 +367,9 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
     && rm "/tmp/node-v${NODE_VERSION}-linux-x64.tar.xz"
 
 # --- GitHub CLI (signed apt repo) ---
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
         > /etc/apt/sources.list.d/github-cli.list \
@@ -364,7 +393,10 @@ WORKDIR /
 # confirmed with `php -m`, not reinstalled. imagick and pcov are ops-specific (the app
 # needs imagick too, but compiles it itself in the app target; pcov is test-coverage
 # tooling no published image needs).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,target=/tmp/pear \
+    apt-get update && apt-get install -y --no-install-recommends \
         imagemagick \
         libmagickwand-dev \
     && pecl install imagick pcov \
@@ -390,9 +422,13 @@ ENV PATH="${PATH}:/home/ops/.config/composer/vendor/bin"
 USER root
 
 RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     sh /tmp/lib/install-trivy.sh
 
 RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     OPENGREP_ENABLED=${OPENGREP_ENABLED} sh /tmp/lib/install-static-analysis-toolchain.sh
 
 ENV PATH="${PATH}:/usr/local/dotnet-tools" \
