@@ -173,3 +173,31 @@ jobs:
           push: false
           cache-from: type=gha,scope=ops
           cache-to: type=gha,scope=ops,mode=max
+
+  # dev is also local-only (never published or scanned) — a developer's own opt-in via
+  # APP_BUILD_TARGET=dev, not part of the default `app` build the matrix above already
+  # covers. Smoke-built here for the same reason as build-ops: proving it still builds
+  # on every docker/**-touching PR, since nothing else in this workflow ever selects it.
+  build-dev:
+    name: dev (smoke build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build dev image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: dev
+          push: false
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=dev,mode=max
