@@ -16,22 +16,13 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 WORKDIR /app
 
 COPY app-laravel/composer.json app-laravel/composer.lock ./
-COPY .docker/certs/ /tmp/appsec-scout-certs/
 
-RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
-        find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
-            -exec cp {} /usr/local/share/ca-certificates/ \; ; \
-        update-ca-certificates; \
-    fi
+RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
+    --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    sh /tmp/lib/install-ca-certs.sh
 
 RUN apk add --no-cache icu-dev \
     && docker-php-ext-install intl
-
-RUN if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
-        export SSL_CERT_FILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
-        export CURL_CA_BUNDLE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
-        export COMPOSER_CAFILE=/tmp/appsec-scout-certs/host-ca-bundle.crt; \
-    fi;
 
 RUN composer install \
         --prefer-dist \
@@ -69,8 +60,6 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     https_proxy=${HTTPS_PROXY} \
     no_proxy=${NO_PROXY}
 
-COPY .docker/certs/ /tmp/appsec-scout-certs/
-
 COPY --from=composer-deps /usr/bin/composer /usr/local/bin/composer
 
 # The upgrade applies Debian security updates the base image predates — the CI Trivy
@@ -87,12 +76,13 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
         libpq-dev \
         libzip-dev \
         unzip \
-    && if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
-        find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
-            -exec cp {} /usr/local/share/ca-certificates/ \; ; \
-        update-ca-certificates; \
-    fi \
-    && docker-php-ext-install -j"$(nproc)" pdo_mysql pdo_pgsql intl bcmath zip pcntl opcache \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
+    --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    sh /tmp/lib/install-ca-certs.sh
+
+RUN docker-php-ext-install -j"$(nproc)" pdo_mysql pdo_pgsql intl bcmath zip pcntl opcache \
     && printf 'memory_limit=512M\n' > /usr/local/etc/php/conf.d/appsec-scout-memory-limit.ini \
     && pecl install redis \
     && docker-php-ext-enable redis \
@@ -134,9 +124,10 @@ RUN mkdir -p \
         storage/logs
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/lib/install-ca-certs.sh /usr/local/bin/install-ca-certs.sh
 
-RUN dos2unix /usr/local/bin/entrypoint.sh && \
-    chmod +x /usr/local/bin/entrypoint.sh
+RUN dos2unix /usr/local/bin/entrypoint.sh /usr/local/bin/install-ca-certs.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/install-ca-certs.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # -v: full exception traces on job failure go to stdout, not just a one-line summary.

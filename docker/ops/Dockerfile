@@ -41,8 +41,6 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     https_proxy=${HTTPS_PROXY} \
     no_proxy=${NO_PROXY}
 
-COPY .docker/certs/ /tmp/appsec-scout-certs/
-
 # --- Layer 1: Base packages + custom CA certs (mirrors claude Dockerfile) ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
@@ -53,12 +51,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         lsb-release \
         unzip \
         wget \
-    && if [ -f /tmp/appsec-scout-certs/host-ca-bundle.crt ]; then \
-         find /tmp/appsec-scout-certs -maxdepth 1 -type f -name '*.crt' ! -name 'host-ca-bundle.crt' \
-             -exec cp {} /usr/local/share/ca-certificates/ \; ; \
-         update-ca-certificates; \
-       fi \
     && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
+    --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    sh /tmp/lib/install-ca-certs.sh
 
 # --- Layer 2: GitHub CLI (mirrors claude Dockerfile) ---
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
