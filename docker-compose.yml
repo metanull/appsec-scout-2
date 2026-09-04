@@ -3,7 +3,7 @@ services:
         build:
             context: .
             dockerfile: docker/Dockerfile
-            target: app
+            target: ${APP_BUILD_TARGET:-app}
             args:
                 HTTP_PROXY: "${HTTP_PROXY:-}"
                 HTTPS_PROXY: "${HTTPS_PROXY:-}"

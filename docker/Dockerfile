@@ -41,6 +41,7 @@ RUN apk add --no-cache icu-dev \
     && docker-php-ext-install intl
 
 RUN composer install \
+        --no-dev \
         --prefer-dist \
         --no-interaction \
         --no-progress \
@@ -228,6 +229,25 @@ RUN chown -R www-data:www-data storage bootstrap/cache
 EXPOSE 8080
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+
+# --- dev (local only, never published): the app target with Composer dev dependencies
+# (Pest, PHPStan, Larastan, Pint, Faker, Mockery, Pail, Collision) baked in, so the image
+# is complete for checks without relying on the entrypoint's runtime `composer install`.
+# composer-deps installed with --no-dev, so this reinstalls with dev packages included —
+# composer.lock still lists them, this just adds what --no-dev skipped. ---
+FROM app AS dev
+
+WORKDIR /var/www/html
+
+RUN --mount=type=bind,source=.docker/certs,target=/host-certs,ro \
+    --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
+    sh /tmp/lib/install-ca-certs.sh \
+    && composer install \
+        --prefer-dist \
+        --no-interaction \
+        --no-progress \
+        --no-scripts \
+    && chown -R www-data:www-data vendor
 
 # --- collector (published): lean CLI-only worker — git + Trivy + the Laravel app's PHP
 # runtime. No nginx/php-fpm/supervisor (nothing here serves HTTP) and no build toolchain

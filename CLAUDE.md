@@ -229,7 +229,7 @@ This rule is about that workstation, not about Claude Code's own execution envir
 
 **Image publishing**: `.github/workflows/image-publish.yml` builds the three deployable images (app, collector, static-analysis-collector — each a named target of the single `docker/Dockerfile`) on every push to `main`, gates each on a Trivy scan (fixable HIGH/CRITICAL fail the build), and publishes to `ghcr.io/metanull/appsec-scout-2/<name>`; PRs touching `docker/**` get a build+scan without publish. `.github/workflows/acr-promote.yml` (manual trigger, untested until Azure access exists) imports a published GHCR tag into ACR server-side rather than rebuilding.
 
-When running checks directly via `docker compose` (e.g. for a single file or narrower scope), the dev image must be active:
+When running checks directly via `docker compose` (e.g. for a single file or narrower scope), the dev image must be active. `APP_BUILD_TARGET=dev` builds the `dev` target of `docker/Dockerfile` (the `app` target plus Composer dev dependencies baked in); without it, `docker compose run` still works against the plain `app` target because `docker/entrypoint.sh` runs `composer install` (dev included, since it does not pass `--no-dev`) on every container start in the local (non-immutable) flow — setting `APP_BUILD_TARGET=dev` just avoids paying that install cost on every run:
 
 ```powershell
 $env:APP_BUILD_TARGET = 'dev'
