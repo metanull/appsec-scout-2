@@ -16,6 +16,12 @@ A sandboxed, ephemeral container for hands-on appsec investigation against any r
 
 One image throughout — every mode (`-Shell`, `-Claude`, `-SbomScan`, `-StaticAnalysis`) runs in the same container with the full toolset above available, since Claude is mostly used to work on code and may need any of it. The image runs as a non-root `ops` user (falls back to root only for system package installs during build).
 
+The .NET/Java toolchain (.NET SDK, Roslynator, Temurin JDK, Maven, Gradle, SpotBugs + Find
+Security Bugs, Opengrep) and Trivy are installed by `docker/lib/install-static-analysis-toolchain.sh`
+and `docker/lib/install-trivy.sh` — the same scripts the `static-analysis-collector` and
+`collector` targets of `docker/Dockerfile` use, so this image gets the exact same tool
+versions. Bump a version there, not in this directory.
+
 ## Usage
 
 All usage goes through `invoke-ops.ps1`; see [scripts/README.md](../../scripts/README.md#invoke-opsps1) for the full parameter reference. Summary of modes:
