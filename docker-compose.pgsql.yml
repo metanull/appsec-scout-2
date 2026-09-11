@@ -27,7 +27,16 @@
 
 services:
     postgres:
-        image: postgres:16-alpine
+        build:
+            context: .
+            dockerfile: docker/postgres/Dockerfile
+        image: appsec-scout-postgres:latest
+        # Start this service only when the local-db profile is explicitly enabled
+        # (e.g., COMPOSE_PROFILES=local-db or docker compose --profile local-db up).
+        # An operator pointing at an external PostgreSQL server will override DB_HOST/DB_PORT
+        # in .env instead and can omit this profile entirely.
+        profiles:
+            - local-db
         environment:
             POSTGRES_DB: "${DB_DATABASE:-appsec_scout}"
             POSTGRES_USER: "${DB_USERNAME:-appsec_scout}"
@@ -36,7 +45,6 @@ services:
         mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
         volumes:
             - postgres_data:/var/lib/postgresql/data
-            - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-test-db.sql:ro
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-appsec_scout} -d ${DB_DATABASE:-appsec_scout}"]
             interval: 10s
@@ -53,12 +61,13 @@ services:
         depends_on: !override
             postgres:
                 condition: service_healthy
+                required: false
             redis:
                 condition: service_started
         environment:
             DB_CONNECTION: pgsql
-            DB_HOST: postgres
-            DB_PORT: "5432"
+            DB_HOST: "${DB_HOST:-postgres}"
+            DB_PORT: "${DB_PORT:-5432}"
             DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
             DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
             DB_PASSWORD: "${DB_PASSWORD:-password}"
@@ -67,6 +76,7 @@ services:
         depends_on: !override
             postgres:
                 condition: service_healthy
+                required: false
             redis:
                 condition: service_started
             trivy-server:
@@ -75,8 +85,8 @@ services:
                 condition: service_healthy
         environment:
             DB_CONNECTION: pgsql
-            DB_HOST: postgres
-            DB_PORT: "5432"
+            DB_HOST: "${DB_HOST:-postgres}"
+            DB_PORT: "${DB_PORT:-5432}"
             DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
             DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
             DB_PASSWORD: "${DB_PASSWORD:-password}"
@@ -85,14 +95,15 @@ services:
         depends_on: !override
             postgres:
                 condition: service_healthy
+                required: false
             redis:
                 condition: service_started
             app:
                 condition: service_healthy
         environment:
             DB_CONNECTION: pgsql
-            DB_HOST: postgres
-            DB_PORT: "5432"
+            DB_HOST: "${DB_HOST:-postgres}"
+            DB_PORT: "${DB_PORT:-5432}"
             DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
             DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
             DB_PASSWORD: "${DB_PASSWORD:-password}"
@@ -100,8 +111,8 @@ services:
     dependencytrack-bootstrap:
         environment:
             DB_CONNECTION: pgsql
-            DB_HOST: postgres
-            DB_PORT: "5432"
+            DB_HOST: "${DB_HOST:-postgres}"
+            DB_PORT: "${DB_PORT:-5432}"
             DB_DATABASE: "${DB_DATABASE:-appsec_scout}"
             DB_USERNAME: "${DB_USERNAME:-appsec_scout}"
             DB_PASSWORD: "${DB_PASSWORD:-password}"
