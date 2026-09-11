@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Credentials\Vault;
+use App\Database\AzureManagedIdentityPostgresConnector;
 use App\Events\SyncRunFinished;
 use App\Listeners\BustDashboardCache;
 use App\Models\User;
@@ -63,6 +64,11 @@ class AppServiceProvider extends ServiceProvider
             GitHubRepos::class,
             BitbucketRepos::class,
         ], 'appsec-scout.source-control');
+
+        // Swaps in Azure Managed Identity token auth for pgsql connections that
+        // opt in via config('database.connections.pgsql.azure_managed_identity');
+        // a no-op passthrough for every other connection.
+        $this->app->bind('db.connector.pgsql', AzureManagedIdentityPostgresConnector::class);
     }
 
     /**

@@ -97,6 +97,20 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // TLS client certificates for connecting to an external Postgres server.
+            // When left unset, these SSL options are not passed to the DSN.
+            ...array_filter([
+                'sslrootcert' => env('DB_SSLROOTCERT'),
+                'sslcert' => env('DB_SSLCERT'),
+                'sslkey' => env('DB_SSLKEY'),
+            ]),
+            // Opt-in Azure Managed Identity auth for Azure Database for PostgreSQL:
+            // when enabled, DB_PASSWORD is ignored and a short-lived IMDS access
+            // token is used as the PDO password instead (see
+            // App\Database\AzureManagedIdentityPostgresConnector). Off by default,
+            // so every existing pgsql connection is unaffected.
+            'azure_managed_identity' => (bool) env('DB_AZURE_MANAGED_IDENTITY', false),
+            'azure_managed_identity_client_id' => env('DB_AZURE_MANAGED_IDENTITY_CLIENT_ID'),
         ],
 
         'sqlsrv' => [
