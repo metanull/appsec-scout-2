@@ -147,17 +147,25 @@ jobs:
       # lags the current Trivy release and makes every scan report an outdated engine.
       # Both Trivy steps must ask for the same version so they share the scan cache.
       #
-      # skip-files excludes two upstream-vendored, precompiled binaries this repo does not
-      # build and cannot patch itself: /usr/local/bin/gosu (bundled by the mysql/postgres
-      # base images for privilege-dropping in their entrypoints) and /usr/local/bin/trivy
-      # (the trivy-server image's whole reason for existing). A fix is only possible if/when
-      # Docker Official Images or Aqua Security publish an updated upstream image — until
-      # then their CVEs are permanently "fixable" in name only and would block the gate
-      # forever. This is a path-based skip rather than a per-CVE .trivyignore list on
-      # purpose: it stays correct as new CVEs are disclosed in the same binaries, with no
-      # ongoing upkeep. Paths are relative to the scan root (no leading slash), matching the
-      # `Target` field Trivy itself reports for these binaries; harmless no-op for the other
-      # four matrix images, which have no files at these two paths.
+      # skip-files excludes three upstream-vendored components this repo does not build and
+      # cannot patch itself: /usr/local/bin/gosu (bundled by the mysql/postgres base images
+      # for privilege-dropping in their entrypoints), /usr/local/bin/trivy (the trivy-server
+      # image's whole reason for existing), and the mysqlsh tree under /usr/lib/mysqlsh/**
+      # (MySQL Shell, bundled by the mysql:8.0 base image with its own embedded Python
+      # runtime and pip-installed packages — not RPM-managed, so the microdnf upgrade step
+      # in docker/mysql/Dockerfile does not reach it; also never invoked by our entrypoint or
+      # docker-entrypoint-initdb.d init script, so it carries no usage risk here). A fix is
+      # only possible if/when Docker Official Images or Aqua Security publish an updated
+      # upstream image — until then these CVEs are permanently "fixable" in name only and
+      # would block the gate forever. This is a path-based skip rather than a per-CVE
+      # .trivyignore list on purpose: it stays correct as new CVEs are disclosed in the same
+      # components, with no ongoing upkeep. The mysqlsh entry uses a `**` glob (verified
+      # locally to work with Trivy's skip-files) rather than the exact
+      # cryptography-<version>.dist-info-style paths, since those embed package version
+      # numbers that drift on every upstream mysql:8.0 rebuild. Paths are relative to the
+      # scan root (no leading slash), matching the `Target` field Trivy itself reports for
+      # these files; harmless no-op for the other three matrix images, which have no files at
+      # these paths.
       - name: Trivy scan (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -166,7 +174,7 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.image.name }}.sarif
           scanners: vuln
-          skip-files: usr/local/bin/gosu,usr/local/bin/trivy
+          skip-files: usr/local/bin/gosu,usr/local/bin/trivy,usr/lib/mysqlsh/**
 
       - name: Upload scan results to code scanning
         uses: github/codeql-action/upload-sarif@v4
@@ -179,9 +187,9 @@ jobs:
       # yet) are reported in the SARIF above but do not block — there is no action to
       # take on them beyond waiting for the upstream fix.
       #
-      # skip-files: same two upstream-vendored binaries as the SARIF step above, and for the
-      # same reason — see the comment there. Both Trivy steps must agree on this so the gate
-      # and the report reflect the same picture.
+      # skip-files: same three upstream-vendored components as the SARIF step above, and for
+      # the same reasons — see the comment there. Both Trivy steps must agree on this so the
+      # gate and the report reflect the same picture.
       - name: Trivy gate (fail on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -192,7 +200,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-          skip-files: usr/local/bin/gosu,usr/local/bin/trivy
+          skip-files: usr/local/bin/gosu,usr/local/bin/trivy,usr/lib/mysqlsh/**
         env:
           # The SARIF step above already downloaded today's vulnerability database.
           TRIVY_SKIP_DB_UPDATE: "true"
