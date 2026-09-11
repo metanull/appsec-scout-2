@@ -1,10 +1,13 @@
-# Builds the three deployable container images (app, collector, static-analysis-collector),
-# gates each on a Trivy vulnerability scan, and publishes them to GHCR as
-# ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the Trivy gate
-# fails: the push step runs strictly after the scan steps in the same job. All three are
-# targets of the single docker/Dockerfile — the matrix below selects which target to build.
-# Every build job (including the ops/dev smoke builds) depends on the lint job, which runs
-# hadolint against docker/Dockerfile first — see .hadolint.yaml for the ignored rules.
+# Builds the six deployable container images (app, collector, static-analysis-collector,
+# mysql, postgres, trivy-server), gates each on a Trivy vulnerability scan, and publishes
+# them to GHCR as ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the
+# Trivy gate fails: the push step runs strictly after the scan steps in the same job. The
+# first three are targets of the single docker/Dockerfile — the matrix below selects which
+# target to build; the last three (mysql, postgres, trivy-server) are single-stage
+# Dockerfiles of their own under docker/mysql, docker/postgres, docker/trivy and carry no
+# target. Every build job (including the ops/dev smoke builds) depends on the lint job,
+# which runs hadolint against all four Dockerfiles first — see .hadolint.yaml for the
+# ignored rules.
 #
 # - Pull requests touching the image definitions get a build + scan only (no publish).
 # - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
@@ -40,11 +43,20 @@ concurrency:
 
 jobs:
   lint:
-    name: Lint Dockerfile
+    name: Lint Dockerfile (${{ matrix.dockerfile }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          - docker/Dockerfile
+          - docker/mysql/Dockerfile
+          - docker/postgres/Dockerfile
+          - docker/trivy/Dockerfile
 
     steps:
       - uses: actions/checkout@v7
@@ -52,7 +64,7 @@ jobs:
       - name: hadolint
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
-          dockerfile: docker/Dockerfile
+          dockerfile: ${{ matrix.dockerfile }}
           config: .hadolint.yaml
           failure-threshold: warning
 
@@ -71,11 +83,20 @@ jobs:
       matrix:
         image:
           - name: app
+            dockerfile: docker/Dockerfile
             target: app
           - name: collector
+            dockerfile: docker/Dockerfile
             target: collector
           - name: static-analysis-collector
+            dockerfile: docker/Dockerfile
             target: static-analysis-collector
+          - name: mysql
+            dockerfile: docker/mysql/Dockerfile
+          - name: postgres
+            dockerfile: docker/postgres/Dockerfile
+          - name: trivy-server
+            dockerfile: docker/trivy/Dockerfile
 
     env:
       IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image.name }}
@@ -109,7 +130,11 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: docker/Dockerfile
+          file: ${{ matrix.image.dockerfile }}
+          # matrix entries with no `target` key resolve this to an empty string, which
+          # build-push-action treats the same as omitting the input (falls back to the
+          # Dockerfile's final stage) — correct for the single-stage mysql/postgres/trivy
+          # Dockerfiles, which have no named target to select.
           target: ${{ matrix.image.target }}
           load: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -159,7 +184,7 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: docker/Dockerfile
+          file: ${{ matrix.image.dockerfile }}
           target: ${{ matrix.image.target }}
           push: true
           provenance: false
@@ -223,3 +248,54 @@ jobs:
           push: false
           cache-from: type=gha,scope=app
           cache-to: type=gha,scope=dev,mode=max
+
+  # Packages the small file set docs/QUICKSTART.md documents (compose files + .env.example
+  # + the doc itself) so a Home/Corporate operator can run the stack from prebuilt images
+  # without cloning the repository. Runs only after a real publish to GHCR (push to main —
+  # same population as the "Publish to GHCR" step's `github.event_name != 'pull_request'`
+  # gate, narrowed to `push` since workflow_dispatch can run from any ref and a release tied
+  # to `main` would be misleading otherwise). Tagged sha-<short-sha> to match the immutable
+  # image tag docker-compose.ghcr.yml's header comment already tells operators to pin to.
+  release-bundle:
+    name: Publish deployment bundle
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble deployment bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          zip dist/appsec-scout-deployment-bundle.zip \
+            docker-compose.yml \
+            docker-compose.ghcr.yml \
+            docker-compose.pgsql.yml \
+            .env.example \
+            docs/QUICKSTART.md
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="sha-${{ steps.sha.outputs.short }}"
+          title="Deployment bundle ${{ steps.sha.outputs.short }}"
+          notes="Deployment bundle for image tag ${tag} — see docs/QUICKSTART.md inside the zip."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/appsec-scout-deployment-bundle.zip --clobber
+          else
+            gh release create "$tag" dist/appsec-scout-deployment-bundle.zip \
+              --title "$title" \
+              --notes "$notes" \
+              --target "${{ github.sha }}"
+          fi
