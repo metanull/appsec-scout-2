@@ -146,6 +146,18 @@ jobs:
       # Without it the action installs its own default (v0.70.0 as of v0.36.0), which
       # lags the current Trivy release and makes every scan report an outdated engine.
       # Both Trivy steps must ask for the same version so they share the scan cache.
+      #
+      # skip-files excludes two upstream-vendored, precompiled binaries this repo does not
+      # build and cannot patch itself: /usr/local/bin/gosu (bundled by the mysql/postgres
+      # base images for privilege-dropping in their entrypoints) and /usr/local/bin/trivy
+      # (the trivy-server image's whole reason for existing). A fix is only possible if/when
+      # Docker Official Images or Aqua Security publish an updated upstream image — until
+      # then their CVEs are permanently "fixable" in name only and would block the gate
+      # forever. This is a path-based skip rather than a per-CVE .trivyignore list on
+      # purpose: it stays correct as new CVEs are disclosed in the same binaries, with no
+      # ongoing upkeep. Paths are relative to the scan root (no leading slash), matching the
+      # `Target` field Trivy itself reports for these binaries; harmless no-op for the other
+      # four matrix images, which have no files at these two paths.
       - name: Trivy scan (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -154,6 +166,7 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.image.name }}.sarif
           scanners: vuln
+          skip-files: usr/local/bin/gosu,usr/local/bin/trivy
 
       - name: Upload scan results to code scanning
         uses: github/codeql-action/upload-sarif@v4
@@ -165,6 +178,10 @@ jobs:
       # before the push step below can run. Unfixed CVEs (no patched package released
       # yet) are reported in the SARIF above but do not block — there is no action to
       # take on them beyond waiting for the upstream fix.
+      #
+      # skip-files: same two upstream-vendored binaries as the SARIF step above, and for the
+      # same reason — see the comment there. Both Trivy steps must agree on this so the gate
+      # and the report reflect the same picture.
       - name: Trivy gate (fail on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -175,6 +192,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+          skip-files: usr/local/bin/gosu,usr/local/bin/trivy
         env:
           # The SARIF step above already downloaded today's vulnerability database.
           TRIVY_SKIP_DB_UPDATE: "true"
