@@ -29,13 +29,20 @@ volumes, configuration, first login) is identical between them:
 - **Build from source** (default, and the only mode for development): the Quick Start below —
   `docker compose` builds the `app`, `collector`, and `static-analysis-collector` images as
   three named targets (`app`, `collector`, `static-analysis-collector`) of the single
-  `docker/Dockerfile` in this repository.
+  `docker/Dockerfile` in this repository. This track needs a full clone of the repository —
+  it carries the compose files, helper scripts, Dockerfiles, and `.env.example`.
 - **Run prebuilt images**: the stack runs the exact Trivy-gated images CI publishes to the
-  GitHub Container Registry — no build toolchain, no compilation, faster first start. See
-  [Prebuilt Container Images](#prebuilt-container-images) for the one-line switch.
+  GitHub Container Registry (or an Azure Container Registry mirrored from it) — no build
+  toolchain, no compilation, faster first start, and **no clone required**. Only a small file
+  set is needed (`docker-compose.yml`, `docker-compose.ghcr.yml`, optionally
+  `docker-compose.pgsql.yml`, and `.env.example`) — see
+  [docs/QUICKSTART.md](QUICKSTART.md) for the complete, standalone walkthrough (Home and
+  Corporate/VM Hosting variants, including the ACR mirroring step). The rest of this page
+  still applies if you have a full clone and just want to point it at prebuilt images instead
+  of building — see [Prebuilt Container Images](#prebuilt-container-images) below for that
+  one-line switch.
 
-Both tracks start from a clone of this repository (it carries the compose files, helper
-scripts, and `.env.example`) and support the same corporate proxy setup — see
+Both tracks support the same corporate proxy setup — see
 [Corporate Proxy and SSL Inspection](#corporate-proxy-and-ssl-inspection) for which steps
 apply to which track.
 
@@ -218,7 +225,7 @@ container command). Alternatively, a deployment that guarantees a single replica
 
 ## Prebuilt Container Images
 
-Every push to `main` builds the three deployable images in CI
+Every push to `main` builds the six deployable images in CI
 (`.github/workflows/image-publish.yml`), scans each with Trivy, and publishes them to the
 GitHub Container Registry. Publishing is gated on the scan: an image with a fixable
 HIGH or CRITICAL vulnerability is never pushed. Scan results (including unfixed CVEs,
@@ -230,6 +237,9 @@ scanning tab.
 | `ghcr.io/metanull/appsec-scout-2/app` | Laravel app (nginx + php-fpm + scheduler + queue worker) |
 | `ghcr.io/metanull/appsec-scout-2/collector` | Repository-collection queue worker (git + Trivy client) |
 | `ghcr.io/metanull/appsec-scout-2/static-analysis-collector` | Static-analysis queue worker (.NET/Java toolchain) |
+| `ghcr.io/metanull/appsec-scout-2/mysql` | MySQL 8 with the test-DB init script baked in |
+| `ghcr.io/metanull/appsec-scout-2/postgres` | PostgreSQL 16 with the test-DB init script baked in |
+| `ghcr.io/metanull/appsec-scout-2/trivy-server` | Self-hosted Trivy vulnerability server with the CA-trust installer baked in |
 
 Tags: `latest` (current `main`), `main`, and an immutable `sha-<short-commit>` per build —
 deployments should pin the `sha-` tag.

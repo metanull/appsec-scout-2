@@ -1,10 +1,13 @@
-# Builds the three deployable container images (app, collector, static-analysis-collector),
-# gates each on a Trivy vulnerability scan, and publishes them to GHCR as
-# ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the Trivy gate
-# fails: the push step runs strictly after the scan steps in the same job. All three are
-# targets of the single docker/Dockerfile — the matrix below selects which target to build.
-# Every build job (including the ops/dev smoke builds) depends on the lint job, which runs
-# hadolint against docker/Dockerfile first — see .hadolint.yaml for the ignored rules.
+# Builds the six deployable container images (app, collector, static-analysis-collector,
+# mysql, postgres, trivy-server), gates each on a Trivy vulnerability scan, and publishes
+# them to GHCR as ghcr.io/metanull/appsec-scout-2/<name>. Publishing is unreachable when the
+# Trivy gate fails: the push step runs strictly after the scan steps in the same job. The
+# first three are targets of the single docker/Dockerfile — the matrix below selects which
+# target to build; the last three (mysql, postgres, trivy-server) are single-stage
+# Dockerfiles of their own under docker/mysql, docker/postgres, docker/trivy and carry no
+# target. Every build job (including the ops/dev smoke builds) depends on the lint job,
+# which runs hadolint against all four Dockerfiles first — see .hadolint.yaml for the
+# ignored rules.
 #
 # - Pull requests touching the image definitions get a build + scan only (no publish).
 # - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
@@ -40,11 +43,20 @@ concurrency:
 
 jobs:
   lint:
-    name: Lint Dockerfile
+    name: Lint Dockerfile (${{ matrix.dockerfile }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          - docker/Dockerfile
+          - docker/mysql/Dockerfile
+          - docker/postgres/Dockerfile
+          - docker/trivy/Dockerfile
 
     steps:
       - uses: actions/checkout@v7
@@ -52,7 +64,7 @@ jobs:
       - name: hadolint
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
-          dockerfile: docker/Dockerfile
+          dockerfile: ${{ matrix.dockerfile }}
           config: .hadolint.yaml
           failure-threshold: warning
 
@@ -71,11 +83,20 @@ jobs:
       matrix:
         image:
           - name: app
+            dockerfile: docker/Dockerfile
             target: app
           - name: collector
+            dockerfile: docker/Dockerfile
             target: collector
           - name: static-analysis-collector
+            dockerfile: docker/Dockerfile
             target: static-analysis-collector
+          - name: mysql
+            dockerfile: docker/mysql/Dockerfile
+          - name: postgres
+            dockerfile: docker/postgres/Dockerfile
+          - name: trivy-server
+            dockerfile: docker/trivy/Dockerfile
 
     env:
       IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image.name }}
@@ -109,7 +130,11 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: docker/Dockerfile
+          file: ${{ matrix.image.dockerfile }}
+          # matrix entries with no `target` key resolve this to an empty string, which
+          # build-push-action treats the same as omitting the input (falls back to the
+          # Dockerfile's final stage) — correct for the single-stage mysql/postgres/trivy
+          # Dockerfiles, which have no named target to select.
           target: ${{ matrix.image.target }}
           load: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -121,6 +146,26 @@ jobs:
       # Without it the action installs its own default (v0.70.0 as of v0.36.0), which
       # lags the current Trivy release and makes every scan report an outdated engine.
       # Both Trivy steps must ask for the same version so they share the scan cache.
+      #
+      # skip-files excludes three upstream-vendored components this repo does not build and
+      # cannot patch itself: /usr/local/bin/gosu (bundled by the mysql/postgres base images
+      # for privilege-dropping in their entrypoints), /usr/local/bin/trivy (the trivy-server
+      # image's whole reason for existing), and the mysqlsh tree under /usr/lib/mysqlsh/**
+      # (MySQL Shell, bundled by the mysql:8.0 base image with its own embedded Python
+      # runtime and pip-installed packages — not RPM-managed, so the microdnf upgrade step
+      # in docker/mysql/Dockerfile does not reach it; also never invoked by our entrypoint or
+      # docker-entrypoint-initdb.d init script, so it carries no usage risk here). A fix is
+      # only possible if/when Docker Official Images or Aqua Security publish an updated
+      # upstream image — until then these CVEs are permanently "fixable" in name only and
+      # would block the gate forever. This is a path-based skip rather than a per-CVE
+      # .trivyignore list on purpose: it stays correct as new CVEs are disclosed in the same
+      # components, with no ongoing upkeep. The mysqlsh entry uses a `**` glob (verified
+      # locally to work with Trivy's skip-files) rather than the exact
+      # cryptography-<version>.dist-info-style paths, since those embed package version
+      # numbers that drift on every upstream mysql:8.0 rebuild. Paths are relative to the
+      # scan root (no leading slash), matching the `Target` field Trivy itself reports for
+      # these files; harmless no-op for the other three matrix images, which have no files at
+      # these paths.
       - name: Trivy scan (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -129,6 +174,7 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.image.name }}.sarif
           scanners: vuln
+          skip-files: usr/local/bin/gosu,usr/local/bin/trivy,usr/lib/mysqlsh/**
 
       - name: Upload scan results to code scanning
         uses: github/codeql-action/upload-sarif@v4
@@ -140,6 +186,10 @@ jobs:
       # before the push step below can run. Unfixed CVEs (no patched package released
       # yet) are reported in the SARIF above but do not block — there is no action to
       # take on them beyond waiting for the upstream fix.
+      #
+      # skip-files: same three upstream-vendored components as the SARIF step above, and for
+      # the same reasons — see the comment there. Both Trivy steps must agree on this so the
+      # gate and the report reflect the same picture.
       - name: Trivy gate (fail on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -150,6 +200,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+          skip-files: usr/local/bin/gosu,usr/local/bin/trivy,usr/lib/mysqlsh/**
         env:
           # The SARIF step above already downloaded today's vulnerability database.
           TRIVY_SKIP_DB_UPDATE: "true"
@@ -159,7 +210,7 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: docker/Dockerfile
+          file: ${{ matrix.image.dockerfile }}
           target: ${{ matrix.image.target }}
           push: true
           provenance: false
@@ -223,3 +274,54 @@ jobs:
           push: false
           cache-from: type=gha,scope=app
           cache-to: type=gha,scope=dev,mode=max
+
+  # Packages the small file set docs/QUICKSTART.md documents (compose files + .env.example
+  # + the doc itself) so a Home/Corporate operator can run the stack from prebuilt images
+  # without cloning the repository. Runs only after a real publish to GHCR (push to main —
+  # same population as the "Publish to GHCR" step's `github.event_name != 'pull_request'`
+  # gate, narrowed to `push` since workflow_dispatch can run from any ref and a release tied
+  # to `main` would be misleading otherwise). Tagged sha-<short-sha> to match the immutable
+  # image tag docker-compose.ghcr.yml's header comment already tells operators to pin to.
+  release-bundle:
+    name: Publish deployment bundle
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble deployment bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          zip dist/appsec-scout-deployment-bundle.zip \
+            docker-compose.yml \
+            docker-compose.ghcr.yml \
+            docker-compose.pgsql.yml \
+            .env.example \
+            docs/QUICKSTART.md
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="sha-${{ steps.sha.outputs.short }}"
+          title="Deployment bundle ${{ steps.sha.outputs.short }}"
+          notes="Deployment bundle for image tag ${tag} — see docs/QUICKSTART.md inside the zip."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/appsec-scout-deployment-bundle.zip --clobber
+          else
+            gh release create "$tag" dist/appsec-scout-deployment-bundle.zip \
+              --title "$title" \
+              --notes "$notes" \
+              --target "${{ github.sha }}"
+          fi

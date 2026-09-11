@@ -21,10 +21,11 @@
 # still run, but ignore .docker/certs.
 #
 # What it changes, relative to docker-compose.yml:
-#   - app, collector, and static-analysis-collector run the published
-#     ghcr.io/metanull/appsec-scout-2/<name> images; their build: sections are
-#     removed, so nothing is ever compiled or built locally (trivy-token-init and
-#     dependencytrack-bootstrap, which reuse the app image, are repointed too);
+#   - app, collector, static-analysis-collector, mysql, and trivy-server run the
+#     published ghcr.io/metanull/appsec-scout-2/<name> images; their build:
+#     sections are removed, so nothing is ever compiled or built locally
+#     (trivy-token-init and dependencytrack-bootstrap, which reuse the app image,
+#     are repointed too);
 #   - the image content is authoritative: the ./app-laravel bind mount and the
 #     *_vendor / *_bootstrap_cache named volumes are dropped, because a named
 #     volume is seeded from image content only when first created and would
@@ -41,7 +42,7 @@
 
 services:
     app:
-        image: ghcr.io/metanull/appsec-scout-2/app:${APPSEC_IMAGE_TAG:-latest}
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/app:${APPSEC_IMAGE_TAG:-latest}
         build: !reset null
         volumes: !override
             - app_storage:/var/www/html/storage
@@ -53,10 +54,10 @@ services:
             - ./.docker/certs:/host-certs:ro
 
     trivy-token-init:
-        image: ghcr.io/metanull/appsec-scout-2/app:${APPSEC_IMAGE_TAG:-latest}
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/app:${APPSEC_IMAGE_TAG:-latest}
 
     dependencytrack-bootstrap:
-        image: ghcr.io/metanull/appsec-scout-2/app:${APPSEC_IMAGE_TAG:-latest}
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/app:${APPSEC_IMAGE_TAG:-latest}
         volumes: !override
             - app_storage:/var/www/html/storage
             - app_public_build:/var/www/html/public/build
@@ -65,7 +66,7 @@ services:
             - trivy_token:/var/lib/trivy-token:ro
 
     collector:
-        image: ghcr.io/metanull/appsec-scout-2/collector:${APPSEC_IMAGE_TAG:-latest}
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/collector:${APPSEC_IMAGE_TAG:-latest}
         build: !reset null
         volumes: !override
             - app_storage:/var/www/html/storage
@@ -74,9 +75,21 @@ services:
             - ./.docker/certs:/host-certs:ro
 
     static-analysis-collector:
-        image: ghcr.io/metanull/appsec-scout-2/static-analysis-collector:${APPSEC_IMAGE_TAG:-latest}
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/static-analysis-collector:${APPSEC_IMAGE_TAG:-latest}
         build: !reset null
         volumes: !override
             - app_storage:/var/www/html/storage
             - static_analysis_collector_workspace:/workspace-scratch
             - ./.docker/certs:/host-certs:ro
+
+    mysql:
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/mysql:${APPSEC_IMAGE_TAG:-latest}
+        build: !reset null
+
+    trivy-server:
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/trivy-server:${APPSEC_IMAGE_TAG:-latest}
+        build: !reset null
+
+    postgres:
+        image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/postgres:${APPSEC_IMAGE_TAG:-latest}
+        build: !reset null

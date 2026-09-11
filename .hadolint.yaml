@@ -1,6 +1,7 @@
-# hadolint (.github/workflows/image-publish.yml, `lint` job) lints docker/Dockerfile on
-# every PR that touches docker/**. Every ignore below is deliberate — see the reason next
-# to each. Do not add an ignore without one.
+# hadolint (.github/workflows/image-publish.yml, `lint` job) lints docker/Dockerfile,
+# docker/mysql/Dockerfile, docker/postgres/Dockerfile, and docker/trivy/Dockerfile on every
+# PR that touches docker/**. Every ignore below is deliberate — see the reason next to each.
+# Do not add an ignore without one.
 ignored:
   # Pin versions in apt-get/apk install. Every Debian stage in docker/Dockerfile runs
   # `apt-get upgrade -y` before its own installs specifically so the CI Trivy publish gate
@@ -21,3 +22,14 @@ ignored:
   # side-by-side throughout docker/lib/*.sh, which hadolint cannot see since it only lints
   # the Dockerfile itself; the Dockerfile's own BFG step follows the same split.
   - DL4001
+  # Using latest is prone to errors. Fires on docker/trivy/Dockerfile's `FROM
+  # aquasec/trivy:latest`, which is deliberately unpinned — docker-compose.yml's
+  # trivy-server service already runs the same image the same way, on purpose, so that the
+  # vulnerability database Trivy ships (bundled per release) always matches the freshest
+  # build compatible with the current DB schema; pinning an exact tag here would risk the
+  # image's embedded DB support drifting out of sync with the live vulnerability feed it
+  # pulls at runtime. This ignore applies to every Dockerfile hadolint lints (the config is
+  # shared across the matrix), but only docker/trivy/Dockerfile actually triggers DL3007 —
+  # docker/Dockerfile, docker/mysql/Dockerfile, and docker/postgres/Dockerfile all pin exact
+  # base image tags, so the rule stays meaningful for them.
+  - DL3007
