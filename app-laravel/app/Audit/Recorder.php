@@ -99,6 +99,18 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordLocalFindingFilePathRepaired(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('local_finding.file_path_repaired', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function recordLocalFindingMerged(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('local_finding.merged', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordInventorySyncCompleted(array $payload = []): void
     {
         $this->write('inventory_sync_completed', null, null, $payload);

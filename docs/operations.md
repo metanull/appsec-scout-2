@@ -214,6 +214,23 @@ detail, including the Dependency-Track visualization pipeline, in
 .\scripts\invoke-ops.ps1 -StaticAnalysis -Credential (Get-Credential)
 ```
 
+### Repairing Local Findings Stored With Absolute Container Paths
+
+`local-findings:repair-file-paths {--dry-run}` is a one-off maintenance command for
+`local_findings` rows whose `file_path` predates the repository-relative-path fix (an absolute
+`file:///workspace-scratch/<uuid>/work/...` or `file:///tmp/tmp.XXXXXXXXXX/...` path instead of a
+path relative to the repository root — see
+[docs/concepts/asset-system-container-alert.md](concepts/asset-system-container-alert.md)). It
+rewrites `file_path` and recomputes `dedup_hash` in place, or — when a clean, already-relative twin
+row already exists for the same finding — merges the stale row's comments and work-item links onto
+the twin, keeps the earlier `first_seen_at`, and deletes the stale row. Every change is audited.
+Run with `--dry-run` first to review what would happen before applying it:
+
+```powershell
+.\scripts\invoke-app.ps1 -Artisan "local-findings:repair-file-paths --dry-run"
+.\scripts\invoke-app.ps1 -Artisan "local-findings:repair-file-paths"
+```
+
 ## Development Verification
 
 ```powershell
