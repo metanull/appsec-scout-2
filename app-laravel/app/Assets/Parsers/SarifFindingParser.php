@@ -2,6 +2,7 @@
 
 namespace App\Assets\Parsers;
 
+use Illuminate\Support\Str;
 use JsonException;
 
 /**
@@ -157,18 +158,15 @@ final class SarifFindingParser
         $startLine = is_array($region) && is_int($region['startLine'] ?? null) ? $region['startLine'] : null;
         $endLine = is_array($region) && is_int($region['endLine'] ?? null) ? $region['endLine'] : $startLine;
 
-        $shortDescription = $rule['shortDescription']['text'] ?? null;
-        $title = is_string($shortDescription) && $shortDescription !== ''
-            ? $shortDescription
-            : $ruleId;
-
+        $messageText = (string) ($result['message']['text'] ?? '');
         $fullDescription = $rule['fullDescription']['text'] ?? null;
+        $level = $this->levelFor($result, $rule);
 
         return new ParsedFinding(
             ruleId: $ruleId,
-            title: $title,
+            title: $this->titleFor($ruleId, $rule, $messageText),
             description: is_string($fullDescription) ? $fullDescription : null,
-            severity: $messageFields['Severity'] ?? $this->severityFromLevel($result['level'] ?? null),
+            severity: $messageFields['Severity'] ?? $this->severityFromLevel($level),
             filePath: $filePath,
             startLine: $startLine,
             endLine: $endLine,
@@ -177,9 +175,107 @@ final class SarifFindingParser
             metadata: [
                 'helpUri' => $rule['helpUri'] ?? null,
                 'ruleProperties' => $rule['properties'] ?? [],
+                'message' => $messageText !== '' ? $messageText : null,
+                'help' => $this->helpFor($rule),
+                'tags' => $this->tagsFor($rule),
+                'level' => $level,
                 'result' => $result,
             ],
         );
+    }
+
+    /**
+     * Derives a meaningful title in deterministic precedence order: the rule's
+     * shortDescription (unless it is empty, is the rule id itself, or merely
+     * restates it — Opengrep/Semgrep emit "<Tool> Finding: <rule.id>"), else the
+     * rule's name (unless it equals the rule id), else the first non-empty line
+     * of the result message, else the rule id itself.
+     *
+     * @param  array<string, mixed>  $rule
+     */
+    private function titleFor(string $ruleId, array $rule, string $messageText): string
+    {
+        $short = trim((string) ($rule['shortDescription']['text'] ?? ''));
+
+        if ($short !== '' && ! $this->matchesRuleId($short, $ruleId)) {
+            return $short;
+        }
+
+        $name = trim((string) ($rule['name'] ?? ''));
+
+        if ($name !== '' && strcasecmp($name, $ruleId) !== 0) {
+            return $name;
+        }
+
+        foreach (explode("\n", $messageText) as $line) {
+            $line = trim($line);
+
+            if ($line !== '') {
+                return Str::limit($line, 250);
+            }
+        }
+
+        return $ruleId;
+    }
+
+    /**
+     * True when $text is exactly the rule id or ends with it (case-insensitive) —
+     * the latter covers "Opengrep Finding: <id>"-style shortDescription text.
+     */
+    private function matchesRuleId(string $text, string $ruleId): bool
+    {
+        $textLower = strtolower($text);
+        $ruleIdLower = strtolower($ruleId);
+
+        return $textLower === $ruleIdLower || str_ends_with($textLower, $ruleIdLower);
+    }
+
+    /**
+     * @param  array<string, mixed>  $rule
+     */
+    private function helpFor(array $rule): ?string
+    {
+        $markdown = $rule['help']['markdown'] ?? null;
+
+        if (is_string($markdown) && $markdown !== '') {
+            return $markdown;
+        }
+
+        $text = $rule['help']['text'] ?? null;
+
+        return is_string($text) && $text !== '' ? $text : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $rule
+     * @return list<string>
+     */
+    private function tagsFor(array $rule): array
+    {
+        $tags = $rule['properties']['tags'] ?? null;
+
+        if (! is_array($tags)) {
+            return [];
+        }
+
+        return array_values(array_filter($tags, fn (mixed $tag): bool => is_string($tag) && $tag !== ''));
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @param  array<string, mixed>  $rule
+     */
+    private function levelFor(array $result, array $rule): ?string
+    {
+        $level = $result['level'] ?? null;
+
+        if (is_string($level) && $level !== '') {
+            return $level;
+        }
+
+        $default = $rule['defaultConfiguration']['level'] ?? null;
+
+        return is_string($default) && $default !== '' ? $default : null;
     }
 
     private function severityFromLevel(mixed $level): ?string

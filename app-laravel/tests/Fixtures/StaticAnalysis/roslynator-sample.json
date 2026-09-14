@@ -12,6 +12,9 @@
                             "shortDescription": { "text": "Review SQL queries for security vulnerabilities" },
                             "fullDescription": { "text": "SQL queries that directly use input without validation may be vulnerable to SQL injection attacks." },
                             "helpUri": "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2100"
+                        },
+                        {
+                            "id": "CA1062"
                         }
                     ]
                 }
@@ -26,6 +29,19 @@
                             "physicalLocation": {
                                 "artifactLocation": { "uri": "src/UserRepository.cs" },
                                 "region": { "startLine": 42, "endLine": 42 }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "ruleId": "CA1062",
+                    "level": "warning",
+                    "message": { "text": "Validate parameter 'connectionString' is non-null before using it." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/Database/ConnectionFactory.cs" },
+                                "region": { "startLine": 15, "endLine": 15 }
                             }
                         }
                     ]

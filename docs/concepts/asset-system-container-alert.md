@@ -190,8 +190,8 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
 
 Beyond the owner/hierarchy columns: `kind` (`vulnerability` / `secret` / `code_quality`),
 `rule_id`, `title`, `description`, `severity`, `file_path`, `start_line`/`end_line`,
-`package_name`/`package_version` (Trivy vulnerability findings only), `metadata` (raw SARIF
-result), `correlated_security_event_id`, `correlation_method`, `first_seen_at`/`last_seen_at`.
+`package_name`/`package_version` (Trivy vulnerability findings only), `metadata` (json — see
+below), `correlated_security_event_id`, `correlation_method`, `first_seen_at`/`last_seen_at`.
 
 `file_path` is always relative to the repository root, never an absolute container path. The
 SARIF `artifactLocation.uri` a tool emits is normalized at ingestion time
@@ -208,7 +208,28 @@ Severity is derived per-finding, not per-kind: the parser first looks for a Triv
 `Severity: ...` line inside the SARIF `message.text` free text (SARIF has no first-class severity
 field of its own beyond `level`), and only falls back to mapping the standard SARIF `level`
 (`error`/`warning`/`note` → `HIGH`/`MEDIUM`/`LOW`) when no such line exists — which is exactly the
-case for Roslynator/SpotBugs findings, since they don't encode a Trivy-style severity line.
+case for Roslynator/SpotBugs findings, since they don't encode a Trivy-style severity line. That
+same `level` — the result's own `level`, falling back to the rule's `defaultConfiguration.level`
+— is also captured verbatim into `metadata.level`, independent of the `HIGH`/`MEDIUM`/`LOW`
+mapping used for `severity`.
+
+`App\Assets\Parsers\SarifFindingParser` (`buildFinding()`) fills `metadata` with: `helpUri` and
+`ruleProperties` (the rule's own `properties`, as before), `message` (the per-result
+`message.text`, i.e. the concrete diagnostic — e.g. "Review if the query string passed to
+'SqlCommand.CommandText' ... accepts input from the user", not just the rule's generic
+description), `help` (the rule's `help.markdown`, or `help.text` if no Markdown form is given),
+`tags` (the rule's `properties.tags`, filtered to strings), `level` (as above), and `result` (the
+full raw SARIF result, kept last for the detail page's raw-result view). `App\Models\LocalFinding`
+exposes these through typed accessors — `messageText()`, `helpMarkdown()`, `tags()`,
+`sarifLevel()` — rather than requiring callers to reach into the array directly; `messageText()`
+falls back to the legacy `metadata.result.message.text` path for rows ingested before `message`
+was captured separately.
+
+`title` is derived with a deterministic precedence, since a tool's `shortDescription` is sometimes
+absent or just restates the rule id (Opengrep/Semgrep emit `"<Tool> Finding: <rule.id>"`): the
+rule's `shortDescription.text` is used unless it is empty, equals the rule id, or merely ends with
+it; otherwise the rule's `name` is used unless it equals the rule id; otherwise the first non-empty
+line of the result `message.text`, shortened to 250 characters; otherwise the rule id itself.
 
 ### Correlation: linking a Local Finding back to an Alert
 

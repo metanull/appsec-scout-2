@@ -29,6 +29,7 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
@@ -44,6 +45,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Phiki\Grammar\Grammar;
 
 /**
  * Org-wide Trivy finding explorer (vulnerabilities and secrets), modeled on
@@ -140,6 +142,10 @@ class LocalFindingResource extends Resource
                             ->state(fn (LocalFinding $record): string => $record->start_line !== null
                                 ? "{$record->file_path}:{$record->start_line}"
                                 : $record->file_path)
+                            ->url(fn (LocalFinding $record): ?string => app(LocalFindingLinkCatalog::class)->sourceFileUrl($record))
+                            ->openUrlInNewTab()
+                            ->copyable()
+                            ->fontFamily('mono')
                             ->placeholder('-'),
                         TextEntry::make('_package')
                             ->label('Package')
@@ -147,11 +153,54 @@ class LocalFindingResource extends Resource
                                 ? trim("{$record->package_name} {$record->package_version}")
                                 : null)
                             ->placeholder('-'),
-                        TextEntry::make('description')->label('Description')->wrap()->placeholder('-')->columnSpanFull(),
                     ]),
                 ]),
 
+            Section::make('Problem')
+                ->schema([
+                    TextEntry::make('_message')
+                        ->label('Message')
+                        ->state(fn (LocalFinding $record): ?string => $record->messageText())
+                        ->wrap()
+                        ->placeholder('-')
+                        ->columnSpanFull(),
+                    TextEntry::make('description')
+                        ->label('Description')
+                        ->wrap()
+                        ->placeholder('-')
+                        ->columnSpanFull(),
+                    TextEntry::make('_help')
+                        ->label('Rule help')
+                        ->state(fn (LocalFinding $record): ?string => $record->helpMarkdown())
+                        ->markdown()
+                        ->placeholder('-')
+                        ->columnSpanFull(),
+                    TextEntry::make('_tags')
+                        ->label('Tags')
+                        ->state(fn (LocalFinding $record): array => $record->tags())
+                        ->badge()
+                        ->placeholder('-'),
+                ]),
+
             self::linksSection(),
+
+            Section::make('Raw result')
+                ->collapsible()
+                ->collapsed()
+                ->schema([
+                    CodeEntry::make('_raw_result')
+                        ->label('SARIF result')
+                        ->state(function (LocalFinding $record): array {
+                            $metadata = $record->getAttribute('metadata');
+                            $result = is_array($metadata) ? ($metadata['result'] ?? null) : null;
+
+                            return is_array($result) ? $result : [];
+                        })
+                        ->grammar(Grammar::Json)
+                        ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                        ->copyable()
+                        ->columnSpanFull(),
+                ]),
         ]);
     }
 

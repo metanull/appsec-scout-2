@@ -20,7 +20,12 @@ Reader users consume the local AppSec Scout dataset without mutating it.
 - View alerts (`SecurityEventResource`).
 - View software systems, containers, and software assets.
 - View Dependencies (`SoftwareComponentResource`) and Local Findings (`LocalFindingResource`) —
-  the SBOM/SARIF-derived counterpart to alerts, read-only for Reader.
+  the SBOM/SARIF-derived counterpart to alerts, read-only for Reader. A Local Finding's detail page
+  has a **Problem** section (the scanner's concrete diagnostic message, description, rule help as
+  Markdown, and tags) below the Finding summary, a **Links & References** section, and a collapsed
+  **Raw result** section with the full SARIF result as JSON; the Location field links directly to
+  the source file in the repository when the finding's container/system carries a resolvable
+  repository identity.
 - Inspect linked tracker metadata.
 - Inspect audit-derived sync context shown in pages.
 
