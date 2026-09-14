@@ -112,6 +112,31 @@ it('skips a repository with no clone URL metadata and logs it, without failing t
         ->and($errorLog->context_json['run'])->toBe($run->id);
 });
 
+it('excludes a repository with no clone URL from repositories_considered and records it by reason', function () {
+    bindRealAzDoReposWithFakeClient([
+        new Response(200, [], '{"count":1,"value":[{"id":"project-001","name":"SecurityProject","url":"https://dev.azure.com/testorg/_apis/projects/project-001"}]}'),
+        new Response(200, [], '{"count":2,"value":['
+            . '{"id":"repo-001","name":"backend-api","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-001","project":{"id":"project-001","name":"SecurityProject"},"defaultBranch":"refs/heads/main","remoteUrl":"https://testorg@dev.azure.com/testorg/SecurityProject/_git/backend-api","webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/backend-api"},'
+            . '{"id":"repo-002","name":"frontend-app","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-002","project":{"id":"project-001","name":"SecurityProject"},"webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/frontend-app"}'
+            . ']}'),
+    ]);
+
+    // The batch dispatch below runs the single surviving target's
+    // CollectRepositoryJob synchronously (the `sync` queue connection), so
+    // by the time $run is re-fetched, recordCompletion() has already
+    // rewritten counts_json once — proving the excluded keys survive that
+    // rewrite rather than only asserting their dispatch-time value.
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
+
+    $run = RepositoryCollectionRun::query()->latest('id')->first();
+
+    expect($run->status)->toBe('success')
+        ->and($run->counts_json['repositories_considered'])->toBe(1)
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_excluded_pre_dispatch'])->toBe(1)
+        ->and($run->counts_json['repositories_excluded_by_reason'])->toBe(['no_clone_url' => 1]);
+});
+
 it('marks the run as failure when the azdo-repos credential is not configured', function () {
     // Overwrite the credential seeded in beforeEach with an empty one so the
     // pre-flight hasRequiredSystemCredentials() check fails.

@@ -186,7 +186,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
                 return;
             }
 
-            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int, repositories_skipped?: int} $storedCounts */
+            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int, repositories_skipped?: int, repositories_skipped_by_reason?: array<string, int>, repositories_excluded_pre_dispatch?: int, repositories_excluded_by_reason?: array<string, int>} $storedCounts */
             $storedCounts = (array) $run->counts_json;
 
             $considered = (int) ($storedCounts['repositories_considered'] ?? 0);
@@ -196,12 +196,22 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             $failedCount = (int) ($storedCounts['repositories_failed'] ?? 0) + ($failed ? 1 : 0);
             $skippedCount = (int) ($storedCounts['repositories_skipped'] ?? 0) + ($skipped ? 1 : 0);
 
+            /** @var array<string, int> $skippedByReason */
+            $skippedByReason = (array) ($storedCounts['repositories_skipped_by_reason'] ?? []);
+
+            if ($skipped) {
+                $skippedByReason['unchanged_commit'] = (int) ($skippedByReason['unchanged_commit'] ?? 0) + 1;
+            }
+
             $update = [
                 'counts_json' => [
                     'repositories_considered' => $considered,
                     'repositories_completed' => $completed,
                     'repositories_failed' => $failedCount,
                     'repositories_skipped' => $skippedCount,
+                    'repositories_skipped_by_reason' => $skippedByReason,
+                    'repositories_excluded_pre_dispatch' => (int) ($storedCounts['repositories_excluded_pre_dispatch'] ?? 0),
+                    'repositories_excluded_by_reason' => (array) ($storedCounts['repositories_excluded_by_reason'] ?? []),
                 ],
             ];
 

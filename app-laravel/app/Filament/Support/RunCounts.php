@@ -33,7 +33,17 @@ final class RunCounts
         // has no skip concept, so its output stays byte-identical.
         $skipped = (int) ($counts['repositories_skipped'] ?? 0);
 
-        return $skipped > 0 ? "{$formatted} · {$skipped} skipped" : $formatted;
+        if ($skipped > 0) {
+            $formatted .= " · {$skipped} skipped";
+        }
+
+        $excluded = (int) ($counts['repositories_excluded_pre_dispatch'] ?? 0);
+
+        if ($excluded > 0) {
+            $formatted .= " · {$excluded} excluded";
+        }
+
+        return $formatted;
     }
 
     /**
