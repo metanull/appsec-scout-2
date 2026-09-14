@@ -1,0 +1,52 @@
+# Prunes old GHCR versions of the six container images this repo publishes (see
+# image-publish.yml: app, collector, static-analysis-collector, mysql, postgres,
+# trivy-server, all under ghcr.io/metanull/appsec-scout-2/<name>), keeping only the 3
+# most recent versions of each so storage doesn't grow unbounded. This complements a
+# one-time manual cleanup of a large backlog of old versions — this workflow keeps the
+# backlog from building back up again.
+#
+# Runs weekly (Sunday 03:17 UTC, off the top of the hour to avoid the scheduled-workflow
+# stampede at :00) plus workflow_dispatch for an on-demand run.
+#
+# delete-only-untagged-versions is intentionally left unset (defaults to false): we want
+# old *tagged* versions pruned too, not just untagged ones, keeping only the 3 newest.
+
+name: Prune GHCR Image Versions
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+
+  workflow_dispatch:
+
+jobs:
+  prune:
+    name: Prune ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - app
+          - collector
+          - static-analysis-collector
+          - mysql
+          - postgres
+          - trivy-server
+
+    steps:
+      - name: Delete old versions
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
+        with:
+          package-name: appsec-scout-2/${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: 3
+          owner: metanull
+          token: ${{ secrets.GITHUB_TOKEN }}
