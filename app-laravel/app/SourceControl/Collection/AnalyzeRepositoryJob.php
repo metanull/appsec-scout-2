@@ -86,6 +86,20 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     // @phpstan-ignore property.onlyWritten (consumed by story 3, #486, not yet landed)
     private array $noToolchainStages = [];
 
+    /**
+     * Set true the moment any of Opengrep, dotnet/Roslynator, or
+     * Java/SpotBugs actually completed a scan against this repository's code
+     * — clean or with findings, as opposed to failing or finding no
+     * applicable toolchain. Read by persistAnalyzedCommit() alongside
+     * $degraded: caching requires both that at least one ecosystem completed
+     * a scan (this flag) and that nothing failed ($degraded stays false).
+     * Finding no toolchain does not set $degraded and does not, on its own,
+     * prevent caching — it only means this flag stays false for that one
+     * ecosystem; caching is still blocked only if EVERY ecosystem ends up in
+     * that state (or any ecosystem fails).
+     */
+    private bool $anyAnalyzerCompleted = false;
+
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
         public readonly int $staticAnalysisRunId,
@@ -318,7 +332,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      */
     private function persistAnalyzedCommit(SecurityContainer $container, string $workDir, string $homeDir): void
     {
-        if ($this->degraded) {
+        if ($this->degraded || ! $this->anyAnalyzerCompleted) {
             return;
         }
 
@@ -416,6 +430,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             return;
         }
 
+        $this->anyAnalyzerCompleted = true;
+
         $attachments->attachTo(
             owner: $container,
             kind: AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP,
@@ -501,6 +517,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
                 continue;
             }
+
+            $this->anyAnalyzerCompleted = true;
 
             // A clean, zero-diagnostic solution produces no output file at all — not
             // a failure, simply nothing to merge for this solution.
@@ -590,6 +608,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
             return;
         }
+
+        $this->anyAnalyzerCompleted = true;
 
         $attachments->attachTo(
             owner: $container,
