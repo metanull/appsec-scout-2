@@ -17,6 +17,7 @@ yourself, or to use the `scripts/appsec-scout.ps1` convenience launcher — use
 | `.env.example` | Copy to `.env` and fill in |
 | `scripts/export-host-certificates.ps1` | Exports the host's trusted CAs into `.docker/certs/` (Windows) |
 | `scripts/lib/Certificates.psm1` | Module `export-host-certificates.ps1` wraps — not run directly |
+| `scripts/export-host-certificates.sh` | Exports the host's trusted CAs into `.docker/certs/` (Linux) |
 
 The easiest way to get exactly this set: every push to `main` publishes a matching
 "Deployment bundle" GitHub Release (tag `sha-<short-sha>`, the same short SHA as the
@@ -136,6 +137,18 @@ always safe to re-run. Exported files follow the `NNNN-<label>-<thumbprint>.crt`
 truststore — a hand-copied file with any other name is only trusted by the non-Java
 containers (`app`, `collector`, `static-analysis-collector`, `trivy-server`), not by
 Dependency-Track.
+
+On a Linux host, use the shell equivalent instead:
+
+```bash
+sh scripts/export-host-certificates.sh
+```
+
+It reads the CAs your distribution's administrator already added locally —
+`/usr/local/share/ca-certificates/` (Debian/Ubuntu) and
+`/etc/pki/ca-trust/source/anchors/` (RHEL/Fedora/Rocky/Alma) — so the corporate CA must
+already be installed into one of those directories and trusted by the VM itself before
+you run it; it produces the same `.docker/certs/` layout as the Windows script.
 
 Every container that talks outbound (`app`, `collector`, `static-analysis-collector`,
 `trivy-server`, plus Dependency-Track's own truststore) installs everything under

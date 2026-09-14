@@ -9,6 +9,7 @@ PowerShell entry points for developing, running, and operating AppSec Scout. All
 | [invoke-fix.ps1](#invoke-fixps1) | Run mutating auto-fixes (lint, dependency updates) |
 | [invoke-ops.ps1](#invoke-opsps1) | Open an appsec-ops shell, run Claude Code sandboxed, or run an org-wide SBOM/vuln/secret scan or static analysis scan |
 | [export-host-certificates.ps1](#export-host-certificatesps1) | Export the host's trusted CA certificates into `.docker/certs/` (Windows) |
+| [export-host-certificates.sh](#export-host-certificatessh) | Export the host's trusted CA certificates into `.docker/certs/` (Linux) |
 | [test-GitHubToken.ps1](#test-githubtokenps1) | Validate a GitHub PAT |
 | [test-AzureDevOpsToken.ps1](#test-azuredevopstokenps1) | Validate an Azure DevOps PAT |
 | [validate-workflows.cjs](#validate-workflowscjs) | Lint GitHub Actions workflow YAML |
@@ -103,12 +104,26 @@ Before running a full scan, validate the PAT with `test-AzureDevOpsToken.ps1` be
 
 Standalone wrapper around `Export-HostCertificates` (`scripts/lib/Certificates.psm1`): exports the host's trusted root and intermediate CA certificates into `.docker/certs/` — one `NNNN-<label>-<THUMBPRINT>.crt` file per certificate plus a combined `host-ca-bundle.crt` — in the layout the containers and `dependencytrack-cacerts-init` expect. Safe to re-run: existing `*.crt` files in the output directory are replaced. Windows only (reads the `Cert:\` drive); works under both Windows PowerShell 5.1 and PowerShell 7. `appsec-scout.ps1` and `invoke-ops.ps1` call the module directly and don't need this script — it exists for the deployment bundle (`docs/QUICKSTART.md`), which ships `scripts/` without the rest of the repository.
 
+For a Linux host, use [export-host-certificates.sh](#export-host-certificatessh) instead — same output layout, no PowerShell required.
+
 **Parameters**
 - `-OutputDir <path>` — directory to write the exported certificates into. Default `.docker/certs` relative to the repository root.
 
 ```powershell
 .\scripts\export-host-certificates.ps1
 .\scripts\export-host-certificates.ps1 -OutputDir C:\temp\certs
+```
+
+## export-host-certificates.sh
+
+POSIX `sh` equivalent of `export-host-certificates.ps1` for Linux Docker hosts, producing the exact same `.docker/certs/` layout. Reads every `.crt`/`.pem`/`.cer` file directly inside `/usr/local/share/ca-certificates/` (Debian/Ubuntu) and `/etc/pki/ca-trust/source/anchors/` (RHEL/Fedora/Rocky/Alma) — the anchors directories an administrator adds locally trusted CAs to, not the distribution's own Mozilla bundle — so the corporate CA must already be installed there and trusted by the host before running it. Parses each file with `openssl x509` (PEM, falling back to DER), deduplicates by SHA-1 thumbprint, and is safe to re-run. Requires `openssl` on `PATH`; fails fast with a clear message if it's missing. Same "exists for the deployment bundle" reasoning as the Windows script — `appsec-scout.ps1`/`invoke-ops.ps1` are Windows-only and don't call it.
+
+**Usage**
+- `OUTPUT_DIR` (optional, first argument) — directory to write the exported certificates into. Default `.docker/certs` relative to the repository root.
+
+```bash
+sh scripts/export-host-certificates.sh
+sh scripts/export-host-certificates.sh /tmp/certs
 ```
 
 ## test-GitHubToken.ps1
