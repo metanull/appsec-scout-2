@@ -6,6 +6,7 @@ use App\Assets\AttachmentTargetResolver;
 use App\Credentials\Vault;
 use App\Models\Attachment;
 use App\Models\ErrorLog;
+use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\StaticAnalysisRepositoryState;
@@ -1392,4 +1393,107 @@ it('records three skipped_unchanged ToolInvocation rows, one per tool, with the 
         ->and($invocations->pluck('tool')->sort()->values()->all())->toBe(['dotnet-roslynator', 'java-spotbugs', 'opengrep'])
         ->and($invocations->pluck('security_container_id')->unique()->all())->toBe([$container->id])
         ->and($invocations->pluck('run_type')->unique()->all())->toBe([StaticAnalysisRun::class]);
+});
+
+it('records the clone directory as source_root on the opengrep, dotnet, and java attachments', function () {
+    $clonedWorkDir = null;
+
+    Process::fake(function ($process) use (&$clonedWorkDir) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $clonedWorkDir = end($parts);
+            plantClonedFiles($clonedWorkDir, [
+                'App.sln' => '',
+                'build/Main.class' => '',
+            ]);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect($clonedWorkDir)->not->toBeNull();
+
+    $attachments = Attachment::query()->where('kind', 'like', 'code-quality-%')->get();
+
+    expect($attachments)->toHaveCount(3)
+        ->and($attachments->pluck('source_root')->unique()->all())->toBe([$clonedWorkDir]);
+});
+
+it('produces a repository-relative file_path when opengrep reports an absolute file:// uri under the clone directory', function () {
+    $clonedWorkDir = null;
+
+    Process::fake(function ($process) use (&$clonedWorkDir) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $clonedWorkDir = end($parts);
+            plantClonedFiles($clonedWorkDir, ['src/index.js' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            $sarifPath = argAfter($parts, '--output');
+            File::put($sarifPath, json_encode([
+                '$schema' => 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
+                'version' => '2.1.0',
+                'runs' => [[
+                    'tool' => ['driver' => ['name' => 'opengrep', 'rules' => [[
+                        'id' => 'javascript.lang.security.detect-eval.detect-eval',
+                        'shortDescription' => ['text' => 'Detected eval of user input'],
+                    ]]]],
+                    'results' => [[
+                        'ruleId' => 'javascript.lang.security.detect-eval.detect-eval',
+                        'level' => 'error',
+                        'message' => ['text' => 'User input flows into eval().'],
+                        'locations' => [[
+                            'physicalLocation' => [
+                                'artifactLocation' => ['uri' => 'file://' . $clonedWorkDir . '/src/index.js'],
+                                'region' => ['startLine' => 10, 'endLine' => 10],
+                            ],
+                        ]],
+                    ]],
+                ]],
+            ], JSON_THROW_ON_ERROR));
+
+            return Process::result(exitCode: 0);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $finding = LocalFinding::query()->where('rule_id', 'javascript.lang.security.detect-eval.detect-eval')->firstOrFail();
+
+    expect($finding->file_path)->toBe('src/index.js');
 });

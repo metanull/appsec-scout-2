@@ -469,6 +469,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             name: $this->target->repositoryName . '.opengrep.sarif',
             payload: File::get($sarifPath),
             createdByCommand: 'static-analysis',
+            sourceRoot: $workDir,
         );
     }
 
@@ -599,6 +600,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             name: $this->target->repositoryName . '.dotnet.sarif',
             payload: json_encode(['$schema' => $schema, 'version' => $version, 'runs' => $runs], JSON_THROW_ON_ERROR),
             createdByCommand: 'static-analysis',
+            sourceRoot: $workDir,
         );
     }
 
@@ -670,6 +672,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             name: $this->target->repositoryName . '.java.sarif',
             payload: File::get($sarifPath),
             createdByCommand: 'static-analysis',
+            sourceRoot: $workDir,
         );
     }
 
