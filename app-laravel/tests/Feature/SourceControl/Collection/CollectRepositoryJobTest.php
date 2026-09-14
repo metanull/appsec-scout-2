@@ -9,6 +9,7 @@ use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
+use App\Models\ToolInvocation;
 use App\SourceControl\Collection\CollectRepositoryJob;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
@@ -395,4 +396,58 @@ it('records the owning system/container and a single row when the job-level fail
     expect($errorLogs->first()->software_system_id)->toBe($system->id)
         ->and($errorLogs->first()->security_container_id)->toBe($container->id)
         ->and($errorLogs->first()->trace)->not->toBeNull();
+});
+
+// ---------------------------------------------------------------------------
+// ToolInvocation rows (#489) — one per Trivy invocation per repository, on
+// every outcome (findings, clean, skipped, or failed), not only on failure.
+// ---------------------------------------------------------------------------
+
+it('records a ToolInvocation row for a successful Trivy SBOM scan, with no credential value in command_json', function () {
+    fakeCollectorProcesses();
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-001')->firstOrFail();
+
+    $invocation = ToolInvocation::query()->where('tool', 'trivy-sbom')->first();
+
+    expect($invocation)->not->toBeNull()
+        ->and($invocation->outcome)->toBe('ran_with_findings')
+        ->and($invocation->run_type)->toBe(RepositoryCollectionRun::class)
+        ->and($invocation->run_id)->toBe($run->id)
+        ->and($invocation->security_container_id)->toBe($container->id);
+
+    // The fake Trivy token seeded in beforeEach() ('fake-token') must never
+    // appear anywhere in the stored command — only its redacted placeholder.
+    expect($invocation->command_json)->toContain('***REDACTED***')
+        ->and(json_encode($invocation->command_json))->not->toContain('fake-token');
+});
+
+it('records a ToolInvocation row with outcome failed and a non-null output_tail when a Trivy scan fails', function () {
+    fakeCollectorProcesses(function (array $parts, ?string $outputPath) {
+        if (in_array('secret', $parts, true)) {
+            return Process::result(exitCode: 1, errorOutput: 'trivy: scan failed');
+        }
+
+        if ($outputPath !== null) {
+            File::ensureDirectoryExists(dirname($outputPath));
+            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $invocation = ToolInvocation::query()->where('tool', 'trivy-secret')->first();
+
+    expect($invocation)->not->toBeNull()
+        ->and($invocation->outcome)->toBe('failed')
+        ->and($invocation->output_tail)->not->toBeNull();
 });
