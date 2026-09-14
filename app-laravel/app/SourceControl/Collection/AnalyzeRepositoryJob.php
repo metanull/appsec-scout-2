@@ -13,12 +13,14 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\StaticAnalysisRepositoryState;
 use App\Models\StaticAnalysisRun;
+use App\Models\ToolInvocation;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -76,17 +78,6 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     private bool $degraded = false;
 
     /**
-     * Ecosystem stages (e.g. 'dotnet', 'java') for which this pass found no
-     * applicable toolchain — set by logNoToolchain(), read by
-     * persistAnalyzedCommit() once story 3 (#486) lands. Deliberately
-     * distinct from $degraded: finding no toolchain is not a failure.
-     *
-     * @var list<string>
-     */
-    // @phpstan-ignore property.onlyWritten (consumed by story 3, #486, not yet landed)
-    private array $noToolchainStages = [];
-
-    /**
      * Set true the moment any of Opengrep, dotnet/Roslynator, or
      * Java/SpotBugs actually completed a scan against this repository's code
      * — clean or with findings, as opposed to failing or finding no
@@ -136,6 +127,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             }
 
             if (! $this->force && $this->isUnchangedSinceLastAnalysis($remoteHead->sha)) {
+                $this->recordSkippedUnchanged();
                 $this->recordCompletion(failed: false, skipped: true);
 
                 return;
@@ -313,13 +305,9 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      * Resolves the container read-only — deliberately not via resolveOwner(),
      * which creates rows — on the same natural keys that resolver uses.
      */
-    private function isUnchangedSinceLastAnalysis(?string $remoteSha): bool
+    private function findExistingContainer(): ?SecurityContainer
     {
-        if ($remoteSha === null) {
-            return false;
-        }
-
-        $container = SecurityContainer::query()
+        return SecurityContainer::query()
             ->whereHas('softwareSystem', function (Builder $query): void {
                 /** @var Builder<SoftwareSystem> $query */
                 $query->where('source_id', AzDoNormalizer::SOURCE_ID)
@@ -327,11 +315,37 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             })
             ->where('source_container_id', $this->target->repositoryId)
             ->first();
+    }
 
-        $state = $container?->staticAnalysisState;
+    private function isUnchangedSinceLastAnalysis(?string $remoteSha): bool
+    {
+        if ($remoteSha === null) {
+            return false;
+        }
+
+        $state = $this->findExistingContainer()?->staticAnalysisState;
 
         return $state instanceof StaticAnalysisRepositoryState
             && strcasecmp($state->commit_sha, $remoteSha) === 0;
+    }
+
+    /**
+     * Written at the point handle() takes the unchanged-commit skip: three
+     * rows, one per tool, so "was tool Y ever considered for repository X"
+     * has a row to find even on a skip. The container is guaranteed to
+     * resolve here — isUnchangedSinceLastAnalysis() only returned true
+     * because findExistingContainer() already found one with a
+     * StaticAnalysisRepositoryState, and nothing writes to
+     * security_containers in between.
+     */
+    private function recordSkippedUnchanged(): void
+    {
+        $containerId = $this->findExistingContainer()?->id;
+        $now = now();
+
+        foreach (['opengrep', 'dotnet-roslynator', 'java-spotbugs'] as $tool) {
+            $this->recordToolInvocation($containerId, $tool, null, 'skipped_unchanged', null, $now, $now, null);
+        }
     }
 
     /**
@@ -424,23 +438,29 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         string $homeDir,
     ): void {
         $sarifPath = $scratchRoot . '/opengrep.sarif';
+        $command = [
+            'opengrep', 'scan', '--quiet', '--sarif',
+            '--output', $sarifPath,
+            '-f', (string) config('static_analysis_collection.opengrep_rules_dir'),
+            $workDir,
+        ];
+        $startedAt = now();
 
         $result = Process::env(['HOME' => $homeDir])
             ->timeout((int) config('static_analysis_collection.opengrep_timeout'))
-            ->run([
-                'opengrep', 'scan', '--quiet', '--sarif',
-                '--output', $sarifPath,
-                '-f', (string) config('static_analysis_collection.opengrep_rules_dir'),
-                $workDir,
-            ]);
+            ->run($command);
 
         if ($result->failed() || ! File::exists($sarifPath)) {
-            $this->logFailure('opengrep-analyze', $this->tail($result->errorOutput() . $result->output()));
+            $outputTail = $this->tail($result->errorOutput() . $result->output());
+            $this->logFailure('opengrep-analyze', $outputTail);
+            $this->recordToolInvocation($container->id, 'opengrep', $command, 'failed', $result->exitCode(), $startedAt, now(), $outputTail);
 
             return;
         }
 
         $this->anyAnalyzerCompleted = true;
+
+        $this->recordToolInvocation($container->id, 'opengrep', $command, $this->sarifOutcome($sarifPath), $result->exitCode(), $startedAt, now(), null);
 
         $attachments->attachTo(
             owner: $container,
@@ -484,20 +504,25 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         $solutions = iterator_to_array((new Finder)->files()->in($workDir)->name('*.sln'), false);
 
         if ($solutions === []) {
-            $this->logNoToolchain('dotnet');
+            $this->logNoToolchain('dotnet', $container, 'dotnet-roslynator');
 
             return;
         }
 
         foreach ($solutions as $solution) {
             $slnPath = $solution->getPathname();
+            $startedAt = now();
+
+            $restoreCommand = ['dotnet', 'restore', $slnPath];
 
             $restoreResult = Process::env($env)
                 ->timeout((int) config('static_analysis_collection.dotnet_restore_timeout'))
-                ->run(['dotnet', 'restore', $slnPath]);
+                ->run($restoreCommand);
 
             if ($restoreResult->failed()) {
-                $this->logFailure('dotnet-restore', $this->tail($restoreResult->errorOutput() . $restoreResult->output()), $slnPath);
+                $outputTail = $this->tail($restoreResult->errorOutput() . $restoreResult->output());
+                $this->logFailure('dotnet-restore', $outputTail, $slnPath);
+                $this->recordToolInvocation($container->id, 'dotnet-roslynator', $restoreCommand, 'failed', $restoreResult->exitCode(), $startedAt, now(), $outputTail);
 
                 continue;
             }
@@ -512,18 +537,22 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
             $sarifPath = $scratchRoot . '/' . Str::uuid() . '.roslynator.sarif';
 
+            $analyzeCommand = [
+                'roslynator', 'analyze', $slnPath,
+                '--output', $sarifPath,
+                '--output-format', 'sarif',
+                '--severity-level', 'info',
+                '--return-success-on-diagnostics',
+            ];
+
             $analyzeResult = Process::env($env)
                 ->timeout((int) config('static_analysis_collection.analysis_timeout'))
-                ->run([
-                    'roslynator', 'analyze', $slnPath,
-                    '--output', $sarifPath,
-                    '--output-format', 'sarif',
-                    '--severity-level', 'info',
-                    '--return-success-on-diagnostics',
-                ]);
+                ->run($analyzeCommand);
 
             if ($analyzeResult->failed()) {
-                $this->logFailure('dotnet-analyze', $this->tail($analyzeResult->errorOutput() . $analyzeResult->output()), $slnPath);
+                $outputTail = $this->tail($analyzeResult->errorOutput() . $analyzeResult->output());
+                $this->logFailure('dotnet-analyze', $outputTail, $slnPath);
+                $this->recordToolInvocation($container->id, 'dotnet-roslynator', $analyzeCommand, 'failed', $analyzeResult->exitCode(), $startedAt, now(), $outputTail);
 
                 continue;
             }
@@ -533,16 +562,23 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             // A clean, zero-diagnostic solution produces no output file at all — not
             // a failure, simply nothing to merge for this solution.
             if (! File::exists($sarifPath) || File::size($sarifPath) === 0) {
+                $this->recordToolInvocation($container->id, 'dotnet-roslynator', $analyzeCommand, 'ran_clean', $analyzeResult->exitCode(), $startedAt, now(), null);
+
                 continue;
             }
 
             $decoded = json_decode($this->stripUtf8Bom(File::get($sarifPath)), true);
 
             if (! is_array($decoded) || ! isset($decoded['runs'][0])) {
-                $this->logFailure('dotnet-analyze', 'Roslynator produced output that could not be parsed as SARIF.', $slnPath);
+                $message = 'Roslynator produced output that could not be parsed as SARIF.';
+                $this->logFailure('dotnet-analyze', $message, $slnPath);
+                $this->recordToolInvocation($container->id, 'dotnet-roslynator', $analyzeCommand, 'failed', $analyzeResult->exitCode(), $startedAt, now(), $message);
 
                 continue;
             }
+
+            $results = $decoded['runs'][0]['results'] ?? [];
+            $this->recordToolInvocation($container->id, 'dotnet-roslynator', $analyzeCommand, $results === [] ? 'ran_clean' : 'ran_with_findings', $analyzeResult->exitCode(), $startedAt, now(), null);
 
             if ($schema === null) {
                 $schema = $decoded['$schema'] ?? 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json';
@@ -585,7 +621,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         $projectDirs = $this->javaProjectDirs($workDir);
 
         if ($projectDirs === [] && $this->javaClassDirs($workDir) === []) {
-            $this->logNoToolchain('java');
+            $this->logNoToolchain('java', $container, 'java-spotbugs');
 
             return;
         }
@@ -609,17 +645,23 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             $classDirs,
         );
 
+        $startedAt = now();
+
         $result = Process::env($env)
             ->timeout((int) config('static_analysis_collection.analysis_timeout'))
             ->run($command);
 
         if ($result->failed() || ! File::exists($sarifPath) || File::size($sarifPath) === 0) {
-            $this->logFailure('java-analyze', $this->tail($result->errorOutput() . $result->output()));
+            $outputTail = $this->tail($result->errorOutput() . $result->output());
+            $this->logFailure('java-analyze', $outputTail);
+            $this->recordToolInvocation($container->id, 'java-spotbugs', $command, 'failed', $result->exitCode(), $startedAt, now(), $outputTail);
 
             return;
         }
 
         $this->anyAnalyzerCompleted = true;
+
+        $this->recordToolInvocation($container->id, 'java-spotbugs', $command, $this->sarifOutcome($sarifPath), $result->exitCode(), $startedAt, now(), null);
 
         $attachments->attachTo(
             owner: $container,
@@ -728,10 +770,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         return str_starts_with($content, "\xEF\xBB\xBF") ? substr($content, 3) : $content;
     }
 
-    private function logNoToolchain(string $stage): void
+    private function logNoToolchain(string $stage, SecurityContainer $container, string $tool): void
     {
-        $this->noToolchainStages[] = $stage;
-
         // Unlike logFailure()'s context (whose 'subject' field is genuinely
         // nullable), every field here is non-nullable, so no array_filter()
         // is needed to drop null entries.
@@ -745,6 +785,57 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         ];
 
         Log::channel('single')->info("No applicable {$stage} toolchain found; {$stage} analysis skipped.", $context);
+
+        $now = now();
+        $this->recordToolInvocation($container->id, $tool, null, 'skipped_no_toolchain', null, $now, $now, null);
+    }
+
+    /**
+     * Shared by analyzeOpengrep() and analyzeJava(): decodes a SARIF file the
+     * same way analyzeDotnet() decodes Roslynator's own SARIF, treating
+     * output that succeeded but could not be parsed as the safer, more
+     * visible 'ran_with_findings' default rather than a new failure path.
+     */
+    private function sarifOutcome(string $path): string
+    {
+        $decoded = json_decode($this->stripUtf8Bom(File::get($path)), true);
+
+        if (! is_array($decoded) || ! isset($decoded['runs'][0])) {
+            return 'ran_with_findings';
+        }
+
+        $results = $decoded['runs'][0]['results'] ?? [];
+
+        return $results === [] ? 'ran_clean' : 'ran_with_findings';
+    }
+
+    /**
+     * @param  list<string>|null  $command
+     */
+    private function recordToolInvocation(
+        ?int $securityContainerId,
+        string $tool,
+        ?array $command,
+        string $outcome,
+        ?int $exitCode,
+        Carbon $startedAt,
+        ?Carbon $finishedAt,
+        ?string $outputTail,
+    ): void {
+        ToolInvocation::query()->create([
+            'run_type' => StaticAnalysisRun::class,
+            'run_id' => $this->staticAnalysisRunId,
+            'security_container_id' => $securityContainerId,
+            'tool' => $tool,
+            'tool_version' => null,
+            'command_json' => $command,
+            'outcome' => $outcome,
+            'exit_code' => $exitCode,
+            'started_at' => $startedAt,
+            'finished_at' => $finishedAt,
+            'duration_seconds' => $finishedAt !== null ? max(0, $finishedAt->getTimestamp() - $startedAt->getTimestamp()) : null,
+            'output_tail' => $outputTail !== null ? $this->tail($outputTail) : null,
+        ]);
     }
 
     private function logFailure(string $stage, string $message, ?string $subject = null, ?Throwable $exception = null): void

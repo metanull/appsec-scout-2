@@ -10,6 +10,7 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\StaticAnalysisRepositoryState;
 use App\Models\StaticAnalysisRun;
+use App\Models\ToolInvocation;
 use App\SourceControl\Collection\AnalyzeRepositoryJob;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
@@ -1302,4 +1303,93 @@ it('case 4: caches, and later skip-caches, a repository where every ecosystem co
     $secondRun->refresh();
     expect($secondRun->counts_json['repositories_skipped'])->toBe(1)
         ->and($secondRun->status)->toBe('success');
+});
+
+// ---------------------------------------------------------------------------
+// ToolInvocation rows (#489) — one per tool invocation (or applicable
+// no-toolchain/skip outcome) per repository, on every outcome, not only on
+// failure.
+// ---------------------------------------------------------------------------
+
+it('records an opengrep ToolInvocation row with outcome ran_clean when the scan finds zero results', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['src/index.js' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $invocation = ToolInvocation::query()->where('tool', 'opengrep')->first();
+
+    expect($invocation)->not->toBeNull()
+        ->and($invocation->outcome)->toBe('ran_clean')
+        ->and($invocation->run_type)->toBe(StaticAnalysisRun::class)
+        ->and($invocation->run_id)->toBe($run->id);
+});
+
+it('records a dotnet-roslynator ToolInvocation row with outcome skipped_no_toolchain and no exit_code when no .sln exists', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            // A .class file with no .sln anywhere: only the dotnet no-toolchain
+            // path is exercised — java still has something to analyze.
+            plantClonedFiles(end($parts), ['build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $invocation = ToolInvocation::query()->where('tool', 'dotnet-roslynator')->first();
+
+    expect($invocation)->not->toBeNull()
+        ->and($invocation->outcome)->toBe('skipped_no_toolchain')
+        ->and($invocation->exit_code)->toBeNull();
+});
+
+it('records three skipped_unchanged ToolInvocation rows, one per tool, with the existing container id when a repository is skipped as unchanged', function () {
+    $container = seedAnalyzedRepository(UNCHANGED_HEAD_SHA);
+
+    Process::fake(staticAnalysisCleanPassFake(UNCHANGED_HEAD_SHA));
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $invocations = ToolInvocation::query()->where('outcome', 'skipped_unchanged')->get();
+
+    expect($invocations)->toHaveCount(3)
+        ->and($invocations->pluck('tool')->sort()->values()->all())->toBe(['dotnet-roslynator', 'java-spotbugs', 'opengrep'])
+        ->and($invocations->pluck('security_container_id')->unique()->all())->toBe([$container->id])
+        ->and($invocations->pluck('run_type')->unique()->all())->toBe([StaticAnalysisRun::class]);
 });

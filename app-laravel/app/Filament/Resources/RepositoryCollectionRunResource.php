@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ListRepositoryCollectionRuns;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ViewRepositoryCollectionRun;
+use App\Filament\Resources\Shared\RelationManagers\ToolInvocationsRelationManager;
 use App\Filament\Resources\Support\CollectionRunResource;
 use App\Models\RepositoryCollectionRun;
 
@@ -52,6 +53,14 @@ class RepositoryCollectionRunResource extends CollectionRunResource
         return [
             'index' => ListRepositoryCollectionRuns::route('/'),
             'view' => ViewRepositoryCollectionRun::route('/{record}'),
+        ];
+    }
+
+    /** @return array<class-string> */
+    public static function getRelations(): array
+    {
+        return [
+            ToolInvocationsRelationManager::class,
         ];
     }
 }

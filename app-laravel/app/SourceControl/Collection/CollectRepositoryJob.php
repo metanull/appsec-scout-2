@@ -11,11 +11,13 @@ use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\Models\SecurityContainer;
+use App\Models\ToolInvocation;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -278,9 +280,13 @@ final class CollectRepositoryJob implements ShouldQueue
         $trivyServerUrl = (string) config('repository_collection.trivy_server_url');
         $tokenFile = (string) config('repository_collection.trivy_token_file');
         $timeout = (string) config('repository_collection.trivy_timeout');
+        $tool = $this->trivyToolName($report['kind']);
+        $startedAt = now();
 
         if (! File::exists($tokenFile)) {
-            $this->logFailure($report['kind'], 'Trivy token file not found at ' . $tokenFile);
+            $message = 'Trivy token file not found at ' . $tokenFile;
+            $this->logFailure($report['kind'], $message);
+            $this->recordToolInvocation($securityContainer, $tool, null, 'failed', null, $startedAt, now(), $message);
 
             return;
         }
@@ -299,15 +305,31 @@ final class CollectRepositoryJob implements ShouldQueue
             $result = Process::timeout(self::PER_SCAN_TIMEOUT)->run($command);
         } catch (Throwable $e) {
             $this->logFailure($report['kind'], $e->getMessage(), $e);
+            $this->recordToolInvocation($securityContainer, $tool, $command, 'failed', null, $startedAt, now(), $e->getMessage());
 
             return;
         }
 
         if ($result->failed() || ! File::exists($outputPath) || File::size($outputPath) === 0) {
-            $this->logFailure($report['kind'], 'Trivy scan did not produce output.');
+            $message = 'Trivy scan did not produce output.';
+            $this->logFailure($report['kind'], $message);
+            $this->recordToolInvocation($securityContainer, $tool, $command, 'failed', $result->exitCode(), $startedAt, now(), $message);
 
             return;
         }
+
+        $finishedAt = now();
+
+        $this->recordToolInvocation(
+            $securityContainer,
+            $tool,
+            $command,
+            $this->trivyOutcome($report['kind'], $outputPath),
+            $result->exitCode(),
+            $startedAt,
+            $finishedAt,
+            null,
+        );
 
         $attachment = $attachments->attachTo(
             owner: $securityContainer,
@@ -322,6 +344,104 @@ final class CollectRepositoryJob implements ShouldQueue
             'attachment_id' => $attachment->id,
             'size_bytes' => $attachment->size_bytes,
         ]));
+    }
+
+    private function trivyToolName(string $kind): string
+    {
+        return match ($kind) {
+            AttachmentIngestionService::KIND_SBOM => 'trivy-sbom',
+            AttachmentIngestionService::KIND_VULNERABILITIES => 'trivy-vuln',
+            AttachmentIngestionService::KIND_SECRETS => 'trivy-secret',
+            default => 'trivy',
+        };
+    }
+
+    /**
+     * The SBOM report has no "clean" state to detect — a CycloneDX inventory
+     * is meaningful output regardless of how many components it lists — so it
+     * always records as findings. The two SARIF report kinds are decoded the
+     * same way AnalyzeRepositoryJob::analyzeDotnet() decodes Roslynator's own
+     * SARIF: an unparseable-but-successful output is treated as the safer,
+     * more visible 'ran_with_findings' default rather than a new failure path.
+     */
+    private function trivyOutcome(string $kind, string $outputPath): string
+    {
+        if ($kind === AttachmentIngestionService::KIND_SBOM) {
+            return 'ran_with_findings';
+        }
+
+        $decoded = json_decode($this->stripUtf8Bom(File::get($outputPath)), true);
+
+        if (! is_array($decoded) || ! isset($decoded['runs'][0])) {
+            return 'ran_with_findings';
+        }
+
+        $results = $decoded['runs'][0]['results'] ?? [];
+
+        return $results === [] ? 'ran_clean' : 'ran_with_findings';
+    }
+
+    /**
+     * @param  list<string>|null  $command
+     */
+    private function recordToolInvocation(
+        SecurityContainer $securityContainer,
+        string $tool,
+        ?array $command,
+        string $outcome,
+        ?int $exitCode,
+        Carbon $startedAt,
+        ?Carbon $finishedAt,
+        ?string $outputTail,
+    ): void {
+        ToolInvocation::query()->create([
+            'run_type' => RepositoryCollectionRun::class,
+            'run_id' => $this->repositoryCollectionRunId,
+            'security_container_id' => $securityContainer->id,
+            'tool' => $tool,
+            'tool_version' => null,
+            'command_json' => $command !== null ? $this->redactCommand($command) : null,
+            'outcome' => $outcome,
+            'exit_code' => $exitCode,
+            'started_at' => $startedAt,
+            'finished_at' => $finishedAt,
+            'duration_seconds' => $finishedAt !== null ? max(0, $finishedAt->getTimestamp() - $startedAt->getTimestamp()) : null,
+            'output_tail' => $outputTail !== null ? $this->tail($outputTail) : null,
+        ]);
+    }
+
+    /**
+     * Never store the Trivy token: the value immediately following --token is
+     * replaced before the command is persisted to command_json.
+     *
+     * @param  list<string>  $command
+     * @return list<string>
+     */
+    private function redactCommand(array $command): array
+    {
+        $tokenIndex = array_search('--token', $command, true);
+
+        if ($tokenIndex !== false && isset($command[$tokenIndex + 1])) {
+            $command[$tokenIndex + 1] = '***REDACTED***';
+        }
+
+        return $command;
+    }
+
+    private function tail(string $output, int $length = 4000): string
+    {
+        return mb_strlen($output) > $length ? '…' . mb_substr($output, -$length) : $output;
+    }
+
+    /**
+     * Trivy's SARIF output may carry a leading UTF-8 byte-order mark, which
+     * json_decode() does not tolerate — identical in body to
+     * AnalyzeRepositoryJob::stripUtf8Bom(), duplicated here since this file
+     * has no existing helper to reuse.
+     */
+    private function stripUtf8Bom(string $content): string
+    {
+        return str_starts_with($content, "\xEF\xBB\xBF") ? substr($content, 3) : $content;
     }
 
     private function logFailure(string $operation, string $message, ?Throwable $exception = null): void

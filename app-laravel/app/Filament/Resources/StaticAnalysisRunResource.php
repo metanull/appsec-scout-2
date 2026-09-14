@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\Shared\RelationManagers\ToolInvocationsRelationManager;
 use App\Filament\Resources\StaticAnalysisRunResource\Pages\ListStaticAnalysisRuns;
 use App\Filament\Resources\StaticAnalysisRunResource\Pages\ViewStaticAnalysisRun;
 use App\Filament\Resources\Support\CollectionRunResource;
@@ -52,6 +53,14 @@ class StaticAnalysisRunResource extends CollectionRunResource
         return [
             'index' => ListStaticAnalysisRuns::route('/'),
             'view' => ViewStaticAnalysisRun::route('/{record}'),
+        ];
+    }
+
+    /** @return array<class-string> */
+    public static function getRelations(): array
+    {
+        return [
+            ToolInvocationsRelationManager::class,
         ];
     }
 }
