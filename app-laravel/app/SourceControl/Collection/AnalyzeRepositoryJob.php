@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -73,6 +74,17 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      * the repository instead of freezing it out until someone pushes to it.
      */
     private bool $degraded = false;
+
+    /**
+     * Ecosystem stages (e.g. 'dotnet', 'java') for which this pass found no
+     * applicable toolchain — set by logNoToolchain(), read by
+     * persistAnalyzedCommit() once story 3 (#486) lands. Deliberately
+     * distinct from $degraded: finding no toolchain is not a failure.
+     *
+     * @var list<string>
+     */
+    // @phpstan-ignore property.onlyWritten (consumed by story 3, #486, not yet landed)
+    private array $noToolchainStages = [];
 
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
@@ -443,7 +455,15 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         $schema = null;
         $version = null;
 
-        foreach ((new Finder)->files()->in($workDir)->name('*.sln') as $solution) {
+        $solutions = iterator_to_array((new Finder)->files()->in($workDir)->name('*.sln'), false);
+
+        if ($solutions === []) {
+            $this->logNoToolchain('dotnet');
+
+            return;
+        }
+
+        foreach ($solutions as $solution) {
             $slnPath = $solution->getPathname();
 
             $restoreResult = Process::env($env)
@@ -534,7 +554,15 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     ): void {
         $env = ['HOME' => $homeDir];
 
-        foreach ($this->javaProjectDirs($workDir) as $projectDir) {
+        $projectDirs = $this->javaProjectDirs($workDir);
+
+        if ($projectDirs === [] && $this->javaClassDirs($workDir) === []) {
+            $this->logNoToolchain('java');
+
+            return;
+        }
+
+        foreach ($projectDirs as $projectDir) {
             $this->buildJavaProject($projectDir, $env);
         }
 
@@ -668,6 +696,25 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     private function stripUtf8Bom(string $content): string
     {
         return str_starts_with($content, "\xEF\xBB\xBF") ? substr($content, 3) : $content;
+    }
+
+    private function logNoToolchain(string $stage): void
+    {
+        $this->noToolchainStages[] = $stage;
+
+        // Unlike logFailure()'s context (whose 'subject' field is genuinely
+        // nullable), every field here is non-nullable, so no array_filter()
+        // is needed to drop null entries.
+        $context = [
+            'run' => $this->staticAnalysisRunId,
+            'project_id' => $this->target->projectId,
+            'project_name' => $this->target->projectName,
+            'repository_id' => $this->target->repositoryId,
+            'repository_name' => $this->target->repositoryName,
+            'stage' => $stage,
+        ];
+
+        Log::channel('single')->info("No applicable {$stage} toolchain found; {$stage} analysis skipped.", $context);
     }
 
     private function logFailure(string $stage, string $message, ?string $subject = null, ?Throwable $exception = null): void

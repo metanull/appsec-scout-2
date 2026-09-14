@@ -13,6 +13,7 @@ use App\Models\StaticAnalysisRun;
 use App\SourceControl\Collection\AnalyzeRepositoryJob;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 // Leading UTF-8 BOM matches Roslynator's real --output-format sarif output exactly
@@ -397,6 +398,104 @@ it('produces only a java attachment for a repository with no .sln', function () 
     // dotnet/java distinction this test is actually about.
     expect(Attachment::query()->whereIn('kind', [AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET, AttachmentIngestionService::KIND_CODE_QUALITY_JAVA])->pluck('kind')->all())
         ->toBe([AttachmentIngestionService::KIND_CODE_QUALITY_JAVA]);
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
+it('logs a no-toolchain outcome for dotnet and creates no ErrorLog when no .sln exists anywhere', function () {
+    Log::spy();
+    // The chained Log::channel('single')->info(...) call needs channel() to
+    // return the same spy so the subsequent info() call is recorded on it —
+    // a spy returns null from unconfigured methods, so this must be set up
+    // before the job runs, not asserted only afterward.
+    Log::shouldReceive('channel')->with('single')->andReturnSelf();
+
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            // A .class file with no .sln anywhere: only the dotnet no-toolchain
+            // path is exercised — java still has something to analyze.
+            plantClonedFiles(end($parts), ['build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(ErrorLog::query()->where('channel', 'static-analysis')->count())->toBe(0);
+
+    Log::shouldHaveReceived('info')
+        ->with(
+            Mockery::pattern('/No applicable dotnet toolchain found/'),
+            Mockery::on(fn (array $context): bool => ($context['stage'] ?? null) === 'dotnet'
+                && $context['project_id'] === 'project-001'
+                && $context['repository_id'] === 'repo-001'),
+        )
+        ->once();
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
+it('logs a no-toolchain outcome for java and creates no ErrorLog when no build files or classes exist', function () {
+    Log::spy();
+    // See the dotnet test above: channel('single') must be configured to
+    // return the spy itself before the job runs, not asserted after.
+    Log::shouldReceive('channel')->with('single')->andReturnSelf();
+
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            // A .sln with no Java build file/class anywhere: only the java
+            // no-toolchain path is exercised — dotnet still has something to analyze.
+            plantClonedFiles(end($parts), ['App.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(ErrorLog::query()->where('channel', 'static-analysis')->count())->toBe(0);
+
+    Log::shouldHaveReceived('info')
+        ->with(
+            Mockery::pattern('/No applicable java toolchain found/'),
+            Mockery::on(fn (array $context): bool => ($context['stage'] ?? null) === 'java'
+                && $context['project_id'] === 'project-001'
+                && $context['repository_id'] === 'repo-001'),
+        )
+        ->once();
 
     $run->refresh();
     expect($run->status)->toBe('success');
