@@ -37,7 +37,10 @@ volumes, configuration, first login) is identical between them:
   set is needed (`docker-compose.yml`, `docker-compose.ghcr.yml`, optionally
   `docker-compose.pgsql.yml`, and `.env.example`) — see
   [docs/QUICKSTART.md](QUICKSTART.md) for the complete, standalone walkthrough (Home and
-  Corporate/VM Hosting variants, including the ACR mirroring step). The rest of this page
+  Corporate/VM Hosting variants, including the ACR mirroring step, which also mirrors the
+  four third-party images the stack pulls directly — `redis`, `postgres`,
+  `dependencytrack/apiserver`, `dependencytrack/frontend` — through the same
+  `UPSTREAM_IMAGE_REGISTRY` mechanism). The rest of this page
   still applies if you have a full clone and just want to point it at prebuilt images instead
   of building — see [Prebuilt Container Images](#prebuilt-container-images) below for that
   one-line switch.

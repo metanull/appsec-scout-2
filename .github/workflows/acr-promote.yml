@@ -17,6 +17,14 @@
 # The GHCR packages are public, so `az acr import` needs no source registry credentials.
 # If they are ever made private, add to each import command:
 #   --username <github-username> --password <PAT with read:packages>
+#
+# A second loop imports the four third-party images docker-compose.yml pulls directly
+# (redis, postgres, dependencytrack/apiserver, dependencytrack/frontend) from Docker Hub,
+# name-preserving (same repository path, just re-hosted under the ACR), so
+# UPSTREAM_IMAGE_REGISTRY can point straight at this ACR. These are anonymous Docker Hub
+# pulls and subject to Docker Hub's anonymous rate limit; pass
+# `--username <docker-hub-username> --password <Docker Hub access token>` to `az acr
+# import` for the upstream loop if that limit is hit.
 
 name: Promote Images to ACR
 
@@ -64,14 +72,14 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Import images
+      - name: Import AppSec Scout images
         env:
           TAG: ${{ inputs.tag }}
           ACR_NAME: ${{ vars.ACR_NAME }}
           SOURCE: ghcr.io/${{ github.repository }}
         run: |
           set -euo pipefail
-          for name in app collector static-analysis-collector; do
+          for name in app collector static-analysis-collector mysql postgres trivy-server; do
             echo "Importing ${SOURCE}/${name}:${TAG} -> ${ACR_NAME}/appsec-scout-2/${name}:{${TAG},latest}"
             az acr import \
               --name "$ACR_NAME" \
@@ -80,3 +88,29 @@ jobs:
               --image "appsec-scout-2/${name}:latest" \
               --force
           done
+
+      - name: Import upstream (Docker Hub) images
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          set -euo pipefail
+          az acr import \
+            --name "$ACR_NAME" \
+            --source docker.io/library/redis:7-alpine \
+            --image library/redis:7-alpine \
+            --force
+          az acr import \
+            --name "$ACR_NAME" \
+            --source docker.io/library/postgres:16-alpine \
+            --image library/postgres:16-alpine \
+            --force
+          az acr import \
+            --name "$ACR_NAME" \
+            --source docker.io/dependencytrack/apiserver:latest \
+            --image dependencytrack/apiserver:latest \
+            --force
+          az acr import \
+            --name "$ACR_NAME" \
+            --source docker.io/dependencytrack/frontend:latest \
+            --image dependencytrack/frontend:latest \
+            --force
