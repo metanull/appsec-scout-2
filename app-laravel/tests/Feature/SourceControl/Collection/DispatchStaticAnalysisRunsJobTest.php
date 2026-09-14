@@ -57,6 +57,16 @@ beforeEach(function () {
             File::ensureDirectoryExists(end($parts));
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            $outputIndex = array_search('--output', $parts, true);
+            $outputPath = $outputIndex !== false ? $parts[$outputIndex + 1] : null;
+
+            if ($outputPath !== null) {
+                File::ensureDirectoryExists(dirname($outputPath));
+                File::put($outputPath, '{"runs":[]}');
+            }
+        }
+
         return Process::result(exitCode: 0);
     });
 });
@@ -165,6 +175,16 @@ it('completes as partial when one of several repository jobs fails', function ()
             }
 
             File::ensureDirectoryExists(end($parts));
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            $outputIndex = array_search('--output', $parts, true);
+            $outputPath = $outputIndex !== false ? $parts[$outputIndex + 1] : null;
+
+            if ($outputPath !== null) {
+                File::ensureDirectoryExists(dirname($outputPath));
+                File::put($outputPath, '{"runs":[]}');
+            }
         }
 
         return Process::result(exitCode: 0);
