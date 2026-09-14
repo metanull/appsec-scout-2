@@ -11,8 +11,11 @@
 #
 # The `;` path separator is the Docker Compose default on Windows. On Linux/macOS the
 # default separator is `:` (or set COMPOSE_PATH_SEPARATOR explicitly). To combine with
-# the PostgreSQL engine override, list all three files (docker-compose.pgsql.yml last
-# or between — the two overrides touch disjoint keys).
+# the PostgreSQL engine override, `docker-compose.pgsql.yml` must come BEFORE this file
+# (COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml;docker-compose.ghcr.yml) —
+# both files define the `postgres` service's `image`, and the last file listed wins, so
+# listing pgsql last reverts `postgres` to the locally-built `appsec-scout-postgres:latest`
+# and `docker compose pull` fails with "pull access denied".
 #
 # APPSEC_IMAGE_TAG selects the tag (default: latest). Deployments should pin the
 # immutable sha-<short-commit> tag of a vetted build instead of tracking latest.

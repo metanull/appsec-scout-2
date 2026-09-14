@@ -219,6 +219,9 @@ add `docker-compose.pgsql.yml` to the `COMPOSE_FILE` chain:
 COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml;docker-compose.ghcr.yml
 ```
 
+Order matters here: `docker-compose.pgsql.yml` must come before `docker-compose.ghcr.yml`, or `postgres`
+reverts to the locally-built image and `docker compose pull` fails with "pull access denied".
+
 Then choose one:
 
 - **Bundled Postgres container** (same as Home, just on Postgres): also set

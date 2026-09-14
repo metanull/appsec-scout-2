@@ -9,6 +9,10 @@
 # The `;` path separator is the Docker Compose default on Windows. On Linux/macOS the
 # default separator is `:` (or set COMPOSE_PATH_SEPARATOR explicitly).
 #
+# When combined with docker-compose.ghcr.yml, this file must be listed BEFORE it —
+# both define the `postgres` service's `image` and the last file listed wins, so
+# listing ghcr first is what keeps `postgres` on the published registry image.
+#
 # What it changes, relative to docker-compose.yml:
 #   - starts a `postgres` service (PostgreSQL 16) instead of `mysql` (the mysql
 #     service is parked behind a never-activated profile so it neither starts nor
