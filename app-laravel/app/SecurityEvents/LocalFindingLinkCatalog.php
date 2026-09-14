@@ -100,10 +100,36 @@ final class LocalFindingLinkCatalog
 
         $add('Repository', $this->repositoryCodeUrlGenerator->repositoryUrlFor($identity), LinkCollector::KIND_CODE, 3);
 
+        $fileUrl = $this->sourceFileUrl($finding);
+
+        if ($fileUrl !== null) {
+            $add('Source file', $fileUrl, LinkCollector::KIND_CODE, 3);
+        }
+    }
+
+    /**
+     * The "Source file" URL on its own — resolves the same repository identity and
+     * builds the same URL as the "Source file" entry in build()'s link list, so the
+     * detail page's Location entry and the link list can never diverge. Returns null
+     * when the finding's container/system carries no repository identity, or when
+     * the finding has no file path.
+     */
+    public function sourceFileUrl(LocalFinding $finding): ?string
+    {
+        $owner = $finding->owner;
+        $container = $owner instanceof SecurityContainer ? $owner : null;
+        $system = $finding->softwareSystem;
+
+        $identity = $this->repositoryCodeIdentityResolver->resolve($container, $system);
+
+        if (! $identity instanceof RepositoryCodeIdentity) {
+            return null;
+        }
+
         $filePath = $finding->file_path;
 
         if ($filePath === '') {
-            return;
+            return null;
         }
 
         $location = new CodeLocation(
@@ -112,8 +138,7 @@ final class LocalFindingLinkCatalog
             endLine: is_int($finding->end_line) ? $finding->end_line : null,
         );
 
-        $fileUrl = $this->repositoryCodeUrlGenerator->fileUrlFor($identity, $location);
-        $add('Source file', $fileUrl, LinkCollector::KIND_CODE, 3);
+        return $this->repositoryCodeUrlGenerator->fileUrlFor($identity, $location);
     }
 
     /**

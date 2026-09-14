@@ -16,6 +16,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
 use App\Models\User;
+use App\SecurityEvents\LocalFindingLinkCatalog;
 use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\WorkItemDto;
 use Database\Seeders\RolePermissionSeeder;
@@ -137,6 +138,95 @@ it('shows the finding detail page including the correlated alert link', function
         ->test(ViewLocalFinding::class, ['record' => $finding->getKey()])
         ->assertSee('GitHub PAT committed')
         ->assertSee('#' . $event->id);
+});
+
+it('shows the problem section, links the location, and renders the raw SARIF result on the view page', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $system = SoftwareSystem::factory()->create(['url' => 'https://dev.azure.com/EESC-CoR/PW-API']);
+    $container = SecurityContainer::factory()->forSystem($system)->create([
+        'url' => 'https://dev.azure.com/EESC-CoR/PW-API/_git/consultation-api',
+        'metadata' => [
+            'source' => ['provider' => 'azure-repos'],
+            'code' => ['default_branch' => 'main'],
+        ],
+    ]);
+
+    $finding = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_CODE_QUALITY,
+        'rule_id' => 'CA2100',
+        'title' => 'Review SQL queries for security vulnerabilities',
+        'description' => 'SQL queries that directly use input without validation may be vulnerable to SQL injection attacks.',
+        'file_path' => 'src/UserRepository.cs',
+        'start_line' => 42,
+        'software_system_id' => $system->id,
+        'metadata' => [
+            'message' => "Review if the query string passed to 'SqlCommand.CommandText' accepts input from the user.",
+            'help' => 'Use parameterized queries instead of string concatenation.',
+            'tags' => ['security', 'sql-injection'],
+            'level' => 'warning',
+            'result' => ['ruleId' => 'CA2100', 'message' => ['text' => 'raw-result-only-marker']],
+        ],
+    ]);
+
+    $expectedUrl = app(LocalFindingLinkCatalog::class)->sourceFileUrl($finding);
+
+    expect($expectedUrl)->not->toBeNull();
+
+    // Only assert the ampersand-free prefix of the URL: Blade HTML-escapes "&" to
+    // "&amp;" in the rendered href attribute, so the raw query string would not
+    // match verbatim.
+    $expectedUrlPrefix = strstr((string) $expectedUrl, '&', true) ?: $expectedUrl;
+
+    Livewire::actingAs($user)
+        ->test(ViewLocalFinding::class, ['record' => $finding->getKey()])
+        ->assertSee("Review if the query string passed to 'SqlCommand.CommandText' accepts input from the user.")
+        ->assertSee('SQL queries that directly use input without validation may be vulnerable to SQL injection attacks.')
+        ->assertSee('Use parameterized queries instead of string concatenation.')
+        ->assertSee('security')
+        ->assertSee('sql-injection')
+        ->assertSee($expectedUrlPrefix, false)
+        ->assertSee('raw-result-only-marker');
+});
+
+it('shows the message for a legacy finding whose metadata predates the captured message field', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $container = SecurityContainer::factory()->create();
+    $finding = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'CVE-2024-1234',
+        'title' => 'Legacy finding',
+        'file_path' => 'requirements.txt',
+        'metadata' => [
+            'result' => ['message' => ['text' => 'Legacy diagnostic captured only in the raw result.']],
+        ],
+    ]);
+
+    Livewire::actingAs($user)
+        ->test(ViewLocalFinding::class, ['record' => $finding->getKey()])
+        ->assertSee('Legacy diagnostic captured only in the raw result.');
+});
+
+it('does not link the Location entry when the finding has no repository identity', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $container = SecurityContainer::factory()->create(['url' => null, 'metadata' => null]);
+    $finding = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'r1',
+        'title' => 'No identity',
+        'file_path' => 'a.txt',
+    ]);
+
+    expect(app(LocalFindingLinkCatalog::class)->sourceFileUrl($finding))->toBeNull();
+
+    Livewire::actingAs($user)
+        ->test(ViewLocalFinding::class, ['record' => $finding->getKey()])
+        ->assertSee('a.txt');
 });
 
 it('orders findings by effective severity rank by default, respecting overrides', function () {
