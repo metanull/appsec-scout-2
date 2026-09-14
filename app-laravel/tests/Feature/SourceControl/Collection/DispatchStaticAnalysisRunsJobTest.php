@@ -120,6 +120,38 @@ it('marks the run as failure when the azdo-repos credential is not configured', 
     expect($run->status)->toBe('failure')
         ->and($run->error_message)->not->toBeNull()
         ->and($run->batch_id)->toBeNull();
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('message', $run->error_message)->latest('id')->first();
+
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->level)->toBe('error')
+        ->and($errorLog->context_json['run'])->toBe($run->id)
+        ->and($errorLog->context_json['operation'])->toBe('discover');
+});
+
+it('logs and marks the run as failure when the batch dispatch itself throws', function () {
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], '{"count":1,"value":[{"id":"project-001","name":"SecurityProject","url":"https://dev.azure.com/testorg/_apis/projects/project-001"}]}'),
+        new Response(200, [], staticAnalysisDispatcherFixture('repositories.json')),
+    ]);
+
+    Bus::shouldReceive('batch')->once()->andThrow(new RuntimeException('Batch dispatch failed.'));
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    $run = StaticAnalysisRun::query()->latest('id')->first();
+
+    expect($run->status)->toBe('failure')
+        ->and($run->error_message)->toBe('Batch dispatch failed.')
+        ->and($run->batch_id)->toBeNull();
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('message', 'Batch dispatch failed.')->latest('id')->first();
+
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->level)->toBe('error')
+        ->and($errorLog->context_json['run'])->toBe($run->id)
+        ->and($errorLog->context_json['operation'])->toBe('dispatch')
+        ->and($errorLog->trace)->not->toBeNull();
 });
 
 it('completes as partial when one of several repository jobs fails', function () {

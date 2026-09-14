@@ -14,6 +14,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -65,10 +66,27 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
         $provider = $runtime->sourceControl(self::SOURCE_CONTROL_ID);
 
         if (! $provider instanceof EnumeratesInventory || ! $runtime->hasRequiredSystemCredentials($provider->credentialFields())) {
+            $message = 'Azure DevOps Repos credential is not configured.';
+            $context = ['run' => $run->id, 'operation' => 'discover'];
+
             $run->update([
                 'status' => 'failure',
                 'finished_at' => now(),
-                'error_message' => 'Azure DevOps Repos credential is not configured.',
+                'error_message' => $message,
+            ]);
+
+            // Not Log::error() (the default `stack` channel already includes
+            // the `database` handler at level=error) — that would create a
+            // second, poorer-context ErrorLog row for the same failure.
+            Log::channel('single')->error($message, $context);
+
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'static-analysis',
+                'message' => $message,
+                'context_json' => $context,
+                'trace' => null,
+                'occurred_at' => now(),
             ]);
 
             return;
@@ -119,10 +137,24 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
                 $run->refresh();
 
                 if ($run->status === 'running') {
+                    $context = ['run' => $run->id, 'operation' => 'dispatch'];
+
                     $run->update([
                         'status' => 'failure',
                         'finished_at' => now(),
                         'error_message' => $e->getMessage(),
+                    ]);
+
+                    // Not Log::error() — see the "credential not configured" branch's identical comment.
+                    Log::channel('single')->error($e->getMessage(), $context);
+
+                    ErrorLog::query()->create([
+                        'level' => 'error',
+                        'channel' => 'static-analysis',
+                        'message' => $e->getMessage(),
+                        'context_json' => $context,
+                        'trace' => $e->getTraceAsString(),
+                        'occurred_at' => now(),
                     ]);
                 }
             }
