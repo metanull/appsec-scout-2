@@ -71,13 +71,17 @@ services:
             timeout: 5s
             retries: 5
 
+    # UPSTREAM_IMAGE_REGISTRY prefixes every third-party (non-AppSec-Scout) image below
+    # while keeping its Docker Hub repository path unchanged (default: docker.io). Set it
+    # to <acr>.azurecr.io after mirroring those repository paths into your own registry —
+    # see docs/QUICKSTART.md section "Mirror every image into your ACR".
     redis:
-        image: redis:7-alpine
+        image: ${UPSTREAM_IMAGE_REGISTRY:-docker.io}/library/redis:7-alpine
         volumes:
             - redis_data:/data
 
     dependencytrack-postgres:
-        image: postgres:16-alpine
+        image: ${UPSTREAM_IMAGE_REGISTRY:-docker.io}/library/postgres:16-alpine
         environment:
             POSTGRES_DB: "${DTRACK_DB_DATABASE:-dtrack}"
             POSTGRES_USER: "${DTRACK_DB_USERNAME:-dtrack}"
@@ -105,7 +109,7 @@ services:
     # path has to be a directory containing the file, not the file itself. A no-op merge
     # (just the base cacerts, unchanged) when there's no corporate CA present (e.g. home).
     dependencytrack-cacerts-init:
-        image: dependencytrack/apiserver:latest
+        image: ${UPSTREAM_IMAGE_REGISTRY:-docker.io}/dependencytrack/apiserver:latest
         # The image's default USER 1000 can't write into a fresh named volume (root-owned
         # until something chowns it). Safe here since this container only copies/imports
         # certs and exits — dependencytrack-apiserver itself keeps running as UID 1000.
@@ -126,7 +130,7 @@ services:
             - dependencytrack_cacerts:/output
 
     dependencytrack-apiserver:
-        image: dependencytrack/apiserver:latest
+        image: ${UPSTREAM_IMAGE_REGISTRY:-docker.io}/dependencytrack/apiserver:latest
         depends_on:
             dependencytrack-postgres:
                 condition: service_healthy
@@ -158,7 +162,7 @@ services:
             - dependencytrack_cacerts:/opt/appsec-scout-certs:ro
 
     dependencytrack-frontend:
-        image: dependencytrack/frontend:latest
+        image: ${UPSTREAM_IMAGE_REGISTRY:-docker.io}/dependencytrack/frontend:latest
         depends_on:
             - dependencytrack-apiserver
         environment:

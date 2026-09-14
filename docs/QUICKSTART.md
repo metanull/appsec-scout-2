@@ -71,7 +71,7 @@ Everything Home needs above, plus the items below. "User" and "VM Hosting" are t
 file set and the same steps — the only difference is whether the four files live on your
 own workstation or on the VM.
 
-### a. Mirror the six images into your ACR
+### a. Mirror every image into your ACR
 
 CI publishes six images to GHCR (`app`, `collector`, `static-analysis-collector`,
 `mysql`, `postgres`, `trivy-server` — see `.github/workflows/image-publish.yml`). Pulling
@@ -96,14 +96,23 @@ for name in app collector static-analysis-collector mysql postgres trivy-server;
 done
 ```
 
-This matches the flags `.github/workflows/acr-promote.yml` uses for its own three
-images, extended to all six. The GHCR packages are public, so no source-registry
-credentials are needed; if they are ever made private, add
+This matches the flags `.github/workflows/acr-promote.yml` uses for its own six
+images. The GHCR packages are public, so no source-registry credentials are needed; if
+they are ever made private, add
 `--username <github-username> --password <PAT with read:packages>` to each import.
 
-`redis`, and the three `dependencytrack-*` images, are **not** part of this list —
-they are pulled straight from Docker Hub in every mode (Home and Corporate alike) and
-are not AppSec Scout's own images, so there is nothing to mirror for them.
+`redis`, `postgres` (Dependency-Track's own database — a separate image pull from the
+AppSec Scout `postgres` image above), and the two `dependencytrack/*` images are Docker
+Hub images, not AppSec Scout's own — but `docker-compose.yml` reads them through the same
+kind of registry variable, `UPSTREAM_IMAGE_REGISTRY`, so mirroring them is a
+name-preserving import of the unchanged Docker Hub repository path:
+
+```bash
+az acr import --name "$ACR_NAME" --source docker.io/library/redis:7-alpine --image library/redis:7-alpine --force
+az acr import --name "$ACR_NAME" --source docker.io/library/postgres:16-alpine --image library/postgres:16-alpine --force
+az acr import --name "$ACR_NAME" --source docker.io/dependencytrack/apiserver:latest --image dependencytrack/apiserver:latest --force
+az acr import --name "$ACR_NAME" --source docker.io/dependencytrack/frontend:latest --image dependencytrack/frontend:latest --force
+```
 
 ### b. Point the stack at your ACR
 
@@ -113,10 +122,25 @@ In `.env`:
 COMPOSE_FILE=docker-compose.yml;docker-compose.ghcr.yml
 APPSEC_IMAGE_REGISTRY=<your-acr-short-name>.azurecr.io/appsec-scout-2
 APPSEC_IMAGE_TAG=sha-<short-sha>
+UPSTREAM_IMAGE_REGISTRY=<your-acr-short-name>.azurecr.io
 ```
 
-`docker compose pull && docker compose up -d` now pulls every AppSec Scout image from
-your ACR instead of GHCR.
+Authenticate to the ACR before pulling — from a workstation with the Azure CLI:
+
+```bash
+az acr login --name <your-acr-short-name>
+```
+
+or, on a VM without the Azure CLI, `docker login <your-acr-short-name>.azurecr.io` with a
+token or service principal. Then:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+pulls every image — AppSec Scout's own and the four upstream ones — from your ACR
+instead of GHCR/Docker Hub.
 
 ### c. Trust your corporate CA
 
