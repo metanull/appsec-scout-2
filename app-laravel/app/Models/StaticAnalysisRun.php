@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'source_control_id',
@@ -26,5 +27,11 @@ class StaticAnalysisRun extends Model
             'finished_at' => 'datetime',
             'counts_json' => 'array',
         ];
+    }
+
+    /** @return MorphMany<ToolInvocation, $this> */
+    public function toolInvocations(): MorphMany
+    {
+        return $this->morphMany(ToolInvocation::class, 'run');
     }
 }
