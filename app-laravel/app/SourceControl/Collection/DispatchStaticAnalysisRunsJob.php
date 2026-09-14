@@ -14,6 +14,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -65,10 +66,27 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
         $provider = $runtime->sourceControl(self::SOURCE_CONTROL_ID);
 
         if (! $provider instanceof EnumeratesInventory || ! $runtime->hasRequiredSystemCredentials($provider->credentialFields())) {
+            $message = 'Azure DevOps Repos credential is not configured.';
+            $context = ['run' => $run->id, 'operation' => 'discover'];
+
             $run->update([
                 'status' => 'failure',
                 'finished_at' => now(),
-                'error_message' => 'Azure DevOps Repos credential is not configured.',
+                'error_message' => $message,
+            ]);
+
+            // Not Log::error() (the default `stack` channel already includes
+            // the `database` handler at level=error) — that would create a
+            // second, poorer-context ErrorLog row for the same failure.
+            Log::channel('single')->error($message, $context);
+
+            ErrorLog::query()->create([
+                'level' => 'error',
+                'channel' => 'static-analysis',
+                'message' => $message,
+                'context_json' => $context,
+                'trace' => null,
+                'occurred_at' => now(),
             ]);
 
             return;
@@ -76,13 +94,17 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
 
         $runtime->runSourceControl(self::SOURCE_CONTROL_ID, function (SourceControlProvider $resolvedProvider) use ($run): void {
             /** @var EnumeratesInventory&SourceControlProvider $resolvedProvider */
-            $targets = $this->buildTargets($resolvedProvider, $run->id);
+            ['targets' => $targets, 'excluded' => $excluded] = $this->buildTargets($resolvedProvider, $run->id);
 
             if ($targets === []) {
                 $run->update([
                     'status' => 'success',
                     'finished_at' => now(),
-                    'counts_json' => ['repositories_considered' => 0],
+                    'counts_json' => [
+                        'repositories_considered' => 0,
+                        'repositories_excluded_pre_dispatch' => array_sum($excluded),
+                        'repositories_excluded_by_reason' => $excluded,
+                    ],
                 ]);
 
                 return;
@@ -94,6 +116,9 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
                     'repositories_completed' => 0,
                     'repositories_failed' => 0,
                     'repositories_skipped' => 0,
+                    'repositories_skipped_by_reason' => [],
+                    'repositories_excluded_pre_dispatch' => array_sum($excluded),
+                    'repositories_excluded_by_reason' => $excluded,
                 ],
             ]);
 
@@ -119,20 +144,35 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
                 $run->refresh();
 
                 if ($run->status === 'running') {
+                    $context = ['run' => $run->id, 'operation' => 'dispatch'];
+
                     $run->update([
                         'status' => 'failure',
                         'finished_at' => now(),
                         'error_message' => $e->getMessage(),
+                    ]);
+
+                    // Not Log::error() — see the "credential not configured" branch's identical comment.
+                    Log::channel('single')->error($e->getMessage(), $context);
+
+                    ErrorLog::query()->create([
+                        'level' => 'error',
+                        'channel' => 'static-analysis',
+                        'message' => $e->getMessage(),
+                        'context_json' => $context,
+                        'trace' => $e->getTraceAsString(),
+                        'occurred_at' => now(),
                     ]);
                 }
             }
         });
     }
 
-    /** @return list<RepositoryCollectionTarget> */
+    /** @return array{targets: list<RepositoryCollectionTarget>, excluded: array<string, int>} */
     private function buildTargets(EnumeratesInventory&SourceControlProvider $provider, int $runId): array
     {
         $targets = [];
+        $excluded = [];
 
         foreach ($provider->fetchProjects() as $project) {
             foreach ($provider->fetchRepositories($project) as $container) {
@@ -144,6 +184,8 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
                 $cloneUrl = SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL);
 
                 if ($cloneUrl === null) {
+                    $excluded['no_clone_url'] = ($excluded['no_clone_url'] ?? 0) + 1;
+
                     ErrorLog::query()->create([
                         'level' => 'error',
                         'channel' => 'static-analysis',
@@ -178,6 +220,6 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
             }
         }
 
-        return $targets;
+        return ['targets' => $targets, 'excluded' => $excluded];
     }
 }

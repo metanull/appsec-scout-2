@@ -54,6 +54,13 @@ final class CollectRepositoryJob implements ShouldQueue
 
     private const PER_SCAN_TIMEOUT = 1200;
 
+    /**
+     * Set by logFailure(): once any Trivy scan against this repository has
+     * failed, the repository counts as failed for this run even though its
+     * clone succeeded.
+     */
+    private bool $degraded = false;
+
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
         public readonly int $repositoryCollectionRunId,
@@ -97,7 +104,7 @@ final class CollectRepositoryJob implements ShouldQueue
         // connection (tests, and optionally elsewhere) re-throws through
         // after already recording it via failed(), aborting the rest of
         // the batch under that connection specifically.
-        $this->recordCompletion(failed: ! $cloned);
+        $this->recordCompletion(failed: ! $cloned || $this->degraded);
 
         Log::info('Repository collection finished.', $this->logContext('finish', ['cloned' => $cloned]));
     }
@@ -151,7 +158,7 @@ final class CollectRepositoryJob implements ShouldQueue
                 return;
             }
 
-            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int} $storedCounts */
+            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int, repositories_excluded_pre_dispatch?: int, repositories_excluded_by_reason?: array<string, int>} $storedCounts */
             $storedCounts = (array) $run->counts_json;
 
             $considered = (int) ($storedCounts['repositories_considered'] ?? 0);
@@ -163,6 +170,8 @@ final class CollectRepositoryJob implements ShouldQueue
                     'repositories_considered' => $considered,
                     'repositories_completed' => $completed,
                     'repositories_failed' => $failedCount,
+                    'repositories_excluded_pre_dispatch' => (int) ($storedCounts['repositories_excluded_pre_dispatch'] ?? 0),
+                    'repositories_excluded_by_reason' => (array) ($storedCounts['repositories_excluded_by_reason'] ?? []),
                 ],
             ];
 
@@ -317,6 +326,8 @@ final class CollectRepositoryJob implements ShouldQueue
 
     private function logFailure(string $operation, string $message, ?Throwable $exception = null): void
     {
+        $this->degraded = true;
+
         $context = $this->logContext($operation);
 
         // Not Log::error() — see failed()'s identical comment.

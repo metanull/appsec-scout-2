@@ -17,6 +17,20 @@ it('formats counts as zeroes when null', function () {
     expect(RunCounts::format(null))->toBe('0 / 0 · 0 failed');
 });
 
+it('renders unchanged for a counts array stored before the excluded keys existed', function () {
+    expect(RunCounts::format(['repositories_considered' => 3, 'repositories_completed' => 2, 'repositories_failed' => 1]))
+        ->toBe('2 / 3 · 1 failed');
+});
+
+it('appends the excluded count when repositories_excluded_pre_dispatch is present', function () {
+    expect(RunCounts::format([
+        'repositories_considered' => 3,
+        'repositories_completed' => 2,
+        'repositories_failed' => 1,
+        'repositories_excluded_pre_dispatch' => 2,
+    ]))->toBe('2 / 3 · 1 failed · 2 excluded');
+});
+
 it('computes the duration in seconds between a repository collection run\'s started_at and finished_at', function () {
     $run = new RepositoryCollectionRun;
     $run->setRawAttributes(['started_at' => '2026-01-01 00:00:00', 'finished_at' => '2026-01-01 00:01:30'], true);

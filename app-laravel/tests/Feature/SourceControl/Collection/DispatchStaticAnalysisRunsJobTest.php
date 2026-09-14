@@ -2,6 +2,9 @@
 
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
+use App\Models\SecurityContainer;
+use App\Models\SoftwareSystem;
+use App\Models\StaticAnalysisRepositoryState;
 use App\Models\StaticAnalysisRun;
 use App\SourceControl\AzDo\AzDoRepos;
 use App\SourceControl\Collection\AnalyzeRepositoryJob;
@@ -57,6 +60,16 @@ beforeEach(function () {
             File::ensureDirectoryExists(end($parts));
         }
 
+        if (($parts[0] ?? null) === 'opengrep') {
+            $outputIndex = array_search('--output', $parts, true);
+            $outputPath = $outputIndex !== false ? $parts[$outputIndex + 1] : null;
+
+            if ($outputPath !== null) {
+                File::ensureDirectoryExists(dirname($outputPath));
+                File::put($outputPath, '{"runs":[]}');
+            }
+        }
+
         return Process::result(exitCode: 0);
     });
 });
@@ -108,6 +121,81 @@ it('skips a repository with no clone URL metadata and logs it, without failing t
         ->and($errorLog->context_json['repository_name'])->toBe('backend-api');
 });
 
+it('excludes a repository with no clone URL from repositories_considered and records it by reason', function () {
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], '{"count":1,"value":[{"id":"project-001","name":"SecurityProject","url":"https://dev.azure.com/testorg/_apis/projects/project-001"}]}'),
+        new Response(200, [], '{"count":2,"value":['
+            . '{"id":"repo-001","name":"backend-api","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-001","project":{"id":"project-001","name":"SecurityProject"},"defaultBranch":"refs/heads/main","remoteUrl":"https://testorg@dev.azure.com/testorg/SecurityProject/_git/backend-api","webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/backend-api"},'
+            . '{"id":"repo-002","name":"frontend-app","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-002","project":{"id":"project-001","name":"SecurityProject"},"webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/frontend-app"}'
+            . ']}'),
+    ]);
+
+    // The batch dispatch below runs the single surviving target's
+    // AnalyzeRepositoryJob synchronously (the `sync` queue connection), so
+    // by the time $run is re-fetched, recordCompletion() has already
+    // rewritten counts_json once — proving the excluded keys survive that
+    // rewrite rather than only asserting their dispatch-time value.
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    $run = StaticAnalysisRun::query()->latest('id')->first();
+
+    expect($run->status)->toBe('success')
+        ->and($run->counts_json['repositories_considered'])->toBe(1)
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_excluded_pre_dispatch'])->toBe(1)
+        ->and($run->counts_json['repositories_excluded_by_reason'])->toBe(['no_clone_url' => 1]);
+});
+
+it('records repositories_skipped_by_reason when a repository is skipped as unchanged', function () {
+    $sha = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4';
+
+    $system = SoftwareSystem::factory()->create([
+        'source_id' => 'azdo',
+        'source_system_id' => 'project-001',
+    ]);
+
+    $container = SecurityContainer::factory()->create([
+        'software_system_id' => $system->id,
+        'source_container_id' => 'repo-001',
+    ]);
+
+    StaticAnalysisRepositoryState::query()->create([
+        'security_container_id' => $container->id,
+        'commit_sha' => $sha,
+        'analyzed_at' => now()->subDay(),
+        'analyzed_run_id' => null,
+    ]);
+
+    Process::fake(function ($process) use ($sha) {
+        $command = $process->command;
+        $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: "{$sha}\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            File::ensureDirectoryExists(end($parts));
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], '{"count":1,"value":[{"id":"project-001","name":"SecurityProject","url":"https://dev.azure.com/testorg/_apis/projects/project-001"}]}'),
+        new Response(200, [], '{"count":1,"value":[{"id":"repo-001","name":"backend-api","url":"https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-001","project":{"id":"project-001","name":"SecurityProject"},"defaultBranch":"refs/heads/main","remoteUrl":"https://testorg@dev.azure.com/testorg/SecurityProject/_git/backend-api","webUrl":"https://dev.azure.com/testorg/SecurityProject/_git/backend-api"}]}'),
+    ]);
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    $run = StaticAnalysisRun::query()->latest('id')->first();
+
+    expect($run->status)->toBe('success')
+        ->and($run->counts_json['repositories_considered'])->toBe(1)
+        ->and($run->counts_json['repositories_skipped'])->toBe(1)
+        ->and($run->counts_json['repositories_skipped_by_reason'])->toBe(['unchanged_commit' => 1]);
+});
+
 it('marks the run as failure when the azdo-repos credential is not configured', function () {
     // Overwrite the credential seeded in beforeEach with an empty one so the
     // pre-flight hasRequiredSystemCredentials() check fails.
@@ -120,6 +208,38 @@ it('marks the run as failure when the azdo-repos credential is not configured', 
     expect($run->status)->toBe('failure')
         ->and($run->error_message)->not->toBeNull()
         ->and($run->batch_id)->toBeNull();
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('message', $run->error_message)->latest('id')->first();
+
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->level)->toBe('error')
+        ->and($errorLog->context_json['run'])->toBe($run->id)
+        ->and($errorLog->context_json['operation'])->toBe('discover');
+});
+
+it('logs and marks the run as failure when the batch dispatch itself throws', function () {
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], '{"count":1,"value":[{"id":"project-001","name":"SecurityProject","url":"https://dev.azure.com/testorg/_apis/projects/project-001"}]}'),
+        new Response(200, [], staticAnalysisDispatcherFixture('repositories.json')),
+    ]);
+
+    Bus::shouldReceive('batch')->once()->andThrow(new RuntimeException('Batch dispatch failed.'));
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    $run = StaticAnalysisRun::query()->latest('id')->first();
+
+    expect($run->status)->toBe('failure')
+        ->and($run->error_message)->toBe('Batch dispatch failed.')
+        ->and($run->batch_id)->toBeNull();
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('message', 'Batch dispatch failed.')->latest('id')->first();
+
+    expect($errorLog)->not->toBeNull()
+        ->and($errorLog->level)->toBe('error')
+        ->and($errorLog->context_json['run'])->toBe($run->id)
+        ->and($errorLog->context_json['operation'])->toBe('dispatch')
+        ->and($errorLog->trace)->not->toBeNull();
 });
 
 it('completes as partial when one of several repository jobs fails', function () {
@@ -133,6 +253,16 @@ it('completes as partial when one of several repository jobs fails', function ()
             }
 
             File::ensureDirectoryExists(end($parts));
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            $outputIndex = array_search('--output', $parts, true);
+            $outputPath = $outputIndex !== false ? $parts[$outputIndex + 1] : null;
+
+            if ($outputPath !== null) {
+                File::ensureDirectoryExists(dirname($outputPath));
+                File::put($outputPath, '{"runs":[]}');
+            }
         }
 
         return Process::result(exitCode: 0);

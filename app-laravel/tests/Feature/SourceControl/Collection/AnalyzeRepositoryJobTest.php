@@ -13,6 +13,7 @@ use App\Models\StaticAnalysisRun;
 use App\SourceControl\Collection\AnalyzeRepositoryJob;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 // Leading UTF-8 BOM matches Roslynator's real --output-format sarif output exactly
@@ -325,7 +326,8 @@ it('logs a dotnet-analyze failure only when roslynator both fails and produces n
         ->and($errorLog->context_json['repository_name'])->toBe('backend-api');
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 it('records the owning system/container on a logged static-analysis failure', function () {
@@ -401,6 +403,104 @@ it('produces only a java attachment for a repository with no .sln', function () 
     expect($run->status)->toBe('success');
 });
 
+it('logs a no-toolchain outcome for dotnet and creates no ErrorLog when no .sln exists anywhere', function () {
+    Log::spy();
+    // The chained Log::channel('single')->info(...) call needs channel() to
+    // return the same spy so the subsequent info() call is recorded on it —
+    // a spy returns null from unconfigured methods, so this must be set up
+    // before the job runs, not asserted only afterward.
+    Log::shouldReceive('channel')->with('single')->andReturnSelf();
+
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            // A .class file with no .sln anywhere: only the dotnet no-toolchain
+            // path is exercised — java still has something to analyze.
+            plantClonedFiles(end($parts), ['build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(ErrorLog::query()->where('channel', 'static-analysis')->count())->toBe(0);
+
+    Log::shouldHaveReceived('info')
+        ->with(
+            Mockery::pattern('/No applicable dotnet toolchain found/'),
+            Mockery::on(fn (array $context): bool => ($context['stage'] ?? null) === 'dotnet'
+                && $context['project_id'] === 'project-001'
+                && $context['repository_id'] === 'repo-001'),
+        )
+        ->once();
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
+it('logs a no-toolchain outcome for java and creates no ErrorLog when no build files or classes exist', function () {
+    Log::spy();
+    // See the dotnet test above: channel('single') must be configured to
+    // return the spy itself before the job runs, not asserted after.
+    Log::shouldReceive('channel')->with('single')->andReturnSelf();
+
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            // A .sln with no Java build file/class anywhere: only the java
+            // no-toolchain path is exercised — dotnet still has something to analyze.
+            plantClonedFiles(end($parts), ['App.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(ErrorLog::query()->where('channel', 'static-analysis')->count())->toBe(0);
+
+    Log::shouldHaveReceived('info')
+        ->with(
+            Mockery::pattern('/No applicable java toolchain found/'),
+            Mockery::on(fn (array $context): bool => ($context['stage'] ?? null) === 'java'
+                && $context['project_id'] === 'project-001'
+                && $context['repository_id'] === 'repo-001'),
+        )
+        ->once();
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+});
+
 it('does not let a restore failure on one .sln prevent another from being analyzed, and merges their SARIF runs', function () {
     Process::fake(function ($process) {
         $parts = commandParts($process->command);
@@ -451,7 +551,8 @@ it('does not let a restore failure on one .sln prevent another from being analyz
         ->and($errorLog->context_json['run'])->toBe($run->id);
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 it('does not let a Maven build failure in one directory prevent SpotBugs from analyzing classes elsewhere', function () {
@@ -502,7 +603,8 @@ it('does not let a Maven build failure in one directory prevent SpotBugs from an
     expect($errorLog)->not->toBeNull();
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 it('records completion as failure and attempts no analysis when the clone fails', function () {
@@ -683,7 +785,8 @@ it('logs an opengrep-analyze failure and still runs the dotnet and java analyzer
     expect($errorLog)->not->toBeNull();
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 // ---------------------------------------------------------------------------
@@ -963,4 +1066,240 @@ it('deletes the PAT-bearing scratch directory on the skip path too', function ()
     expect(File::directories($workspace))->toBe([]);
 
     File::deleteDirectory($workspace);
+});
+
+// ---------------------------------------------------------------------------
+// Only caching a commit when at least one analyzer actually completed a scan
+// (#486) — $anyAnalyzerCompleted, checked alongside $degraded in
+// persistAnalyzedCommit(). Each of the four combinations below also runs the
+// job a second time against an unchanged remote head, to prove whether the
+// unchanged-commit skip path (isUnchangedSinceLastAnalysis()) is taken next.
+// ---------------------------------------------------------------------------
+
+it('case 1: caches, and later skip-caches, a repository where only opengrep finds applicable code', function () {
+    $cloneCount = 0;
+
+    Process::fake(function ($process) use (&$cloneCount) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'rev-parse') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $cloneCount++;
+            // No .sln, no Java build file, and no compiled classes anywhere:
+            // a pure single-ecosystem repository (e.g. Python/JS) that only
+            // opengrep ever analyzes.
+            plantClonedFiles(end($parts), ['src/index.js' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-001')->firstOrFail();
+
+    // Opengrep alone completing a scan is enough to cache the commit — this
+    // is the pure-Python/JS repository this story must not regress.
+    expect(StaticAnalysisRepositoryState::query()->where('security_container_id', $container->id)->count())->toBe(1)
+        ->and($cloneCount)->toBe(1);
+
+    $secondRun = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $secondRun->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $secondRun->refresh();
+
+    // The remote head has not moved: commit-based skip-caching still works
+    // for a single-ecosystem repository exactly as it does today.
+    expect($cloneCount)->toBe(1)
+        ->and($secondRun->counts_json['repositories_skipped'])->toBe(1)
+        ->and($secondRun->status)->toBe('success');
+});
+
+it('case 2: does not cache, and does not skip-cache, a repository where java fails alongside a successful opengrep pass', function () {
+    $cloneCount = 0;
+
+    Process::fake(function ($process) use (&$cloneCount) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'rev-parse') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $cloneCount++;
+            // No .sln: only java (via its compiled classes) and opengrep are
+            // in play for this repository.
+            plantClonedFiles(end($parts), ['build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            return Process::result(exitCode: 1, errorOutput: 'spotbugs: analysis error');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    // Opengrep succeeded, but java's own analyze step failed: $degraded stays
+    // true, so — exactly as today — nothing is cached.
+    expect(StaticAnalysisRepositoryState::query()->count())->toBe(0)
+        ->and($cloneCount)->toBe(1);
+
+    $run->refresh();
+    expect($run->status)->toBe('failure');
+
+    $secondRun = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $secondRun->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    // No cached state exists, so the second sweep re-clones and re-attempts
+    // every ecosystem rather than taking the unchanged-commit skip path.
+    expect($cloneCount)->toBe(2);
+
+    $secondRun->refresh();
+    expect($secondRun->counts_json['repositories_skipped'])->toBe(0)
+        ->and($secondRun->status)->toBe('failure');
+});
+
+it('case 3: does not cache, and does not skip-cache, a repository where no analyzer completes a scan at all', function () {
+    $cloneCount = 0;
+
+    Process::fake(function ($process) use (&$cloneCount) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'rev-parse') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $cloneCount++;
+            // No .sln, no Java build file, and no compiled classes anywhere,
+            // and opengrep itself fails: nothing at all scans this repository.
+            plantClonedFiles(end($parts), ['README.md' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            return Process::result(exitCode: 1, errorOutput: 'opengrep: rule parse error');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    // Every applicable ecosystem either found no toolchain (dotnet, java) or
+    // failed (opengrep): nothing scanned this repository's code, so it must
+    // not be cached — this is the new behaviour this story adds.
+    expect(StaticAnalysisRepositoryState::query()->count())->toBe(0)
+        ->and($cloneCount)->toBe(1);
+
+    $run->refresh();
+    expect($run->status)->toBe('failure');
+
+    $secondRun = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $secondRun->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect($cloneCount)->toBe(2);
+
+    $secondRun->refresh();
+    expect($secondRun->counts_json['repositories_skipped'])->toBe(0);
+});
+
+it('case 4: caches, and later skip-caches, a repository where every ecosystem completes a clean scan', function () {
+    $cloneCount = 0;
+
+    Process::fake(function ($process) use (&$cloneCount) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'ls-remote') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\tHEAD\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'rev-parse') {
+            return Process::result(exitCode: 0, output: UNCHANGED_HEAD_SHA . "\n");
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $cloneCount++;
+            plantClonedFiles(end($parts), ['App.sln' => '', 'build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-001')->firstOrFail();
+
+    expect(StaticAnalysisRepositoryState::query()->where('security_container_id', $container->id)->count())->toBe(1)
+        ->and($cloneCount)->toBe(1);
+
+    $run->refresh();
+    expect($run->status)->toBe('success');
+
+    $secondRun = staticAnalysisRunForJobTest();
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $secondRun->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect($cloneCount)->toBe(1);
+
+    $secondRun->refresh();
+    expect($secondRun->counts_json['repositories_skipped'])->toBe(1)
+        ->and($secondRun->status)->toBe('success');
 });

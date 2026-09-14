@@ -93,13 +93,17 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
 
         $runtime->runSourceControl(self::SOURCE_CONTROL_ID, function (SourceControlProvider $resolvedProvider) use ($run, $recorder): void {
             /** @var EnumeratesInventory&SourceControlProvider $resolvedProvider */
-            $targets = $this->buildTargets($resolvedProvider, $run->id);
+            ['targets' => $targets, 'excluded' => $excluded] = $this->buildTargets($resolvedProvider, $run->id);
 
             if ($targets === []) {
                 $run->update([
                     'status' => 'success',
                     'finished_at' => now(),
-                    'counts_json' => ['repositories_considered' => 0],
+                    'counts_json' => [
+                        'repositories_considered' => 0,
+                        'repositories_excluded_pre_dispatch' => array_sum($excluded),
+                        'repositories_excluded_by_reason' => $excluded,
+                    ],
                 ]);
 
                 Log::info('Repository collection run completed with no repositories to collect.', [
@@ -129,6 +133,8 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                     'repositories_considered' => count($targets),
                     'repositories_completed' => 0,
                     'repositories_failed' => 0,
+                    'repositories_excluded_pre_dispatch' => array_sum($excluded),
+                    'repositories_excluded_by_reason' => $excluded,
                 ],
             ]);
 
@@ -195,10 +201,11 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
         });
     }
 
-    /** @return list<RepositoryCollectionTarget> */
+    /** @return array{targets: list<RepositoryCollectionTarget>, excluded: array<string, int>} */
     private function buildTargets(EnumeratesInventory&SourceControlProvider $provider, int $runId): array
     {
         $targets = [];
+        $excluded = [];
 
         foreach ($provider->fetchProjects() as $project) {
             foreach ($provider->fetchRepositories($project) as $container) {
@@ -210,6 +217,8 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                 $cloneUrl = SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL);
 
                 if ($cloneUrl === null) {
+                    $excluded['no_clone_url'] = ($excluded['no_clone_url'] ?? 0) + 1;
+
                     $message = 'Repository has no clone URL, skipping.';
                     $context = [
                         'run' => $runId,
@@ -250,6 +259,6 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
             }
         }
 
-        return $targets;
+        return ['targets' => $targets, 'excluded' => $excluded];
     }
 }

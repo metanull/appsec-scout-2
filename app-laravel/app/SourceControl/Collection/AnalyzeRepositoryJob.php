@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -73,6 +74,31 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      * the repository instead of freezing it out until someone pushes to it.
      */
     private bool $degraded = false;
+
+    /**
+     * Ecosystem stages (e.g. 'dotnet', 'java') for which this pass found no
+     * applicable toolchain — set by logNoToolchain(), read by
+     * persistAnalyzedCommit() once story 3 (#486) lands. Deliberately
+     * distinct from $degraded: finding no toolchain is not a failure.
+     *
+     * @var list<string>
+     */
+    // @phpstan-ignore property.onlyWritten (consumed by story 3, #486, not yet landed)
+    private array $noToolchainStages = [];
+
+    /**
+     * Set true the moment any of Opengrep, dotnet/Roslynator, or
+     * Java/SpotBugs actually completed a scan against this repository's code
+     * — clean or with findings, as opposed to failing or finding no
+     * applicable toolchain. Read by persistAnalyzedCommit() alongside
+     * $degraded: caching requires both that at least one ecosystem completed
+     * a scan (this flag) and that nothing failed ($degraded stays false).
+     * Finding no toolchain does not set $degraded and does not, on its own,
+     * prevent caching — it only means this flag stays false for that one
+     * ecosystem; caching is still blocked only if EVERY ecosystem ends up in
+     * that state (or any ecosystem fails).
+     */
+    private bool $anyAnalyzerCompleted = false;
 
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
@@ -132,7 +158,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
         // A clone failure is a logged, per-repository outcome, not a job-level
         // exception — mirrors CollectRepositoryJob::handle()'s own reasoning.
-        $this->recordCompletion(failed: ! $cloned);
+        $this->recordCompletion(failed: ! $cloned || $this->degraded);
     }
 
     /**
@@ -160,7 +186,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
                 return;
             }
 
-            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int, repositories_skipped?: int} $storedCounts */
+            /** @var array{repositories_considered?: int, repositories_completed?: int, repositories_failed?: int, repositories_skipped?: int, repositories_skipped_by_reason?: array<string, int>, repositories_excluded_pre_dispatch?: int, repositories_excluded_by_reason?: array<string, int>} $storedCounts */
             $storedCounts = (array) $run->counts_json;
 
             $considered = (int) ($storedCounts['repositories_considered'] ?? 0);
@@ -170,12 +196,22 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             $failedCount = (int) ($storedCounts['repositories_failed'] ?? 0) + ($failed ? 1 : 0);
             $skippedCount = (int) ($storedCounts['repositories_skipped'] ?? 0) + ($skipped ? 1 : 0);
 
+            /** @var array<string, int> $skippedByReason */
+            $skippedByReason = (array) ($storedCounts['repositories_skipped_by_reason'] ?? []);
+
+            if ($skipped) {
+                $skippedByReason['unchanged_commit'] = (int) ($skippedByReason['unchanged_commit'] ?? 0) + 1;
+            }
+
             $update = [
                 'counts_json' => [
                     'repositories_considered' => $considered,
                     'repositories_completed' => $completed,
                     'repositories_failed' => $failedCount,
                     'repositories_skipped' => $skippedCount,
+                    'repositories_skipped_by_reason' => $skippedByReason,
+                    'repositories_excluded_pre_dispatch' => (int) ($storedCounts['repositories_excluded_pre_dispatch'] ?? 0),
+                    'repositories_excluded_by_reason' => (array) ($storedCounts['repositories_excluded_by_reason'] ?? []),
                 ],
             ];
 
@@ -306,7 +342,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      */
     private function persistAnalyzedCommit(SecurityContainer $container, string $workDir, string $homeDir): void
     {
-        if ($this->degraded) {
+        if ($this->degraded || ! $this->anyAnalyzerCompleted) {
             return;
         }
 
@@ -404,6 +440,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             return;
         }
 
+        $this->anyAnalyzerCompleted = true;
+
         $attachments->attachTo(
             owner: $container,
             kind: AttachmentIngestionService::KIND_CODE_QUALITY_OPENGREP,
@@ -443,7 +481,15 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         $schema = null;
         $version = null;
 
-        foreach ((new Finder)->files()->in($workDir)->name('*.sln') as $solution) {
+        $solutions = iterator_to_array((new Finder)->files()->in($workDir)->name('*.sln'), false);
+
+        if ($solutions === []) {
+            $this->logNoToolchain('dotnet');
+
+            return;
+        }
+
+        foreach ($solutions as $solution) {
             $slnPath = $solution->getPathname();
 
             $restoreResult = Process::env($env)
@@ -481,6 +527,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
                 continue;
             }
+
+            $this->anyAnalyzerCompleted = true;
 
             // A clean, zero-diagnostic solution produces no output file at all — not
             // a failure, simply nothing to merge for this solution.
@@ -534,7 +582,15 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     ): void {
         $env = ['HOME' => $homeDir];
 
-        foreach ($this->javaProjectDirs($workDir) as $projectDir) {
+        $projectDirs = $this->javaProjectDirs($workDir);
+
+        if ($projectDirs === [] && $this->javaClassDirs($workDir) === []) {
+            $this->logNoToolchain('java');
+
+            return;
+        }
+
+        foreach ($projectDirs as $projectDir) {
             $this->buildJavaProject($projectDir, $env);
         }
 
@@ -562,6 +618,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
             return;
         }
+
+        $this->anyAnalyzerCompleted = true;
 
         $attachments->attachTo(
             owner: $container,
@@ -668,6 +726,25 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     private function stripUtf8Bom(string $content): string
     {
         return str_starts_with($content, "\xEF\xBB\xBF") ? substr($content, 3) : $content;
+    }
+
+    private function logNoToolchain(string $stage): void
+    {
+        $this->noToolchainStages[] = $stage;
+
+        // Unlike logFailure()'s context (whose 'subject' field is genuinely
+        // nullable), every field here is non-nullable, so no array_filter()
+        // is needed to drop null entries.
+        $context = [
+            'run' => $this->staticAnalysisRunId,
+            'project_id' => $this->target->projectId,
+            'project_name' => $this->target->projectName,
+            'repository_id' => $this->target->repositoryId,
+            'repository_name' => $this->target->repositoryName,
+            'stage' => $stage,
+        ];
+
+        Log::channel('single')->info("No applicable {$stage} toolchain found; {$stage} analysis skipped.", $context);
     }
 
     private function logFailure(string $stage, string $message, ?string $subject = null, ?Throwable $exception = null): void
