@@ -39,6 +39,9 @@
 #     *_vendor / *_bootstrap_cache named volumes are dropped, because a named
 #     volume is seeded from image content only when first created and would
 #     permanently shadow a newer pulled image's code with stale content;
+#   - every service that runs the entrypoint sets APP_SKIP_COMPOSER_INSTALL=1, so
+#     the runtime `composer install` (meant for the build-from-source bind mount)
+#     never runs and never reaches a package registry — see docker/entrypoint.sh;
 #   - data and state volumes are unchanged: app_storage (persisted .env/APP_KEY),
 #     the app_public_* asset volumes (resynced from the image on every start by
 #     the entrypoint), workspace scratch volumes, and trivy_token — so switching
@@ -53,6 +56,8 @@ services:
     app:
         image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/app:${APPSEC_IMAGE_TAG:-latest}
         build: !reset null
+        environment:
+            APP_SKIP_COMPOSER_INSTALL: "1"
         volumes: !override
             - app_storage:/var/www/html/storage
             - app_public_build:/var/www/html/public/build
@@ -64,19 +69,26 @@ services:
 
     trivy-token-init:
         image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/app:${APPSEC_IMAGE_TAG:-latest}
+        environment:
+            APP_SKIP_COMPOSER_INSTALL: "1"
 
     dependencytrack-bootstrap:
         image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/app:${APPSEC_IMAGE_TAG:-latest}
+        environment:
+            APP_SKIP_COMPOSER_INSTALL: "1"
         volumes: !override
             - app_storage:/var/www/html/storage
             - app_public_build:/var/www/html/public/build
             - app_public_css:/var/www/html/public/css
             - app_public_js:/var/www/html/public/js
             - trivy_token:/var/lib/trivy-token:ro
+            - ./.docker/certs:/host-certs:ro
 
     collector:
         image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/collector:${APPSEC_IMAGE_TAG:-latest}
         build: !reset null
+        environment:
+            APP_SKIP_COMPOSER_INSTALL: "1"
         volumes: !override
             - app_storage:/var/www/html/storage
             - collector_workspace:/workspace-scratch
@@ -86,6 +98,8 @@ services:
     static-analysis-collector:
         image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/static-analysis-collector:${APPSEC_IMAGE_TAG:-latest}
         build: !reset null
+        environment:
+            APP_SKIP_COMPOSER_INSTALL: "1"
         volumes: !override
             - app_storage:/var/www/html/storage
             - static_analysis_collector_workspace:/workspace-scratch

@@ -33,9 +33,11 @@ volumes, configuration, first login) is identical between them:
   it carries the compose files, helper scripts, Dockerfiles, and `.env.example`.
 - **Run prebuilt images**: the stack runs the exact Trivy-gated images CI publishes to the
   GitHub Container Registry (or an Azure Container Registry mirrored from it) — no build
-  toolchain, no compilation, faster first start, and **no clone required**. Only a small file
-  set is needed (`docker-compose.yml`, `docker-compose.ghcr.yml`, optionally
-  `docker-compose.pgsql.yml`, and `.env.example`) — see
+  toolchain, no compilation, faster first start, and **no clone required**. The images ship
+  their production `vendor/` baked in, so the container entrypoint never runs Composer at
+  start in this track (dev tooling such as Pint/PHPStan/Pest is not available in it, by
+  design). Only a small file set is needed (`docker-compose.yml`, `docker-compose.ghcr.yml`,
+  optionally `docker-compose.pgsql.yml`, and `.env.example`) — see
   [docs/QUICKSTART.md](QUICKSTART.md) for the complete, standalone walkthrough (Home and
   Corporate/VM Hosting variants, including the ACR mirroring step, which also mirrors the
   four third-party images the stack pulls directly — `redis`, `postgres`,
