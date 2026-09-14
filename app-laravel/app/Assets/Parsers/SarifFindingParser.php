@@ -16,10 +16,14 @@ use JsonException;
  */
 final class SarifFindingParser
 {
+    public function __construct(
+        private readonly SarifArtifactUriNormalizer $uriNormalizer,
+    ) {}
+
     /**
      * @return list<ParsedFinding>
      */
-    public function parse(string $payload): array
+    public function parse(string $payload, ?string $sourceRoot = null): array
     {
         try {
             /** @var array<string, mixed> $data */
@@ -38,7 +42,7 @@ final class SarifFindingParser
 
         foreach ($runs as $run) {
             if (is_array($run)) {
-                array_push($parsed, ...$this->parseRun($run));
+                array_push($parsed, ...$this->parseRun($run, $sourceRoot));
             }
         }
 
@@ -49,7 +53,7 @@ final class SarifFindingParser
      * @param  array<string, mixed>  $run
      * @return list<ParsedFinding>
      */
-    private function parseRun(array $run): array
+    private function parseRun(array $run, ?string $sourceRoot): array
     {
         $rules = $this->indexRules($run);
         $results = $run['results'] ?? null;
@@ -80,7 +84,7 @@ final class SarifFindingParser
             }
 
             foreach ($locations as $location) {
-                $finding = $this->buildFinding($ruleId, $rule, $messageFields, $result, $location);
+                $finding = $this->buildFinding($ruleId, $rule, $messageFields, $result, $location, $sourceRoot);
 
                 if ($finding !== null) {
                     $parsed[] = $finding;
@@ -139,7 +143,7 @@ final class SarifFindingParser
      * @param  array<string, mixed>  $result
      * @param  array<string, mixed>  $location
      */
-    private function buildFinding(string $ruleId, array $rule, array $messageFields, array $result, array $location): ?ParsedFinding
+    private function buildFinding(string $ruleId, array $rule, array $messageFields, array $result, array $location, ?string $sourceRoot): ?ParsedFinding
     {
         $artifactLocation = $location['physicalLocation']['artifactLocation'] ?? null;
         $filePath = is_array($artifactLocation) ? ($artifactLocation['uri'] ?? null) : null;
@@ -147,6 +151,8 @@ final class SarifFindingParser
         if (! is_string($filePath) || $filePath === '') {
             return null;
         }
+
+        $filePath = $this->uriNormalizer->normalize($filePath, $sourceRoot);
 
         $region = $location['physicalLocation']['region'] ?? null;
         $startLine = is_array($region) && is_int($region['startLine'] ?? null) ? $region['startLine'] : null;

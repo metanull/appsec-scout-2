@@ -8,6 +8,7 @@ use App\Assets\AttachmentTargetResolver;
 use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
+use App\Assets\LocalFindingFilePathRepairer;
 use App\Assets\Sbom\PendingSbomScanImporter;
 use App\Assets\Sbom\SbomScanStatusReporter;
 use App\Assets\StaticAnalysis\PendingStaticAnalysisScanImporter;
@@ -1007,6 +1008,29 @@ Artisan::command('local-findings:backfill-dedup-hash', function (): int {
 
     return self::SUCCESS;
 })->purpose('One-off backfill: populate dedup_hash on any local_findings row missing it, then resolve any duplicate (owner_type, owner_id, kind, dedup_hash) groups by keeping the most recently updated row and deleting the rest. Must be run once, in production, before the migration adding the UNIQUE constraint on (owner_type, owner_id, kind, dedup_hash) is deployed. Safe to re-run.');
+
+Artisan::command('local-findings:repair-file-paths {--dry-run}', function (LocalFindingFilePathRepairer $repairer): int {
+    $dryRun = (bool) $this->option('dry-run');
+
+    if ($dryRun) {
+        $this->info('Running in --dry-run mode: no rows will be changed.');
+    }
+
+    $result = $repairer->repair($dryRun);
+
+    foreach ($result['skipped'] as $skipped) {
+        $this->line(sprintf('Skipped local_finding #%d: unrecognized absolute file_path "%s".', $skipped['id'], $skipped['file_path']));
+    }
+
+    $this->info(sprintf(
+        'repaired=%d merged=%d skipped=%d',
+        $result['repaired'],
+        $result['merged'],
+        count($result['skipped']),
+    ));
+
+    return self::SUCCESS;
+})->purpose('One-off repair: rewrite local_findings.file_path from an absolute container path (file:///workspace-scratch/<uuid>/work/... or file:///tmp/tmp.XXXXXXXXXX/...) to a repository-relative one and recompute dedup_hash, merging onto an already-relative twin (moving comments and work-item links, keeping the earliest first_seen_at) when one already exists. Use --dry-run first. Safe to re-run.');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();

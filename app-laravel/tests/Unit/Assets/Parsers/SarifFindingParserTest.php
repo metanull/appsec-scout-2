@@ -13,7 +13,7 @@ function staticAnalysisSarifFixture(string $name): string
 }
 
 it('parses a vulnerability sarif result including package and version', function () {
-    $findings = (new SarifFindingParser)->parse(sarifFixture('vuln-sarif-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(sarifFixture('vuln-sarif-sample.json'));
 
     expect($findings)->toHaveCount(1);
 
@@ -33,7 +33,7 @@ it('parses a vulnerability sarif result including package and version', function
 });
 
 it('parses a secret sarif result with a pre-masked match and no package fields', function () {
-    $findings = (new SarifFindingParser)->parse(sarifFixture('secret-sarif-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(sarifFixture('secret-sarif-sample.json'));
 
     expect($findings)->toHaveCount(1);
 
@@ -50,15 +50,15 @@ it('parses a secret sarif result with a pre-masked match and no package fields',
 });
 
 it('returns an empty list for invalid json', function () {
-    expect((new SarifFindingParser)->parse('not json'))->toBe([]);
+    expect(app(SarifFindingParser::class)->parse('not json'))->toBe([]);
 });
 
 it('returns an empty list when there are no runs', function () {
-    expect((new SarifFindingParser)->parse('{"version":"2.1.0"}'))->toBe([]);
+    expect(app(SarifFindingParser::class)->parse('{"version":"2.1.0"}'))->toBe([]);
 });
 
 it('derives severity from level for a Roslynator result with no Trivy-style Severity field', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
 
     expect($findings)->toHaveCount(2);
 
@@ -73,7 +73,7 @@ it('derives severity from level for a Roslynator result with no Trivy-style Seve
 });
 
 it('falls back to the first message line for a title when the rule has no shortDescription or name', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
 
     expect($findings)->toHaveCount(2);
 
@@ -87,7 +87,7 @@ it('falls back to the first message line for a title when the rule has no shortD
 });
 
 it('derives severity from level for a SpotBugs result with no Trivy-style Severity field', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('spotbugs-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('spotbugs-sample.json'));
 
     expect($findings)->toHaveCount(1);
 
@@ -114,14 +114,14 @@ it('returns null severity when neither a Severity field nor a recognized level i
         ]],
     ], JSON_THROW_ON_ERROR);
 
-    $findings = (new SarifFindingParser)->parse($payload);
+    $findings = app(SarifFindingParser::class)->parse($payload);
 
     expect($findings)->toHaveCount(1)
         ->and($findings[0]->severity)->toBeNull();
 });
 
 it('derives severity from level for an Opengrep result with no Trivy-style Severity field', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('opengrep-sample.json'));
 
     expect($findings)->toHaveCount(2);
 
@@ -138,7 +138,7 @@ it('derives severity from level for an Opengrep result with no Trivy-style Sever
 });
 
 it('uses the rule name as the title when shortDescription just restates the rule id, and captures help/tags/level', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
 
     expect($findings)->toHaveCount(2);
 
@@ -157,7 +157,7 @@ it('uses the rule name as the title when shortDescription just restates the rule
 });
 
 it('falls back to the message line for a title when both shortDescription and name just restate the rule id', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
 
     expect($findings)->toHaveCount(2);
 
@@ -173,11 +173,73 @@ it('falls back to the message line for a title when both shortDescription and na
 });
 
 it('parses findings from every run, not just the first', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('roslynator-multi-run-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('roslynator-multi-run-sample.json'));
 
     expect($findings)->toHaveCount(2)
         ->and($findings[0]->ruleId)->toBe('CA2100')
         ->and($findings[0]->severity)->toBe('MEDIUM')
         ->and($findings[1]->ruleId)->toBe('CA5350')
         ->and($findings[1]->severity)->toBe('HIGH');
+});
+
+it('relativises an absolute file:// artifact uri against the given source root', function () {
+    $payload = json_encode([
+        'version' => '2.1.0',
+        'runs' => [[
+            'tool' => ['driver' => ['rules' => [['id' => 'CA2100']]]],
+            'results' => [[
+                'ruleId' => 'CA2100',
+                'message' => ['text' => 'Review SQL queries for security vulnerabilities'],
+                'locations' => [[
+                    'physicalLocation' => [
+                        'artifactLocation' => ['uri' => 'file:///workspace-scratch/9c1b2d3e/work/Sources/A/B.cs'],
+                        'region' => ['startLine' => 42],
+                    ],
+                ]],
+            ]],
+        ]],
+    ], JSON_THROW_ON_ERROR);
+
+    $findings = app(SarifFindingParser::class)->parse($payload, '/workspace-scratch/9c1b2d3e/work');
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->filePath)->toBe('Sources/A/B.cs');
+});
+
+it('leaves the absolute file:// artifact uri (scheme stripped) when no source root is given', function () {
+    $payload = json_encode([
+        'version' => '2.1.0',
+        'runs' => [[
+            'tool' => ['driver' => ['rules' => [['id' => 'CA2100']]]],
+            'results' => [[
+                'ruleId' => 'CA2100',
+                'message' => ['text' => 'Review SQL queries for security vulnerabilities'],
+                'locations' => [[
+                    'physicalLocation' => [
+                        'artifactLocation' => ['uri' => 'file:///workspace-scratch/9c1b2d3e/work/Sources/A/B.cs'],
+                        'region' => ['startLine' => 42],
+                    ],
+                ]],
+            ]],
+        ]],
+    ], JSON_THROW_ON_ERROR);
+
+    $findings = app(SarifFindingParser::class)->parse($payload);
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->filePath)->toBe('/workspace-scratch/9c1b2d3e/work/Sources/A/B.cs');
+});
+
+it('keeps producing byte-for-byte identical Trivy file_path output whether or not a source root is given', function () {
+    $withoutRoot = app(SarifFindingParser::class)->parse(sarifFixture('vuln-sarif-sample.json'));
+    $withRoot = app(SarifFindingParser::class)->parse(sarifFixture('vuln-sarif-sample.json'), '/scan');
+
+    expect($withoutRoot[0]->filePath)->toBe('vendor/mockery/mockery/docs/requirements.txt')
+        ->and($withRoot[0]->filePath)->toBe('vendor/mockery/mockery/docs/requirements.txt');
+
+    $withoutRootSecret = app(SarifFindingParser::class)->parse(sarifFixture('secret-sarif-sample.json'));
+    $withRootSecret = app(SarifFindingParser::class)->parse(sarifFixture('secret-sarif-sample.json'), '/scan');
+
+    expect($withoutRootSecret[0]->filePath)->toBe('config.php')
+        ->and($withRootSecret[0]->filePath)->toBe('config.php');
 });

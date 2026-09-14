@@ -237,6 +237,9 @@ final class PendingStaticAnalysisScanImporter
             metadata: $container->metadata ?? [],
         );
 
+        $workDir = $result['workDir'] ?? null;
+        $sourceRoot = is_string($workDir) && $workDir !== '' ? $workDir : null;
+
         $this->attachments->attachTo(
             owner: $owner,
             kind: $kind,
@@ -244,6 +247,7 @@ final class PendingStaticAnalysisScanImporter
             name: basename($relativePath),
             payload: $this->files->get($path),
             createdByCommand: 'staticanalysis:import-pending-scans',
+            sourceRoot: $sourceRoot,
         );
     }
 

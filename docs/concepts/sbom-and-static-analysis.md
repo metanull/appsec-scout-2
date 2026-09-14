@@ -120,6 +120,12 @@ scan scripts do directly:
   default branch, all read from the same Azure DevOps API responses the Source reads — so the row
   holds the same `url`, `description` and `SourceContextFacts` a Source sync produces. Existing rows
   are not overwritten; the live Source is the authoritative writer.
+- Each `run.jsonl` line also carries `workDir`, the absolute directory the repository was cloned
+  into for that pass; the importer forwards it as the created attachment's `source_root`, so the
+  SARIF parser can turn Roslynator/SpotBugs/Opengrep's absolute `file://` artifact URIs back into
+  repository-relative paths (see [asset-system-container-alert.md](asset-system-container-alert.md)).
+  A `run.jsonl` line from before this field existed still imports; the attachment's `source_root`
+  is simply left `null`.
 - `-SkipUpload` drops a marker file in the run directory that both the scan scripts and these
   import commands recognize, opting that run out of upload entirely — useful for a dry run.
 

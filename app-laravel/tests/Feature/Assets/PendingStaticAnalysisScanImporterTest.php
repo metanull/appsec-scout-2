@@ -97,6 +97,40 @@ it('enriches an ops-first system and container with the same facts a source sync
     tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
 });
 
+it('records the workDir field from run.jsonl as the attachment source_root', function () {
+    [$importPath, $cursorPath] = setUpStaticAnalysisTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.dotnet.sarif', '{"runs":[]}');
+    File::put($runDir . '/run.jsonl', writeStaticAnalysisResultLine(['workDir' => '/tmp/tmp.abc123']) . "\n");
+
+    app(PendingStaticAnalysisScanImporter::class)->importPending();
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-guid-1')->firstOrFail();
+    $attachment = Attachment::query()->where('owner_id', $container->id)->where('kind', 'code-quality-dotnet')->firstOrFail();
+
+    expect($attachment->source_root)->toBe('/tmp/tmp.abc123');
+
+    tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
+});
+
+it('leaves source_root null when the run.jsonl line has no workDir field (an older shell collector output)', function () {
+    [$importPath, $cursorPath] = setUpStaticAnalysisTestDirectories();
+    $runDir = $importPath . '/20260101T000000Z';
+    File::ensureDirectoryExists($runDir . '/Payments');
+    File::put($runDir . '/Payments/payments-api.dotnet.sarif', '{"runs":[]}');
+    File::put($runDir . '/run.jsonl', writeStaticAnalysisResultLine() . "\n");
+
+    app(PendingStaticAnalysisScanImporter::class)->importPending();
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-guid-1')->firstOrFail();
+    $attachment = Attachment::query()->where('owner_id', $container->id)->where('kind', 'code-quality-dotnet')->firstOrFail();
+
+    expect($attachment->source_root)->toBeNull();
+
+    tearDownStaticAnalysisTestDirectories($importPath, $cursorPath);
+});
+
 it('never overwrites an already-existing source-synced system or container', function () {
     [$importPath, $cursorPath] = setUpStaticAnalysisTestDirectories();
 

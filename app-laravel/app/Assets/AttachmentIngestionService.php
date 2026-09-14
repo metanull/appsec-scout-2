@@ -170,7 +170,7 @@ final class AttachmentIngestionService
 
     private function ingestFindings(Attachment $attachment, SoftwareAsset|SoftwareSystem|SecurityContainer $owner, string $kind): void
     {
-        $findings = $this->sarifParser->parse($attachment->payload);
+        $findings = $this->sarifParser->parse($attachment->payload, $attachment->source_root);
 
         DB::transaction(function () use ($attachment, $owner, $kind, $findings): void {
             // Only a SecurityContainer owner carries the real (owner_type, owner_id, kind,

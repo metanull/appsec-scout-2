@@ -316,6 +316,7 @@ process_repo() {
         --arg defaultBranch "$default_branch" \
         --arg projectDescription "$project_description" \
         --arg projectUrl "$project_url" \
+        --arg workDir "$workdir" \
         --argjson cloned "$clone_ok" \
         --argjson solutions "$solutions_json" \
         --argjson dotnetAnalysisGenerated "$dotnet_ok" \
@@ -329,7 +330,7 @@ process_repo() {
         --arg opengrepAnalysisLog "$opengrep_analyze_log" \
         '{project: $project, repository: $repository, projectId: $projectId, repositoryId: $repositoryId,
           webUrl: $webUrl, repositoryWebUrl: $repositoryWebUrl, defaultBranch: $defaultBranch,
-          projectDescription: $projectDescription, projectUrl: $projectUrl,
+          projectDescription: $projectDescription, projectUrl: $projectUrl, workDir: $workDir,
           cloned: $cloned, solutions: $solutions,
           dotnetAnalysisGenerated: $dotnetAnalysisGenerated, dotnetAnalysisPath: $dotnetAnalysisPath,
           javaAnalysisGenerated: $javaAnalysisGenerated, javaAnalysisPath: $javaAnalysisPath,

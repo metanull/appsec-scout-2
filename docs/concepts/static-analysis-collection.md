@@ -180,7 +180,11 @@ the `.NET`/Java steps that follow it.
 
 Results are written **directly**, in-process — reusing `App\Assets\AttachmentTargetResolver` and
 `App\Assets\AzDoScanResultDtoFactory` exactly as `CollectRepositoryJob`/`PendingSbomScanImporter`
-do, then `App\Assets\AttachmentService::attachTo()`.
+do, then `App\Assets\AttachmentService::attachTo()`. Each of the three `attachTo()` calls passes
+`sourceRoot: $workDir` — the same absolute clone directory Opengrep/Roslynator/SpotBugs were run
+against — so the attachment's `source_root` lets the SARIF parser turn their absolute `file://`
+artifact URIs back into paths relative to the repository root instead of the scratch directory
+(see [asset-system-container-alert.md](asset-system-container-alert.md)).
 
 **Do not confuse the two `source_id` values this feature touches** — the identical gotcha
 [Repository Collection's own equivalent section](repository-collection.md#from-repository-to-attachment)

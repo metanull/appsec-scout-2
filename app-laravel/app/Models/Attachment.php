@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'created_at',
     'created_by_user_id',
     'created_by_command',
+    'source_root',
 ])]
 class Attachment extends Model
 {
