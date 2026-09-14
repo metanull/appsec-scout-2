@@ -17,6 +17,7 @@ use App\Credentials\Vault;
 use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Jobs\PruneFailedJobs;
+use App\Jobs\PruneToolInvocations;
 use App\Models\Attachment;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
@@ -1010,5 +1011,6 @@ Artisan::command('local-findings:backfill-dedup-hash', function (): int {
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
 Schedule::job(new PruneFailedJobs((int) config('queue.failed.retain_days', 90)))->daily();
+Schedule::job(new PruneToolInvocations((int) config('static_analysis_collection.tool_invocation_retain_days', 90)))->daily();
 Schedule::command('sbom:import-pending-scans')->everyMinute()->withoutOverlapping()->name('sbom:import-pending-scans');
 Schedule::command('staticanalysis:import-pending-scans')->everyMinute()->withoutOverlapping()->name('staticanalysis:import-pending-scans');

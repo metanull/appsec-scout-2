@@ -69,4 +69,19 @@ return [
 
     'opengrep_timeout' => (int) env('STATIC_ANALYSIS_OPENGREP_TIMEOUT', 900),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tool invocation retention
+    |--------------------------------------------------------------------------
+    |
+    | Number of days to retain tool_invocations rows (one per tool per
+    | repository per collection/analysis pass, written by CollectRepositoryJob
+    | and AnalyzeRepositoryJob on every outcome). The scheduled
+    | PruneToolInvocations job deletes rows whose started_at is older than
+    | this threshold daily.
+    |
+    */
+
+    'tool_invocation_retain_days' => (int) env('TOOL_INVOCATION_RETAIN_DAYS', 90),
+
 ];
