@@ -276,8 +276,9 @@ jobs:
           cache-to: type=gha,scope=dev,mode=max
 
   # Packages the small file set docs/QUICKSTART.md documents (compose files + .env.example
-  # + the doc itself) so a Home/Corporate operator can run the stack from prebuilt images
-  # without cloning the repository. Runs only after a real publish to GHCR (push to main —
+  # + the doc itself + the host-CA export scripts and the module the Windows one wraps) so
+  # a Home/Corporate operator can run the stack from prebuilt images without cloning the
+  # repository. Runs only after a real publish to GHCR (push to main —
   # same population as the "Publish to GHCR" step's `github.event_name != 'pull_request'`
   # gate, narrowed to `push` since workflow_dispatch can run from any ref and a release tied
   # to `main` would be misleading otherwise). Tagged sha-<short-sha> to match the immutable
@@ -307,7 +308,9 @@ jobs:
             docker-compose.ghcr.yml \
             docker-compose.pgsql.yml \
             .env.example \
-            docs/QUICKSTART.md
+            docs/QUICKSTART.md \
+            scripts/export-host-certificates.ps1 \
+            scripts/lib/Certificates.psm1
 
       - name: Create or update GitHub Release
         env:
