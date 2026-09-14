@@ -54,6 +54,13 @@ final class CollectRepositoryJob implements ShouldQueue
 
     private const PER_SCAN_TIMEOUT = 1200;
 
+    /**
+     * Set by logFailure(): once any Trivy scan against this repository has
+     * failed, the repository counts as failed for this run even though its
+     * clone succeeded.
+     */
+    private bool $degraded = false;
+
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
         public readonly int $repositoryCollectionRunId,
@@ -97,7 +104,7 @@ final class CollectRepositoryJob implements ShouldQueue
         // connection (tests, and optionally elsewhere) re-throws through
         // after already recording it via failed(), aborting the rest of
         // the batch under that connection specifically.
-        $this->recordCompletion(failed: ! $cloned);
+        $this->recordCompletion(failed: ! $cloned || $this->degraded);
 
         Log::info('Repository collection finished.', $this->logContext('finish', ['cloned' => $cloned]));
     }
@@ -317,6 +324,8 @@ final class CollectRepositoryJob implements ShouldQueue
 
     private function logFailure(string $operation, string $message, ?Throwable $exception = null): void
     {
+        $this->degraded = true;
+
         $context = $this->logContext($operation);
 
         // Not Log::error() — see failed()'s identical comment.

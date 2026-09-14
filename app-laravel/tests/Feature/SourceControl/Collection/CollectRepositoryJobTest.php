@@ -296,6 +296,87 @@ it('does not let one failing Trivy scan prevent the other two from attaching', f
         ->and(ErrorLog::query()->where('channel', 'repository-collection')->count())->toBe(1);
 });
 
+it('counts a repository as failed for the run when one Trivy scan fails but the clone and other two scans succeed', function () {
+    fakeCollectorProcesses(function (array $parts, ?string $outputPath) {
+        if (in_array('secret', $parts, true)) {
+            return Process::result(exitCode: 1, errorOutput: 'trivy: scan failed');
+        }
+
+        if ($outputPath !== null) {
+            File::ensureDirectoryExists(dirname($outputPath));
+            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    // Clone succeeded and the two non-failing reports were still attached —
+    // not 0 (a clone failure) and not 3 (every scan succeeding).
+    expect(Attachment::query()->count())->toBe(2);
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->where('context_json->operation', AttachmentIngestionService::KIND_SECRETS)->first();
+    expect($errorLog)->not->toBeNull();
+
+    // A repository whose clone succeeded but whose Trivy scan logged a
+    // failure must still count as failed for this run, per #484. With a
+    // single repository considered, one failure out of one is the run's
+    // 'failure' case (recordCompletion()'s own match block, unchanged by
+    // #484) — 'partial' requires at least one repository to also succeed,
+    // covered separately below.
+    $run->refresh();
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_considered'])->toBe(1)
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
+});
+
+it('marks the run partial when one repository is fully clean and another has a failing Trivy scan', function () {
+    // Toggled between the two handle() calls below: the workDir passed to
+    // trivy is an anonymous scratch path (a fresh uuid per job), so which
+    // repository is "currently running" is tracked by this flag rather than
+    // by inspecting the command itself — mirrors
+    // fakeStaticAnalysisPipelineProcessesAtCommit()'s own reasoning for why
+    // per-repository behavior sometimes has to be sequenced instead of
+    // parsed out of the faked command.
+    $failSecrets = false;
+
+    fakeCollectorProcesses(function (array $parts, ?string $outputPath) use (&$failSecrets) {
+        if ($failSecrets && in_array('secret', $parts, true)) {
+            return Process::result(exitCode: 1, errorOutput: 'trivy: scan failed');
+        }
+
+        if ($outputPath !== null) {
+            File::ensureDirectoryExists(dirname($outputPath));
+            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = repositoryCollectionRunForJobTest(considered: 2);
+
+    // repo-001: every Trivy scan succeeds.
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    // repo-002: clone succeeds, but the secrets scan fails.
+    $failSecrets = true;
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(['repositoryId' => 'repo-002']), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $run->refresh();
+    expect($run->status)->toBe('partial')
+        ->and($run->counts_json['repositories_considered'])->toBe(2)
+        ->and($run->counts_json['repositories_completed'])->toBe(2)
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
+});
+
 it('records the owning system/container and a single row when the job-level failed() hook fires', function () {
     $system = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001']);
     $container = SecurityContainer::factory()->create([

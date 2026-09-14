@@ -325,7 +325,8 @@ it('logs a dotnet-analyze failure only when roslynator both fails and produces n
         ->and($errorLog->context_json['repository_name'])->toBe('backend-api');
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 it('records the owning system/container on a logged static-analysis failure', function () {
@@ -451,7 +452,8 @@ it('does not let a restore failure on one .sln prevent another from being analyz
         ->and($errorLog->context_json['run'])->toBe($run->id);
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 it('does not let a Maven build failure in one directory prevent SpotBugs from analyzing classes elsewhere', function () {
@@ -502,7 +504,8 @@ it('does not let a Maven build failure in one directory prevent SpotBugs from an
     expect($errorLog)->not->toBeNull();
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 it('records completion as failure and attempts no analysis when the clone fails', function () {
@@ -683,7 +686,8 @@ it('logs an opengrep-analyze failure and still runs the dotnet and java analyzer
     expect($errorLog)->not->toBeNull();
 
     $run->refresh();
-    expect($run->status)->toBe('success');
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
 });
 
 // ---------------------------------------------------------------------------

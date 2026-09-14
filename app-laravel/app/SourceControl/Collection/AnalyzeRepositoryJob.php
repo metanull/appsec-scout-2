@@ -132,7 +132,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
         // A clone failure is a logged, per-repository outcome, not a job-level
         // exception — mirrors CollectRepositoryJob::handle()'s own reasoning.
-        $this->recordCompletion(failed: ! $cloned);
+        $this->recordCompletion(failed: ! $cloned || $this->degraded);
     }
 
     /**
