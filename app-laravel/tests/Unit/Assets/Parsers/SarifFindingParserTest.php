@@ -73,7 +73,7 @@ it('derives severity from level for a Roslynator result with no Trivy-style Seve
 });
 
 it('falls back to the first message line for a title when the rule has no shortDescription or name', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
 
     expect($findings)->toHaveCount(2);
 
@@ -138,7 +138,7 @@ it('derives severity from level for an Opengrep result with no Trivy-style Sever
 });
 
 it('uses the rule name as the title when shortDescription just restates the rule id, and captures help/tags/level', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
 
     expect($findings)->toHaveCount(2);
 
@@ -157,7 +157,7 @@ it('uses the rule name as the title when shortDescription just restates the rule
 });
 
 it('falls back to the message line for a title when both shortDescription and name just restate the rule id', function () {
-    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
+    $findings = app(SarifFindingParser::class)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
 
     expect($findings)->toHaveCount(2);
 
