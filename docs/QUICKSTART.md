@@ -67,6 +67,16 @@ content beyond the CA export files above.
    CA — see [Trust your corporate CA](#c-trust-your-corporate-ca) below), fix the cause, then
    retry with `docker compose up -d dependencytrack-bootstrap`.
 
+   Only needed on an image published before this fix (the entrypoint still ran `composer
+   install` at start there): run the bootstrap once with Composer's dev packages disabled,
+   which makes the install a no-op on the baked production `vendor/` and needs no network.
+   The variable must be passed with `-e` — the root `.env` and shell variables are not
+   forwarded into containers:
+
+   ```bash
+   docker compose run --rm -e COMPOSER_NO_DEV=1 dependencytrack-bootstrap
+   ```
+
 5. Open `http://localhost:8080/`, sign in with the bootstrap admin
    (`admin@example.com` / `a-changeme-now` unless you changed
    `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD`), and complete TOTP enrollment.
