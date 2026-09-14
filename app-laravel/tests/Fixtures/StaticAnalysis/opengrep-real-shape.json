@@ -1,0 +1,59 @@
+{
+    "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "opengrep",
+                    "rules": [
+                        {
+                            "id": "python.django.security.injection.sql.sql-injection-using-rawsql-or-cursor-execute",
+                            "name": "SQL injection via raw SQL construction",
+                            "shortDescription": { "text": "Opengrep Finding: python.django.security.injection.sql.sql-injection-using-rawsql-or-cursor-execute" },
+                            "fullDescription": { "text": "User data flows into a raw SQL query without parameterization, which can lead to SQL injection." },
+                            "help": {
+                                "text": "Use parameterized queries or the Django ORM instead of raw SQL string concatenation.",
+                                "markdown": "Use parameterized queries or the Django ORM instead of raw SQL string concatenation. See the [Django security docs](https://docs.djangoproject.com/en/stable/topics/security/#sql-injection-protection)."
+                            },
+                            "helpUri": "https://opengrep.dev/r/python.django.security.injection.sql.sql-injection-using-rawsql-or-cursor-execute",
+                            "properties": { "tags": ["security", "sql-injection", "owasp-a03"] },
+                            "defaultConfiguration": { "level": "error" }
+                        },
+                        {
+                            "id": "javascript.lang.security.detect-eval-with-expression",
+                            "name": "javascript.lang.security.detect-eval-with-expression",
+                            "shortDescription": { "text": "Opengrep Finding: javascript.lang.security.detect-eval-with-expression" }
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "python.django.security.injection.sql.sql-injection-using-rawsql-or-cursor-execute",
+                    "message": { "text": "User input flows into a raw SQL query built with string formatting — this is vulnerable to SQL injection." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "app/reports/views.py" },
+                                "region": { "startLine": 87, "endLine": 87 }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "ruleId": "javascript.lang.security.detect-eval-with-expression",
+                    "message": { "text": "Detected \"eval\" used with a non-literal argument, this could lead to a code injection vulnerability." },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": "src/utils/template.js" },
+                                "region": { "startLine": 12, "endLine": 12 }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

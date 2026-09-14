@@ -72,6 +72,35 @@ it('includes linked work items as tracker links', function () {
         ->and(array_column($catalog, 'url'))->toContain('https://jira.example.com/browse/SEC-42');
 });
 
+it('sourceFileUrl returns the same URL as the Source file catalog entry', function () {
+    $finding = azdoFinding();
+
+    $catalog = app(LocalFindingLinkCatalog::class)->build($finding);
+    $sourceFileEntry = collect($catalog)->firstWhere('label', 'Source file');
+
+    expect($sourceFileEntry)->not->toBeNull()
+        ->and(app(LocalFindingLinkCatalog::class)->sourceFileUrl($finding))->toBe($sourceFileEntry['url']);
+});
+
+it('returns null from sourceFileUrl for a finding with an empty file path', function () {
+    $finding = azdoFinding(['file_path' => '']);
+
+    expect(app(LocalFindingLinkCatalog::class)->sourceFileUrl($finding))->toBeNull();
+});
+
+it('returns null from sourceFileUrl when the finding has no linkable identity', function () {
+    $container = SecurityContainer::factory()->create(['url' => null, 'metadata' => null]);
+    $finding = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'r1',
+        'title' => 'x',
+        'file_path' => 'a',
+        'status' => EventState::Open,
+    ]);
+
+    expect(app(LocalFindingLinkCatalog::class)->sourceFileUrl($finding))->toBeNull();
+});
+
 it('returns an empty catalog when the finding has no linkable identity', function () {
     $container = SecurityContainer::factory()->create(['url' => null, 'metadata' => null]);
     $finding = $container->localFindings()->create([

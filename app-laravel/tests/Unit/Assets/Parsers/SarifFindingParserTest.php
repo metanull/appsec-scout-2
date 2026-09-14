@@ -26,7 +26,10 @@ it('parses a vulnerability sarif result including package and version', function
         ->and($finding->startLine)->toBe(8)
         ->and($finding->endLine)->toBe(8)
         ->and($finding->packageName)->toBe('Jinja2')
-        ->and($finding->packageVersion)->toBe('3.1.4');
+        ->and($finding->packageVersion)->toBe('3.1.4')
+        ->and($finding->metadata['message'])->toBe("Package: Jinja2\nInstalled Version: 3.1.4\nVulnerability CVE-2024-56201\nSeverity: MEDIUM\nFixed Version: 3.1.5\nLink: [CVE-2024-56201](https://avd.aquasec.com/nvd/cve-2024-56201)")
+        ->and($finding->metadata['tags'])->toBe(['vulnerability', 'security', 'MEDIUM'])
+        ->and($finding->metadata['level'])->toBe('warning');
 });
 
 it('parses a secret sarif result with a pre-masked match and no package fields', function () {
@@ -57,7 +60,7 @@ it('returns an empty list when there are no runs', function () {
 it('derives severity from level for a Roslynator result with no Trivy-style Severity field', function () {
     $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
 
-    expect($findings)->toHaveCount(1);
+    expect($findings)->toHaveCount(2);
 
     $finding = $findings[0];
 
@@ -67,6 +70,20 @@ it('derives severity from level for a Roslynator result with no Trivy-style Seve
         ->and($finding->filePath)->toBe('src/UserRepository.cs')
         ->and($finding->startLine)->toBe(42)
         ->and($finding->packageName)->toBeNull();
+});
+
+it('falls back to the first message line for a title when the rule has no shortDescription or name', function () {
+    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('roslynator-sample.json'));
+
+    expect($findings)->toHaveCount(2);
+
+    $finding = $findings[1];
+
+    expect($finding->ruleId)->toBe('CA1062')
+        ->and($finding->title)->toBe("Validate parameter 'connectionString' is non-null before using it.")
+        ->and($finding->description)->toBeNull()
+        ->and($finding->filePath)->toBe('src/Database/ConnectionFactory.cs')
+        ->and($finding->startLine)->toBe(15);
 });
 
 it('derives severity from level for a SpotBugs result with no Trivy-style Severity field', function () {
@@ -118,6 +135,41 @@ it('derives severity from level for an Opengrep result with no Trivy-style Sever
         ->and($findings[1]->severity)->toBe('MEDIUM')
         ->and($findings[1]->filePath)->toBe('src/services/backup.ts')
         ->and($findings[1]->startLine)->toBe(34);
+});
+
+it('uses the rule name as the title when shortDescription just restates the rule id, and captures help/tags/level', function () {
+    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
+
+    expect($findings)->toHaveCount(2);
+
+    $finding = $findings[0];
+
+    expect($finding->ruleId)->toBe('python.django.security.injection.sql.sql-injection-using-rawsql-or-cursor-execute')
+        ->and($finding->title)->toBe('SQL injection via raw SQL construction')
+        ->and($finding->description)->toBe('User data flows into a raw SQL query without parameterization, which can lead to SQL injection.')
+        ->and($finding->severity)->toBe('HIGH')
+        ->and($finding->filePath)->toBe('app/reports/views.py')
+        ->and($finding->startLine)->toBe(87)
+        ->and($finding->metadata['message'])->toBe('User input flows into a raw SQL query built with string formatting — this is vulnerable to SQL injection.')
+        ->and($finding->metadata['help'])->toBe('Use parameterized queries or the Django ORM instead of raw SQL string concatenation. See the [Django security docs](https://docs.djangoproject.com/en/stable/topics/security/#sql-injection-protection).')
+        ->and($finding->metadata['tags'])->toBe(['security', 'sql-injection', 'owasp-a03'])
+        ->and($finding->metadata['level'])->toBe('error');
+});
+
+it('falls back to the message line for a title when both shortDescription and name just restate the rule id', function () {
+    $findings = (new SarifFindingParser)->parse(staticAnalysisSarifFixture('opengrep-real-shape.json'));
+
+    expect($findings)->toHaveCount(2);
+
+    $finding = $findings[1];
+
+    expect($finding->ruleId)->toBe('javascript.lang.security.detect-eval-with-expression')
+        ->and($finding->title)->toBe('Detected "eval" used with a non-literal argument, this could lead to a code injection vulnerability.')
+        ->and($finding->description)->toBeNull()
+        ->and($finding->severity)->toBeNull()
+        ->and($finding->metadata['help'])->toBeNull()
+        ->and($finding->metadata['tags'])->toBe([])
+        ->and($finding->metadata['level'])->toBeNull();
 });
 
 it('parses findings from every run, not just the first', function () {
