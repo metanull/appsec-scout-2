@@ -24,8 +24,9 @@ final class AttachmentService
         string $payload,
         ?int $createdByUserId = null,
         ?string $createdByCommand = null,
+        ?string $sourceRoot = null,
     ): Attachment {
-        $attachment = DB::transaction(function () use ($createdByCommand, $createdByUserId, $owner, $kind, $mime, $name, $payload): Attachment {
+        $attachment = DB::transaction(function () use ($createdByCommand, $createdByUserId, $owner, $kind, $mime, $name, $payload, $sourceRoot): Attachment {
             $attachment = $owner->attachments()->create([
                 'kind' => $kind,
                 'mime' => $mime,
@@ -35,6 +36,7 @@ final class AttachmentService
                 'created_at' => now(),
                 'created_by_user_id' => $createdByUserId,
                 'created_by_command' => $createdByCommand,
+                'source_root' => $sourceRoot,
             ]);
 
             $this->recorder->recordAttachmentCreated($owner::class, (string) $owner->getKey(), [
@@ -43,6 +45,7 @@ final class AttachmentService
                 'name' => $name,
                 'size_bytes' => $attachment->size_bytes,
                 'created_by_command' => $createdByCommand,
+                'source_root' => $sourceRoot,
             ]);
 
             return $attachment;

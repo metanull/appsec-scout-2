@@ -226,6 +226,49 @@ it('does not parse attachments of other kinds', function () {
         ->and(LocalFinding::query()->where('owner_id', $container->id)->count())->toBe(0);
 });
 
+it('normalizes file_path against source_root and derives a stable dedup_hash across scratch roots', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+
+    $sarif = absoluteCodeQualitySarif('CA2100', '/workspace-scratch/run-one/work', 'Sources/A/B.cs', 42);
+
+    $service->attachTo(
+        $container,
+        'code-quality-dotnet',
+        'application/json',
+        'first.sarif',
+        $sarif,
+        sourceRoot: '/workspace-scratch/run-one/work',
+    );
+
+    $finding = LocalFinding::query()->where('owner_id', $container->id)->firstOrFail();
+
+    expect($finding->file_path)->toBe('Sources/A/B.cs')
+        ->and($finding->dedup_hash)->toBe(LocalFinding::computeDedupHash('CA2100', 'Sources/A/B.cs', 42));
+
+    $firstSeenAt = $finding->first_seen_at;
+
+    // A second scan from a *different* scratch root (a fresh clone directory) must
+    // normalize to the same repository-relative path and upsert onto the same row.
+    $secondSarif = absoluteCodeQualitySarif('CA2100', '/workspace-scratch/run-two/work', 'Sources/A/B.cs', 42);
+
+    $service->attachTo(
+        $container,
+        'code-quality-dotnet',
+        'application/json',
+        'second.sarif',
+        $secondSarif,
+        sourceRoot: '/workspace-scratch/run-two/work',
+    );
+
+    expect(LocalFinding::query()->where('owner_id', $container->id)->count())->toBe(1);
+
+    $finding->refresh();
+
+    expect($finding->file_path)->toBe('Sources/A/B.cs')
+        ->and($finding->first_seen_at)->toEqual($firstSeenAt);
+});
+
 it('cascades deleting components and findings when the owning container is deleted', function () {
     $container = SecurityContainer::factory()->create();
     $service = app(AttachmentService::class);
@@ -478,6 +521,35 @@ it('upserts a large SARIF spanning multiple chunks, sweeps and correlates correc
     expect(LocalFinding::query()->where('owner_id', $container->id)->where('status', EventState::Open)->count())->toBe(200)
         ->and(LocalFinding::query()->where('owner_id', $container->id)->where('status', EventState::Resolved)->count())->toBe(500);
 });
+
+function absoluteCodeQualitySarif(string $ruleId, string $sourceRoot, string $relativePath, int $startLine): string
+{
+    return json_encode([
+        'version' => '2.1.0',
+        'runs' => [[
+            'tool' => [
+                'driver' => [
+                    'name' => 'Roslynator',
+                    'rules' => [[
+                        'id' => $ruleId,
+                        'shortDescription' => ['text' => "{$ruleId} description"],
+                    ]],
+                ],
+            ],
+            'results' => [[
+                'ruleId' => $ruleId,
+                'level' => 'warning',
+                'message' => ['text' => 'Review this finding.'],
+                'locations' => [[
+                    'physicalLocation' => [
+                        'artifactLocation' => ['uri' => 'file://' . $sourceRoot . '/' . $relativePath],
+                        'region' => ['startLine' => $startLine],
+                    ],
+                ]],
+            ]],
+        ]],
+    ], JSON_THROW_ON_ERROR);
+}
 
 function minimalCycloneDx(array $purls): string
 {

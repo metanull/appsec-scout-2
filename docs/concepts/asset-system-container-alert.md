@@ -193,6 +193,17 @@ Beyond the owner/hierarchy columns: `kind` (`vulnerability` / `secret` / `code_q
 `package_name`/`package_version` (Trivy vulnerability findings only), `metadata` (raw SARIF
 result), `correlated_security_event_id`, `correlation_method`, `first_seen_at`/`last_seen_at`.
 
+`file_path` is always relative to the repository root, never an absolute container path. The
+SARIF `artifactLocation.uri` a tool emits is normalized at ingestion time
+(`App\Assets\Parsers\SarifArtifactUriNormalizer`, applied from `SarifFindingParser`): a `file://`
+scheme is stripped first, then the attachment's `source_root` — the absolute directory the
+scanned tree was cloned into, recorded on `attachments.source_root` by whichever collector created
+the attachment — is stripped as a prefix when present. Trivy's own findings are unaffected: Trivy
+already emits a relative `uri` alongside `uriBaseId`, and that SARIF indirection is deliberately
+never resolved. Because `file_path` is stable across scratch/clone directories, so is
+`dedup_hash` (`rule_id` + `file_path` + `start_line`), which is what lets a re-scan from a fresh
+clone upsert onto the same row instead of creating a duplicate.
+
 Severity is derived per-finding, not per-kind: the parser first looks for a Trivy-style
 `Severity: ...` line inside the SARIF `message.text` free text (SARIF has no first-class severity
 field of its own beyond `level`), and only falls back to mapping the standard SARIF `level`
