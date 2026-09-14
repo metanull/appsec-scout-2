@@ -125,6 +125,80 @@ class LocalFinding extends Model
     }
 
     /**
+     * The concrete diagnostic for this result. Prefers the message captured directly
+     * into metadata; falls back to metadata.result.message.text for rows ingested
+     * before that key existed.
+     */
+    public function messageText(): ?string
+    {
+        $metadata = $this->getAttribute('metadata');
+
+        if (! is_array($metadata)) {
+            return null;
+        }
+
+        $message = $metadata['message'] ?? null;
+
+        if (is_string($message) && $message !== '') {
+            return $message;
+        }
+
+        $legacy = $metadata['result']['message']['text'] ?? null;
+
+        return is_string($legacy) && $legacy !== '' ? $legacy : null;
+    }
+
+    /**
+     * The rule's remediation guidance, as Markdown (or plain text) — whichever the
+     * scanner provided.
+     */
+    public function helpMarkdown(): ?string
+    {
+        $metadata = $this->getAttribute('metadata');
+
+        if (! is_array($metadata)) {
+            return null;
+        }
+
+        $help = $metadata['help'] ?? null;
+
+        return is_string($help) && $help !== '' ? $help : null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function tags(): array
+    {
+        $metadata = $this->getAttribute('metadata');
+
+        if (! is_array($metadata)) {
+            return [];
+        }
+
+        $tags = $metadata['tags'] ?? null;
+
+        if (! is_array($tags)) {
+            return [];
+        }
+
+        return array_values(array_filter($tags, fn (mixed $tag): bool => is_string($tag) && $tag !== ''));
+    }
+
+    public function sarifLevel(): ?string
+    {
+        $metadata = $this->getAttribute('metadata');
+
+        if (! is_array($metadata)) {
+            return null;
+        }
+
+        $level = $metadata['level'] ?? null;
+
+        return is_string($level) && $level !== '' ? $level : null;
+    }
+
+    /**
      * A short, fixed-width identity hash of a finding's (rule_id, file_path, start_line) —
      * narrow enough, unlike those columns at full width, to sit in a real composite unique
      * index alongside owner_type/owner_id/kind (see the local_findings migrations). The

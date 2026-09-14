@@ -33,3 +33,47 @@ it('computes a different dedup hash when any input differs', function () {
 it('does not collide across the rule_id/file_path boundary on plain concatenation', function () {
     expect(LocalFinding::computeDedupHash('ab', 'c', 1))->not->toBe(LocalFinding::computeDedupHash('a', 'bc', 1));
 });
+
+it('reads message, help, tags and level from metadata', function () {
+    $finding = new LocalFinding([
+        'metadata' => [
+            'message' => 'Concrete diagnostic text.',
+            'help' => 'Fix it like this.',
+            'tags' => ['security', 'owasp-a03'],
+            'level' => 'error',
+        ],
+    ]);
+
+    expect($finding->messageText())->toBe('Concrete diagnostic text.')
+        ->and($finding->helpMarkdown())->toBe('Fix it like this.')
+        ->and($finding->tags())->toBe(['security', 'owasp-a03'])
+        ->and($finding->sarifLevel())->toBe('error');
+});
+
+it('falls back messageText to the legacy metadata.result.message.text for rows without a captured message', function () {
+    $finding = new LocalFinding([
+        'metadata' => [
+            'result' => ['message' => ['text' => 'Legacy diagnostic text.']],
+        ],
+    ]);
+
+    expect($finding->messageText())->toBe('Legacy diagnostic text.');
+});
+
+it('defaults message, help, tags and level to empty when metadata carries none of them', function () {
+    $finding = new LocalFinding(['metadata' => []]);
+
+    expect($finding->messageText())->toBeNull()
+        ->and($finding->helpMarkdown())->toBeNull()
+        ->and($finding->tags())->toBe([])
+        ->and($finding->sarifLevel())->toBeNull();
+});
+
+it('defaults message, help, tags and level to empty when metadata is null', function () {
+    $finding = new LocalFinding(['metadata' => null]);
+
+    expect($finding->messageText())->toBeNull()
+        ->and($finding->helpMarkdown())->toBeNull()
+        ->and($finding->tags())->toBe([])
+        ->and($finding->sarifLevel())->toBeNull();
+});
