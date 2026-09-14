@@ -15,18 +15,22 @@ yourself, or to use the `scripts/appsec-scout.ps1` convenience launcher — use
 | `docker-compose.ghcr.yml` | Switches every AppSec Scout service to the published images instead of building |
 | `docker-compose.pgsql.yml` | Optional: switches the database engine from MySQL to PostgreSQL 16 |
 | `.env.example` | Copy to `.env` and fill in |
+| `scripts/export-host-certificates.ps1` | Exports the host's trusted CAs into `.docker/certs/` (Windows) |
+| `scripts/lib/Certificates.psm1` | Module `export-host-certificates.ps1` wraps — not run directly |
+| `scripts/export-host-certificates.sh` | Exports the host's trusted CAs into `.docker/certs/` (Linux) |
 
 The easiest way to get exactly this set: every push to `main` publishes a matching
 "Deployment bundle" GitHub Release (tag `sha-<short-sha>`, the same short SHA as the
-`sha-<short-sha>` image tag it pairs with) with these four files attached as a zip —
-see the repository's Releases page. You can also copy the four files by hand from the
-repository if you prefer a different ref.
+`sha-<short-sha>` image tag it pairs with) with these files attached as a zip — see the
+repository's Releases page. You can also copy them by hand from the repository if you
+prefer a different ref.
 
-Nothing else is required: no `app-laravel/`, no `scripts/`, no Dockerfiles.
+Nothing else is required: no `app-laravel/`, no Dockerfiles, and no other `scripts/`
+content beyond the CA export files above.
 
 ## Home
 
-1. Unzip the deployment bundle (or gather the four files above) into an empty directory.
+1. Unzip the deployment bundle (or gather the files above) into an empty directory.
 2. Copy the env file:
 
    ```bash
@@ -68,8 +72,8 @@ needed unless you specifically want PostgreSQL.
 ## Corporate (User or VM Hosting)
 
 Everything Home needs above, plus the items below. "User" and "VM Hosting" are the same
-file set and the same steps — the only difference is whether the four files live on your
-own workstation or on the VM.
+file set and the same steps — the only difference is whether the files live on your own
+workstation or on the VM.
 
 ### a. Mirror the six images into your ACR
 
@@ -120,11 +124,31 @@ your ACR instead of GHCR.
 
 ### c. Trust your corporate CA
 
-```bash
-mkdir -p .docker/certs
-# copy your corporate/TLS-inspecting proxy CA chain in, as PEM-encoded .crt files
-cp /path/to/your-corporate-ca.crt .docker/certs/
+On a Windows host, export the host's trusted CAs directly into `.docker/certs/`:
+
+```powershell
+.\scripts\export-host-certificates.ps1
 ```
+
+Re-run it whenever the corporate CA changes, and before every `docker compose up` — it
+wipes and rewrites `.docker/certs/*.crt` with the host's current trusted set, so it is
+always safe to re-run. Exported files follow the `NNNN-<label>-<thumbprint>.crt` layout
+`dependencytrack-cacerts-init` requires to pick them up for Dependency-Track's own
+truststore — a hand-copied file with any other name is only trusted by the non-Java
+containers (`app`, `collector`, `static-analysis-collector`, `trivy-server`), not by
+Dependency-Track.
+
+On a Linux host, use the shell equivalent instead:
+
+```bash
+sh scripts/export-host-certificates.sh
+```
+
+It reads the CAs your distribution's administrator already added locally —
+`/usr/local/share/ca-certificates/` (Debian/Ubuntu) and
+`/etc/pki/ca-trust/source/anchors/` (RHEL/Fedora/Rocky/Alma) — so the corporate CA must
+already be installed into one of those directories and trusted by the VM itself before
+you run it; it produces the same `.docker/certs/` layout as the Windows script.
 
 Every container that talks outbound (`app`, `collector`, `static-analysis-collector`,
 `trivy-server`, plus Dependency-Track's own truststore) installs everything under

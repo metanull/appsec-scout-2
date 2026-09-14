@@ -322,9 +322,12 @@ well, `trivy-server` through the same script mounted directly into its command. 
 
 - `.\scripts\appsec-scout.ps1` does it automatically — on every run in prebuilt-image
   mode, and on `-Rebuild` in build mode (via `Export-HostCertificates` in
-  `scripts/lib/Certificates.psm1`; there is no separate script to run by hand);
-- without PowerShell, run `Export-HostCertificates` manually
-  (`Import-Module scripts/lib/Certificates.psm1; Export-HostCertificates -OutputDir .docker/certs`)
+  `scripts/lib/Certificates.psm1`);
+- without the full repository (or when you just want to run the export standalone), run
+  `.\scripts\export-host-certificates.ps1` (Windows — a thin wrapper around the same
+  `Export-HostCertificates` module function) or `sh scripts/export-host-certificates.sh`
+  (Linux, reading `/usr/local/share/ca-certificates/` and
+  `/etc/pki/ca-trust/source/anchors/`); both are also shipped in the deployment bundle —
   or drop PEM-encoded `.crt` files into `.docker/certs/` yourself.
 
 Only set `SSL_CERT_FILE` when a custom CA bundle needs to be pointed to explicitly inside
