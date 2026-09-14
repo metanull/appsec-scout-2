@@ -61,6 +61,12 @@ content beyond the CA export files above.
    curl http://localhost:8080/up
    ```
 
+   If `docker compose wait` reports `no containers for project`, the one-shot
+   `dependencytrack-bootstrap` container has already exited — run `docker compose ps -a` and
+   `docker compose logs dependencytrack-bootstrap` to see why (for example a missing corporate
+   CA — see [Trust your corporate CA](#c-trust-your-corporate-ca) below), fix the cause, then
+   retry with `docker compose up -d dependencytrack-bootstrap`.
+
 5. Open `http://localhost:8080/`, sign in with the bootstrap admin
    (`admin@example.com` / `a-changeme-now` unless you changed
    `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD`), and complete TOTP enrollment.

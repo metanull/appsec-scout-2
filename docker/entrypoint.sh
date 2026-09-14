@@ -62,7 +62,13 @@ else
     fi
 fi
 
-composer install --optimize-autoloader
+# APP_SKIP_COMPOSER_INSTALL is set by docker-compose.ghcr.yml: prebuilt images ship their
+# production vendor/ (composer install --no-dev in the composer-deps build stage) and must
+# not reach a package registry at start, so dev tooling (Pint/PHPStan/Pest) is not available
+# in that mode by design.
+if [ "${APP_SKIP_COMPOSER_INSTALL:-0}" != "1" ]; then
+    composer install --optimize-autoloader
+fi
 
 # SKIP_APP_BOOTSTRAP is set by invoke-check.ps1/invoke-fix.ps1 for one-off `docker
 # compose run` commands (Pint, PHPStan, Pest, Composer). Those never serve HTTP and

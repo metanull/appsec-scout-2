@@ -245,6 +245,8 @@ services:
             - app_public_js:/var/www/html/public/js
             - app_bootstrap_cache:/var/www/html/bootstrap/cache
             - trivy_token:/var/lib/trivy-token:ro
+            # Runtime CA trust — see the app service's /host-certs mount.
+            - ./.docker/certs:/host-certs:ro
         command:
             - php
             - artisan
