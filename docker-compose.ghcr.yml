@@ -26,6 +26,12 @@
 #     sections are removed, so nothing is ever compiled or built locally
 #     (trivy-token-init and dependencytrack-bootstrap, which reuse the app image,
 #     are repointed too);
+#   - postgres is repointed the same way, but only exists behind the local-db
+#     profile (same profile as docker-compose.pgsql.yml's own postgres service),
+#     since Compose merges profiles per service across files: without this,
+#     Home GHCR mode (docker-compose.pgsql.yml absent) would define a postgres
+#     service with no profile and start an unconfigured container that crashes
+#     immediately (no POSTGRES_* environment set);
 #   - the image content is authoritative: the ./app-laravel bind mount and the
 #     *_vendor / *_bootstrap_cache named volumes are dropped, because a named
 #     volume is seeded from image content only when first created and would
@@ -93,3 +99,7 @@ services:
     postgres:
         image: ${APPSEC_IMAGE_REGISTRY:-ghcr.io/metanull/appsec-scout-2}/postgres:${APPSEC_IMAGE_TAG:-latest}
         build: !reset null
+        # Same profile as docker-compose.pgsql.yml's own postgres service — without it,
+        # Home GHCR mode would start an unconfigured postgres container.
+        profiles:
+            - local-db
