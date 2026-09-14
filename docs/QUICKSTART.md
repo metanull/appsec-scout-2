@@ -85,6 +85,11 @@ No corporate CA certs, no ACR, no Entra ID — none of that applies to a Home in
 Database stays on the default MySQL 8 container; `docker-compose.pgsql.yml` isn't
 needed unless you specifically want PostgreSQL.
 
+To keep Docker's disk footprint bounded over time, see
+[Disk Usage](https://github.com/metanull/appsec-scout-2/blob/main/docs/operations.md#disk-usage)
+in the full repository's operations guide (this bundle ships the quickstart only, not
+`operations.md`).
+
 ## Corporate (User or VM Hosting)
 
 Everything Home needs above, plus the items below. "User" and "VM Hosting" are the same

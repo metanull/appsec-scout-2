@@ -44,6 +44,9 @@ docker compose down
 docker compose down -v   # also removes named volumes (database, storage, etc.)
 ```
 
+See [Disk Usage](#disk-usage) below for what `-v` destroys and how to reclaim disk space
+without it.
+
 ## Health And Access
 
 | URL | Purpose |
@@ -154,6 +157,90 @@ docker compose logs -f trivy-server
 
 Application errors are also copied into the `error_logs` table and exposed in the Admin `Errors`
 resource. Audit records are written to `audit_logs` and exposed in the Admin `Audit Log` resource.
+
+## Disk Usage
+
+Docker Desktop's disk footprint on a workstation grows over time and does not shrink on its
+own after files are deleted inside it. This section covers where the usage comes from, what
+is safe to reclaim, how to bound future growth, and how to give the reclaimed space back to
+the host.
+
+### Measure
+
+```bash
+docker system df -v      # images / containers / volumes / build cache, broken down
+docker ps -a --size      # writable layer per container ("virtual" size includes the image)
+docker images -f dangling=true
+```
+
+`docker images` lists each image's full size, but the three AppSec Scout images share a
+common base layer — the same layer is counted in every image's total, so the sum overstates
+actual disk usage.
+
+### What grows and why
+
+| Category | Grows from | Notes |
+| --- | --- | --- |
+| BuildKit build cache | Building images from source (`docker compose up --build`, `scripts/appsec-scout.ps1`) | Docker Desktop's default builder GC keeps up to 20 GB; the prebuilt-image path (`docker-compose.ghcr.yml`) never builds and never grows this |
+| Superseded images | `docker compose pull` on a moved `latest` tag | The previous image is left untagged (dangling) rather than deleted |
+| Data volumes | Normal operation | `dependencytrack_data` (NVD mirror), `dependencytrack_postgres_data`, and `trivy_data` typically total 3–5 GB together and are required for vulnerability matching; `mysql_data`/`postgres_data` grow with stored scan attachments |
+| Container writable layers | Runtime writes inside `app`/`collector`/`static-analysis-collector` | Small once #515 is deployed; recreated on `docker compose up` after a pull |
+
+### Reclaim safely
+
+```bash
+docker builder prune -a -f       # safe on a prebuilt-image install; on a build-from-source
+                                  # install it just makes the next build slower
+docker image prune -f            # run after every `docker compose pull`
+```
+
+`docker compose down` followed by `docker volume rm <project>_<volume>` reclaims a data
+volume, but only for the Dependency-Track/Trivy volumes and only when re-mirroring the NVD
+data is acceptable — never for `app_storage` (holds the persisted `.env`/`APP_KEY`) or the
+database volumes.
+
+`docker system prune` (without `--volumes`) is a reasonable catch-all for cache, dangling
+images, and stopped containers. Adding `--volumes` also deletes every unused volume,
+including application state — do not pass it without checking what would be removed first.
+
+### Bound future growth
+
+In Docker Desktop, Settings > Docker Engine, add a build-cache cap to the JSON config:
+
+```json
+{
+  "builder": { "gc": { "enabled": true, "defaultKeepStorage": "3GB" } }
+}
+```
+
+Keep `docker image prune -f` as a step in the upgrade routine so superseded images from
+`docker compose pull` don't accumulate.
+
+### Give the space back to Windows
+
+Docker Desktop stores everything in one dynamically growing virtual disk, and pruning inside
+Docker frees space inside that disk without shrinking the file itself. Which file depends on
+the backend:
+
+```bash
+docker info --format '{{.KernelVersion}}'
+```
+
+- `microsoft-standard-WSL2` in the output — WSL 2 backend, `ext4.vhdx`/`docker_data.vhdx`
+  under `%LOCALAPPDATA%\Docker\wsl`.
+- `linuxkit` in the output — Hyper-V backend, `DockerDesktop.vhdx` at the path shown in
+  Settings > Resources > Advanced.
+
+Compact the virtual disk after pruning:
+
+- **WSL 2**: `wsl --shutdown`, then `Optimize-VHD -Path <path to ext4.vhdx> -Mode Full`
+  (Hyper-V PowerShell module). On editions without that module, use `diskpart`'s
+  `select vdisk file=<path>` followed by `compact vdisk` instead.
+- **Hyper-V backend**: quit Docker Desktop, then run the same `Optimize-VHD` against
+  `DockerDesktop.vhdx`.
+- Either backend: Docker Desktop's Troubleshoot > "Clean / Purge data" also reclaims host
+  disk space, but it deletes all images, containers, and volumes — including application
+  state such as `app_storage` and the database volumes.
 
 ## Credentials And Integrations
 
