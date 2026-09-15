@@ -324,9 +324,15 @@ RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
     sh /tmp/lib/install-static-analysis-toolchain.sh
 
 # PATH/JAVA_HOME can't be set from inside the script — it only affects the RUN step's
-# own shell, not the image config — so the caller sets them here.
+# own shell, not the image config — so the caller sets them here. MSBuild reads
+# environment variables as properties, so TargetFrameworkRootPath here makes
+# `dotnet restore`/`dotnet build` and Roslynator's MSBuildWorkspace resolve
+# net48/net472/net462 projects' reference assemblies from the targeting packs installed
+# above, without modifying the analyzed repository. Trailing slash required — MSBuild
+# concatenates the value with .NETFramework/vX.Y.
 ENV PATH="${PATH}:/usr/local/dotnet-tools" \
-    JAVA_HOME=/opt/java-home
+    JAVA_HOME=/opt/java-home \
+    TargetFrameworkRootPath=/opt/netfx-reference-assemblies/
 
 # Every PHP extension is compiled in php-runtime, and the .NET SDK/JDK toolchain above
 # compiles analyzed repos itself without the system C toolchain — see app's own purge
@@ -439,7 +445,8 @@ RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
     && sh /tmp/lib/install-static-analysis-toolchain.sh
 
 ENV PATH="${PATH}:/usr/local/dotnet-tools" \
-    JAVA_HOME=/opt/java-home
+    JAVA_HOME=/opt/java-home \
+    TargetFrameworkRootPath=/opt/netfx-reference-assemblies/
 
 # --- BFG Repo Cleaner (checksum- and signature-verified) — a Git-history tool, not
 # part of the shared static-analysis toolchain. ---

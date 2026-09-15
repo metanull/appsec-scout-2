@@ -46,7 +46,10 @@ own `repository-collection` queue, and from the app container's own default queu
 A second, dedicated Docker image/Compose service, `static-analysis-collector`
 (the `static-analysis-collector` target of `docker/Dockerfile`), runs `php artisan queue:work
 --queue=static-analysis` as its only process. Unlike `collector` (git + Trivy only), this image
-carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, Roslynator, Eclipse Temurin JDK,
+carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, the .NET Framework
+4.6.2/4.7.2/4.8 reference assemblies (the compile-time targeting packs only — .NET Framework
+has no Linux runtime at all, but this is enough for `dotnet build` to resolve those projects'
+references), Roslynator, Eclipse Temurin JDK,
 Maven, Gradle, SpotBugs + Find Security Bugs, plus the Opengrep binary and its vendored
 csharp/java/javascript/typescript ruleset
 (`/opt/opengrep-rules`) — installed by `docker/lib/install-static-analysis-toolchain.sh`, the

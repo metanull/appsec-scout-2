@@ -28,6 +28,19 @@ set -eu
 : "${OPENGREP_VERSION:=1.27.1}"
 : "${OPENGREP_SHA256:=58053da76672bbeb5b0a5441021c58338707052e10f81d777140ca879bd491ce}"
 : "${OPENGREP_RULES_REF:=f1d2b562b414783763fd02a6ed2736eaed622efa}"
+# Microsoft.NETFramework.ReferenceAssemblies.<tfm> (MIT-licensed) — the compile-time
+# .NETFramework targeting packs for 4.8, 4.7.2 and 4.6.2. .NET Framework is Windows-only
+# and has no Linux runtime at all, but these packages carry only reference assemblies
+# (used by the compiler to resolve types, never executed), which is exactly what's
+# needed to build net48/net472/net462 projects on Linux. 1.0.3 is the latest published
+# version for all three monikers (confirmed against NuGet's own flat-container index —
+# they are not assumed to share a version, it just happens to be true here). Each
+# SHA-256 was computed from the .nupkg downloaded from the exact NuGet flat-container
+# URL used below.
+: "${NETFX_REFERENCE_ASSEMBLIES_VERSION:=1.0.3}"
+: "${NETFX_REFERENCE_ASSEMBLIES_SHA256_NET48:=8a7e348538e7eb91351696911689f49e3d4f63f8bab517432bbe159b8b1104a2}"
+: "${NETFX_REFERENCE_ASSEMBLIES_SHA256_NET472:=ffa0a5570a39f911399164d0581ffddef99b5e3dfbaa5f220e5ce22969bcf57c}"
+: "${NETFX_REFERENCE_ASSEMBLIES_SHA256_NET462:=ee692a845743500910855d4c330ca6e9ef87c16e16f740e4474d187185d66e21}"
 
 # --- .NET SDK — Microsoft's official install script (served over HTTPS from
 # Microsoft's own CDN), not the packages.microsoft.com apt repo: that repo's signing
@@ -48,6 +61,31 @@ dotnet tool install \
     --version "${ROSLYNATOR_VERSION}" \
     --tool-path /usr/local/dotnet-tools \
     roslynator.dotnet.cli
+
+# --- .NET Framework 4.8/4.7.2/4.6.2 reference assemblies (compile-time targeting packs
+# only — see the pin comment above for why no Linux runtime is involved). MSBuild locates
+# this tree through the TargetFrameworkRootPath property, which the caller sets as image
+# ENV (same reason PATH/JAVA_HOME are set there instead of here), so net48/net472/net462
+# projects resolve their references for `dotnet restore`/`dotnet build` and Roslynator's
+# MSBuildWorkspace alike, without touching the analyzed repository. ---
+mkdir -p /opt/netfx-reference-assemblies/.NETFramework
+for entry in \
+    "net48:v4.8:${NETFX_REFERENCE_ASSEMBLIES_SHA256_NET48}" \
+    "net472:v4.7.2:${NETFX_REFERENCE_ASSEMBLIES_SHA256_NET472}" \
+    "net462:v4.6.2:${NETFX_REFERENCE_ASSEMBLIES_SHA256_NET462}"; do
+    tfm=$(echo "${entry}" | cut -d: -f1)
+    tfm_dir=$(echo "${entry}" | cut -d: -f2)
+    sha256=$(echo "${entry}" | cut -d: -f3)
+    wget -q \
+        "https://api.nuget.org/v3-flatcontainer/microsoft.netframework.referenceassemblies.${tfm}/${NETFX_REFERENCE_ASSEMBLIES_VERSION}/microsoft.netframework.referenceassemblies.${tfm}.${NETFX_REFERENCE_ASSEMBLIES_VERSION}.nupkg" \
+        -O /tmp/netfx-ref.nupkg
+    echo "${sha256}  /tmp/netfx-ref.nupkg" | sha256sum -c -
+    mkdir -p /tmp/netfx-ref-extract
+    unzip -q /tmp/netfx-ref.nupkg -d /tmp/netfx-ref-extract
+    mv "/tmp/netfx-ref-extract/build/.NETFramework/${tfm_dir}" "/opt/netfx-reference-assemblies/.NETFramework/${tfm_dir}"
+    rm -rf /tmp/netfx-ref.nupkg /tmp/netfx-ref-extract
+    test -f "/opt/netfx-reference-assemblies/.NETFramework/${tfm_dir}/mscorlib.dll"
+done
 
 # --- Java (Eclipse Temurin JDK, current LTS — signed Adoptium apt repo) ---
 curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
