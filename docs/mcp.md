@@ -66,6 +66,28 @@ Both flags matter: stdout carries the protocol, so `-T` (no pseudo-terminal) and
 Check the connection by asking Claude to call the `whoami` tool: it returns the user, its roles
 and its permissions.
 
+## Tools
+
+Every tool runs as the MCP user and checks the permission listed. Tools that change data default
+to `dry_run: true` and describe the change first.
+
+| Tool | What it does | Permission |
+|---|---|---|
+| `whoami` | The acting user, its roles and permissions | — |
+| `list-software-assets`, `list-software-systems`, `list-security-containers` | Browse the inventory (asset → system → container) | `alerts.view` |
+| `get-container-links` | A container's browse / clone URL, its system's (deployed) URL, repository mappings and curated links | `alerts.view` |
+| `get-triage-summary` | Counts by severity, type, source and kind for one asset, system or container, across all sources | `alerts.view` |
+| `list-alerts`, `get-alert` | Source alerts, filtered by state, severity, type, source and scope | `alerts.view` |
+| `list-local-findings`, `get-local-finding` | Trivy and static-analysis findings, filtered by kind, status, effective severity and scope | `alerts.view` |
+| `list-sbom-components`, `get-sbom` | SBOM components with their vulnerabilities (local findings on the same package and version) | `alerts.view` |
+| `change-alert-state`, `change-alert-severity` | Pending until pushed from the Pending Sync page | `alerts.edit` (+ `alerts.bulk-edit` for several) |
+| `change-local-finding-status`, `change-local-finding-severity` | Applied immediately | `alerts.edit` (+ `alerts.bulk-edit` for several) |
+| `comment-alert`, `comment-local-finding` | Add a comment | `alerts.edit` |
+| `get-tracker-options` | Projects, item types, priorities and the suggested project, with the user's own tracker credentials | `work-items.create` |
+| `create-alerts-work-item`, `create-local-findings-work-item` | One ticket per selection; alerts and local findings never share a ticket | `work-items.create` |
+| `fetch-alerts` | Queue a fetch from the sources for an asset, system or container (system credential) | `admin.queue` or `work-items.sync` |
+| `collect-repositories`, `run-static-analysis` | Queue repository collection (Trivy: SBOM, vulnerabilities, secrets) or static analysis for AzDO systems (system credential, one run at a time) | `admin.queue` |
+
 ## Troubleshooting
 
 | Symptom | Cause |

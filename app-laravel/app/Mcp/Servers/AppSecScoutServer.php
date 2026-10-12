@@ -2,6 +2,9 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\Collection\CollectRepositoriesTool;
+use App\Mcp\Tools\Collection\FetchAlertsTool;
+use App\Mcp\Tools\Collection\RunStaticAnalysisTool;
 use App\Mcp\Tools\Findings\GetAlertTool;
 use App\Mcp\Tools\Findings\GetLocalFindingTool;
 use App\Mcp\Tools\Findings\GetTriageSummaryTool;
@@ -74,5 +77,8 @@ final class AppSecScoutServer extends Server
         GetTrackerOptionsTool::class,
         CreateAlertsWorkItemTool::class,
         CreateLocalFindingsWorkItemTool::class,
+        FetchAlertsTool::class,
+        CollectRepositoriesTool::class,
+        RunStaticAnalysisTool::class,
     ];
 }
