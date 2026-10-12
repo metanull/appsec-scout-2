@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SecurityContainerResource\Pages;
 
+use App\Assets\ContainerLinkChange;
 use App\Assets\ContainerSystemLinkService;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Models\SecurityContainer;
@@ -70,13 +71,13 @@ class ViewSecurityContainer extends ViewRecord
         );
     }
 
-    /** @param  callable(ContainerSystemLinkService, ?User): SecurityContainer  $change */
+    /** @param  callable(ContainerSystemLinkService, ?User): ContainerLinkChange  $change */
     private function applyLinkChange(callable $change, string $successTitle): void
     {
         $author = Auth::user();
 
         try {
-            $this->record = $change(app(ContainerSystemLinkService::class), $author instanceof User ? $author : null);
+            $this->record = $change(app(ContainerSystemLinkService::class), $author instanceof User ? $author : null)->container;
         } catch (InvalidArgumentException $exception) {
             Notification::make()->title('Link not changed')->body($exception->getMessage())->danger()->send();
 

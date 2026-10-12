@@ -15,9 +15,9 @@ final class SoftwareAssetService
 {
     public function __construct(private readonly Recorder $recorder) {}
 
-    public function attach(SoftwareAsset $asset, SoftwareSystem $system, ?User $author = null): SoftwareSystem
+    public function attach(SoftwareAsset $asset, SoftwareSystem $system, ?User $author = null): SystemAssetLinkChange
     {
-        return DB::transaction(function () use ($asset, $system, $author): SoftwareSystem {
+        return DB::transaction(function () use ($asset, $system, $author): SystemAssetLinkChange {
             $previousAssetId = $system->software_asset_id;
 
             $system->forceFill(['software_asset_id' => $asset->id])->save();
@@ -31,13 +31,13 @@ final class SoftwareAssetService
                 'restamped' => $restamped,
             ]);
 
-            return $system->refresh();
+            return new SystemAssetLinkChange($system->refresh(), $previousAssetId, $restamped);
         });
     }
 
-    public function detach(SoftwareSystem $system, ?User $author = null): SoftwareSystem
+    public function detach(SoftwareSystem $system, ?User $author = null): SystemAssetLinkChange
     {
-        return DB::transaction(function () use ($system, $author): SoftwareSystem {
+        return DB::transaction(function () use ($system, $author): SystemAssetLinkChange {
             $previousAssetId = $system->software_asset_id;
 
             $system->forceFill(['software_asset_id' => null])->save();
@@ -50,7 +50,7 @@ final class SoftwareAssetService
                 'restamped' => $restamped,
             ]);
 
-            return $system->refresh();
+            return new SystemAssetLinkChange($system->refresh(), $previousAssetId, $restamped);
         });
     }
 

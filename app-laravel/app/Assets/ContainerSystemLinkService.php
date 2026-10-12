@@ -22,61 +22,23 @@ final class ContainerSystemLinkService
 {
     public function __construct(private readonly Recorder $recorder) {}
 
-    public function relink(SecurityContainer $container, SoftwareSystem $target, ?User $author = null): SecurityContainer
+    public function relink(SecurityContainer $container, SoftwareSystem $target, ?User $author = null): ContainerLinkChange
     {
+        $this->ensureMovable($container, $target);
+
         return $this->move($container, $target, 'security_container_relinked', $author);
     }
 
-    public function reset(SecurityContainer $container, ?User $author = null): SecurityContainer
+    public function reset(SecurityContainer $container, ?User $author = null): ContainerLinkChange
     {
-        if (! $container->isSystemOverridden()) {
-            throw new InvalidArgumentException("Security container #{$container->id} already follows its source system.");
-        }
-
-        $source = $container->sourceSoftwareSystem;
-
-        if ($source === null) {
-            throw new InvalidArgumentException("Security container #{$container->id} has no source system to restore.");
-        }
+        $source = $this->resetTarget($container);
+        $this->ensureMovable($container, $source);
 
         return $this->move($container, $source, 'security_container_link_reset', $author);
     }
 
-    private function move(SecurityContainer $container, SoftwareSystem $target, string $action, ?User $author): SecurityContainer
-    {
-        $this->guard($container, $target);
-
-        return DB::transaction(function () use ($container, $target, $action, $author): SecurityContainer {
-            $previousSystemId = $container->software_system_id;
-            $overridden = $target->id !== $container->source_software_system_id;
-
-            $container->forceFill([
-                'software_system_id' => $target->id,
-                'system_overridden_at' => $overridden ? now() : null,
-            ])->save();
-
-            $events = SecurityEvent::query()
-                ->where('container_id', $container->id)
-                ->toBase()
-                ->update(['software_system_id' => $target->id]);
-
-            $this->recorder->recordAdminAction($action, [
-                'security_container_id' => $container->id,
-                'previous_software_system_id' => $previousSystemId,
-                'software_system_id' => $target->id,
-                'source_software_system_id' => $container->source_software_system_id,
-                'overridden' => $overridden,
-                'author_id' => $author?->id,
-                'events' => $events,
-                'local_findings' => $this->restamp(LocalFinding::query(), $container, $target),
-                'software_components' => $this->restamp(SoftwareComponent::query(), $container, $target),
-            ]);
-
-            return $container->refresh();
-        });
-    }
-
-    private function guard(SecurityContainer $container, SoftwareSystem $target): void
+    /** Fails with the reason a move of $container to $target would be refused. */
+    public function ensureMovable(SecurityContainer $container, SoftwareSystem $target): void
     {
         if ($target->getAttribute('removed_at') !== null) {
             throw new InvalidArgumentException("Software system #{$target->id} was removed from its source.");
@@ -89,6 +51,55 @@ final class ContainerSystemLinkService
         if ($container->source_software_system_id === null) {
             throw new InvalidArgumentException("Security container #{$container->id} has no source system, so its link cannot be managed.");
         }
+    }
+
+    /** The system a reset would move $container back to; fails when there is nothing to restore. */
+    public function resetTarget(SecurityContainer $container): SoftwareSystem
+    {
+        if (! $container->isSystemOverridden()) {
+            throw new InvalidArgumentException("Security container #{$container->id} already follows its source system.");
+        }
+
+        return $container->sourceSoftwareSystem
+            ?? throw new InvalidArgumentException("Security container #{$container->id} has no source system to restore.");
+    }
+
+    private function move(SecurityContainer $container, SoftwareSystem $target, string $action, ?User $author): ContainerLinkChange
+    {
+        return DB::transaction(function () use ($container, $target, $action, $author): ContainerLinkChange {
+            $previousSystemId = $container->software_system_id;
+            $overridden = $target->id !== $container->source_software_system_id;
+
+            $container->forceFill([
+                'software_system_id' => $target->id,
+                'system_overridden_at' => $overridden ? now() : null,
+            ])->save();
+
+            $change = new ContainerLinkChange(
+                container: $container->refresh(),
+                previousSystemId: $previousSystemId,
+                events: SecurityEvent::query()
+                    ->where('container_id', $container->id)
+                    ->toBase()
+                    ->update(['software_system_id' => $target->id]),
+                localFindings: $this->restamp(LocalFinding::query(), $container, $target),
+                softwareComponents: $this->restamp(SoftwareComponent::query(), $container, $target),
+            );
+
+            $this->recorder->recordAdminAction($action, [
+                'security_container_id' => $container->id,
+                'previous_software_system_id' => $previousSystemId,
+                'software_system_id' => $target->id,
+                'source_software_system_id' => $container->source_software_system_id,
+                'overridden' => $overridden,
+                'author_id' => $author?->id,
+                'events' => $change->events,
+                'local_findings' => $change->localFindings,
+                'software_components' => $change->softwareComponents,
+            ]);
+
+            return $change;
+        });
     }
 
     /**

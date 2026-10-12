@@ -87,6 +87,8 @@ to `dry_run: true` and describe the change first.
 | `create-alerts-work-item`, `create-local-findings-work-item` | One ticket per selection; alerts and local findings never share a ticket | `work-items.create` |
 | `fetch-alerts` | Queue a fetch from the sources for an asset, system or container (system credential) | `admin.queue` or `work-items.sync` |
 | `collect-repositories`, `run-static-analysis` | Queue repository collection (Trivy: SBOM, vulnerabilities, secrets) or static analysis for AzDO systems (system credential, one run at a time) | `admin.queue` |
+| `link-system-to-asset`, `unlink-system-from-asset` | Group a system under an asset (moving it from another asset), or ungroup it | `context.curate` |
+| `move-container-to-system`, `restore-container-source-link` | Move a container, with its alerts, local findings and SBOM components, to another system (kept across fetches; `manual_link` in the container tools), or back to its source system | `context.curate` |
 
 ## Troubleshooting
 

@@ -11,9 +11,13 @@ use App\Mcp\Tools\Findings\GetTriageSummaryTool;
 use App\Mcp\Tools\Findings\ListAlertsTool;
 use App\Mcp\Tools\Findings\ListLocalFindingsTool;
 use App\Mcp\Tools\Inventory\GetContainerLinksTool;
+use App\Mcp\Tools\Inventory\LinkSystemToAssetTool;
 use App\Mcp\Tools\Inventory\ListSecurityContainersTool;
 use App\Mcp\Tools\Inventory\ListSoftwareAssetsTool;
 use App\Mcp\Tools\Inventory\ListSoftwareSystemsTool;
+use App\Mcp\Tools\Inventory\MoveContainerToSystemTool;
+use App\Mcp\Tools\Inventory\RestoreContainerSourceLinkTool;
+use App\Mcp\Tools\Inventory\UnlinkSystemFromAssetTool;
 use App\Mcp\Tools\Sbom\GetSbomTool;
 use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
 use App\Mcp\Tools\Trackers\CreateAlertsWorkItemTool;
@@ -80,5 +84,9 @@ final class AppSecScoutServer extends Server
         FetchAlertsTool::class,
         CollectRepositoriesTool::class,
         RunStaticAnalysisTool::class,
+        LinkSystemToAssetTool::class,
+        UnlinkSystemFromAssetTool::class,
+        MoveContainerToSystemTool::class,
+        RestoreContainerSourceLinkTool::class,
     ];
 }
