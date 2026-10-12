@@ -22,7 +22,6 @@ flowchart LR
     subgraph Queue
         FETCH[FetchSourceJob]
         TRACK[RefreshWorkItemsJob]
-        PUSH[PushEventStatesJob]
         RECON[ReconcileAllJob]
         SYNCINV[SyncInventoryJob]
         SBOMIMP[sbom / staticanalysis import]
@@ -74,6 +73,7 @@ flowchart LR
         ALERTS[Reader and triage resources]
         PLAN[Planning actions]
         SYNC[Pending Sync]
+        PUSH[PendingStatePusher - synchronous, operator credential]
         ADMIN[Admin pages]
         OPSPAGE[Operations page]
     end

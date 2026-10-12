@@ -51,17 +51,19 @@ available as a table bulk action (`alerts.bulk-edit`). Both record an audit entr
 **Pushing (Sync role, `work-items.sync` *and* `sources.push-state`)**: staged changes sit on
 `Sync -> Pending Sync` (`App\Filament\Resources\PendingSyncResource`) until someone with both
 permissions reviews and pushes them. The page groups dirty events by Source and its one action,
-`pushToSource`, dispatches one queued `App\Sync\PushEventStatesJob` per Source group, which calls
-`Source::pushEventState($event)`. On success it clears `pending_state`/`pending_comment` and
+`pushToSource`, calls `App\Sync\PendingStatePusher::push()` synchronously for each Source group,
+with the operator's own Source credential, and reports each group's outcome. A group is refused up
+front when that credential is missing or another push to the same Source is running. The pusher
+calls `Source::pushEventState($event)`. On success it clears `pending_state`/`pending_comment` and
 sets `state = pending_state`.
 
 Behavior worth knowing when reading this flow — `App\Sync\PendingSyncResolver` (shared by
-`PushEventStatesJob` and the one-off `events:recompute-pending-sync` backfill command) decides,
+`PendingStatePusher` and the one-off `events:recompute-pending-sync` backfill command) decides,
 for every dirty event handed to a sync run, whether it actually has something pushable for its
 Source:
 
 - A staged **state** change (`pending_state`) is pushable whenever the Source declares
-  `canUpdateState: true` (every shipped Source does): `PushEventStatesJob` calls
+  `canUpdateState: true` (every shipped Source does): `PendingStatePusher` calls
   `Source::pushEventState($event)`, and on success clears `pending_state`/`pending_comment` and
   sets `state = pending_state`.
 - A pending **severity** change is pushable only when the Source declares `canUpdateSeverity: true`
