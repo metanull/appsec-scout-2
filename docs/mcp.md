@@ -17,8 +17,10 @@ registered as the local server `appsec-scout` (`app-laravel/routes/ai.php`).
   that user's role. Give the MCP user the narrowest role that fits (e.g. *Triage* for state and
   severity changes, *Plan* for work items).
 - **Credential flows** are unchanged. User-triggered actions (state, severity, comments, work
-  items) run synchronously as the MCP user, with that user's personal credentials (Profile →
-  Integrations). Data collection is queued as background jobs that use the system credentials.
+  items, pushing pending changes, code search and reading code) run synchronously as the MCP user,
+  with that user's personal credentials (Profile → Integrations); a missing one is reported, never
+  replaced by a system credential. Data collection is queued as background jobs that use the
+  system credentials.
 - **Audit.** Every write is recorded in the audit log under the MCP user, with `channel: mcp` in
   its payload. Unexpected tool failures are recorded in the Error log under channel `mcp`.
 - **Billing.** Tool calls run inside your Claude client session, so they count against that
@@ -79,6 +81,7 @@ to `dry_run: true` and describe the change first.
 | `get-triage-summary` | Counts by severity, type, source and kind for one asset, system or container, across all sources | `alerts.view` |
 | `list-alerts`, `get-alert` | Source alerts, filtered by state, severity, type, source and scope | `alerts.view` |
 | `list-local-findings`, `get-local-finding` | Trivy and static-analysis findings, filtered by kind, status, effective severity and scope | `alerts.view` |
+| `search-code` | Azure DevOps code search, optionally within one container's repository or one system's project, with the user's own AzDO Repos credential | `alerts.view` |
 | `list-sbom-components`, `get-sbom` | SBOM components with their vulnerabilities (local findings on the same package and version) | `alerts.view` |
 | `change-alert-state`, `change-alert-severity` | Pending until pushed from the Pending Sync page | `alerts.edit` (+ `alerts.bulk-edit` for several) |
 | `change-local-finding-status`, `change-local-finding-severity` | Applied immediately | `alerts.edit` (+ `alerts.bulk-edit` for several) |
