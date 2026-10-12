@@ -10,6 +10,8 @@ use App\Models\User;
 use App\Trackers\Registry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Testing\Fluent\AssertableJson;
+use Laravel\Mcp\Server\Testing\TestResponse;
 use Tests\Fakes\FakeTracker;
 use Tests\TestCase;
 
@@ -27,6 +29,23 @@ function mcpUser(?string $role, array $attributes = []): User
     $user->syncRoles($role === null ? [] : [$role]);
 
     return $user;
+}
+
+/**
+ * The `id` of every row in a paginated MCP list response, in response order.
+ *
+ * @return list<int>
+ */
+function mcpItemIds(TestResponse $response): array
+{
+    $ids = [];
+
+    $response->assertStructuredContent(function (AssertableJson $json) use (&$ids): void {
+        $ids = array_column($json->toArray()['items'] ?? [], 'id');
+        $json->etc();
+    });
+
+    return $ids;
 }
 
 function trackerFixtureText(string $path): string

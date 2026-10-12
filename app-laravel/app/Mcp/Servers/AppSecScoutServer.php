@@ -2,6 +2,10 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\Findings\GetAlertTool;
+use App\Mcp\Tools\Findings\GetLocalFindingTool;
+use App\Mcp\Tools\Findings\ListAlertsTool;
+use App\Mcp\Tools\Findings\ListLocalFindingsTool;
 use App\Mcp\Tools\Inventory\GetContainerLinksTool;
 use App\Mcp\Tools\Inventory\ListSecurityContainersTool;
 use App\Mcp\Tools\Inventory\ListSoftwareAssetsTool;
@@ -42,5 +46,9 @@ final class AppSecScoutServer extends Server
         ListSoftwareSystemsTool::class,
         ListSecurityContainersTool::class,
         GetContainerLinksTool::class,
+        ListAlertsTool::class,
+        GetAlertTool::class,
+        ListLocalFindingsTool::class,
+        GetLocalFindingTool::class,
     ];
 }
