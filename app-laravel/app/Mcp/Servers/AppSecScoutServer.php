@@ -10,6 +10,8 @@ use App\Mcp\Tools\Inventory\GetContainerLinksTool;
 use App\Mcp\Tools\Inventory\ListSecurityContainersTool;
 use App\Mcp\Tools\Inventory\ListSoftwareAssetsTool;
 use App\Mcp\Tools\Inventory\ListSoftwareSystemsTool;
+use App\Mcp\Tools\Sbom\GetSbomTool;
+use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
 use App\Mcp\Tools\WhoAmITool;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
@@ -50,5 +52,7 @@ final class AppSecScoutServer extends Server
         GetAlertTool::class,
         ListLocalFindingsTool::class,
         GetLocalFindingTool::class,
+        ListSbomComponentsTool::class,
+        GetSbomTool::class,
     ];
 }
