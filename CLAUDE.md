@@ -140,10 +140,12 @@ app/
   Audit/             # AuditLog recorder
   SecurityEvents/    # Event linking and triage context
   Context/           # Application domain context
+  Mcp/               # Embedded stdio MCP server (laravel/mcp): Servers/, Tools/ (all extend AppSecTool), Support/ — see docs/mcp.md
   Providers/         # AppServiceProvider (registers Source/Tracker/Source Control singletons), FortifyServiceProvider, PanelProvider
 routes/
   console.php        # Artisan commands + scheduler (log pruning daily; sbom/static-analysis import every minute)
   web.php            # Authenticated routes for alert attachment downloads
+  ai.php             # MCP server registration (Mcp::local('appsec-scout'), stdio only)
 tests/
   Feature/           # Admin, Attachments, Audit, Auth, Credentials, Filament, Integrations, Smoke, Sources, Sync, Trackers, Triage
   Unit/

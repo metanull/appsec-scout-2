@@ -6,7 +6,10 @@ use Illuminate\Http\Request;
 
 class Recorder
 {
-    public function __construct(private readonly ?Request $request = null) {}
+    public function __construct(
+        private readonly ?Request $request = null,
+        private readonly ?AuditChannel $channel = null,
+    ) {}
 
     /** @param array<string, mixed> $payload */
     public function recordStateChange(string $subjectType, string $subjectId, array $payload = []): void
@@ -153,6 +156,11 @@ class Recorder
     private function write(string $action, ?string $subjectType, ?string $subjectId, array $payload): void
     {
         $user = auth()->user();
+        $channel = $this->channel?->current();
+
+        if ($channel !== null) {
+            $payload['channel'] = $channel;
+        }
 
         AuditLog::create([
             'user_id' => $user?->getKey(),

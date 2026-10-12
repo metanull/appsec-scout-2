@@ -8,6 +8,7 @@ Related documents:
 - [docs/admin.md](admin.md)
 - [docs/security.md](security.md)
 - [docs/roles/admin.md](roles/admin.md)
+- [docs/mcp.md](mcp.md) — the embedded MCP server for triage from Claude Code / Claude Desktop
 - [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md) — the
   host-triggered SBOM/static-analysis scan pipeline covered in its own section below
 
