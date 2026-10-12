@@ -334,7 +334,7 @@ reference see [operations.md](operations.md).
 | `docker compose stop` | Stop without removing anything |
 | `docker compose down` | Stop and remove containers. **Your data survives** in the volumes. |
 | `docker compose down -v` | ⚠ Also deletes volumes: **database, attachments, vault, Dependency-Track data** |
-| `docker compose restart app` | Restart the app; re-runs migrations and seeding on boot |
+| `docker compose restart app` | Restart the app; re-runs migrations and seeding on boot (or `.\scripts\invoke-app.ps1 -Restart`) |
 | `docker compose logs -f app` | Follow app logs (also `collector`, `static-analysis-collector`, `dependencytrack-apiserver`, `trivy-server`, `mysql`) |
 | `docker compose logs dependencytrack-bootstrap` | Find out why Dependency-Track setup failed |
 | `docker compose up -d dependencytrack-bootstrap` | Re-run Dependency-Track setup |

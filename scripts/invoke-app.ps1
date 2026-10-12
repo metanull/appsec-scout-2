@@ -54,15 +54,15 @@ function Invoke-Docker {
 Set-Location $ProjectRoot
 
 try {
-    $modesRequested = @($RestartApp.IsPresent, $Tinker.IsPresent, $Artisan.IsPresent) | Where-Object { $_ }
+    $modesRequested = @($Restart.IsPresent, $Tinker.IsPresent, $Artisan.IsPresent) | Where-Object { $_ }
     if ($modesRequested.Count -gt 1) {
-        throw "Specify only one of -RestartApp, -Tinker, or -Artisan at a time."
+        throw "Specify only one of -Restart, -Tinker, or -Artisan at a time."
     }
     if ($Artisan -and $ArtisanArgs.Count -eq 0) {
         throw "-Artisan requires at least one artisan command argument, e.g. -Artisan migrate:status"
     }
 
-    if ($RestartApp) {
+    if ($Restart) {
         Write-Host "Restarting app container..."
         Invoke-Docker compose restart app
     } elseif ($Tinker) {
