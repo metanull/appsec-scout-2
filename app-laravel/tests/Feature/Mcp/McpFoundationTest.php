@@ -9,7 +9,6 @@ use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
-use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Tests\Fixtures\Mcp\AuditingTestTool;
 use Tests\Fixtures\Mcp\ExplodingTestTool;
@@ -27,14 +26,6 @@ beforeEach(function () {
 afterEach(function () {
     putenv(McpActor::ENV);
 });
-
-function mcpUser(string $role, array $attributes = []): User
-{
-    $user = User::factory()->create($attributes);
-    $user->syncRoles([$role]);
-
-    return $user;
-}
 
 it('refuses to resolve an actor when MCP_USER_EMAIL is not set', function () {
     app(McpActor::class)->resolve();

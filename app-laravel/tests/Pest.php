@@ -6,6 +6,7 @@ use App\Models\Enums\EventType;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
+use App\Models\User;
 use App\Trackers\Registry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -14,6 +15,19 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class)->in('Feature');
 uses(TestCase::class)->in('Unit');
+
+/**
+ * A user holding exactly the given seeded role (none when null). Requires RolePermissionSeeder.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function mcpUser(?string $role, array $attributes = []): User
+{
+    $user = User::factory()->create($attributes);
+    $user->syncRoles($role === null ? [] : [$role]);
+
+    return $user;
+}
 
 function trackerFixtureText(string $path): string
 {
