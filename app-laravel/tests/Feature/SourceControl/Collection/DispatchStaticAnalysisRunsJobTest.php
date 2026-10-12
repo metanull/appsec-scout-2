@@ -352,3 +352,41 @@ it('leaves force off for an ordinary sweep', function () {
             && $batch->jobs->every(fn (AnalyzeRepositoryJob $job): bool => $job->force === false);
     });
 });
+
+it('analyses only one Azure DevOps system\'s repositories, honouring force', function () {
+    Bus::fake();
+    $system = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001', 'name' => 'SecurityProject']);
+
+    // No projects listing: a scoped run goes straight to that project's repositories.
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], staticAnalysisDispatcherFixture('repositories.json')),
+    ]);
+
+    (new DispatchStaticAnalysisRunsJob(force: true, softwareSystemId: $system->id))->handle(app(SystemIntegrationRuntime::class));
+
+    $run = StaticAnalysisRun::query()->latest('id')->sole();
+
+    expect($run->software_system_id)->toBe($system->id)
+        ->and($run->counts_json['repositories_considered'])->toBe(2);
+
+    Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->jobs->count() === 2
+        && $batch->jobs->every(fn (AnalyzeRepositoryJob $job): bool => $job->force === true && $job->target->projectId === 'project-001'));
+});
+
+it('fails a scoped analysis run for a system it cannot analyse', function (Closure $makeSystem, string $message) {
+    $system = $makeSystem();
+
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([]);
+
+    (new DispatchStaticAnalysisRunsJob(softwareSystemId: $system?->id ?? 999999))->handle(app(SystemIntegrationRuntime::class));
+
+    $run = StaticAnalysisRun::query()->latest('id')->sole();
+
+    expect($run->status)->toBe('failure')
+        ->and($run->error_message)->toContain($message)
+        ->and(ErrorLog::query()->where('channel', 'static-analysis')->where('message', $run->error_message)->exists())->toBeTrue();
+})->with([
+    'non-AzDO system' => [fn () => SoftwareSystem::factory()->create(['source_id' => 'detectify']), 'only covers Azure DevOps systems'],
+    'removed system' => [fn () => SoftwareSystem::factory()->azdo()->create(['removed_at' => now()]), 'is no longer reported by its source'],
+    'missing system' => [fn () => null, 'Software system #999999 no longer exists.'],
+]);

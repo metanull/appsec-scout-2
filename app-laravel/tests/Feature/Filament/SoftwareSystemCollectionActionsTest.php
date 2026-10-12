@@ -5,8 +5,10 @@ use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ListRepositoryC
 use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
 use App\Models\RepositoryCollectionRun;
 use App\Models\SoftwareSystem;
+use App\Models\StaticAnalysisRun;
 use App\Models\User;
 use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
+use App\SourceControl\Collection\DispatchStaticAnalysisRunsJob;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -71,4 +73,38 @@ it('shows which system a collection run covered', function () {
         ->test(ListRepositoryCollectionRuns::class)
         ->assertSee('Payments Project')
         ->assertSee('All systems');
+});
+
+it('queues a forced static analysis for one Azure DevOps system', function () {
+    $system = SoftwareSystem::factory()->azdo()->create();
+
+    Livewire::actingAs($this->admin)
+        ->test(ViewSoftwareSystem::class, ['record' => $system->getRouteKey()])
+        ->assertActionVisible('runStaticAnalysis')
+        ->callAction('runStaticAnalysis', data: ['force' => true])
+        ->assertNotified();
+
+    Queue::assertPushed(DispatchStaticAnalysisRunsJob::class, fn (DispatchStaticAnalysisRunsJob $job): bool => $job->softwareSystemId === $system->id && $job->force === true);
+
+    expect(AuditLog::query()->where('action', 'operations.run_static_analysis')->sole()->payload_json)
+        ->toBe(['force' => true, 'software_system_id' => $system->id]);
+});
+
+it('refuses to queue a second static analysis while one is running and hides it from non-admins', function () {
+    $system = SoftwareSystem::factory()->azdo()->create();
+    StaticAnalysisRun::query()->create(['source_control_id' => 'azdo-repos', 'started_at' => now(), 'status' => 'running', 'counts_json' => []]);
+
+    Livewire::actingAs($this->admin)
+        ->test(ViewSoftwareSystem::class, ['record' => $system->getRouteKey()])
+        ->callAction('runStaticAnalysis')
+        ->assertNotified('A static analysis run is already in progress.');
+
+    Queue::assertNothingPushed();
+
+    $sync = User::factory()->create();
+    $sync->syncRoles(['Sync']);
+
+    Livewire::actingAs($sync)
+        ->test(ViewSoftwareSystem::class, ['record' => $system->getRouteKey()])
+        ->assertActionHidden('runStaticAnalysis');
 });
