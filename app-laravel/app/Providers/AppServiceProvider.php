@@ -2,10 +2,12 @@
 
 namespace App\Providers;
 
+use App\Audit\AuditChannel;
 use App\Credentials\Vault;
 use App\Database\AzureManagedIdentityPostgresConnector;
 use App\Events\SyncRunFinished;
 use App\Listeners\BustDashboardCache;
+use App\Mcp\McpActor;
 use App\Models\User;
 use App\SourceControl\AzDo\AzDoRepos;
 use App\SourceControl\Bitbucket\BitbucketRepos;
@@ -30,6 +32,8 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(Vault::class);
+        $this->app->scoped(AuditChannel::class);
+        $this->app->singleton(McpActor::class);
         $this->app->singleton(AzDoSource::class);
         $this->app->singleton(AsocSource::class);
         $this->app->singleton(DetectifySource::class);
