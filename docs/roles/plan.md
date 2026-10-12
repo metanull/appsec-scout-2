@@ -22,6 +22,7 @@ and maintain the local link state.
   `LocalFindingWorkItemLink` records.
 - Review tracker refresh data written back locally.
 - Create and edit Software Assets (`context.curate`), and attach/detach a Software System to one.
+- Move a Security Container to another Software System, or restore its source link (`context.curate`).
 - Add Curated Links on any Asset/System/Container/Alert (`context.curate`).
 - Manage Repository Providers (`admin.repository-providers`) — the base URL/type configuration
   Repository Mappings resolve against, even though this surface lives under the Admin navigation

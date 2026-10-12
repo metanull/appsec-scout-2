@@ -82,6 +82,15 @@ class SecurityContainerResource extends Resource
                     TextEntry::make('softwareSystem.name')
                         ->label('Software system')
                         ->placeholder('-'),
+                    TextEntry::make('_system_link')
+                        ->label('Link')
+                        ->state(fn (SecurityContainer $record): string => $record->isSystemOverridden() ? 'Manual' : 'From source')
+                        ->badge()
+                        ->color(fn (string $state): string => $state === 'Manual' ? 'warning' : 'gray'),
+                    TextEntry::make('sourceSoftwareSystem.name')
+                        ->label('Source system')
+                        ->visible(fn (SecurityContainer $record): bool => $record->isSystemOverridden())
+                        ->placeholder('-'),
                     TextEntry::make('open_events_count')
                         ->label('Open alerts')
                         ->state(function (SecurityContainer $record): int {

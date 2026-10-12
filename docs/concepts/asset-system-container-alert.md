@@ -107,8 +107,8 @@ A System is created and kept up to date by whichever Source produced it (see
 ## Security Container
 
 A `SecurityContainer` is the optional sub-grouping within a System — typically a repository
-within an AzDO project or ASoC application. Natural key: `software_system_id` +
-`source_container_id`. Only Sources with `SourceCapabilities::hasContainers = true` (AzDO, ASoC)
+within an AzDO project or ASoC application. Natural key: `source_software_system_id` (the System
+its Source reports it under) + `source_container_id`. Only Sources with `SourceCapabilities::hasContainers = true` (AzDO, ASoC)
 produce these; Detectify never does.
 
 A Container is a mandatory child of exactly one System (non-nullable FK) — the database enforces
@@ -116,6 +116,17 @@ A Container is a mandatory child of exactly one System (non-nullable FK) — the
 cascades (`$system->containers->each->delete()`) before the parent row is removed, so a normal
 Eloquent delete still works; only bypassing Eloquent entirely (raw SQL) would hit the DB-level
 restriction.
+
+**Manual re-link**: a `context.curate` user can move a Container to another System from its view
+page ("Move to another system"), e.g. when a repository belongs to a different project than the
+one its Source reports. `software_system_id` then points at the chosen System while
+`source_software_system_id` keeps the Source's, and `system_overridden_at` marks the link as
+manual, so later fetches still find the Container and leave its link alone
+(`App\Sync\SystemContainerUpserter`). Its Alerts move with it and the Local Findings and
+Dependencies it owns are re-stamped (`App\Assets\ContainerSystemLinkService`, audited as
+`security_container_relinked`). "Restore source link" (audited as
+`security_container_link_reset`) moves it back and clears the flag. Writeback and refetch of its
+Alerts still address the Source-reported System (`SecurityEvent::upstreamSoftwareSystem()`).
 
 ## Security Event ("Alert"), Local Finding, and Software Component ("Dependency")
 
@@ -281,7 +292,7 @@ together, in depth, in
 | Action | Permission | Who has it |
 | --- | --- | --- |
 | View Asset/System/Container/Alert/Finding/Component (`alerts.view`) | `alerts.view` | Reader and above |
-| Create/edit/delete a `SoftwareAsset`; attach/detach a System; add a Curated Link | `context.curate` | Plan, Sync, Admin |
+| Create/edit/delete a `SoftwareAsset`; attach/detach a System; move a Container to another System or restore its source link; add a Curated Link | `context.curate` | Plan, Sync, Admin |
 | Manage a Repository Provider (`admin.repository-providers`) | `admin.repository-providers` | Plan, Sync, Admin |
 | Change a `LocalFinding`'s status/severity/comment | `alerts.edit` | Triage and above |
 | Create/link/unlink a `LocalFinding` tracker work item | `work-items.create` / `work-items.link` | Plan and above |
