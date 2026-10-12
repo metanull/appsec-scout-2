@@ -4,6 +4,7 @@ use App\Audit\Recorder;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
+use App\Models\SoftwareSystem;
 use App\SourceControl\AzDo\AzDoRepos;
 use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
 use App\Sources\AzDo\AzDoClient;
@@ -191,3 +192,39 @@ it('is unique while a run is already in flight', function () {
     expect(new DispatchRepositoryCollectionRunsJob)->toBeInstanceOf(ShouldBeUnique::class);
     expect((new DispatchRepositoryCollectionRunsJob)->uniqueId())->toBe('repository-collection');
 });
+
+it('collects only one Azure DevOps system\'s repositories through the per-project step', function () {
+    $system = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001', 'name' => 'SecurityProject']);
+
+    // No projects listing: a scoped run goes straight to that project's repositories.
+    bindRealAzDoReposWithFakeClient([
+        new Response(200, [], dispatcherFixture('repositories.json')),
+    ]);
+
+    (new DispatchRepositoryCollectionRunsJob($system->id))->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
+
+    $run = RepositoryCollectionRun::query()->latest('id')->sole();
+
+    expect($run->software_system_id)->toBe($system->id)
+        ->and($run->status)->toBe('success')
+        ->and($run->counts_json['repositories_considered'])->toBe(2)
+        ->and($run->counts_json['repositories_completed'])->toBe(2);
+});
+
+it('fails a scoped run for a system it cannot collect', function (Closure $makeSystem, string $message) {
+    $system = $makeSystem();
+
+    bindRealAzDoReposWithFakeClient([]);
+
+    (new DispatchRepositoryCollectionRunsJob($system?->id ?? 999999))->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
+
+    $run = RepositoryCollectionRun::query()->latest('id')->sole();
+
+    expect($run->status)->toBe('failure')
+        ->and($run->error_message)->toContain($message)
+        ->and(ErrorLog::query()->where('channel', 'repository-collection')->where('message', $run->error_message)->exists())->toBeTrue();
+})->with([
+    'non-AzDO system' => [fn () => SoftwareSystem::factory()->create(['source_id' => 'asoc']), 'only covers Azure DevOps systems'],
+    'removed system' => [fn () => SoftwareSystem::factory()->azdo()->create(['removed_at' => now()]), 'is no longer reported by its source'],
+    'missing system' => [fn () => null, 'Software system #999999 no longer exists.'],
+]);
