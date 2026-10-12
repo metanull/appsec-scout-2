@@ -20,6 +20,8 @@ use App\Mcp\Tools\Inventory\RestoreContainerSourceLinkTool;
 use App\Mcp\Tools\Inventory\UnlinkSystemFromAssetTool;
 use App\Mcp\Tools\Sbom\GetSbomTool;
 use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
+use App\Mcp\Tools\Sync\ListPendingChangesTool;
+use App\Mcp\Tools\Sync\PushPendingChangesTool;
 use App\Mcp\Tools\Trackers\CreateAlertsWorkItemTool;
 use App\Mcp\Tools\Trackers\CreateLocalFindingsWorkItemTool;
 use App\Mcp\Tools\Trackers\GetTrackerOptionsTool;
@@ -47,7 +49,7 @@ use Laravel\Mcp\Server\Tool;
     source at once.
 
     Findings come in two kinds: alerts (from AzDO Advanced Security, AppScan on Cloud,
-    Detectify; state and severity changes become pending until pushed back to the source) and
+    Detectify; state and severity changes become pending until pushed back to the source with push-pending-changes) and
     local findings (from Trivy scans and static analysis of collected repositories; changes
     apply immediately).
 
@@ -78,6 +80,8 @@ final class AppSecScoutServer extends Server
         ChangeLocalFindingStatusTool::class,
         ChangeLocalFindingSeverityTool::class,
         CommentLocalFindingTool::class,
+        ListPendingChangesTool::class,
+        PushPendingChangesTool::class,
         GetTrackerOptionsTool::class,
         CreateAlertsWorkItemTool::class,
         CreateLocalFindingsWorkItemTool::class,
