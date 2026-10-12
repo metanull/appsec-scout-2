@@ -8,7 +8,8 @@ use App\Filament\Support\EventStateBadgeColor;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
-use App\Sync\PushEventStatesJob;
+use App\Sync\PendingStatePusher;
+use App\Sync\PushOutcome;
 use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -21,6 +22,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use InvalidArgumentException;
 
 /**
  * Alerts with an unpushed local change (state and/or severity), awaiting a
@@ -143,7 +145,7 @@ class PendingSyncResource extends Resource
                     ->icon('heroicon-o-arrow-up-on-square-stack')
                     ->requiresConfirmation()
                     ->modalHeading('Push selected alerts to source')
-                    ->modalDescription('This will dispatch sync jobs for each selected alert grouped by source.')
+                    ->modalDescription('Push the selected alerts\' pending changes to their sources now, with your own source credentials. Each source is pushed separately and reported on its own.')
                     ->action(function (Collection $records): void {
                         Gate::authorize('work-items.sync');
                         Gate::authorize('sources.push-state');
@@ -156,13 +158,7 @@ class PendingSyncResource extends Resource
                         }
 
                         $records->groupBy('source_id')
-                            ->each(function (Collection $group) use ($user): void {
-                                $ids = $group->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
-                                /** @var list<int> $ids */
-                                PushEventStatesJob::dispatch($ids, $user->id);
-                            });
-
-                        Notification::make()->title('Selected alerts queued for sync')->success()->send();
+                            ->each(fn (Collection $group) => self::pushGroup($group, $user));
                     }),
             ])
             ->recordUrl(fn (SecurityEvent $record): string => SecurityEventResource::getUrl('view', ['record' => $record]))
@@ -176,6 +172,40 @@ class PendingSyncResource extends Resource
         return [
             'index' => ListPendingSync::route('/'),
         ];
+    }
+
+    /** @param  Collection<int, Model>  $group  alerts of one source */
+    private static function pushGroup(Collection $group, User $user): void
+    {
+        $sourceId = (string) $group->first()?->getAttribute('source_id');
+
+        try {
+            $outcome = app(PendingStatePusher::class)->push($group->filter(fn (Model $record): bool => $record instanceof SecurityEvent), $user);
+        } catch (InvalidArgumentException $exception) {
+            Notification::make()->title("{$sourceId}: nothing pushed")->body($exception->getMessage())->danger()->send();
+
+            return;
+        }
+
+        $notification = Notification::make()->title("{$sourceId}: " . self::outcomeSummary($outcome));
+
+        if ($outcome->failed > 0) {
+            $notification->body('Last error: ' . ($outcome->lastError ?? 'unknown') . '. Failed alerts stay pending; see the Error log.')->warning()->send();
+
+            return;
+        }
+
+        $notification->success()->send();
+    }
+
+    private static function outcomeSummary(PushOutcome $outcome): string
+    {
+        return collect([
+            'pushed' => $outcome->succeeded,
+            'failed' => $outcome->failed,
+            'skipped' => $outcome->skipped,
+            'kept local only' => $outcome->resolvedLocalOnly,
+        ])->filter()->map(fn (int $count, string $label): string => "{$count} {$label}")->join(', ') ?: 'nothing to push';
     }
 
     /**

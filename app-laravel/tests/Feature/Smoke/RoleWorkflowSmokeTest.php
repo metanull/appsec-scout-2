@@ -1,7 +1,7 @@
 <?php
 
 use App\Audit\AuditLog;
-use App\Audit\Recorder;
+use App\Credentials\Vault;
 use App\Filament\Resources\PendingSyncResource;
 use App\Filament\Resources\SecurityContainerResource;
 use App\Filament\Resources\SecurityEventResource;
@@ -17,13 +17,11 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Models\WorkItemLink;
 use App\Sources\Registry as SourceRegistry;
-use App\Sync\PendingSyncResolver;
-use App\Sync\PushEventStatesJob;
+use App\Sync\PendingStatePusher;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Registry;
 use App\Trackers\WorkItemService;
 use App\Triage\CommentManager;
-use App\Triage\OperatorIntegrationRuntime;
 use App\Triage\SeverityChanger;
 use App\Triage\StateChanger;
 use App\Users\UserAdminService;
@@ -113,7 +111,8 @@ it('covers the sync workflow and a denied admin action', function () {
         'is_dirty' => true,
     ]);
 
-    (new PushEventStatesJob([$event->id], $syncUser->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(Vault::class)->set('fake.apiKey', $syncUser->id, 'operator-key');
+    app(PendingStatePusher::class)->push(collect([$event]), $syncUser);
 
     $event->refresh();
 

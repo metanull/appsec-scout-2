@@ -1,7 +1,6 @@
 <?php
 
 use App\Audit\AuditLog;
-use App\Audit\Recorder;
 use App\Credentials\Vault;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -13,9 +12,8 @@ use App\Models\User;
 use App\Sources\Registry as SourceRegistry;
 use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
-use App\Sync\PendingSyncResolver;
-use App\Sync\PushEventStatesJob;
-use App\Triage\OperatorIntegrationRuntime;
+use App\Sync\PendingStatePusher;
+use Illuminate\Support\Facades\Cache;
 use Tests\Fakes\FakeSource;
 
 it('pushes pending state successfully and clears the dirty state', function () {
@@ -33,9 +31,9 @@ it('pushes pending state successfully and clears the dirty state', function () {
         'is_dirty' => true,
     ]);
 
-    $operator = User::factory()->create();
+    $operator = pushOperator();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -49,7 +47,7 @@ it('pushes pending state successfully and clears the dirty state', function () {
 });
 
 it('uses the operator credential when pushing selected dirty records from the queue', function () {
-    $operator = User::factory()->create();
+    $operator = pushOperator();
     app(Vault::class)->set('fake.apiKey', null, 'system-key');
     app(Vault::class)->set('fake.apiKey', $operator->id, 'operator-key');
 
@@ -73,7 +71,7 @@ it('uses the operator credential when pushing selected dirty records from the qu
         'is_dirty' => true,
     ]);
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -97,9 +95,9 @@ it('preserves the dirty state and records retry metadata when a push fails', fun
         'metadata' => [],
     ]);
 
-    $operator = User::factory()->create();
+    $operator = pushOperator();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -130,9 +128,9 @@ it('preserves pending severity as a local-only annotation after a successful sta
         'is_dirty' => true,
     ]);
 
-    $operator = User::factory()->create();
+    $operator = pushOperator();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -161,9 +159,9 @@ it('resolves a severity-only change as local-only without ever attempting a push
         'is_dirty' => true,
     ]);
 
-    $operator = User::factory()->create();
+    $operator = pushOperator();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -188,9 +186,9 @@ it('resolves a standalone-comment-only dirty event as local-only', function () {
         'is_dirty' => true,
     ]);
 
-    $operator = User::factory()->create();
+    $operator = pushOperator();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -222,9 +220,9 @@ it('leaves a misconfigured canPushStandaloneComment source dirty and logs an err
         'is_dirty' => true,
     ]);
 
-    $operator = User::factory()->create();
+    $operator = pushOperator();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -251,9 +249,9 @@ it('stops retrying automatically after the third failure', function () {
         ],
     ]);
 
-    $operator = User::factory()->create();
+    $operator = pushOperator();
 
-    (new PushEventStatesJob([$event->id], $operator->id))->handle(app(OperatorIntegrationRuntime::class), app(Recorder::class), app(PendingSyncResolver::class));
+    app(PendingStatePusher::class)->push(collect([$event]), $operator);
 
     $event->refresh();
 
@@ -270,4 +268,65 @@ function bindFakePushSource(FakeSource $source): FakeSource
     app()->forgetInstance(SourceRegistry::class);
 
     return $source;
+}
+
+it('refuses alerts from more than one source', function () {
+    bindFakePushSource(new FakeSource);
+    $events = collect([
+        SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]),
+        SecurityEvent::factory()->create(['source_id' => 'other', 'is_dirty' => true, 'pending_state' => EventState::Resolved]),
+    ]);
+
+    expect(fn () => app(PendingStatePusher::class)->push($events, pushOperator()))
+        ->toThrow(InvalidArgumentException::class, 'exactly one source');
+});
+
+it('refuses before any work when the operator has no credential for the source, even with a system one', function () {
+    $source = bindFakePushSource(new FakeSource);
+    app(Vault::class)->set('fake.apiKey', null, 'system-key');
+    $event = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
+
+    expect(fn () => app(PendingStatePusher::class)->push(collect([$event]), User::factory()->create()))
+        ->toThrow(InvalidArgumentException::class, 'Pushing to fake uses your own credential, and yours is missing: API Key.');
+
+    expect($source->pushCalls)->toBe(0)
+        ->and(SyncRun::query()->count())->toBe(0)
+        ->and($event->fresh()?->is_dirty)->toBeTrue();
+});
+
+it('refuses while another push to the same source is running', function () {
+    $source = bindFakePushSource(new FakeSource);
+    $event = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
+    $lock = Cache::lock('push-event-states:fake', 600);
+    $lock->get();
+
+    try {
+        expect(fn () => app(PendingStatePusher::class)->push(collect([$event]), pushOperator()))
+            ->toThrow(InvalidArgumentException::class, 'A push to fake is already running.');
+    } finally {
+        $lock->release();
+    }
+
+    expect($source->pushCalls)->toBe(0);
+});
+
+it('reports what the push did', function () {
+    bindFakePushSource(new FakeSource);
+    $event = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
+
+    $outcome = app(PendingStatePusher::class)->push(collect([$event]), pushOperator());
+
+    expect($outcome->sourceId)->toBe('fake')
+        ->and($outcome->succeeded)->toBe(1)
+        ->and($outcome->failed)->toBe(0)
+        ->and($outcome->lastError)->toBeNull();
+});
+
+/** A user holding their own credential for the fake source. */
+function pushOperator(): User
+{
+    $operator = User::factory()->create();
+    app(Vault::class)->set('fake.apiKey', $operator->id, 'operator-key');
+
+    return $operator;
 }

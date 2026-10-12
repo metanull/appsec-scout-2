@@ -946,7 +946,7 @@ Artisan::command('events:recompute-pending-sync', function (SourceRegistry $sour
     ));
 
     return self::SUCCESS;
-})->purpose('One-off backfill for events dirtied under the pre-fix logic, where a severity-only or comment-only change could never be pushed and stayed flagged pending sync forever. Leaves a system note + ErrorLog warning on each event it resolves, matching what PushEventStatesJob now does for new changes going forward. Safe to re-run — already-resolved events are no longer dirty and are skipped by the query.');
+})->purpose('One-off backfill for events dirtied under the pre-fix logic, where a severity-only or comment-only change could never be pushed and stayed flagged pending sync forever. Leaves a system note + ErrorLog warning on each event it resolves, matching what PendingStatePusher now does for new changes going forward. Safe to re-run — already-resolved events are no longer dirty and are skipped by the query.');
 
 Artisan::command('local-findings:backfill-dedup-hash', function (): int {
     $backfilled = 0;

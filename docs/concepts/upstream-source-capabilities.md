@@ -27,7 +27,7 @@ acts on it yet (see below).
 Local-first means an operator can always stage a state, severity, or comment change locally,
 regardless of whether the connected Source can ever receive it — appsec-scout never blocks or
 warns against a local edit at the moment it's made. The question of "can this actually push
-anywhere" is answered later, when a Sync operator runs a push (`App\Sync\PushEventStatesJob`, via
+anywhere" is answered later, when a Sync operator runs a push (`App\Sync\PendingStatePusher`, via
 `Sync -> Pending Sync`), by `App\Sync\PendingSyncResolver`:
 
 - **Pushable** (a state change; a severity change when the Source declares `canUpdateSeverity:
@@ -44,7 +44,7 @@ anywhere" is answered later, when a Sync operator runs a push (`App\Sync\PushEve
   mechanism): the event is left dirty and an `ErrorLog` error is recorded, rather than silently
   claiming resolution for a capability that was declared but never wired up.
 
-This resolution runs both from a live `PushEventStatesJob` run and from the one-off
+This resolution runs both from a live `PendingStatePusher` push and from the one-off
 `events:recompute-pending-sync` Artisan command, which re-evaluates every currently-dirty event
 against the same rules — safe to re-run: once an event resolves, it's no longer dirty and the
 query that selects candidates skips it.

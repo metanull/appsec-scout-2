@@ -1,5 +1,6 @@
 <?php
 
+use App\Credentials\Vault;
 use App\Filament\Resources\PendingSyncResource;
 use App\Filament\Resources\PendingSyncResource\Pages\ListPendingSync;
 use App\Filament\Resources\SecurityEventResource;
@@ -7,10 +8,11 @@ use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
-use App\Sync\PushEventStatesJob;
+use App\Sources\Registry as SourceRegistry;
 use Database\Seeders\RolePermissionSeeder;
-use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
+use Tests\Fakes\FakeSource;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
@@ -108,18 +110,47 @@ it('filters pending sync by source, and the filter round-trips through the query
         ->assertCanNotSeeTableRecords([$asoc]);
 });
 
-it('dispatches a push job per source for the selected rows', function () {
-    Bus::fake();
+it('pushes the selected rows synchronously per source and reports each outcome', function () {
+    Queue::fake();
+    $source = new FakeSource;
+    app()->bind('appsec-scout.source.fake', fn () => $source);
+    app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    app()->forgetInstance(SourceRegistry::class);
 
     $user = pendingSyncUser();
+    app(Vault::class)->set('fake.apiKey', $user->id, 'operator-key');
 
-    $azdoEvent = SecurityEvent::factory()->create(['source_id' => 'azdo', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
-    $asocEvent = SecurityEvent::factory()->create(['source_id' => 'asoc', 'is_dirty' => true, 'pending_state' => EventState::Dismissed]);
+    $pushed = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
+    $unknown = SecurityEvent::factory()->create(['source_id' => 'gone', 'is_dirty' => true, 'pending_state' => EventState::Dismissed]);
 
     Livewire::actingAs($user)
         ->test(ListPendingSync::class)
-        ->callTableBulkAction('pushToSource', [$azdoEvent, $asocEvent]);
+        ->callTableBulkAction('pushToSource', [$pushed])
+        ->assertNotified('fake: 1 pushed')
+        ->callTableBulkAction('pushToSource', [$unknown])
+        ->assertNotified('gone: nothing pushed');
 
-    Bus::assertDispatched(PushEventStatesJob::class, fn (PushEventStatesJob $job): bool => $job->eventIds === [$azdoEvent->id]);
-    Bus::assertDispatched(PushEventStatesJob::class, fn (PushEventStatesJob $job): bool => $job->eventIds === [$asocEvent->id]);
+    expect($source->pushCalls)->toBe(1)
+        ->and($pushed->fresh()?->is_dirty)->toBeFalse()
+        ->and($unknown->fresh()?->is_dirty)->toBeTrue();
+
+    Queue::assertNothingPushed();
+});
+
+it('refuses a push when the user has no credential of their own for the source', function () {
+    $source = new FakeSource;
+    app()->bind('appsec-scout.source.fake', fn () => $source);
+    app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    app()->forgetInstance(SourceRegistry::class);
+    app(Vault::class)->set('fake.apiKey', null, 'system-key');
+
+    $event = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
+
+    Livewire::actingAs(pendingSyncUser())
+        ->test(ListPendingSync::class)
+        ->callTableBulkAction('pushToSource', [$event])
+        ->assertNotified('fake: nothing pushed');
+
+    expect($source->pushCalls)->toBe(0)
+        ->and($event->fresh()?->is_dirty)->toBeTrue();
 });

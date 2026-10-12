@@ -14,7 +14,7 @@ use App\Sources\ValueObjects\SourceCapabilities;
  * Decides whether a dirty `SecurityEvent`'s staged changes are actually awaiting a push for its
  * Source, and resolves the ones that aren't: a severity-only change the Source can't accept, or a
  * standalone comment (no Source can ever push a comment independent of a state/severity change —
- * see `SourceCapabilities`). Shared by `PushEventStatesJob` (resolves as part of a live push run)
+ * see `SourceCapabilities`). Shared by `PendingStatePusher` (resolves as part of a live push run)
  * and `events:recompute-pending-sync` (a one-off backfill for events dirtied before this class
  * existed).
  */
