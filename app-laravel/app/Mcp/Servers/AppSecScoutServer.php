@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\Code\GetCodeTool;
 use App\Mcp\Tools\Code\SearchCodeTool;
 use App\Mcp\Tools\Collection\CollectRepositoriesTool;
 use App\Mcp\Tools\Collection\FetchAlertsTool;
@@ -78,6 +79,7 @@ final class AppSecScoutServer extends Server
         GetSbomTool::class,
         GetTriageSummaryTool::class,
         SearchCodeTool::class,
+        GetCodeTool::class,
         ChangeAlertStateTool::class,
         ChangeAlertSeverityTool::class,
         CommentAlertTool::class,

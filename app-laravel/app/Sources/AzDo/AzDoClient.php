@@ -205,6 +205,42 @@ final class AzDoClient
     }
 
     /**
+     * The text content of one file of a Git repository, at a branch or else the repository's
+     * default branch.
+     *
+     * @throws \InvalidArgumentException when the file (or branch) does not exist
+     */
+    public function getFileContent(string $projectId, string $repositoryId, string $path, ?string $branch = null): string
+    {
+        $query = ['path' => $path, 'includeContent' => 'true', '$format' => 'json', 'api-version' => '7.0'];
+
+        if ($branch !== null) {
+            $query['versionDescriptor.version'] = $branch;
+            $query['versionDescriptor.versionType'] = 'branch';
+        }
+
+        try {
+            $response = $this->http->get("{$projectId}/_apis/git/repositories/{$repositoryId}/items", ['query' => $query]);
+        } catch (ClientException $e) {
+            if ($e->getResponse()->getStatusCode() === 404) {
+                throw new \InvalidArgumentException(sprintf('File %s not found in the repository%s.', $path, $branch !== null ? " at branch {$branch}" : ''), 0, $e);
+            }
+
+            throw $e;
+        }
+
+        /** @var array<string, mixed> $data */
+        $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        $content = $data['content'] ?? null;
+
+        if (! is_string($content)) {
+            throw new \InvalidArgumentException("{$path} has no text content (a folder or a binary file).");
+        }
+
+        return $content;
+    }
+
+    /**
      * @param  array<string, mixed>  $update
      */
     public function updateAlert(string $projectName, string $repoId, int $alertId, array $update): void
