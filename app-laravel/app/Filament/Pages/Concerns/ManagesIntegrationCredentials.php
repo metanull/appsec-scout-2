@@ -171,6 +171,29 @@ trait ManagesIntegrationCredentials
             ->send();
     }
 
+    public function deleteIntegration(string $integrationId): void
+    {
+        $integration = $this->integrationById($integrationId);
+        $ownerId = $this->credentialOwnerId();
+        $deleted = 0;
+
+        foreach ($integration['credential_fields'] as $field) {
+            if (app(Vault::class)->forget($field->key, $ownerId)) {
+                $deleted++;
+            }
+        }
+
+        unset($this->testResults[$integrationId]);
+        $this->resetErrorBag();
+        $this->loadCredentialState();
+        $this->syncCredentialFormState();
+
+        Notification::make()
+            ->title($deleted > 0 ? "Deleted {$integration['display_name']} credentials" : 'No stored credentials to delete')
+            ->color($deleted > 0 ? 'success' : 'info')
+            ->send();
+    }
+
     public function testAllConfiguredIntegrations(): void
     {
         $ownerId = $this->credentialOwnerId();
@@ -225,6 +248,15 @@ trait ManagesIntegrationCredentials
                         ->icon('heroicon-o-signal')
                         ->color('gray')
                         ->action(fn () => $this->testIntegration($integrationId)),
+                    Action::make("delete_{$actionKey}")
+                        ->label('Delete')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading("Delete {$integration['display_name']} credentials")
+                        ->modalDescription('All stored values for this integration are removed. Anything relying on them stops working until new credentials are saved.')
+                        ->visible(fn (): bool => $this->hasAnyStoredCredential($integration['credential_fields']))
+                        ->action(fn () => $this->deleteIntegration($integrationId)),
                 ])
                 ->schema([
                     Grid::make(2)->schema($sectionComponents),
@@ -300,6 +332,18 @@ trait ManagesIntegrationCredentials
         }
 
         return $result['ok'] ? 'Connected' : 'Connection failed';
+    }
+
+    /** @param  list<CredentialField>  $credentialFields */
+    private function hasAnyStoredCredential(array $credentialFields): bool
+    {
+        foreach ($credentialFields as $field) {
+            if ($this->hasStored[$field->stateKey()] ?? false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function integrationHasDecryptFailure(string $integrationId): bool

@@ -72,6 +72,37 @@ it('writes audit row on set with value redacted', function () {
         ->and($payload)->not()->toContain('secret');
 });
 
+it('forgets only the credential in the given owner scope and audits the deletion', function () {
+    $user = User::factory()->create();
+    vault()->set('azdo.pat', null, 'system-token');
+    vault()->set('azdo.pat', $user->id, 'user-token');
+
+    expect(vault()->forget('azdo.pat', null))->toBeTrue();
+
+    expect(Credential::query()->where('integration_key', 'azdo.pat')->whereNull('owner_user_id')->exists())->toBeFalse()
+        ->and(vault()->get('azdo.pat', $user->id))->toBe('user-token');
+
+    $log = AuditLog::where('action', 'credential_change')->latest('id')->first();
+    expect($log?->subject_id)->toBe('azdo.pat')
+        ->and($log?->payload_json)->toMatchArray(['actor' => 'system', 'outcome' => 'deleted']);
+});
+
+it('forgets an undecryptable credential', function () {
+    DB::table('credentials')->insert([
+        'integration_key' => 'azdo.pat',
+        'owner_user_id' => null,
+        'value' => 'invalid-payload',
+    ]);
+
+    expect(vault()->forget('azdo.pat', null))->toBeTrue()
+        ->and(vault()->get('azdo.pat', null))->toBeNull();
+});
+
+it('does not audit forgetting a credential that is not stored', function () {
+    expect(vault()->forget('missing.key', null))->toBeFalse()
+        ->and(AuditLog::where('action', 'credential_change')->exists())->toBeFalse();
+});
+
 it('updates existing credential on re-set', function () {
     $vault = vault();
 
