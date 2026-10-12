@@ -61,6 +61,27 @@ class Vault
         $this->recorder->recordCredentialChange($key, $actor, 'set');
     }
 
+    /**
+     * Remove the stored credential for exactly this owner scope. Returns whether a row was
+     * deleted; only an actual removal is audited.
+     */
+    public function forget(string $key, ?int $userId): bool
+    {
+        $deleted = Credential::query()
+            ->where('integration_key', $key)
+            ->when($userId === null, fn ($query) => $query->whereNull('owner_user_id'), fn ($query) => $query->where('owner_user_id', $userId))
+            ->delete();
+
+        if ($deleted === 0) {
+            return false;
+        }
+
+        $actor = $userId !== null ? "user:{$userId}" : 'system';
+        $this->recorder->recordCredentialChange($key, $actor, 'deleted');
+
+        return true;
+    }
+
     public function test(string $key, ?int $userId, callable $probe): TestResult
     {
         $credential = $this->resolveCredential($key, $userId);

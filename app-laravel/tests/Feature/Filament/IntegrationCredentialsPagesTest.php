@@ -283,6 +283,71 @@ it('rejects saving over an undecryptable secret without activating Replace', fun
         ->assertHasErrors(['values.fake_tracker_token']);
 });
 
+it('deletes stored system credentials for one integration and leaves the others', function () {
+    bindFakeCredentialIntegrations();
+
+    $admin = enrolledUser();
+    $admin->syncRoles(['Admin']);
+
+    app(Vault::class)->set('fake-tracker.token', null, 'system-token');
+    app(Vault::class)->set('fake.apiKey', null, 'source-key');
+    app(Vault::class)->set('fake-tracker.token', $admin->id, 'personal-token');
+
+    Livewire::actingAs($admin)
+        ->test(SystemCredentialsPage::class)
+        ->assertSet('hasStored.fake_tracker_token', true)
+        ->call('deleteIntegration', 'fake-tracker')
+        ->assertHasNoErrors()
+        ->assertSet('hasStored.fake_tracker_token', false)
+        ->assertSet('hasStored.fake_apiKey', true);
+
+    expect(Credential::query()->where('integration_key', 'fake-tracker.token')->whereNull('owner_user_id')->exists())->toBeFalse()
+        ->and(Credential::query()->where('integration_key', 'fake.apiKey')->whereNull('owner_user_id')->exists())->toBeTrue()
+        ->and(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $admin->id)->exists())->toBeTrue();
+});
+
+it('deletes only the acting user personal credentials from the profile page', function () {
+    bindFakeCredentialIntegrations();
+
+    $user = enrolledUser();
+    $other = enrolledUser();
+
+    app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
+    app(Vault::class)->set('fake-tracker.token', $other->id, 'other-token');
+    app(Vault::class)->set('fake-tracker.token', null, 'system-token');
+
+    Livewire::actingAs($user)
+        ->test(ProfileIntegrationsPage::class)
+        ->call('deleteIntegration', 'fake-tracker')
+        ->assertHasNoErrors();
+
+    expect(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $user->id)->exists())->toBeFalse()
+        ->and(Credential::query()->where('integration_key', 'fake-tracker.token')->where('owner_user_id', $other->id)->exists())->toBeTrue()
+        ->and(Credential::query()->where('integration_key', 'fake-tracker.token')->whereNull('owner_user_id')->exists())->toBeTrue();
+});
+
+it('deletes an undecryptable system credential', function () {
+    bindFakeCredentialIntegrations();
+
+    $admin = enrolledUser();
+    $admin->syncRoles(['Admin']);
+
+    DB::table('credentials')->insert([
+        'integration_key' => 'fake-tracker.token',
+        'owner_user_id' => null,
+        'value' => 'invalid-payload',
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(SystemCredentialsPage::class)
+        ->call('deleteIntegration', 'fake-tracker')
+        ->assertHasNoErrors()
+        ->assertSet('hasStored.fake_tracker_token', false)
+        ->assertSet('decryptFailed.fake_tracker_token', false);
+
+    expect(Credential::query()->where('integration_key', 'fake-tracker.token')->exists())->toBeFalse();
+});
+
 function bindFakeCredentialIntegrations(): void
 {
     app()->bind('appsec-scout.source.fake', fn () => new FakeSource);

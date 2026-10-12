@@ -272,7 +272,7 @@ Shared tabs on Assets, Systems and Containers:
 
 | Page | Actions and their effect |
 | --- | --- |
-| **System Credentials** | One section per integration: AzDO Advanced Security, ASoC, Detectify, GitHub Issues, Jira Cloud, AzDO Repos, GitHub Repos, Bitbucket, Dependency-Track. Stored secrets are masked; use **Replace** to change one. **Test** saves and tests one integration; **Test all configured** tests everything already saved; **Save all changes** saves the page. These credentials are used by every Operations action. |
+| **System Credentials** | One section per integration: AzDO Advanced Security, ASoC, Detectify, GitHub Issues, Jira Cloud, AzDO Repos, GitHub Repos, Bitbucket, Dependency-Track. Stored secrets are masked; use **Replace** to change one. **Test** saves and tests one integration; **Test all configured** tests everything already saved; **Save all changes** saves the page; **Delete** (shown once something is stored, asks for confirmation) removes every stored value of that one integration, e.g. to disable it. These credentials are used by every Operations action. |
 | **Profile integrations** | The same form (minus Dependency-Track) for **your own** credentials, used by the actions you run yourself. |
 | **Users** | **New**; row menu **Edit** (name, email, roles, disabled), **Reset 2FA** (forces re-enrolment), **Send password reset** (email), **Disable user** (also ends their sessions) / **Enable user**. |
 | **Repository Providers** | **New** / **Edit** / **Delete** for repository hosts (Azure Repos, GitHub, Bitbucket) that repository mappings point to. Deleting a provider also deletes its mappings. |
@@ -401,7 +401,7 @@ Run each one as `docker compose exec app php artisan <command>` (or
 | A button was clicked but nothing new appears | *Queues* (still waiting?), then *Sync Runs* / *Collection Runs* / *Analysis Runs* (status, error), then *Failed Jobs* and *Errors* |
 | "Personal tracker credentials required" | Add your tracker token under *Profile integrations* and use **Test** |
 | Fetch or sync fails right away | The system credential is missing or wrong: *Admin → System Credentials → Test* |
-| "Stored credentials cannot be decrypted (was APP_KEY changed?)" | **Replace** the value and save it again |
+| "Stored credentials cannot be decrypted (was APP_KEY changed?)" | **Replace** the value and save it again, or **Delete** the integration's credentials |
 | A run is stuck in "running" and blocks a new sweep | **Force-finish** it on *Collection Runs* / *Analysis Runs* |
 | Alerts land with no System/Container | Run **Sync inventory**, then **Fetch source** again |
 | Dependency-Track login fails | `vault:get dependencytrack.adminPassword`; if the key is missing, check `docker compose logs dependencytrack-bootstrap` |
