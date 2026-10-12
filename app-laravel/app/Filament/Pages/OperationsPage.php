@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Audit\Recorder;
+use App\Filament\Support\OperationsAuthorization;
 use App\Filament\Widgets\OperationsHealthStatsWidget;
 use App\Filament\Widgets\RecentErrorsTableWidget;
 use App\Filament\Widgets\RecentFailedJobsTableWidget;
@@ -32,7 +33,6 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -99,7 +99,7 @@ class OperationsPage extends Page
             Action::make('fetchSource')
                 ->label('Fetch source')
                 ->icon('heroicon-o-arrow-down-tray')
-                ->visible(fn (): bool => self::canOperateQueueOrSync())
+                ->visible(fn (): bool => OperationsAuthorization::canQueueOrSync())
                 ->form([
                     Select::make('source_id')
                         ->label('Source')
@@ -111,7 +111,7 @@ class OperationsPage extends Page
             Action::make('refreshTracker')
                 ->label('Refresh tracker')
                 ->icon('heroicon-o-arrow-path')
-                ->visible(fn (): bool => self::canOperateQueueOrSync())
+                ->visible(fn (): bool => OperationsAuthorization::canQueueOrSync())
                 ->form([
                     Select::make('tracker_id')
                         ->label('Tracker')
@@ -123,7 +123,7 @@ class OperationsPage extends Page
             Action::make('reconcileWorkItems')
                 ->label('Reconcile all tracker links')
                 ->icon('heroicon-o-arrows-pointing-in')
-                ->visible(fn (): bool => self::canOperateQueueOrSync())
+                ->visible(fn (): bool => OperationsAuthorization::canQueueOrSync())
                 ->requiresConfirmation()
                 ->modalDescription('Queue a global reconciliation run to discover and link existing tracker work items.')
                 ->action(fn () => $this->dispatchReconcileAll()),
@@ -161,19 +161,19 @@ class OperationsPage extends Page
             ActionGroup::make([
                 Action::make('pruneAuditLogs')
                     ->label('Prune audit logs')
-                    ->visible(fn (): bool => self::canOperateQueueOrSync())
+                    ->visible(fn (): bool => OperationsAuthorization::canQueueOrSync())
                     ->requiresConfirmation()
                     ->action(fn () => $this->pruneAuditLogsNow()),
 
                 Action::make('pruneErrorLogs')
                     ->label('Prune error logs')
-                    ->visible(fn (): bool => self::canOperateQueueOrSync())
+                    ->visible(fn (): bool => OperationsAuthorization::canQueueOrSync())
                     ->requiresConfirmation()
                     ->action(fn () => $this->pruneErrorLogsNow()),
 
                 Action::make('pruneFailedJobs')
                     ->label('Prune failed jobs')
-                    ->visible(fn (): bool => self::canOperateQueueOrSync())
+                    ->visible(fn (): bool => OperationsAuthorization::canQueueOrSync())
                     ->requiresConfirmation()
                     ->action(fn () => $this->pruneFailedJobsNow()),
             ])->label('Maintenance'),
@@ -206,7 +206,7 @@ class OperationsPage extends Page
 
     public function dispatchSelectedSource(string $sourceId): void
     {
-        self::authorizeQueueOrSync();
+        OperationsAuthorization::authorizeQueueOrSync();
 
         if ($sourceId === '') {
             Notification::make()->title('Select a source first')->warning()->send();
@@ -222,7 +222,7 @@ class OperationsPage extends Page
 
     public function dispatchSelectedTracker(string $trackerId): void
     {
-        self::authorizeQueueOrSync();
+        OperationsAuthorization::authorizeQueueOrSync();
 
         if ($trackerId === '') {
             Notification::make()->title('Select a tracker first')->warning()->send();
@@ -238,7 +238,7 @@ class OperationsPage extends Page
 
     public function dispatchReconcileAll(): void
     {
-        self::authorizeQueueOrSync();
+        OperationsAuthorization::authorizeQueueOrSync();
 
         if ($this->isReconcileAllQueued()) {
             Notification::make()->title('Reconciliation is already queued or running.')->info()->send();
@@ -316,7 +316,7 @@ class OperationsPage extends Page
 
     public function pruneAuditLogsNow(): void
     {
-        self::authorizeQueueOrSync();
+        OperationsAuthorization::authorizeQueueOrSync();
 
         $retainDays = (int) config('audit.retain_days', 365);
         $deleted = (new PruneAuditLogs($retainDays))->handle();
@@ -331,7 +331,7 @@ class OperationsPage extends Page
 
     public function pruneErrorLogsNow(): void
     {
-        self::authorizeQueueOrSync();
+        OperationsAuthorization::authorizeQueueOrSync();
 
         $retainDays = (int) config('logging.error_retain_days', 90);
         $deleted = (new PruneErrorLogs($retainDays))->handle();
@@ -346,7 +346,7 @@ class OperationsPage extends Page
 
     public function pruneFailedJobsNow(): void
     {
-        self::authorizeQueueOrSync();
+        OperationsAuthorization::authorizeQueueOrSync();
 
         $retainDays = (int) config('queue.failed.retain_days', 90);
         $deleted = (new PruneFailedJobs($retainDays))->handle();
@@ -357,23 +357,5 @@ class OperationsPage extends Page
         ]);
 
         Notification::make()->title("{$deleted} failed job(s) deleted")->success()->send();
-    }
-
-    /**
-     * Every action on this page that's meant for either audience — Admin
-     * operators (admin.queue) or Sync operators (work-items.sync) — shares
-     * this one check, so the gate can't silently drift out of sync between
-     * a button's ->visible() and its handler's own authorization.
-     */
-    private static function canOperateQueueOrSync(): bool
-    {
-        return Gate::any(['admin.queue', 'work-items.sync']);
-    }
-
-    private static function authorizeQueueOrSync(): void
-    {
-        if (! self::canOperateQueueOrSync()) {
-            throw new AuthorizationException('This action requires the admin.queue or work-items.sync permission.');
-        }
     }
 }
