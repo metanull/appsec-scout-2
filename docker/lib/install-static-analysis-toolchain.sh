@@ -21,7 +21,9 @@ set -eu
 : "${SPOTBUGS_SHA256:=53c03a77da9746ed0c17aae6c0a9419a12ddeb8bf61dd7209a2e417550afd01d}"
 : "${FINDSECBUGS_VERSION:=1.14.0}"
 : "${MAVEN_VERSION:=3.9.16}"
-: "${GRADLE_VERSION:=9.7.0}"
+# 9.8.1 bundles Jackson 2.22.3 and BouncyCastle 1.85 and drops jsoup, clearing the
+# fixable HIGH/CRITICAL CVEs the image-publish Trivy gate found in 9.7.0's lib/.
+: "${GRADLE_VERSION:=9.8.1}"
 # Opengrep (https://github.com/opengrep/opengrep) — LGPL-2.1 community fork of Semgrep, a
 # single self-contained static binary, no Python runtime, native SARIF output. Analyzes
 # C#/Java/JavaScript/TypeScript source directly, no build required.
