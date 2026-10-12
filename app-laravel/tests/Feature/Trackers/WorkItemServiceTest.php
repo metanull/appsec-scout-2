@@ -24,7 +24,7 @@ it('creates a single work item and links one event', function () {
         'url' => 'https://example.test/alerts/secret-101',
     ]);
 
-    app(WorkItemService::class)->createForEvents(
+    $created = app(WorkItemService::class)->createForEvents(
         eventIds: [$event->id],
         userId: $user->id,
         trackerId: 'fake-tracker',
@@ -36,7 +36,10 @@ it('creates a single work item and links one event', function () {
 
     $link = WorkItemLink::query()->first();
 
-    expect($tracker->createCalls)->toBe(1)
+    expect($created)->toBeInstanceOf(WorkItemDto::class)
+        ->and($created->id)->toBe($link?->work_item_id)
+        ->and($created->url)->toBe($link?->work_item_url)
+        ->and($tracker->createCalls)->toBe(1)
         ->and($tracker->latestCreateWorkItemRequest)->not->toBeNull()
         ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('[View alert](https://example.test/alerts/secret-101)')
         ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('This is a cross-site scripting vulnerability.')
