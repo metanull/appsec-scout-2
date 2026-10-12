@@ -23,6 +23,7 @@ AppSec Scout is built to work seamlessly in environments with strict security an
 
 Operator documentation:
 
+- [docs/user-guide.md](docs/user-guide.md) — start here: using the UI to collect, triage and report
 - [docs/install.md](docs/install.md)
 - [docs/operations.md](docs/operations.md)
 - [docs/admin.md](docs/admin.md)
