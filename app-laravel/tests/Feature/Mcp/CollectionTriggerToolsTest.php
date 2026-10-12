@@ -55,6 +55,18 @@ it('fetches the system of a container', function () {
     Queue::assertPushed(FetchSystemJob::class, fn (FetchSystemJob $job): bool => $job->softwareSystemId === $system->id);
 });
 
+it('fetches a re-linked container from the system its source reports it under', function () {
+    $source = SoftwareSystem::factory()->create();
+    $linkedTo = SoftwareSystem::factory()->create();
+    $container = SecurityContainer::factory()->relinked($source, $linkedTo)->create();
+
+    AppSecScoutServer::actingAs(mcpUser('Sync'))->tool(FetchAlertsTool::class, ['container_id' => $container->id])
+        ->assertOk();
+
+    Queue::assertPushed(FetchSystemJob::class, 1);
+    Queue::assertPushed(FetchSystemJob::class, fn (FetchSystemJob $job): bool => $job->softwareSystemId === $source->id);
+});
+
 it('collects the first AzDO system of a scope and reports the rest', function () {
     $asset = SoftwareAsset::factory()->create();
     $first = SoftwareSystem::factory()->azdo()->create(['software_asset_id' => $asset->id, 'name' => 'Alpha']);

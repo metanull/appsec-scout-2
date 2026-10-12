@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
-    'software_system_id', 'source_container_id', 'name', 'kind',
+    'software_system_id', 'source_software_system_id', 'system_overridden_at', 'source_container_id', 'name', 'kind',
     'url', 'metadata', 'first_seen_at', 'last_seen_at', 'synced_at', 'removed_at',
 ])]
 class SecurityContainer extends Model
@@ -22,6 +22,12 @@ class SecurityContainer extends Model
 
     protected static function booted(): void
     {
+        // A container is first linked to the system its source reports; that system stays its
+        // sync identity (source_software_system_id) even after an operator re-links it.
+        static::creating(function (SecurityContainer $container): void {
+            $container->source_software_system_id ??= $container->software_system_id;
+        });
+
         static::deleting(function (SecurityContainer $container): void {
             $container->trackerProjectLinks()->delete();
             $container->repositoryMappings()->delete();
@@ -42,13 +48,26 @@ class SecurityContainer extends Model
             'last_seen_at' => 'datetime',
             'synced_at' => 'datetime',
             'removed_at' => 'datetime',
+            'system_overridden_at' => 'datetime',
         ];
     }
 
-    /** @return BelongsTo<SoftwareSystem, $this> */
+    /** @return BelongsTo<SoftwareSystem, $this> the system the container is linked to */
     public function softwareSystem(): BelongsTo
     {
         return $this->belongsTo(SoftwareSystem::class);
+    }
+
+    /** @return BelongsTo<SoftwareSystem, $this> the system the container's source reports it under */
+    public function sourceSoftwareSystem(): BelongsTo
+    {
+        return $this->belongsTo(SoftwareSystem::class, 'source_software_system_id');
+    }
+
+    /** True when an operator re-linked the container to a system other than its source's. */
+    public function isSystemOverridden(): bool
+    {
+        return $this->getAttribute('system_overridden_at') !== null;
     }
 
     /** @return HasMany<SecurityEvent, $this> */

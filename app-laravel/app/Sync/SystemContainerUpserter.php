@@ -9,9 +9,11 @@ use App\Sources\Dto\SystemDto;
 
 /**
  * Upserts SoftwareSystem/SecurityContainer rows on the natural keys the whole
- * app relies on (source_id + source_system_id, software_system_id +
+ * app relies on (source_id + source_system_id, source_software_system_id +
  * source_container_id) so any caller — the scheduled FetchSourceJob or an
- * on-demand inventory sync — converges on the same rows.
+ * on-demand inventory sync — converges on the same rows. Containers are keyed
+ * on the system their source reports, not the one they are linked to, so a
+ * container an operator re-linked is still found and keeps its link.
  */
 final class SystemContainerUpserter
 {
@@ -43,11 +45,16 @@ final class SystemContainerUpserter
     public function upsertContainer(SoftwareSystem $system, ContainerDto $dto): array
     {
         $container = SecurityContainer::query()->firstOrNew([
-            'software_system_id' => $system->id,
+            'source_software_system_id' => $system->id,
             'source_container_id' => $dto->sourceContainerId,
         ]);
 
         $wasCreated = ! $container->exists;
+
+        // A container an operator re-linked to another system keeps that link.
+        if (! $container->isSystemOverridden()) {
+            $container->setAttribute('software_system_id', $system->id);
+        }
 
         $container->fill([
             'name' => $dto->name,

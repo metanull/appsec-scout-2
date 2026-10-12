@@ -2,11 +2,15 @@
 
 namespace App\Sync;
 
+use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Sources\Dto\EventDto;
 
 final class Upserter
 {
+    /** @var array<int, int|null> container id => the system it is currently linked to */
+    private array $containerSystemIds = [];
+
     /**
      * @param  array<string, int>  $systemIdMap
      * @param  array<string, int>  $containerIdMap
@@ -23,6 +27,13 @@ final class Upserter
         if ($dto->sourceContainerId !== null && $dto->sourceContainerId !== '') {
             $containerId = $containerIdMap[$dto->sourceSystemId . ':' . $dto->sourceContainerId] ?? null;
             $containerId ??= $containerIdMap[$dto->sourceContainerId] ?? null;
+        }
+
+        // An alert follows its container: when an operator re-linked the container to another
+        // system, the alert is triaged under that system (upstream calls still use the
+        // source-reported one, see SecurityEvent::upstreamSoftwareSystem()).
+        if ($containerId !== null) {
+            $softwareSystemId = $this->containerSystemId($containerId) ?? $softwareSystemId;
         }
 
         $existing = SecurityEvent::query()->where([
@@ -86,5 +97,15 @@ final class Upserter
         $existing->update($payload);
 
         return $existing;
+    }
+
+    private function containerSystemId(int $containerId): ?int
+    {
+        if (! array_key_exists($containerId, $this->containerSystemIds)) {
+            $systemId = SecurityContainer::query()->whereKey($containerId)->value('software_system_id');
+            $this->containerSystemIds[$containerId] = is_numeric($systemId) ? (int) $systemId : null;
+        }
+
+        return $this->containerSystemIds[$containerId];
     }
 }

@@ -40,12 +40,14 @@ final class StaleRecordSweeper
     {
         $systemIds = SoftwareSystem::query()->where('source_id', $sourceId)->pluck('id');
 
-        SecurityContainer::query()->whereIn('software_system_id', $systemIds)
+        // By the system the source reports: a container re-linked elsewhere is still this
+        // source's to sweep or restore.
+        SecurityContainer::query()->whereIn('source_software_system_id', $systemIds)
             ->whereNotIn('id', $touchedIds)->whereNull('removed_at')
             ->update(['removed_at' => now()]);
 
         if ($touchedIds !== []) {
-            SecurityContainer::query()->whereIn('software_system_id', $systemIds)
+            SecurityContainer::query()->whereIn('source_software_system_id', $systemIds)
                 ->whereIn('id', $touchedIds)->whereNotNull('removed_at')
                 ->update(['removed_at' => null]);
         }

@@ -308,7 +308,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
     private function findExistingContainer(): ?SecurityContainer
     {
         return SecurityContainer::query()
-            ->whereHas('softwareSystem', function (Builder $query): void {
+            ->whereHas('sourceSoftwareSystem', function (Builder $query): void {
                 /** @var Builder<SoftwareSystem> $query */
                 $query->where('source_id', AzDoNormalizer::SOURCE_ID)
                     ->where('source_system_id', $this->target->projectId);

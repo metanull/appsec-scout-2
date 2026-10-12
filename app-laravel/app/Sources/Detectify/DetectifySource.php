@@ -110,7 +110,7 @@ final class DetectifySource implements Source
     {
         try {
             $metadata = self::metadataArray($event);
-            $domainToken = $metadata['domainToken'] ?? $event->softwareSystem?->source_system_id;
+            $domainToken = $metadata['domainToken'] ?? $event->upstreamSoftwareSystem()?->source_system_id;
 
             if (! is_string($domainToken) || $domainToken === '') {
                 return PushResult::failure('Missing domain token');

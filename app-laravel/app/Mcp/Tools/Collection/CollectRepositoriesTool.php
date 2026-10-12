@@ -39,7 +39,7 @@ final class CollectRepositoriesTool extends AppSecTool
 
     protected function run(Request $request, User $actor): ResponseFactory
     {
-        $targets = RepositoryRunTargets::from(Scope::fromRequest($request)->systems(), self::OPERATION);
+        $targets = RepositoryRunTargets::from(Scope::fromRequest($request)->upstreamSystems(), self::OPERATION);
 
         if (RepositoryCollectionRun::query()->where('status', 'running')->exists()) {
             throw new InvalidArgumentException('A repository collection run is already in progress; nothing was queued. Try again once it finishes.');

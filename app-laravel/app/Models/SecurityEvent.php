@@ -75,6 +75,23 @@ class SecurityEvent extends Model
         return $this->belongsTo(SecurityContainer::class, 'container_id');
     }
 
+    /**
+     * The system the source reports this alert under — what writeback and re-fetch must address
+     * upstream. It differs from softwareSystem when an operator re-linked the alert's container
+     * to another system: the alert is triaged there, but the source still knows it by the
+     * original one.
+     */
+    public function upstreamSoftwareSystem(): ?SoftwareSystem
+    {
+        $container = $this->container;
+
+        if ($container instanceof SecurityContainer && $container->isSystemOverridden()) {
+            return $container->sourceSoftwareSystem;
+        }
+
+        return $this->softwareSystem;
+    }
+
     /** @return HasMany<EventComment, $this> */
     public function comments(): HasMany
     {

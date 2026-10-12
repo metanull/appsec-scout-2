@@ -10,7 +10,7 @@ use InvalidArgumentException;
  * Resolves the SoftwareSystem/SecurityContainer row that an out-of-band file
  * import (SBOM, dependency report, HTTP headers, pipeline run, ...) should
  * attach to, using the same natural keys FetchSourceJob upserts on
- * (source_id + source_system_id, software_system_id + source_container_id)
+ * (source_id + source_system_id, source_software_system_id + source_container_id)
  * so the row converges with whatever a live source sync creates or already created.
  *
  * The optional url/description/metadata arguments are applied only when this
@@ -74,8 +74,10 @@ final class AttachmentTargetResolver
         ?string $url = null,
         array $metadata = [],
     ): SecurityContainer {
+        // Keyed on the system the source reports (see SystemContainerUpserter), so scan results
+        // land on a re-linked container instead of creating a duplicate under its old system.
         $container = SecurityContainer::query()->firstOrNew([
-            'software_system_id' => $system->id,
+            'source_software_system_id' => $system->id,
             'source_container_id' => $sourceContainerId,
         ]);
 
@@ -84,7 +86,7 @@ final class AttachmentTargetResolver
 
             if ($name === '') {
                 throw new InvalidArgumentException(
-                    "No security container found for '{$sourceContainerId}' under software system #{$system->id}. Provide --container-name to create it.",
+                    "No security container found for '{$sourceContainerId}' under source software system #{$system->id}. Provide --container-name to create it.",
                 );
             }
 
