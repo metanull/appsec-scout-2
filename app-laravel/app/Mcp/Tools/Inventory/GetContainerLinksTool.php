@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Inventory;
 
+use App\Mcp\Support\ContainerLinkResult;
 use App\Mcp\Support\Format;
 use App\Mcp\Tools\AppSecTool;
 use App\Models\RepositoryMapping;
@@ -49,6 +50,7 @@ final class GetContainerLinksTool extends AppSecTool
 
         $container = SecurityContainer::query()
             ->with([
+                'sourceSoftwareSystem:id,name',
                 ...self::LINK_RELATIONS,
                 ...array_map(fn (string $relation): string => 'softwareSystem.' . $relation, self::LINK_RELATIONS),
             ])
@@ -66,6 +68,7 @@ final class GetContainerLinksTool extends AppSecTool
                 'id' => $container->id,
                 'name' => $container->name,
                 'kind' => $container->kind,
+                ...ContainerLinkResult::linkKeys($container),
                 'url' => $container->url,
                 'clone_url' => SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL),
                 'default_branch' => SourceContextFacts::getString($metadata, SourceContextFacts::CODE_DEFAULT_BRANCH),

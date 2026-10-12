@@ -44,12 +44,12 @@ it('links and unlinks a software system with an audit trail', function () {
 
     $service = app(SoftwareAssetService::class);
 
-    $linked = $service->attach($asset, $system, $author);
+    $linked = $service->attach($asset, $system, $author)->system;
 
     expect($linked->software_asset_id)->toBe($asset->id)
         ->and(AuditLog::query()->where('action', 'software_system_linked_to_asset')->exists())->toBeTrue();
 
-    $unlinked = $service->detach($linked, $author);
+    $unlinked = $service->detach($linked, $author)->system;
 
     expect($unlinked->software_asset_id)->toBeNull()
         ->and(AuditLog::query()->where('action', 'software_system_unlinked_from_asset')->exists())->toBeTrue();

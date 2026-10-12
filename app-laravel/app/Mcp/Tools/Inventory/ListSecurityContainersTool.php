@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Inventory;
 
+use App\Mcp\Support\ContainerLinkResult;
 use App\Mcp\Support\Format;
 use App\Mcp\Support\Pagination;
 use App\Mcp\Support\Search;
@@ -19,7 +20,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Name('list-security-containers')]
 #[Title('List security containers')]
-#[Description('Lists security containers (e.g. repositories, scans) with the software system they belong to. Filter by system, or by asset to list the containers of all its systems. Containers removed upstream are hidden unless include_removed is true. Use get-container-links for a container\'s repository and deployment URLs. Requires alerts.view.')]
+#[Description('Lists security containers (e.g. repositories, scans) with the software system they belong to; manual_link marks a container an operator moved away from its source_system. Filter by system, or by asset to list the containers of all its systems. Containers removed upstream are hidden unless include_removed is true. Use get-container-links for a container\'s repository and deployment URLs. Requires alerts.view.')]
 #[IsReadOnly]
 final class ListSecurityContainersTool extends AppSecTool
 {
@@ -54,7 +55,7 @@ final class ListSecurityContainersTool extends AppSecTool
         $like = Search::like($validated['search'] ?? null);
 
         $query = SecurityContainer::query()
-            ->with('softwareSystem:id,name,source_id')
+            ->with(['softwareSystem:id,name,source_id', 'sourceSoftwareSystem:id,name'])
             ->when(isset($validated['system_id']), fn ($query) => $query->where('software_system_id', $validated['system_id']))
             ->when(isset($validated['asset_id']), fn ($query) => $query->whereIn(
                 'software_system_id',
@@ -75,6 +76,7 @@ final class ListSecurityContainersTool extends AppSecTool
                 'name' => $container->softwareSystem->name,
                 'source_id' => $container->softwareSystem->source_id,
             ],
+            ...ContainerLinkResult::linkKeys($container),
             'url' => $container->url,
             'removed_at' => Format::date($container->getAttribute('removed_at')),
         ]);

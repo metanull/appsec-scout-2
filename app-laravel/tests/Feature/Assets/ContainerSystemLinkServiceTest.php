@@ -59,7 +59,7 @@ it('moves a container\'s alerts and re-stamps the rows it owns, leaving other co
     $siblingOwned = ownedScanRows($sibling, '0002');
     $author = User::factory()->create();
 
-    $moved = app(ContainerSystemLinkService::class)->relink($container, $target, $author);
+    $moved = app(ContainerSystemLinkService::class)->relink($container, $target, $author)->container;
 
     expect($moved->software_system_id)->toBe($target->id)
         ->and($moved->source_software_system_id)->toBe($source->id)
@@ -94,7 +94,7 @@ it('clears the manual flag when a container is reset to its source system', func
     $container = SecurityContainer::factory()->relinked($source, $target)->create();
     $event = SecurityEvent::factory()->forContainer($container)->create();
 
-    $reset = app(ContainerSystemLinkService::class)->reset($container);
+    $reset = app(ContainerSystemLinkService::class)->reset($container)->container;
 
     expect($reset->software_system_id)->toBe($source->id)
         ->and($reset->isSystemOverridden())->toBeFalse()
@@ -106,7 +106,7 @@ it('clears the manual flag when a container is moved back to its source system',
     $source = SoftwareSystem::factory()->create();
     $container = SecurityContainer::factory()->relinked($source, SoftwareSystem::factory()->create())->create();
 
-    expect(app(ContainerSystemLinkService::class)->relink($container, $source)->isSystemOverridden())->toBeFalse();
+    expect(app(ContainerSystemLinkService::class)->relink($container, $source)->container->isSystemOverridden())->toBeFalse();
 });
 
 it('refuses a move that cannot apply', function (Closure $arrange, string $message) {
