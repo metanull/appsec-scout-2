@@ -56,6 +56,34 @@ final class Scope
         );
     }
 
+    /** Fails unless exactly one of asset_id, system_id or container_id was given. */
+    public function requireSingle(): void
+    {
+        if (count(array_filter([$this->asset, $this->system, $this->container])) !== 1) {
+            throw ValidationException::withMessages([
+                'scope' => 'Provide exactly one of asset_id, system_id or container_id.',
+            ]);
+        }
+    }
+
+    /**
+     * What a single scope is, for echoing back to the client.
+     *
+     * @return array{type: string, id: int, name: string}
+     */
+    public function describe(): array
+    {
+        $this->requireSingle();
+
+        [$type, $model] = match (true) {
+            $this->asset !== null => ['asset', $this->asset],
+            $this->system !== null => ['system', $this->system],
+            default => ['container', $this->container],
+        };
+
+        return ['type' => $type, 'id' => (int) $model?->getKey(), 'name' => (string) $model?->getAttribute('name')];
+    }
+
     public function isEmpty(): bool
     {
         return $this->asset === null && $this->system === null && $this->container === null;
@@ -87,13 +115,7 @@ final class Scope
      */
     public function systems(): Collection
     {
-        $given = array_filter([$this->asset, $this->system, $this->container]);
-
-        if (count($given) !== 1) {
-            throw ValidationException::withMessages([
-                'scope' => 'Provide exactly one of asset_id, system_id or container_id.',
-            ]);
-        }
+        $this->requireSingle();
 
         $systems = match (true) {
             $this->asset !== null => $this->asset->softwareSystems()->orderBy('name')->get(),
