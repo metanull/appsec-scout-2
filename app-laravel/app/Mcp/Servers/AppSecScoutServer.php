@@ -2,6 +2,10 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Tools\Inventory\GetContainerLinksTool;
+use App\Mcp\Tools\Inventory\ListSecurityContainersTool;
+use App\Mcp\Tools\Inventory\ListSoftwareAssetsTool;
+use App\Mcp\Tools\Inventory\ListSoftwareSystemsTool;
 use App\Mcp\Tools\WhoAmITool;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
@@ -34,5 +38,9 @@ final class AppSecScoutServer extends Server
     /** @var array<int, class-string<Tool>> */
     protected array $tools = [
         WhoAmITool::class,
+        ListSoftwareAssetsTool::class,
+        ListSoftwareSystemsTool::class,
+        ListSecurityContainersTool::class,
+        GetContainerLinksTool::class,
     ];
 }
