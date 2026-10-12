@@ -7,8 +7,6 @@ use App\Assets\StaleRecordSweeper;
 use App\Events\SyncRunFinished;
 use App\Models\ErrorLog;
 use App\Models\SyncRun;
-use App\Sources\Contracts\EnrichesFetchedEvents;
-use App\Sources\Contracts\QueuesEnrichmentJobs;
 use App\Sources\Contracts\Source;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -106,7 +104,10 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
 
             $sinceCarbon = $since !== null ? Carbon::parse((string) $since) : null;
 
-            $runtime->runSource($this->sourceId, function (Source $source) use ($sinceCarbon, $upserter, $systemContainerUpserter, $azDoProjectLinker, $sweeper, &$counts): void {
+            $containers = new SourceContainerIngestor($systemContainerUpserter, $azDoProjectLinker);
+            $events = new SourceEventIngestor($upserter);
+
+            $runtime->runSource($this->sourceId, function (Source $source) use ($sinceCarbon, $systemContainerUpserter, $azDoProjectLinker, $sweeper, $containers, $events, &$counts): void {
                 $systemIdMap = [];
                 $containerIdMap = [];
 
@@ -117,14 +118,9 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                     $systemIdMap[$systemDto->sourceSystemId] = $system->id;
                     $counts[$isNew ? 'systems_created' : 'systems_updated']++;
 
-                    foreach ($source->fetchContainers($systemDto) as $containerDto) {
-                        ['container' => $container, 'wasCreated' => $containerIsNew] = $systemContainerUpserter->upsertContainer($system, $containerDto);
-                        $azDoProjectLinker->ensureRepositoryMapping($container);
-
-                        $containerIdMap[$systemDto->sourceSystemId . ':' . $containerDto->sourceContainerId] = $container->id;
-                        $containerIdMap[$containerDto->sourceContainerId] = $container->id;
-                        $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
-                    }
+                    // array_replace, not spread/array_merge: container ids can be numeric strings,
+                    // whose keys those would renumber.
+                    $containerIdMap = array_replace($containerIdMap, $containers->ingest($source, $system, $systemDto, $counts));
                 }
 
                 // The systems/containers enumeration above just completed in full without
@@ -133,21 +129,7 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
                 $sweeper->sweepSystems($this->sourceId, array_values($systemIdMap));
                 $sweeper->sweepContainers($this->sourceId, array_values(array_unique($containerIdMap)));
 
-                foreach ($source->fetchEvents($sinceCarbon) as $eventDto) {
-                    if ($source instanceof EnrichesFetchedEvents) {
-                        $eventDto = $source->enrichFetchedEvent($eventDto);
-                    }
-
-                    $event = $upserter->upsert($this->sourceId, $eventDto, $systemIdMap, $containerIdMap);
-                    $counts[$event->wasRecentlyCreated ? 'events_created' : 'events_updated']++;
-
-                    if ($source instanceof QueuesEnrichmentJobs) {
-                        $job = $source->enrichmentJobFor($this->sourceId, $event);
-                        if ($job !== null) {
-                            dispatch($job);
-                        }
-                    }
-                }
+                $events->ingest($source, $this->sourceId, $source->fetchEvents($sinceCarbon), $systemIdMap, $containerIdMap, $counts);
             });
 
             $run->update([

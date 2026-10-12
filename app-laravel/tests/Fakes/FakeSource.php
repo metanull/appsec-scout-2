@@ -40,6 +40,9 @@ class FakeSource implements Source
 
     public int $pushCalls = 0;
 
+    /** @var list<array{since: ?Carbon, system: ?SystemDto}> */
+    public array $fetchEventsCalls = [];
+
     public function id(): string
     {
         return 'fake';
@@ -93,7 +96,13 @@ class FakeSource implements Source
     /** @return iterable<EventDto> */
     public function fetchEvents(?Carbon $since = null, ?SystemDto $system = null): iterable
     {
-        return $this->events;
+        $this->fetchEventsCalls[] = ['since' => $since, 'system' => $system];
+
+        if ($system === null) {
+            return $this->events;
+        }
+
+        return array_values(array_filter($this->events, fn (EventDto $event): bool => $event->sourceSystemId === $system->sourceSystemId));
     }
 
     public function pushEventState(SecurityEvent $event): PushResult
