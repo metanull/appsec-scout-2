@@ -11,8 +11,10 @@ use App\Assets\DependencyTrack\DependencyTrackExporter;
 use App\Assets\LocalFindingFilePathRepairer;
 use App\Assets\Sbom\PendingSbomScanImporter;
 use App\Assets\Sbom\SbomScanStatusReporter;
+use App\Assets\SoftwareAssetService;
 use App\Assets\StaticAnalysis\PendingStaticAnalysisScanImporter;
 use App\Assets\StaticAnalysis\StaticAnalysisScanStatusReporter;
+use App\Audit\Recorder;
 use App\Credentials\Credential;
 use App\Credentials\Vault;
 use App\Jobs\PruneAuditLogs;
@@ -23,6 +25,7 @@ use App\Models\Attachment;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
+use App\Models\SoftwareSystem;
 use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Contracts\Source;
@@ -1031,6 +1034,30 @@ Artisan::command('local-findings:repair-file-paths {--dry-run}', function (Local
 
     return self::SUCCESS;
 })->purpose('One-off repair: rewrite local_findings.file_path from an absolute container path (file:///workspace-scratch/<uuid>/work/... or file:///tmp/tmp.XXXXXXXXXX/...) to a repository-relative one and recompute dedup_hash, merging onto an already-relative twin (moving comments and work-item links, keeping the earliest first_seen_at) when one already exists. Use --dry-run first. Safe to re-run.');
+
+Artisan::command('assets:restamp-hierarchy', function (SoftwareAssetService $service, Recorder $recorder): int {
+    $totals = ['local_findings' => 0, 'software_components' => 0];
+
+    SoftwareSystem::query()->chunkById(200, function (Collection $systems) use ($service, &$totals): void {
+        foreach ($systems as $system) {
+            foreach ($service->restampHierarchy($system) as $table => $count) {
+                $totals[$table] += $count;
+            }
+        }
+    });
+
+    if (array_sum($totals) > 0) {
+        $recorder->recordAdminAction('software_asset_hierarchy_restamped', $totals);
+    }
+
+    $this->info(sprintf(
+        'Re-stamped software_asset_id on %d local finding(s) and %d software component(s).',
+        $totals['local_findings'],
+        $totals['software_components'],
+    ));
+
+    return self::SUCCESS;
+})->purpose('One-off repair: re-point the denormalized software_asset_id of every local finding and software component at its system\'s current asset, fixing rows left stale by systems linked, moved or unlinked before re-stamping existed. Safe to re-run.');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();

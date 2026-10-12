@@ -104,6 +104,56 @@ it('deletes owned curated links and attachments when the asset is deleted', func
         ->and(Attachment::query()->whereKey($attachment->id)->exists())->toBeFalse();
 });
 
+it('keeps its systems\' scanned findings and components when the asset is deleted, deleting only what it owns', function () {
+    $asset = SoftwareAsset::factory()->create();
+    $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id]);
+    $container = SecurityContainer::factory()->forSystem($system)->create();
+
+    $scannedComponent = SoftwareComponent::query()->create([
+        'owner_type' => SecurityContainer::class,
+        'owner_id' => $container->id,
+        'software_system_id' => $system->id,
+        'software_asset_id' => $asset->id,
+        'name' => 'Jinja2',
+        'purl' => 'pkg:pypi/jinja2@3.1.4',
+    ]);
+    $ownedComponent = SoftwareComponent::query()->create([
+        'owner_type' => SoftwareAsset::class,
+        'owner_id' => $asset->id,
+        'software_asset_id' => $asset->id,
+        'name' => 'Imported',
+        'purl' => 'pkg:pypi/imported@1.0.0',
+    ]);
+    $scannedFinding = LocalFinding::query()->create([
+        'owner_type' => SecurityContainer::class,
+        'owner_id' => $container->id,
+        'software_system_id' => $system->id,
+        'software_asset_id' => $asset->id,
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'CVE-2024-56201',
+        'title' => 'Jinja sandbox breakout',
+        'file_path' => 'requirements.txt',
+    ]);
+    $ownedFinding = LocalFinding::query()->create([
+        'owner_type' => SoftwareAsset::class,
+        'owner_id' => $asset->id,
+        'software_asset_id' => $asset->id,
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'generic-api-key',
+        'title' => 'Imported secret',
+        'file_path' => 'config.yml',
+    ]);
+
+    $asset->delete();
+
+    expect($scannedComponent->fresh()?->software_asset_id)->toBeNull()
+        ->and($scannedComponent->fresh()?->software_system_id)->toBe($system->id)
+        ->and($scannedFinding->fresh()?->software_asset_id)->toBeNull()
+        ->and($scannedFinding->fresh()?->software_system_id)->toBe($system->id)
+        ->and(SoftwareComponent::query()->whereKey($ownedComponent->id)->exists())->toBeFalse()
+        ->and(LocalFinding::query()->whereKey($ownedFinding->id)->exists())->toBeFalse();
+});
+
 it('stores flexible metadata as an array', function () {
     $asset = SoftwareAsset::factory()->create([
         'metadata' => ['owner_team' => 'Payments', 'criticality' => 'high'],

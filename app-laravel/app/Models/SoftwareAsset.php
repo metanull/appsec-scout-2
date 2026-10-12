@@ -44,8 +44,12 @@ class SoftwareAsset extends Model
             $asset->repositoryMappings()->delete();
             $asset->curatedLinks()->delete();
             $asset->attachments()->delete();
-            $asset->softwareComponents()->delete();
-            $asset->localFindings()->delete();
+            // Only rows the asset owns directly. softwareComponents()/localFindings() also match
+            // rows scanned on the asset's systems' containers (via the denormalized
+            // software_asset_id); those belong to systems that outlive the asset, and the
+            // nullOnDelete foreign key clears their stamp instead.
+            SoftwareComponent::query()->whereMorphedTo('owner', $asset)->delete();
+            LocalFinding::query()->whereMorphedTo('owner', $asset)->delete();
         });
     }
 
