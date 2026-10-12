@@ -13,6 +13,9 @@ use App\Mcp\Tools\Inventory\ListSoftwareAssetsTool;
 use App\Mcp\Tools\Inventory\ListSoftwareSystemsTool;
 use App\Mcp\Tools\Sbom\GetSbomTool;
 use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
+use App\Mcp\Tools\Trackers\CreateAlertsWorkItemTool;
+use App\Mcp\Tools\Trackers\CreateLocalFindingsWorkItemTool;
+use App\Mcp\Tools\Trackers\GetTrackerOptionsTool;
 use App\Mcp\Tools\Triage\ChangeAlertSeverityTool;
 use App\Mcp\Tools\Triage\ChangeAlertStateTool;
 use App\Mcp\Tools\Triage\ChangeLocalFindingSeverityTool;
@@ -68,5 +71,8 @@ final class AppSecScoutServer extends Server
         ChangeLocalFindingStatusTool::class,
         ChangeLocalFindingSeverityTool::class,
         CommentLocalFindingTool::class,
+        GetTrackerOptionsTool::class,
+        CreateAlertsWorkItemTool::class,
+        CreateLocalFindingsWorkItemTool::class,
     ];
 }
