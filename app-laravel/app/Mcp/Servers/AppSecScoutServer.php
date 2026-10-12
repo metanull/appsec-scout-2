@@ -4,6 +4,7 @@ namespace App\Mcp\Servers;
 
 use App\Mcp\Tools\Findings\GetAlertTool;
 use App\Mcp\Tools\Findings\GetLocalFindingTool;
+use App\Mcp\Tools\Findings\GetTriageSummaryTool;
 use App\Mcp\Tools\Findings\ListAlertsTool;
 use App\Mcp\Tools\Findings\ListLocalFindingsTool;
 use App\Mcp\Tools\Inventory\GetContainerLinksTool;
@@ -54,5 +55,6 @@ final class AppSecScoutServer extends Server
         GetLocalFindingTool::class,
         ListSbomComponentsTool::class,
         GetSbomTool::class,
+        GetTriageSummaryTool::class,
     ];
 }
