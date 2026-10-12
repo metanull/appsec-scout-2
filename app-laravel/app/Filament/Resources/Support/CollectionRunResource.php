@@ -96,6 +96,9 @@ abstract class CollectionRunResource extends Resource
                         TextEntry::make('status')
                             ->badge()
                             ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
+                        TextEntry::make('softwareSystem.name')
+                            ->label('System')
+                            ->placeholder('All systems'),
                         TextEntry::make('batch_id')
                             ->label('Batch ID')
                             ->placeholder('-'),
@@ -139,6 +142,10 @@ abstract class CollectionRunResource extends Resource
                 TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => RunStatusBadgeColor::for($state)),
+                TextColumn::make('softwareSystem.name')
+                    ->label('System')
+                    ->placeholder('All systems')
+                    ->toggleable(),
                 TextColumn::make('started_at')
                     ->dateTime()
                     ->sortable(),
