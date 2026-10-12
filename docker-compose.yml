@@ -21,6 +21,11 @@ services:
             HTTPS_PROXY: "${HTTPS_PROXY:-}"
             NO_PROXY: "${NO_PROXY:-}"
             SSL_CERT_FILE: "${SSL_CERT_FILE:-}"
+            # First-admin identity, read by docker/entrypoint.sh only on a start where no
+            # user exists yet. Left empty, the entrypoint's own defaults apply.
+            BOOTSTRAP_ADMIN_NAME: "${BOOTSTRAP_ADMIN_NAME:-}"
+            BOOTSTRAP_ADMIN_EMAIL: "${BOOTSTRAP_ADMIN_EMAIL:-}"
+            BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-}"
         volumes:
             - ./app-laravel:/var/www/html
             - app_storage:/var/www/html/storage

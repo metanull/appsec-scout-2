@@ -36,8 +36,9 @@ This guide sticks to *what to click and what happens*. For the reasoning and the
 | `http://localhost:8090/` | Dependency-Track UI (see [Dependency-Track](#dependency-track)) |
 | `http://localhost:8091/` | Dependency-Track API |
 
-**First sign-in.** Use the bootstrap admin account, which is set by `BOOTSTRAP_ADMIN_EMAIL` /
-`BOOTSTRAP_ADMIN_PASSWORD` (see [install.md → First Login](install.md#first-login)). Every
+**First sign-in.** Use the bootstrap admin account: `admin@example.com` / `changeme-now`, unless
+`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` were set in the root `.env` before the first
+start (see [install.md → First Login](install.md#first-login)). Change the password afterwards. Every
 local account must enroll an authenticator app (TOTP) at first login. Keep the recovery codes
 you are shown.
 

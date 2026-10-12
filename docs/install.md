@@ -83,8 +83,8 @@ cp .env.example .env
 waits for Dependency-Track's one-shot bootstrap to finish, and opens `http://localhost:8080` in
 the browser. On this first run the container entrypoint automatically generates `APP_KEY`, runs
 migrations, seeds roles/permissions, and bootstraps an admin account
-(`BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` from `app-laravel/.env`, defaulting to
-`admin@example.com` / `a-changeme-now`) — there is nothing else to run by hand.
+(`BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` from the root `.env`, defaulting to
+`admin@example.com` / `changeme-now`) — there is nothing else to run by hand.
 
 Use `.\scripts\appsec-scout.ps1 -Rebuild` for a clean slate (wipes containers, volumes, and data;
 also re-exports any corporate CA certificates — see [Corporate Proxy and SSL Inspection](#corporate-proxy-and-ssl-inspection)
@@ -121,6 +121,7 @@ Root `.env` (Docker Compose only — see `.env.example` for the full, commented 
 | `DB_ROOT_PASSWORD` | `rootpassword` | MySQL root password (container-only, not used by the app; unused by the PostgreSQL engine) |
 | `COMPOSE_FILE` | unset | Uncomment `COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml` to run the stack on PostgreSQL 16 instead of MySQL 8 — see "Choosing the database engine" below |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `SSL_CERT_FILE` | — | Corporate proxy/TLS settings, shared by every container in the stack |
+| `BOOTSTRAP_ADMIN_NAME` / `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | `Admin` / `admin@example.com` / `changeme-now` | First-admin identity, passed to the `app` container and used by its entrypoint only on a start where no user exists yet |
 | `DTRACK_*` (`DTRACK_DB_*`, `DTRACK_API_PORT`, `DTRACK_FRONTEND_PORT`, `DTRACK_ADMIN_*`, `DTRACK_JAVA_MAX_HEAP`, ...) | see `.env.example` | Dependency-Track database, ports, admin bootstrap, and JVM sizing |
 | `TRIVY_SERVER_URL` | `http://trivy-server:4954` | Shared self-hosted Trivy vulnerability DB server, used by Dependency-Track's Trivy analyzer and by SbomScan/StaticAnalysis |
 | `MYSQL_CPUS`/`MYSQL_MEM_LIMIT`, `DTRACK_DB_CPUS`/`..._MEM_LIMIT`, `TRIVY_CPUS`/`..._MEM_LIMIT`, `OPS_CPUS`/`..._MEM_LIMIT` | see `.env.example` | Per-container CPU/memory limits, tunable for constrained hosts |
@@ -134,7 +135,6 @@ Root `.env` (Docker Compose only — see `.env.example` for the full, commented 
 | `DB_CONNECTION`/`DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD` | `mysql` / `mysql` / `3306` / `appsec_scout` / `appsec_scout` / `password` | Must match the root `.env` values |
 | `SESSION_DRIVER` | `database` | Sessions live in the primary database so that disabling a user revokes its live sessions immediately |
 | `CACHE_STORE`/`QUEUE_CONNECTION` | `redis` | Cache and queues use the `redis` container |
-| `BOOTSTRAP_ADMIN_NAME`/`BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` | `admin` / `admin@example.com` / `a-changeme-now` | First-admin bootstrap identity, consumed by the entrypoint |
 | `SKIP_APP_BOOTSTRAP` | unset | When `1`, skips the entrypoint's asset resync/migrate/seed/bootstrap block entirely — used by `invoke-check.ps1`/`invoke-fix.ps1` for one-off `docker compose run` invocations that shouldn't race the long-lived `app` container over shared volumes |
 
 For a direct internet connection, leave the proxy/CA variables unset or empty — every container

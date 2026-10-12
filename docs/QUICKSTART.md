@@ -78,8 +78,9 @@ content beyond the CA export files above.
    ```
 
 5. Open `http://localhost:8080/`, sign in with the bootstrap admin
-   (`admin@example.com` / `a-changeme-now` unless you changed
-   `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD`), and complete TOTP enrollment.
+   (`admin@example.com` / `changeme-now` unless you set
+   `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` in `.env` before the first start), and
+   complete TOTP enrollment.
 
 No corporate CA certs, no ACR, no Entra ID — none of that applies to a Home install.
 Database stays on the default MySQL 8 container; `docker-compose.pgsql.yml` isn't
