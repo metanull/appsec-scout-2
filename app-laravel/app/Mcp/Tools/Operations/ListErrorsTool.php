@@ -66,7 +66,7 @@ final class ListErrorsTool extends AppSecTool
             ->where('occurred_at', '>=', $since)
             ->when(isset($validated['channel']), fn ($query) => $query->where('channel', $validated['channel']))
             ->when(isset($validated['level']), fn ($query) => $query->where('level', $validated['level']))
-            ->when($like !== null, fn ($query) => $query->where('message', 'like', $like))
+            ->when($like !== null, fn ($query) => $query->whereLike('message', $like, caseSensitive: false))
             ->orderByDesc('occurred_at')
             ->orderByDesc('id');
 
