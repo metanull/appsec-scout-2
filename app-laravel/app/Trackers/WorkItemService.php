@@ -7,6 +7,7 @@ use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
+use App\Trackers\Dto\WorkItemDto;
 use App\Triage\OperatorIntegrationRuntime;
 use Illuminate\Database\DatabaseManager;
 
@@ -34,7 +35,7 @@ final class WorkItemService
         ?string $priority = null,
         ?string $assigneeId = null,
         ?string $parentId = null,
-    ): void {
+    ): WorkItemDto {
         $events = $this->events($eventIds);
 
         $isGrouped = count($events) > 1;
@@ -45,6 +46,7 @@ final class WorkItemService
             ? $this->descriptionBuilder->buildGrouped($events)
             : $this->descriptionBuilder->buildSingle($events[0]);
 
+        /** @var WorkItemDto $workItem */
         $workItem = $this->runtime->runTracker($trackerId, $userId, function (Tracker $tracker) use ($projectKey, $itemType, $title, $description, $labels, $priority, $assigneeId, $parentId) {
             return $tracker->createWorkItem(new CreateWorkItemRequest(
                 projectKey: $projectKey,
@@ -83,6 +85,8 @@ final class WorkItemService
                 'grouped' => $isGrouped,
             ]);
         });
+
+        return $workItem;
     }
 
     /** @param  list<int>  $eventIds */

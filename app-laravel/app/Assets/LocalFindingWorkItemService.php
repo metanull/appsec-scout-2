@@ -9,6 +9,7 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
+use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Support\MarkdownTruncation;
 use App\Trackers\TrackerProjectLinker;
 use App\Triage\OperatorIntegrationRuntime;
@@ -37,13 +38,14 @@ final class LocalFindingWorkItemService
         ?string $priority = null,
         ?string $assigneeId = null,
         ?string $parentId = null,
-    ): void {
+    ): WorkItemDto {
         $findings = $this->findings($findingIds);
 
         $isGrouped = count($findings) > 1;
         $title = $isGrouped ? $this->buildGroupedTitle($findings) : $this->buildTitle($findings[0]);
         $description = $isGrouped ? $this->buildGroupedDescription($findings) : $this->buildDescription($findings[0]);
 
+        /** @var WorkItemDto $workItem */
         $workItem = $this->runtime->runTracker($trackerId, $userId, fn (Tracker $tracker) => $tracker->createWorkItem(new CreateWorkItemRequest(
             projectKey: $projectKey,
             itemType: $itemType,
@@ -80,6 +82,8 @@ final class LocalFindingWorkItemService
                 'grouped' => $isGrouped,
             ]);
         });
+
+        return $workItem;
     }
 
     /** @param  list<int>  $findingIds */

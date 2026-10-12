@@ -33,7 +33,7 @@ it('creates a work item for a single-id array and links it', function () {
         'description' => 'Sandbox escape via crafted template.',
     ]);
 
-    app(LocalFindingWorkItemService::class)->createForFindings(
+    $created = app(LocalFindingWorkItemService::class)->createForFindings(
         findingIds: [$finding->id],
         userId: $user->id,
         trackerId: 'fake-tracker',
@@ -44,7 +44,10 @@ it('creates a work item for a single-id array and links it', function () {
 
     $link = LocalFindingWorkItemLink::query()->first();
 
-    expect($tracker->createCalls)->toBe(1)
+    expect($created)->toBeInstanceOf(WorkItemDto::class)
+        ->and($created->id)->toBe($link?->work_item_id)
+        ->and($created->url)->toBe($link?->work_item_url)
+        ->and($tracker->createCalls)->toBe(1)
         ->and($tracker->latestCreateWorkItemRequest?->title)->toContain('Jinja sandbox breakout')
         ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('Sandbox escape via crafted template.')
         ->and($link)->not->toBeNull()
