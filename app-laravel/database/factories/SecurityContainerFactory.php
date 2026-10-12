@@ -32,4 +32,14 @@ class SecurityContainerFactory extends Factory
     {
         return $this->state(['software_system_id' => $system->id]);
     }
+
+    /** A container its source reports under $source, manually re-linked by an operator to $linkedTo. */
+    public function relinked(SoftwareSystem $source, SoftwareSystem $linkedTo): static
+    {
+        return $this->state([
+            'source_software_system_id' => $source->id,
+            'software_system_id' => $linkedTo->id,
+            'system_overridden_at' => now(),
+        ]);
+    }
 }

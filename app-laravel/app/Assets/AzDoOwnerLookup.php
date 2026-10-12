@@ -37,14 +37,16 @@ final class AzDoOwnerLookup
             return ['software_system_id' => $systemId, 'security_container_id' => null];
         }
 
-        $containerId = SecurityContainer::query()
-            ->where('software_system_id', $systemId)
+        // Keyed on the system the source reports; report the container's current link, which
+        // differs when an operator re-linked it.
+        $container = SecurityContainer::query()
+            ->where('source_software_system_id', $systemId)
             ->where('source_container_id', $repositoryId)
-            ->value('id');
+            ->first(['id', 'software_system_id']);
 
         return [
-            'software_system_id' => $systemId,
-            'security_container_id' => is_numeric($containerId) ? (int) $containerId : null,
+            'software_system_id' => $container === null ? $systemId : (int) $container->software_system_id,
+            'security_container_id' => $container === null ? null : (int) $container->id,
         ];
     }
 }

@@ -117,12 +117,37 @@ final class Scope
     {
         $this->requireSingle();
 
-        $systems = match (true) {
+        return $this->active(match (true) {
             $this->asset !== null => $this->asset->softwareSystems()->orderBy('name')->get(),
             $this->system !== null => collect([$this->system]),
             default => collect([$this->container?->softwareSystem])->filter(),
-        };
+        });
+    }
 
+    /**
+     * Like systems(), but a container resolves to the system its source reports it under, which
+     * differs from its linked system once an operator re-linked it: what a fetch or collection
+     * must address upstream.
+     *
+     * @return Collection<int, SoftwareSystem>
+     */
+    public function upstreamSystems(): Collection
+    {
+        if ($this->container === null) {
+            return $this->systems();
+        }
+
+        $this->requireSingle();
+
+        return $this->active(collect([$this->container->sourceSoftwareSystem])->filter());
+    }
+
+    /**
+     * @param  Collection<int, SoftwareSystem>  $systems
+     * @return Collection<int, SoftwareSystem>
+     */
+    private function active(Collection $systems): Collection
+    {
         return $systems
             ->filter(fn (SoftwareSystem $system): bool => $system->removed_at === null)
             ->values();

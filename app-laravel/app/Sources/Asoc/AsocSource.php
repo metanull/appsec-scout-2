@@ -112,7 +112,7 @@ final class AsocSource implements EnrichesFetchedEvents, Source
     public function pushEventState(SecurityEvent $event): PushResult
     {
         try {
-            $appId = $event->softwareSystem?->source_system_id;
+            $appId = $event->upstreamSoftwareSystem()?->source_system_id;
             if (! is_string($appId) || $appId === '') {
                 return PushResult::failure('Missing ASoC application mapping');
             }
@@ -139,7 +139,7 @@ final class AsocSource implements EnrichesFetchedEvents, Source
     public function fetchRawEvent(SecurityEvent $event): EventDto
     {
         $issue = $this->getClient()->getIssue($event->source_event_id);
-        $sourceSystem = $event->softwareSystem()->first();
+        $sourceSystem = $event->upstreamSoftwareSystem();
         if ($sourceSystem === null) {
             throw new \RuntimeException('Missing ASoC source system mapping');
         }

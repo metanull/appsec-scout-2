@@ -44,7 +44,7 @@ final class RunStaticAnalysisTool extends AppSecTool
     {
         $validated = $request->validate(['force' => ['nullable', 'boolean']]);
         $force = (bool) ($validated['force'] ?? false);
-        $targets = RepositoryRunTargets::from(Scope::fromRequest($request)->systems(), self::OPERATION);
+        $targets = RepositoryRunTargets::from(Scope::fromRequest($request)->upstreamSystems(), self::OPERATION);
 
         if (StaticAnalysisRun::query()->where('status', 'running')->exists()) {
             throw new InvalidArgumentException('A static analysis run is already in progress; nothing was queued. Try again once it finishes.');

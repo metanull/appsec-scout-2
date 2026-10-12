@@ -18,7 +18,7 @@ final class RefetchEventJob implements ShouldQueue
     public function handle(Registry $registry, Upserter $upserter, Recorder $recorder): void
     {
         $event = SecurityEvent::query()
-            ->with(['softwareSystem', 'container'])
+            ->with(['softwareSystem', 'container.sourceSoftwareSystem'])
             ->findOrFail($this->eventId);
 
         $source = $registry->find($event->source_id);
@@ -29,12 +29,17 @@ final class RefetchEventJob implements ShouldQueue
 
         $dto = $source->fetchRawEvent($event);
 
+        // Map the source's own system id: when the alert's container was re-linked, the source
+        // still reports it under the original system (Upserter then re-applies the link).
+        $upstreamSystem = $event->upstreamSoftwareSystem();
+        $upstreamSystemId = $upstreamSystem !== null ? $upstreamSystem->id : $event->software_system_id;
+
         $systemIdMap = [
-            $dto->sourceSystemId => $event->software_system_id,
+            $dto->sourceSystemId => $upstreamSystemId,
         ];
 
-        if (is_string($event->softwareSystem?->source_system_id) && $event->softwareSystem->source_system_id !== '') {
-            $systemIdMap[$event->softwareSystem->source_system_id] = $event->software_system_id;
+        if (is_string($upstreamSystem?->source_system_id) && $upstreamSystem->source_system_id !== '') {
+            $systemIdMap[$upstreamSystem->source_system_id] = $upstreamSystemId;
         }
 
         $containerIdMap = [];
@@ -45,7 +50,7 @@ final class RefetchEventJob implements ShouldQueue
             if (is_string($sourceContainerId) && $sourceContainerId !== '') {
                 $containerIdMap[$dto->sourceSystemId . ':' . $sourceContainerId] = $event->container_id;
             } elseif (is_string($event->container?->source_container_id) && $event->container->source_container_id !== '') {
-                $containerIdMap[(string) $event->softwareSystem?->source_system_id . ':' . $event->container->source_container_id] = $event->container_id;
+                $containerIdMap[(string) $upstreamSystem?->source_system_id . ':' . $event->container->source_container_id] = $event->container_id;
             }
         }
 

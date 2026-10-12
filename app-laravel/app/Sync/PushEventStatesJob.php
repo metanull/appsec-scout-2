@@ -37,7 +37,7 @@ final class PushEventStatesJob implements ShouldQueue
     public function handle(OperatorIntegrationRuntime $runtime, Recorder $recorder, PendingSyncResolver $resolver): void
     {
         $events = SecurityEvent::query()
-            ->with('softwareSystem')
+            ->with(['softwareSystem', 'container.sourceSoftwareSystem'])
             ->whereKey($this->eventIds)
             ->get();
 
