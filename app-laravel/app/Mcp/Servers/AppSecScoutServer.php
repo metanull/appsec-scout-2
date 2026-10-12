@@ -13,6 +13,12 @@ use App\Mcp\Tools\Inventory\ListSoftwareAssetsTool;
 use App\Mcp\Tools\Inventory\ListSoftwareSystemsTool;
 use App\Mcp\Tools\Sbom\GetSbomTool;
 use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
+use App\Mcp\Tools\Triage\ChangeAlertSeverityTool;
+use App\Mcp\Tools\Triage\ChangeAlertStateTool;
+use App\Mcp\Tools\Triage\ChangeLocalFindingSeverityTool;
+use App\Mcp\Tools\Triage\ChangeLocalFindingStatusTool;
+use App\Mcp\Tools\Triage\CommentAlertTool;
+use App\Mcp\Tools\Triage\CommentLocalFindingTool;
 use App\Mcp\Tools\WhoAmITool;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
@@ -56,5 +62,11 @@ final class AppSecScoutServer extends Server
         ListSbomComponentsTool::class,
         GetSbomTool::class,
         GetTriageSummaryTool::class,
+        ChangeAlertStateTool::class,
+        ChangeAlertSeverityTool::class,
+        CommentAlertTool::class,
+        ChangeLocalFindingStatusTool::class,
+        ChangeLocalFindingSeverityTool::class,
+        CommentLocalFindingTool::class,
     ];
 }
