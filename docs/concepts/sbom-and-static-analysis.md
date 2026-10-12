@@ -29,9 +29,10 @@ independent, parallel paths.
 
 ## Trigger and Access
 
-This is entirely **host-side and operator-initiated** — there is no in-app button, no queued
-appsec-scout job, no scheduler entry for starting a scan. An operator with Docker access on
-their own machine runs one of:
+This path is entirely **host-side and operator-initiated** — no queued appsec-scout job and no
+scheduler entry start it (the in-app "Collect repositories" / "Run static analysis" buttons are
+the separate, parallel paths described above). An operator with Docker access on their own
+machine runs one of:
 
 ```powershell
 .\scripts\invoke-ops.ps1 -SbomScan -Credential (Get-Credential)

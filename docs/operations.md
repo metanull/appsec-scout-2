@@ -289,12 +289,20 @@ detail in [docs/concepts/triage.md](concepts/triage.md#reconciliation-the-same-l
 
 ## SBOM and Static Analysis Scanning
 
-Separately from the always-on Source/Tracker sync above, `scripts/invoke-ops.ps1 -SbomScan` and
-`-StaticAnalysis` run host-triggered, organization-wide scans (Trivy for SBOM/vulnerabilities/
-secrets; Roslynator and SpotBugs for static analysis) against every repository in an Azure DevOps
-organization, feeding results into appsec-scout as Local Findings and Dependencies. This is
-entirely operator-initiated — there is no scheduler entry or in-app button to start a scan. Full
-detail, including the Dependency-Track visualization pipeline, in
+Organization-wide scans of every Azure DevOps repository (Trivy for SBOM/vulnerabilities/secrets;
+Roslynator, SpotBugs and Opengrep for static analysis) feed results into appsec-scout as Local
+Findings and Dependencies. Scans are always operator-initiated — there is no scheduler entry —
+and can be started from two independent, parallel paths:
+
+- **In-app**: "Collect repositories" and "Run static analysis" on
+  [`Operations -> Operations`](#operations-page), queued and run by the isolated `collector` and
+  `static-analysis-collector` containers — see
+  [docs/concepts/repository-collection.md](concepts/repository-collection.md) and
+  [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md).
+- **Host-triggered**: `scripts/invoke-ops.ps1 -SbomScan` / `-StaticAnalysis`, which additionally
+  support `-Resume`, `-ProjectFilter`, `-RepositoryFilter` and `-SkipUpload`.
+
+Full detail on the host-triggered path, including the Dependency-Track visualization pipeline, in
 [docs/concepts/sbom-and-static-analysis.md](concepts/sbom-and-static-analysis.md).
 
 ```powershell
