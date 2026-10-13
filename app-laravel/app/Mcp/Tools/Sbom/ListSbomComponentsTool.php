@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Sbom;
 
 use App\Assets\Sbom\ComponentVulnerabilityMatcher;
+use App\Database\TextSearch;
 use App\Mcp\Support\FindingPresenter;
 use App\Mcp\Support\Format;
 use App\Mcp\Support\Pagination;
@@ -57,7 +58,6 @@ final class ListSbomComponentsTool extends AppSecTool
 
         $filters = VulnerabilityFilters::fromRequest($request);
         $scope = Scope::fromRequest($request);
-        $like = Search::like($validated['search'] ?? null);
 
         $query = SoftwareComponent::query()
             ->with(['owner', 'softwareSystem:id,name'])
@@ -67,10 +67,9 @@ final class ListSbomComponentsTool extends AppSecTool
                 ->where('owner_type', SecurityContainer::class)
                 ->where('owner_id', $scope->container?->id))
             ->when(isset($validated['ecosystem']), fn (Builder $query) => $query->where('ecosystem', $validated['ecosystem']))
-            ->when(! ($validated['include_removed'] ?? false), fn (Builder $query) => $query->whereNull('removed_at'))
-            ->when($like !== null, fn (Builder $query) => $query->where(fn (Builder $nested) => $nested
-                ->where('name', 'like', $like)
-                ->orWhere('purl', 'like', $like)));
+            ->when(! ($validated['include_removed'] ?? false), fn (Builder $query) => $query->whereNull('removed_at'));
+
+        TextSearch::apply($query, ['name', 'purl'], $validated['search'] ?? null);
 
         if ($filters->vulnerableOnly) {
             $this->matcher->applyHasMatchingVulnerability($query, $filters->statuses, $filters->severities);

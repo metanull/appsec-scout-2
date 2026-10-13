@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\LocalFindingResource\Support;
 
+use App\Database\TextSearch;
 use App\Models\LocalFinding;
 use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
@@ -208,7 +209,7 @@ final class LocalFindingTableQuery
     }
 
     /**
-     * Escaped, portable LIKE search across every text-bearing column, mirroring
+     * Case-insensitive search across every text-bearing column, mirroring
      * SecurityEventTableQuery::applySearch.
      *
      * @param  Builder<LocalFinding>  $query
@@ -216,29 +217,12 @@ final class LocalFindingTableQuery
      */
     public static function applySearch(Builder $query, ?string $search): Builder
     {
-        $search = trim((string) $search);
-
-        if ($search === '') {
-            return $query;
-        }
-
-        // '!' is the one escape character with identical literal syntax on all three
-        // engines: MySQL rejects ESCAPE '\' outright (backslash escapes the closing
-        // quote in its string literals), while PostgreSQL rejects ESCAPE '\\'.
-        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search) . '%';
-
-        $columns = ['title', 'description', 'rule_id', 'file_path', 'package_name', 'package_version', 'metadata'];
-
-        // metadata is a json column; PostgreSQL has no LIKE operator for json, so it
-        // needs an explicit text cast there (MySQL and SQLite compare it implicitly).
-        $castJsonToText = $query->getModel()->getConnection()->getDriverName() === 'pgsql';
-
-        return $query->where(function (Builder $nested) use ($columns, $like, $castJsonToText): void {
-            foreach ($columns as $column) {
-                $expression = $castJsonToText && $column === 'metadata' ? $column . '::text' : $column;
-                $nested->orWhereRaw($expression . " LIKE ? ESCAPE '!'", [$like]);
-            }
-        });
+        return TextSearch::apply(
+            $query,
+            ['title', 'description', 'rule_id', 'file_path', 'package_name', 'package_version', 'metadata'],
+            $search,
+            jsonColumns: ['metadata'],
+        );
     }
 
     /**
