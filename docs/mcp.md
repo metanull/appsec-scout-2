@@ -79,6 +79,7 @@ to `dry_run: true` and describe the change first.
 | `list-software-assets`, `list-software-systems`, `list-security-containers` | Browse the inventory (asset → system → container) | `alerts.view` |
 | `get-container-links` | A container's browse / clone URL, its system's (deployed) URL, repository mappings and curated links | `alerts.view` |
 | `get-triage-summary` | Counts by severity, type, source and kind for one asset, system or container, across all sources | `alerts.view` |
+| `find-similar-findings` | Every other alert and local finding with the same rule (or local findings on the same package) across the inventory, with state and latest comment | `alerts.view` |
 | `list-alerts`, `get-alert` | Source alerts, filtered by state, severity, type, source and scope | `alerts.view` |
 | `list-local-findings`, `get-local-finding` | Trivy and static-analysis findings, filtered by kind, status, effective severity and scope | `alerts.view` |
 | `search-code` | Azure DevOps code search, optionally within one container's repository or one system's project, with the user's own AzDO Repos credential | `alerts.view` |

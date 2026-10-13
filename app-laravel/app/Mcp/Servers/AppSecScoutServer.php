@@ -7,6 +7,7 @@ use App\Mcp\Tools\Code\SearchCodeTool;
 use App\Mcp\Tools\Collection\CollectRepositoriesTool;
 use App\Mcp\Tools\Collection\FetchAlertsTool;
 use App\Mcp\Tools\Collection\RunStaticAnalysisTool;
+use App\Mcp\Tools\Findings\FindSimilarFindingsTool;
 use App\Mcp\Tools\Findings\GetAlertTool;
 use App\Mcp\Tools\Findings\GetLocalFindingTool;
 use App\Mcp\Tools\Findings\GetTriageSummaryTool;
@@ -61,6 +62,9 @@ use Laravel\Mcp\Server\Tool;
     whoami) and is limited by that user's permissions. Tools that change data default to a dry
     run that describes the change; show it to the user and repeat the call with dry_run=false
     only once they agree.
+
+    Before changing a finding's state, check find-similar-findings for earlier decisions on the
+    same rule, and get-code for the code behind it.
     TEXT)]
 final class AppSecScoutServer extends Server
 {
@@ -78,6 +82,7 @@ final class AppSecScoutServer extends Server
         ListSbomComponentsTool::class,
         GetSbomTool::class,
         GetTriageSummaryTool::class,
+        FindSimilarFindingsTool::class,
         SearchCodeTool::class,
         GetCodeTool::class,
         ChangeAlertStateTool::class,
