@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Inventory;
 
+use App\Database\TextSearch;
 use App\Mcp\Support\ContainerLinkResult;
 use App\Mcp\Support\Format;
 use App\Mcp\Support\Pagination;
@@ -52,8 +53,6 @@ final class ListSecurityContainersTool extends AppSecTool
             'asset_id.exists' => 'No software asset with id :input.',
         ]);
 
-        $like = Search::like($validated['search'] ?? null);
-
         $query = SecurityContainer::query()
             ->with(['softwareSystem:id,name,source_id', 'sourceSoftwareSystem:id,name'])
             ->when(isset($validated['system_id']), fn ($query) => $query->where('software_system_id', $validated['system_id']))
@@ -62,10 +61,11 @@ final class ListSecurityContainersTool extends AppSecTool
                 SoftwareSystem::query()->select('id')->where('software_asset_id', $validated['asset_id']),
             ))
             ->when(! ($validated['include_removed'] ?? false), fn ($query) => $query->whereNull('removed_at'))
-            ->when($like !== null, fn ($query) => $query->where('name', 'like', $like))
             ->orderBy(SoftwareSystem::query()->select('name')->whereColumn('software_systems.id', 'security_containers.software_system_id'))
             ->orderBy('name')
             ->orderBy('id');
+
+        TextSearch::apply($query, ['name'], $validated['search'] ?? null);
 
         return Pagination::paginate($query, $request, fn (SecurityContainer $container): array => [
             'id' => $container->id,

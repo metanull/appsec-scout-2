@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Inventory;
 
+use App\Database\TextSearch;
 use App\Mcp\Support\Format;
 use App\Mcp\Support\Pagination;
 use App\Mcp\Support\Search;
@@ -54,17 +55,16 @@ final class ListSoftwareSystemsTool extends AppSecTool
             'asset_id.exists' => 'No software asset with id :input.',
         ]);
 
-        $like = Search::like($validated['search'] ?? null);
-
         $query = SoftwareSystem::query()
             ->with('softwareAsset:id,name')
             ->withCount('containers')
             ->when(isset($validated['asset_id']), fn ($query) => $query->where('software_asset_id', $validated['asset_id']))
             ->when(isset($validated['source_id']), fn ($query) => $query->where('source_id', $validated['source_id']))
             ->when(! ($validated['include_removed'] ?? false), fn ($query) => $query->whereNull('removed_at'))
-            ->when($like !== null, fn ($query) => $query->where('name', 'like', $like))
             ->orderBy('name')
             ->orderBy('id');
+
+        TextSearch::apply($query, ['name'], $validated['search'] ?? null);
 
         return Pagination::paginate($query, $request, fn (SoftwareSystem $system): array => [
             'id' => $system->id,

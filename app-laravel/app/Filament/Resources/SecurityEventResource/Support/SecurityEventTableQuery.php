@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SecurityEventResource\Support;
 
+use App\Database\TextSearch;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\WorkItemLink;
@@ -223,20 +224,6 @@ final class SecurityEventTableQuery
      */
     public static function applySearch(Builder $query, ?string $search): Builder
     {
-        $search = trim((string) $search);
-
-        if ($search === '') {
-            return $query;
-        }
-
-        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%';
-
-        return $query->where(function (Builder $nested) use ($like): void {
-            $nested
-                ->where('title', 'like', $like)
-                ->orWhere('description', 'like', $like)
-                ->orWhere('rule_id', 'like', $like)
-                ->orWhere('metadata', 'like', $like);
-        });
+        return TextSearch::apply($query, ['title', 'description', 'rule_id', 'metadata'], $search, jsonColumns: ['metadata']);
     }
 }

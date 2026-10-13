@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Operations;
 
+use App\Database\TextSearch;
 use App\Mcp\Support\ErrorLogScope;
 use App\Mcp\Support\FindingPresenter;
 use App\Mcp\Support\Format;
@@ -57,7 +58,6 @@ final class ListErrorsTool extends AppSecTool
             'include_trace' => ['nullable', 'boolean'],
         ]);
 
-        $like = Search::like($validated['search'] ?? null);
         $since = isset($validated['since']) ? Carbon::parse($validated['since']) : now()->subDays(7);
         $withTrace = (bool) ($validated['include_trace'] ?? false);
 
@@ -66,9 +66,10 @@ final class ListErrorsTool extends AppSecTool
             ->where('occurred_at', '>=', $since)
             ->when(isset($validated['channel']), fn ($query) => $query->where('channel', $validated['channel']))
             ->when(isset($validated['level']), fn ($query) => $query->where('level', $validated['level']))
-            ->when($like !== null, fn ($query) => $query->whereLike('message', (string) $like, caseSensitive: false))
             ->orderByDesc('occurred_at')
             ->orderByDesc('id');
+
+        TextSearch::apply($query, ['message'], $validated['search'] ?? null);
 
         return Pagination::paginate($query, $request, fn (ErrorLog $error): array => [
             'id' => $error->id,

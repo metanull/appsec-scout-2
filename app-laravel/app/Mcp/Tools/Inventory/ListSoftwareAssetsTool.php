@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Inventory;
 
+use App\Database\TextSearch;
 use App\Mcp\Support\Pagination;
 use App\Mcp\Support\Search;
 use App\Mcp\Tools\AppSecTool;
@@ -38,13 +39,13 @@ final class ListSoftwareAssetsTool extends AppSecTool
     protected function run(Request $request, User $actor): ResponseFactory
     {
         $validated = $request->validate(['search' => Search::rules()]);
-        $like = Search::like($validated['search'] ?? null);
 
         $query = SoftwareAsset::query()
             ->withCount('softwareSystems')
-            ->when($like !== null, fn ($query) => $query->where('name', 'like', $like))
             ->orderBy('name')
             ->orderBy('id');
+
+        TextSearch::apply($query, ['name'], $validated['search'] ?? null);
 
         return Pagination::paginate($query, $request, fn (SoftwareAsset $asset): array => [
             'id' => $asset->id,
