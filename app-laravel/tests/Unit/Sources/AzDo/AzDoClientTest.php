@@ -115,3 +115,40 @@ it('updates alert with expected patch request body', function () {
         'dismissalMessage' => 'Reviewed by team',
     ]);
 });
+
+it('reads a file\'s content at a branch', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(200, [], json_encode(['path' => '/src/App.cs', 'content' => "line 1\nline 2"], JSON_THROW_ON_ERROR))]));
+    $stack->push(Middleware::history($history));
+    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', new Client(['handler' => $stack]), new Client(['handler' => new MockHandler]));
+
+    expect($client->getFileContent('project-001', 'repo-001', '/src/App.cs', 'release/1.0'))->toBe("line 1\nline 2");
+
+    $request = $history[0]['request'];
+    parse_str($request->getUri()->getQuery(), $query);
+
+    expect($request->getUri()->getPath())->toBe('project-001/_apis/git/repositories/repo-001/items')
+        ->and($query)->toMatchArray([
+            'path' => '/src/App.cs',
+            'includeContent' => 'true',
+            '$format' => 'json',
+            'versionDescriptor_version' => 'release/1.0',
+            'versionDescriptor_versionType' => 'branch',
+        ]);
+});
+
+it('reads the default branch when none is given, and reports a missing file clearly', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(200, [], json_encode(['content' => 'x'], JSON_THROW_ON_ERROR)),
+        new Response(404, [], '{"message":"not found"}'),
+    ]));
+    $stack->push(Middleware::history($history));
+    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', new Client(['handler' => $stack]), new Client(['handler' => new MockHandler]));
+
+    $client->getFileContent('p', 'r', '/a.txt');
+
+    expect($history[0]['request']->getUri()->getQuery())->not->toContain('versionDescriptor')
+        ->and(fn () => $client->getFileContent('p', 'r', '/missing.txt', 'main'))
+        ->toThrow(InvalidArgumentException::class, 'File /missing.txt not found in the repository at branch main.');
+});
