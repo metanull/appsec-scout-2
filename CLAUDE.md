@@ -37,12 +37,12 @@ from the Source/Tracker credential for the same product, since the required PAT 
 
 | Source control | Credential key(s) | Used by |
 |-----------------|--------------------|---------|
-| Azure DevOps Repos | `azdo-repos.pat`, `azdo-repos.organization` | `triage:codesearch` (web UI path), `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` |
+| Azure DevOps Repos | `azdo-repos.pat`, `azdo-repos.organization` | `triage:codesearch`, MCP `search-code` (user's own credential), `invoke-ops.ps1 -SbomScan`/`-StaticAnalysis` |
 | GitHub Repos | `github-repos.token` | `invoke-ops.ps1 -Shell`/`-Claude` (clone/push) |
 
 ### Triage commands (Artisan namespace `triage:*`)
 
-- `triage:codesearch {PAT} {search} [{project|repo_url}]` — AzDO code search, attaches findings with hyperlinks. From the web UI the user's PAT is resolved automatically from the AzDO Repos system credential (`azdo-repos.pat`/`azdo-repos.organization`), distinct from the AzDO source's alert-ingestion PAT.
+- `triage:codesearch {search} [--pat=] [--organization=] [--scope=] [--attach-to=]` — AzDO code search, optionally attached to an alert. Uses `--pat`/`--organization` or else the AzDO Repos system credential (`azdo-repos.pat`/`azdo-repos.organization`), distinct from the AzDO source's alert-ingestion PAT. The MCP `search-code` tool runs the same search synchronously with the acting user's own AzDO Repos credential.
 
 ### Credential resolution
 

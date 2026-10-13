@@ -21,8 +21,7 @@ class CodesearchService
         ?int $attachToEventId = null,
         ?int $createdByUserId = null,
     ): CodesearchRunResult {
-        $client = $this->clientFactory->make($organization, $pat);
-        $result = new CodesearchRunResult($client->search($searchText, $this->parseScope($scope)));
+        $result = $this->search($pat, $organization, $searchText, $this->parseScope($scope));
 
         if ($attachToEventId !== null) {
             $event = SecurityEvent::query()->findOrFail($attachToEventId);
@@ -44,6 +43,18 @@ class CodesearchService
         }
 
         return $result;
+    }
+
+    /**
+     * Search without attaching the result anywhere. Filters are the Azure DevOps search filters,
+     * e.g. ['Project' => ['Payments'], 'Repository' => ['payments-api']]; a Repository filter
+     * needs its Project.
+     *
+     * @param  array<string, list<string>>  $filters
+     */
+    public function search(string $pat, string $organization, string $searchText, array $filters = []): CodesearchRunResult
+    {
+        return new CodesearchRunResult($this->clientFactory->make($organization, $pat)->search($searchText, $filters));
     }
 
     /** @return array<string, list<string>> */
