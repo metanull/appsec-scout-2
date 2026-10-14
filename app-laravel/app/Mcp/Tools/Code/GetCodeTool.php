@@ -9,7 +9,9 @@ use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\User;
+use App\Sources\AzDo\AzDoClient;
 use App\Sources\AzDo\AzDoClientFactory;
+use App\Sources\AzDo\AzDoItemNotFoundException;
 use App\Sources\Context\SourceContextFacts;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Validation\ValidationException;
@@ -24,7 +26,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Name('get-code')]
 #[Title('Read code from Azure DevOps')]
-#[Description('Returns numbered lines of one file of an Azure DevOps repository, read with your own Azure DevOps Repos credential (Profile → Integrations): the code around an alert or local finding (its file and line), or any file of a container given its path. Use it to judge whether a finding is reachable, exploitable or a false positive. context_lines sets how many lines to show on each side of the line (default 20). Reads the container\'s default branch unless a branch is given (an alert\'s own branch when it has one). Requires alerts.view.')]
+#[Description('Returns numbered lines of one file of an Azure DevOps repository, read with your own Azure DevOps Repos credential (Profile → Integrations): the code around an alert or local finding (its file and line), or any file of a container given its path. Use it to judge whether a finding is reachable, exploitable or a false positive. context_lines sets how many lines to show on each side of the line (default 20). Reads the container\'s default branch unless a branch is given (an alert\'s own branch when it has one). A finding\'s path that includes the build\'s checkout folder (e.g. "project/src/App.java") is resolved to the longest trailing part that exists in the repository: path is the file read, reported_path the one the scanner gave. Requires alerts.view.')]
 #[IsReadOnly]
 final class GetCodeTool extends AppSecTool
 {
@@ -69,15 +71,15 @@ final class GetCodeTool extends AppSecTool
             'container_id.exists' => 'No security container with id :input.',
         ]);
 
-        ['container' => $container, 'path' => $path, 'line' => $line, 'branch' => $targetBranch] = $this->target($validated);
+        ['container' => $container, 'path' => $path, 'line' => $line, 'branch' => $targetBranch, 'reported' => $reported] = $this->target($validated);
 
         $project = AzDoReposAccess::projectOf($container);
         $branch = $validated['branch'] ?? $targetBranch ?? $this->defaultBranch($container);
         $credentials = $this->access->credentials($actor);
-        $repositoryPath = '/' . ltrim($path, '/');
+        $reportedPath = '/' . ltrim($path, '/');
+        $client = $this->clients->make($credentials['organization'], $credentials['pat']);
 
-        $content = $this->clients->make($credentials['organization'], $credentials['pat'])
-            ->getFileContent((string) $project->source_system_id, (string) $container->source_container_id, $repositoryPath, $branch);
+        ['content' => $content, 'path' => $repositoryPath] = $this->read($client, (string) $project->source_system_id, (string) $container->source_container_id, $reportedPath, $branch, $reported);
 
         if (strlen($content) > self::MAX_BYTES) {
             throw new InvalidArgumentException("{$repositoryPath} is larger than 1 MB; read it in the repository instead.");
@@ -86,14 +88,48 @@ final class GetCodeTool extends AppSecTool
         return Response::structured([
             'container' => ['id' => $container->id, 'name' => $container->name],
             'path' => $repositoryPath,
+            'reported_path' => $reportedPath,
             'branch' => $branch,
             ...self::window(explode("\n", str_replace(["\r\n", "\r"], "\n", $content)), $line, (int) ($validated['context_lines'] ?? 20)),
         ]);
     }
 
     /**
+     * A scanner reports paths relative to where the build checked the repository out, which can
+     * be a folder below the repository root (e.g. "project/src/App.java" for "src/App.java").
+     * For such a reported path that does not exist, drop leading folders one at a time and read
+     * the longest trailing path that does; a path the caller gave is read as given.
+     *
+     * @return array{content: string, path: string}
+     */
+    private function read(AzDoClient $client, string $projectId, string $repositoryId, string $reportedPath, ?string $branch, bool $resolve): array
+    {
+        try {
+            return ['content' => $client->getFileContent($projectId, $repositoryId, $reportedPath, $branch), 'path' => $reportedPath];
+        } catch (AzDoItemNotFoundException $notFound) {
+            $segments = explode('/', trim($reportedPath, '/'));
+
+            if (! $resolve || count($segments) < 2) {
+                throw $notFound;
+            }
+        }
+
+        for ($skip = 1; $skip < count($segments); $skip++) {
+            $path = '/' . implode('/', array_slice($segments, $skip));
+
+            try {
+                return ['content' => $client->getFileContent($projectId, $repositoryId, $path, $branch), 'path' => $path];
+            } catch (AzDoItemNotFoundException) {
+                continue;
+            }
+        }
+
+        throw new AzDoItemNotFoundException("{$notFound->getMessage()} No shorter trailing part of that path exists there either.", 0, $notFound);
+    }
+
+    /**
      * @param  array<string, mixed>  $validated
-     * @return array{container: SecurityContainer, path: string, line: int|null, branch: string|null}
+     * @return array{container: SecurityContainer, path: string, line: int|null, branch: string|null, reported: bool}
      */
     private function target(array $validated): array
     {
@@ -115,7 +151,7 @@ final class GetCodeTool extends AppSecTool
                 throw new InvalidArgumentException("Local finding #{$finding->id} belongs to a software system or asset, not to a repository, so it has no code to show.");
             }
 
-            return ['container' => $owner, 'path' => self::requirePath($finding->file_path, "Local finding #{$finding->id}"), 'line' => $finding->start_line, 'branch' => null];
+            return ['container' => $owner, 'path' => self::requirePath($finding->file_path, "Local finding #{$finding->id}"), 'line' => $finding->start_line, 'branch' => null, 'reported' => true];
         }
 
         if (isset($validated['alert_id'])) {
@@ -124,7 +160,7 @@ final class GetCodeTool extends AppSecTool
             $container = $alert->container
                 ?? throw new InvalidArgumentException("Alert #{$alert->id} is not attached to a repository, so it has no code to show.");
 
-            return ['container' => $container, 'path' => self::requirePath($alert->file_path, "Alert #{$alert->id}"), 'line' => $alert->start_line, 'branch' => self::branchName($alert->branch)];
+            return ['container' => $container, 'path' => self::requirePath($alert->file_path, "Alert #{$alert->id}"), 'line' => $alert->start_line, 'branch' => self::branchName($alert->branch), 'reported' => true];
         }
 
         return [
@@ -132,6 +168,7 @@ final class GetCodeTool extends AppSecTool
             'path' => (string) $validated['path'],
             'line' => isset($validated['line']) ? (int) $validated['line'] : null,
             'branch' => null,
+            'reported' => false,
         ];
     }
 

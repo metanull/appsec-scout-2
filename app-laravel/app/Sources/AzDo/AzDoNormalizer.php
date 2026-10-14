@@ -79,9 +79,9 @@ final class AzDoNormalizer
             url: $alertWebUrl,
             remediation: $rule['helpMessage'] ?? null,
             filePath: $location['filePath'] ?? null,
-            startLine: isset($location['region']['startLine']) ? (int) $location['region']['startLine'] : null,
-            endLine: isset($location['region']['endLine']) ? (int) $location['region']['endLine'] : null,
-            snippet: $location['region']['snippet']['text'] ?? null,
+            startLine: self::startLine($location),
+            endLine: self::endLine($location),
+            snippet: null,
             commitSha: $location['versionControl']['commitHash'] ?? null,
             branch: $location['versionControl']['branch'] ?? self::normalizeBranch($repo?->defaultBranch),
             versionControlUrl: $location['versionControl']['itemUrl'] ?? null,
@@ -168,6 +168,36 @@ final class AzDoNormalizer
         return [];
     }
 
+    /**
+     * Advanced Security reports a location's region as lineStart/lineEnd (1-based), and carries
+     * no code snippet.
+     *
+     * @param  array<string, mixed>  $location
+     */
+    private static function startLine(array $location): ?int
+    {
+        $line = $location['region']['lineStart'] ?? null;
+
+        return is_int($line) && $line > 0 ? $line : null;
+    }
+
+    /**
+     * lineEnd is 0 when the region is a single line.
+     *
+     * @param  array<string, mixed>  $location
+     */
+    private static function endLine(array $location): ?int
+    {
+        $start = self::startLine($location);
+        $end = $location['region']['lineEnd'] ?? null;
+
+        if ($start === null) {
+            return null;
+        }
+
+        return is_int($end) && $end >= $start ? $end : $start;
+    }
+
     private static function buildFingerprint(AzDoAlert $alert, string $repoId): ?string
     {
         if ($alert->validationFingerprints !== []) {
@@ -187,11 +217,11 @@ final class AzDoNormalizer
         }
 
         $ruleId = (self::extractRule($alert))['opaqueId'] ?? null;
-        $loc = $alert->physicalLocations[0] ?? null;
+        $loc = $alert->physicalLocations[0] ?? [];
         $filePath = $loc['filePath'] ?? null;
 
         if ($ruleId !== null && $filePath !== null) {
-            $line = $loc['region']['startLine'] ?? 0;
+            $line = self::startLine($loc) ?? 0;
 
             return "{$ruleId}:{$filePath}:{$line}";
         }

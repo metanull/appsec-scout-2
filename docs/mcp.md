@@ -83,7 +83,7 @@ to `dry_run: true` and describe the change first.
 | `list-alerts`, `get-alert` | Source alerts, filtered by state, severity, type, source and scope | `alerts.view` |
 | `list-local-findings`, `get-local-finding` | Trivy and static-analysis findings, filtered by kind, status, effective severity and scope | `alerts.view` |
 | `search-code` | Azure DevOps code search, optionally within one container's repository or one system's project, with the user's own AzDO Repos credential | `alerts.view` |
-| `get-code` | Numbered lines around an alert or local finding, or of any file of a container, read from Azure DevOps with the user's own AzDO Repos credential | `alerts.view` |
+| `get-code` | Numbered lines around an alert or local finding, or of any file of a container, read from Azure DevOps with the user's own AzDO Repos credential; a finding path that includes the build's checkout folder (e.g. `project/src/App.java`) is resolved to the longest trailing part that exists in the repository | `alerts.view` |
 | `list-sbom-components`, `get-sbom` | SBOM components with their vulnerabilities (local findings on the same package and version) | `alerts.view` |
 | `change-alert-state`, `change-alert-severity` | Pending until pushed from the Pending Sync page | `alerts.edit` (+ `alerts.bulk-edit` for several) |
 | `change-local-finding-status`, `change-local-finding-severity` | Applied immediately | `alerts.edit` (+ `alerts.bulk-edit` for several) |

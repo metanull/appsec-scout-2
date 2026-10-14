@@ -208,7 +208,8 @@ final class AzDoClient
      * The text content of one file of a Git repository, at a branch or else the repository's
      * default branch.
      *
-     * @throws \InvalidArgumentException when the file (or branch) does not exist
+     * @throws AzDoItemNotFoundException when the file (or branch) does not exist
+     * @throws \InvalidArgumentException when the path is a folder or a binary file
      */
     public function getFileContent(string $projectId, string $repositoryId, string $path, ?string $branch = null): string
     {
@@ -223,7 +224,7 @@ final class AzDoClient
             $response = $this->http->get("{$projectId}/_apis/git/repositories/{$repositoryId}/items", ['query' => $query]);
         } catch (ClientException $e) {
             if ($e->getResponse()->getStatusCode() === 404) {
-                throw new \InvalidArgumentException(sprintf('File %s not found in the repository%s.', $path, $branch !== null ? " at branch {$branch}" : ''), 0, $e);
+                throw new AzDoItemNotFoundException(sprintf('File %s not found in the repository%s.', $path, $branch !== null ? " at branch {$branch}" : ''), 0, $e);
             }
 
             throw $e;
