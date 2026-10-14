@@ -41,12 +41,15 @@ beforeEach(function () {
             $respond = function (RequestInterface $request) use (&$requests, $file): Response {
                 $requests[] = $request;
 
-                return str_contains($request->getUri()->getQuery(), 'missing')
+                // The repository has no "checkout" folder: it is where a build checked it out.
+                $path = requestQuery($request)['path'];
+
+                return str_contains($path, 'missing') || str_starts_with($path, '/checkout/')
                     ? new Response(404)
                     : new Response(200, [], json_encode(['content' => $file], JSON_THROW_ON_ERROR));
             };
 
-            return new AzDoClient($organization, $pat, 'https://dev.azure.com', new Client(['handler' => HandlerStack::create(new MockHandler([$respond, $respond]))]), new Client(['handler' => new MockHandler]));
+            return new AzDoClient($organization, $pat, 'https://dev.azure.com', new Client(['handler' => HandlerStack::create(new MockHandler(array_fill(0, 5, $respond)))]), new Client(['handler' => new MockHandler]));
         }
     });
 
@@ -87,6 +90,7 @@ it('shows the code around a local finding with the user\'s own credential, on th
         ->assertStructuredContent(fn ($json) => $json
             ->where('container', ['id' => $this->repo->id, 'name' => 'payments-api'])
             ->where('path', '/src/Config.cs')
+            ->where('reported_path', '/src/Config.cs')
             ->where('branch', 'main')
             ->where('total_lines', 60)
             ->where('focus_line', 30)
@@ -110,6 +114,33 @@ it('shows the code around an alert on its own branch, clamped at the file end', 
             ->where('start_line', 54)
             ->where('end_line', 60)
             ->etc());
+});
+
+it('resolves an alert path that includes the build checkout folder to the file in the repository', function () {
+    $alert = SecurityEvent::factory()->forContainer($this->repo)->create(['file_path' => 'checkout/src/Crypto.cs', 'start_line' => 30, 'branch' => 'main']);
+
+    AppSecScoutServer::actingAs($this->reader)->tool(GetCodeTool::class, ['alert_id' => $alert->id, 'context_lines' => 1])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('path', '/src/Crypto.cs')
+            ->where('reported_path', '/checkout/src/Crypto.cs')
+            ->where('focus_line', 30)
+            ->etc());
+
+    expect(array_map(fn (RequestInterface $request): string => requestQuery($request)['path'], $this->requests))
+        ->toBe(['/checkout/src/Crypto.cs', '/src/Crypto.cs']);
+});
+
+it('fails when no trailing part of a finding path exists, and reads a given path as given', function () {
+    $alert = SecurityEvent::factory()->forContainer($this->repo)->create(['file_path' => 'checkout/missing.txt', 'branch' => 'main']);
+
+    AppSecScoutServer::actingAs($this->reader)->tool(GetCodeTool::class, ['alert_id' => $alert->id])
+        ->assertHasErrors(['File /checkout/missing.txt not found in the repository at branch main. No shorter trailing part of that path exists there either.']);
+    AppSecScoutServer::actingAs($this->reader)->tool(GetCodeTool::class, ['container_id' => $this->repo->id, 'path' => 'checkout/src/Crypto.cs'])
+        ->assertHasErrors(['File /checkout/src/Crypto.cs not found in the repository at branch main.']);
+
+    expect(array_map(fn (RequestInterface $request): string => requestQuery($request)['path'], $this->requests))
+        ->toBe(['/checkout/missing.txt', '/missing.txt', '/checkout/src/Crypto.cs']);
 });
 
 it('reads any file of a container, from the top when no line is given, from its source project when re-linked', function () {

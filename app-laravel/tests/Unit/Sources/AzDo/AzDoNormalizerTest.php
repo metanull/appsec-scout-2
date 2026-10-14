@@ -90,8 +90,10 @@ it('stores code alert context facts', function () {
                     'itemUrl' => 'https://dev.azure.com/testorg/SecurityProject/_git/backend-api?path=/src/app.php',
                 ],
                 'region' => [
-                    'startLine' => 12,
-                    'endLine' => 14,
+                    'lineStart' => 12,
+                    'lineEnd' => 14,
+                    'columnStart' => 5,
+                    'columnEnd' => 9,
                 ],
             ],
         ],
@@ -116,7 +118,9 @@ it('stores code alert context facts', function () {
 
     $dto = AzDoNormalizer::toEvent($alert, 'repo-001', $project, $repo);
 
-    expect(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::SOURCE_ALERT_WEB_URL))->toBe('https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/5005')
+    expect($dto->startLine)->toBe(12)
+        ->and($dto->endLine)->toBe(14)
+        ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::SOURCE_ALERT_WEB_URL))->toBe('https://dev.azure.com/testorg/SecurityProject/_git/backend-api/alerts/5005')
         ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::CODE_FILE_PATH))->toBe('src/app.php')
         ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::CODE_COMMIT_SHA))->toBe('abc123')
         ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::CODE_DEFAULT_BRANCH))->toBe('feature/code-fix')
@@ -126,6 +130,32 @@ it('stores code alert context facts', function () {
         ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::PACKAGE_NAME))->toBe('express')
         ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::PACKAGE_VERSION))->toBe('4.18.2')
         ->and(SourceContextFacts::get($dto->metadata ?? [], SourceContextFacts::PACKAGE_ECOSYSTEM))->toBe('npm');
+});
+
+it('reads the line of a single-line code alert as Advanced Security reports it', function () {
+    // Shape of a real Advanced Security code alert: lineEnd is 0 for a single-line region.
+    $alert = AzDoAlert::fromArray([
+        'alertId' => 11783,
+        'alertType' => 'code',
+        'severity' => 'critical',
+        'state' => 'active',
+        'title' => 'LDAP query built from user-controlled sources',
+        'tools' => [['name' => 'CodeQL', 'rules' => [['id' => 'java/ldap-injection', 'opaqueId' => 'java/ldap-injection']]]],
+        'physicalLocations' => [[
+            'versionControl' => ['commitHash' => '856597dfcef8edbf1a400a02445e7de0bdcfa4cd'],
+            'filePath' => 'project/core-web/src/main/java/agora/action/common/ReLoginAction.java',
+            'isValidGitPath' => true,
+            'region' => ['lineStart' => 325, 'lineEnd' => 0, 'columnStart' => 70, 'columnEnd' => 76],
+            'additionalProperties' => ['%SRCROOT%' => 'file:///D:/a/1/s'],
+        ]],
+    ]);
+
+    $dto = AzDoNormalizer::toEvent($alert, 'repo-001');
+
+    expect($dto->startLine)->toBe(325)
+        ->and($dto->endLine)->toBe(325)
+        ->and($dto->snippet)->toBeNull()
+        ->and($dto->fingerprint)->toBe('java/ldap-injection:project/core-web/src/main/java/agora/action/common/ReLoginAction.java:325');
 });
 
 it('preserves full rule description text in event descriptions', function () {
