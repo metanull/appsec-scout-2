@@ -9,6 +9,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Sources\Dto\EventDto;
 use App\Sources\Registry as SourceRegistry;
 use App\Sources\ValueObjects\PushResult;
 use App\Sources\ValueObjects\SourceCapabilities;
@@ -260,6 +261,95 @@ it('stops retrying automatically after the third failure', function () {
         ->and($event->is_dirty)->toBeTrue()
         ->and(SyncRun::query()->latest('id')->first()?->counts_json['events_skipped'])->toBe(1);
 });
+
+it('marks a refused push as synced when the source already holds the pending state', function () {
+    $source = bindFakePushSource((new FakeSource)->withPushCallback(
+        fn (): PushResult => PushResult::failure('409 Conflict: A fingerprint dismissal with id \'1697\' already exists'),
+    ));
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'state' => EventState::Open,
+        'pending_state' => EventState::Dismissed,
+        'pending_comment' => 'False positive, already dismissed upstream.',
+        'is_dirty' => true,
+        'metadata' => ['pushRetryCount' => 1, 'lastPushError' => 'earlier 409'],
+    ]);
+    $source->withRawEvent(upstreamDto($event, EventState::Dismissed));
+
+    $outcome = app(PendingStatePusher::class)->push(collect([$event]), pushOperator());
+
+    $event->refresh();
+
+    expect($source->pushCalls)->toBe(1)
+        ->and($outcome->alreadyUpstream)->toBe(1)
+        ->and($outcome->succeeded)->toBe(0)
+        ->and($outcome->failed)->toBe(0)
+        ->and($event->state)->toBe(EventState::Dismissed)
+        ->and($event->pending_state)->toBeNull()
+        ->and($event->is_dirty)->toBeFalse()
+        ->and($event->metadata)->not->toHaveKey('pushRetryCount')
+        ->and($event->comments()->latest('id')->first()?->body)->toContain('Fake Source already had this alert as "dismissed"')
+        ->and(ErrorLog::query()->where('channel', 'sync')->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'sync_push')->first()?->payload_json['status'])->toBe('already_upstream')
+        ->and(SyncRun::query()->latest('id')->first()?->status)->toBe('success');
+});
+
+it('reconciles an alert past its retry limit once the source holds the pending state, without pushing', function () {
+    $source = bindFakePushSource((new FakeSource)->withPushFailure());
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'state' => EventState::Open,
+        'pending_state' => EventState::Dismissed,
+        'is_dirty' => true,
+        'metadata' => ['pushRetryCount' => 3, 'lastPushError' => 'upstream error'],
+    ]);
+    $source->withRawEvent(upstreamDto($event, EventState::Dismissed));
+
+    $outcome = app(PendingStatePusher::class)->push(collect([$event]), pushOperator());
+
+    expect($source->pushCalls)->toBe(0)
+        ->and($outcome->alreadyUpstream)->toBe(1)
+        ->and($outcome->skipped)->toBe(0)
+        ->and($event->fresh()?->is_dirty)->toBeFalse();
+});
+
+it('reports both errors when a push fails and the alert cannot be read back', function () {
+    $source = bindFakePushSource((new class extends FakeSource
+    {
+        public function fetchRawEvent(SecurityEvent $event): EventDto
+        {
+            throw new RuntimeException('read refused');
+        }
+    })->withPushFailure());
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'pending_state' => EventState::Dismissed,
+        'is_dirty' => true,
+        'metadata' => [],
+    ]);
+
+    $outcome = app(PendingStatePusher::class)->push(collect([$event]), pushOperator());
+
+    $event->refresh();
+
+    expect($source->pushCalls)->toBe(1)
+        ->and($outcome->failed)->toBe(1)
+        ->and($outcome->lastError)->toBe('upstream error (Reading the alert back from the source also failed: read refused)')
+        ->and($event->is_dirty)->toBeTrue()
+        ->and($event->metadata['pushRetryCount'])->toBe(1);
+});
+
+function upstreamDto(SecurityEvent $event, EventState $state): EventDto
+{
+    return new EventDto(
+        sourceEventId: $event->source_event_id,
+        sourceSystemId: (string) $event->software_system_id,
+        title: $event->title,
+        severity: $event->severity,
+        state: $state,
+        type: $event->type,
+    );
+}
 
 function bindFakePushSource(FakeSource $source): FakeSource
 {

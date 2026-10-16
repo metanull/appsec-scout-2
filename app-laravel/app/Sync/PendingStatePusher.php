@@ -3,7 +3,9 @@
 namespace App\Sync;
 
 use App\Audit\Recorder;
+use App\Models\Enums\EventState;
 use App\Models\ErrorLog;
+use App\Models\EventComment;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
 use App\Models\User;
@@ -16,11 +18,12 @@ use InvalidArgumentException;
 /**
  * Pushes pending alert state changes of one source upstream. A push is user-triggered, so it
  * runs synchronously with the operator's own source credential and reports what happened;
- * changes the source cannot accept are resolved locally (PendingSyncResolver).
+ * changes the source cannot accept are resolved locally (PendingSyncResolver), and a change the
+ * source already holds (made there directly) is marked synced rather than failing on every push.
  */
 final class PendingStatePusher
 {
-    private const MAX_RETRIES = 3;
+    public const MAX_RETRIES = 3;
 
     public function __construct(
         private readonly OperatorIntegrationRuntime $runtime,
@@ -94,6 +97,7 @@ final class PendingStatePusher
             'events_failed' => 0,
             'events_skipped' => 0,
             'events_resolved_local_only' => 0,
+            'events_already_upstream' => 0,
         ];
         $lastError = null;
 
@@ -133,6 +137,7 @@ final class PendingStatePusher
             failed: $counts['events_failed'],
             skipped: $counts['events_skipped'],
             resolvedLocalOnly: $counts['events_resolved_local_only'],
+            alreadyUpstream: $counts['events_already_upstream'],
             lastError: $lastError,
         );
     }
@@ -153,16 +158,58 @@ final class PendingStatePusher
         }
 
         if ($retryCount >= self::MAX_RETRIES) {
-            return ['counts' => ['events_skipped' => 1]];
+            // No further push attempts, but the change may have been made at the source since.
+            $upstream = $this->upstreamState($source, $event);
+
+            return $upstream === $event->getAttribute('pending_state')
+                ? $this->markPushed($source, $event, $metadata, $sourceId, $operatorUserId, alreadyUpstream: true)
+                : ['counts' => ['events_skipped' => 1]];
         }
 
         $result = $source->pushEventState($event);
 
-        if (! $result->ok) {
-            $this->recordFailure($event, $metadata, $retryCount + 1, $result->error, $sourceId, $operatorUserId);
-
-            return ['counts' => ['events_failed' => 1], 'error' => $result->error];
+        if ($result->ok) {
+            return $this->markPushed($source, $event, $metadata, $sourceId, $operatorUserId, alreadyUpstream: false);
         }
+
+        // A source refuses a change it already holds (e.g. AzDO answers 409 Conflict for an alert
+        // dismissed upstream), so a failed push checks whether the source already has the state.
+        $upstream = $this->upstreamState($source, $event);
+
+        if ($upstream === $event->getAttribute('pending_state')) {
+            return $this->markPushed($source, $event, $metadata, $sourceId, $operatorUserId, alreadyUpstream: true);
+        }
+
+        $error = is_string($upstream)
+            ? sprintf('%s (Reading the alert back from the source also failed: %s)', $result->error ?? 'Push failed.', $upstream)
+            : $result->error;
+
+        $this->recordFailure($event, $metadata, $retryCount + 1, $error, $sourceId, $operatorUserId);
+
+        return ['counts' => ['events_failed' => 1], 'error' => $error];
+    }
+
+    /** The alert's current state at the source, or why it could not be read. */
+    private function upstreamState(Source $source, SecurityEvent $event): EventState|string
+    {
+        try {
+            return $source->fetchRawEvent($event)->state;
+        } catch (\Throwable $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /**
+     * Applies a pending state the source now holds: pushed just now, or found already set there
+     * (`$alreadyUpstream`), in which case a note explains that the local comment was not pushed.
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return array{counts: array<string, int>}
+     */
+    private function markPushed(Source $source, SecurityEvent $event, array $metadata, string $sourceId, int $operatorUserId, bool $alreadyUpstream): array
+    {
+        $capabilities = $source->capabilities();
+        $pendingState = $event->getAttribute('pending_state');
 
         unset($metadata['pushRetryCount'], $metadata['lastPushError']);
 
@@ -179,13 +226,28 @@ final class PendingStatePusher
         ])->save();
 
         $this->recorder->recordSyncPush(SecurityEvent::class, (string) $event->id, [
-            'status' => 'success',
+            'status' => $alreadyUpstream ? 'already_upstream' : 'success',
             'source_id' => $sourceId,
             'operator_user_id' => $operatorUserId,
         ]);
 
+        $counts = [$alreadyUpstream ? 'events_already_upstream' : 'events_succeeded' => 1];
+
+        if ($alreadyUpstream) {
+            EventComment::query()->create([
+                'event_id' => $event->id,
+                'body' => sprintf(
+                    '%s already had this alert as "%s", so the pending change was marked as synced without pushing it. The justification comment stays local-only.',
+                    $source->displayName(),
+                    $pendingState instanceof EventState ? $pendingState->value : (string) $pendingState,
+                ),
+                'author_user_id' => null,
+                'created_at' => now(),
+            ]);
+        }
+
         if (! $stillHasUnsupportedSeverity) {
-            return ['counts' => ['events_succeeded' => 1]];
+            return ['counts' => $counts];
         }
 
         $this->resolver->recordLocalOnlyResolution(
@@ -195,7 +257,7 @@ final class PendingStatePusher
             $operatorUserId,
         );
 
-        return ['counts' => ['events_succeeded' => 1, 'events_resolved_local_only' => 1]];
+        return ['counts' => $counts + ['events_resolved_local_only' => 1]];
     }
 
     /** @param  array<string, mixed>  $metadata */

@@ -41,7 +41,7 @@ final class DashboardData
      * Summarizes a SyncRun's counts_json into "N alerts retrieved, W warning(s), E error(s)" —
      * a fetch run (systems/containers/events pulled from a Source) reports alerts retrieved as
      * events created+updated, with an error only when the whole run failed; a push run (staged
-     * alert changes sent upstream) reports its own events_succeeded/events_resolved_local_only/
+     * alert changes sent upstream) reports its own events_succeeded (plus events_already_upstream)/events_resolved_local_only/
      * events_failed counts directly.
      *
      * Two pseudo-source runs share the table and carry their own shapes instead: an inventory
@@ -68,7 +68,7 @@ final class DashboardData
         }
 
         if (array_key_exists('events_succeeded', $counts)) {
-            $retrieved = (int) ($counts['events_succeeded'] ?? 0);
+            $retrieved = (int) ($counts['events_succeeded'] ?? 0) + (int) ($counts['events_already_upstream'] ?? 0);
             $warnings = (int) ($counts['events_resolved_local_only'] ?? 0);
             $errors = (int) ($counts['events_failed'] ?? 0);
         } else {

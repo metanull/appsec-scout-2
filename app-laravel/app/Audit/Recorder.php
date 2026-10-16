@@ -48,6 +48,12 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordPendingChangeDiscarded(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('pending_change_discarded', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordRefetch(string $subjectType, string $subjectId, array $payload = []): void
     {
         $this->write('event_refetched', $subjectType, $subjectId, $payload);
