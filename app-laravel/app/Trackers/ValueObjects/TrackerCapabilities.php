@@ -14,5 +14,6 @@ final class TrackerCapabilities
         public readonly bool $supportsParent = false,
         public readonly array $supportedItemTypes = [],
         public readonly int $maxDescriptionBytes = 16384,
+        public readonly int $maxCommentChars = 32767,
     ) {}
 }

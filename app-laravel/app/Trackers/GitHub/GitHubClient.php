@@ -157,6 +157,15 @@ final class GitHubClient
         return $this->mapWorkItem($payload, "{$owner}/{$repo}", $request->parentId ?? $this->extractParentFromBody($payload['body'] ?? null));
     }
 
+    public function addComment(string $workItemKey, string $markdown): void
+    {
+        [$owner, $repo, $number] = $this->splitWorkItemKey($workItemKey);
+
+        $this->http->post("repos/{$owner}/{$repo}/issues/{$number}/comments", [
+            'json' => ['body' => $markdown],
+        ]);
+    }
+
     /** @return list<WorkItemDto> */
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): array
     {

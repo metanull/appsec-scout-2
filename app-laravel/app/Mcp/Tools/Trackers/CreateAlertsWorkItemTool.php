@@ -8,6 +8,7 @@ use App\Mcp\Tools\AppSecTool;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Trackers\DescriptionBuilder;
+use App\Trackers\WorkItemComment;
 use App\Trackers\WorkItemService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -19,7 +20,7 @@ use Laravel\Mcp\Server\Attributes\Title;
 
 #[Name('create-alerts-work-item')]
 #[Title('Create a work item for alerts')]
-#[Description('Creates ONE tracker work item (Jira issue / GitHub issue) for a selection of related alerts and links every alert to it; several alerts produce one grouped ticket. Alerts and local findings never share a ticket: use create-local-findings-work-item for those. Uses the acting user\'s personal tracker credentials. Defaults to a dry run showing the title and description that would be sent; call again with dry_run=false to create it. Use get-tracker-options to discover projects, item types and the suggested project. Requires work-items.create.')]
+#[Description('Creates ONE tracker work item (Jira issue / GitHub issue) for a selection of related alerts and links every alert to it; several alerts produce one grouped ticket. Alerts and local findings never share a ticket: use create-local-findings-work-item for those. The title and description are generated from the alerts; put your own write-up in comment, which is posted on the new work item as a comment (if posting it fails, the work item stays created and comment_error says why). Uses the acting user\'s personal tracker credentials. Defaults to a dry run showing the title, description and comment that would be sent; call again with dry_run=false to create it. Use get-tracker-options to discover projects, item types and the suggested project. Requires work-items.create.')]
 final class CreateAlertsWorkItemTool extends AppSecTool
 {
     public const MAX_ALERTS = 50;
@@ -28,6 +29,7 @@ final class CreateAlertsWorkItemTool extends AppSecTool
         private readonly TrackerAccess $trackers,
         private readonly WorkItemService $workItems,
         private readonly DescriptionBuilder $descriptions,
+        private readonly WorkItemComment $comments,
     ) {}
 
     public function schema(JsonSchema $schema): array
@@ -51,6 +53,7 @@ final class CreateAlertsWorkItemTool extends AppSecTool
         $events = FindingSelection::resolve($request, 'alert_ids', SecurityEvent::class, 'alert')->load(['softwareSystem', 'container']);
 
         $this->trackers->ensurePersonalCredentials($fields->tracker, $actor->id);
+        $this->comments->validated($fields->comment, $fields->tracker->id());
 
         if (FindingSelection::isDryRun($request)) {
             $list = array_values($events->all());
@@ -76,14 +79,17 @@ final class CreateAlertsWorkItemTool extends AppSecTool
             priority: $fields->priority,
             assigneeId: $fields->assigneeId,
             parentId: $fields->parentId,
+            comment: $fields->comment,
         );
 
         return Response::structured([
             'dry_run' => false,
             'tracker_id' => $fields->tracker->id(),
-            'work_item_id' => $created->id,
-            'url' => $created->url,
-            'title' => $created->title,
+            'work_item_id' => $created->workItem->id,
+            'url' => $created->workItem->url,
+            'title' => $created->workItem->title,
+            'comment_posted' => $fields->comment !== null && $created->commentError === null,
+            'comment_error' => $created->commentError,
             'linked_alert_ids' => $events->modelKeys(),
         ]);
     }

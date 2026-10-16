@@ -1,12 +1,15 @@
 <?php
 
 use App\Audit\AuditLog;
+use App\Models\ErrorLog;
 use App\Models\SecurityEvent;
 use App\Models\User;
 use App\Models\WorkItemLink;
+use App\Trackers\Dto\CreatedWorkItem;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\WorkItemService;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Validation\ValidationException;
 use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
@@ -36,9 +39,10 @@ it('creates a single work item and links one event', function () {
 
     $link = WorkItemLink::query()->first();
 
-    expect($created)->toBeInstanceOf(WorkItemDto::class)
-        ->and($created->id)->toBe($link?->work_item_id)
-        ->and($created->url)->toBe($link?->work_item_url)
+    expect($created)->toBeInstanceOf(CreatedWorkItem::class)
+        ->and($created->commentError)->toBeNull()
+        ->and($created->workItem->id)->toBe($link?->work_item_id)
+        ->and($created->workItem->url)->toBe($link?->work_item_url)
         ->and($tracker->createCalls)->toBe(1)
         ->and($tracker->latestCreateWorkItemRequest)->not->toBeNull()
         ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('[View alert](https://example.test/alerts/secret-101)')
@@ -129,4 +133,72 @@ it('unlinks a work item and records an audit row', function () {
 
     expect(WorkItemLink::count())->toBe(0)
         ->and(AuditLog::query()->where('action', 'work_item_unlinked')->exists())->toBeTrue();
+});
+
+it('posts the operator comment on the new work item and audits it', function () {
+    $tracker = bindFakeWorkItemTracker(new FakeTracker);
+    $user = User::factory()->create();
+    $event = SecurityEvent::factory()->create();
+
+    $created = app(WorkItemService::class)->createForEvents(
+        eventIds: [$event->id],
+        userId: $user->id,
+        trackerId: 'fake-tracker',
+        projectKey: 'APP',
+        itemType: 'Bug',
+        comment: "  ## Triage\n\nConfirmed true positive.  ",
+    );
+
+    $audit = AuditLog::query()->where('action', 'work_item_comment_added')->sole();
+
+    expect($created->commentError)->toBeNull()
+        ->and($tracker->comments)->toBe([['key' => $created->workItem->id, 'markdown' => "## Triage\n\nConfirmed true positive."]])
+        ->and($audit->subject_id)->toBe((string) $event->id)
+        ->and($audit->payload_json)->toMatchArray([
+            'status' => 'success',
+            'tracker_id' => 'fake-tracker',
+            'work_item_id' => $created->workItem->id,
+            'comment' => "## Triage\n\nConfirmed true positive.",
+        ]);
+});
+
+it('posts no comment when the comment is blank', function () {
+    $tracker = bindFakeWorkItemTracker(new FakeTracker);
+    $event = SecurityEvent::factory()->create();
+
+    app(WorkItemService::class)->createForEvents([$event->id], User::factory()->create()->id, 'fake-tracker', 'APP', 'Bug', comment: "  \n ");
+
+    expect($tracker->createCalls)->toBe(1)
+        ->and($tracker->comments)->toBe([])
+        ->and(AuditLog::query()->where('action', 'work_item_comment_added')->exists())->toBeFalse();
+});
+
+it('refuses a comment longer than the tracker accepts before creating anything', function () {
+    $tracker = bindFakeWorkItemTracker(new FakeTracker);
+    $event = SecurityEvent::factory()->create();
+
+    expect(fn () => app(WorkItemService::class)->createForEvents(
+        [$event->id], User::factory()->create()->id, 'fake-tracker', 'APP', 'Bug', comment: str_repeat('é', 32768),
+    ))->toThrow(ValidationException::class, 'The comment is 32768 characters long; Fake Tracker accepts at most 32767. Nothing was created.');
+
+    expect($tracker->createCalls)->toBe(0)
+        ->and(WorkItemLink::query()->count())->toBe(0);
+});
+
+it('keeps the created and linked work item when its comment cannot be posted', function () {
+    $tracker = bindFakeWorkItemTracker((new FakeTracker)->withCommentFailure('403 Forbidden'));
+    $event = SecurityEvent::factory()->create();
+
+    $created = app(WorkItemService::class)->createForEvents(
+        [$event->id], User::factory()->create()->id, 'fake-tracker', 'APP', 'Bug', comment: 'Confirmed true positive.',
+    );
+
+    $error = ErrorLog::query()->where('channel', 'work-items')->sole();
+
+    expect($created->commentError)->toBe('403 Forbidden')
+        ->and($tracker->createCalls)->toBe(1)
+        ->and(WorkItemLink::query()->where('event_id', $event->id)->value('work_item_id'))->toBe($created->workItem->id)
+        ->and($error->message)->toBe("Work item {$created->workItem->id} was created, but its comment could not be posted: 403 Forbidden")
+        ->and(AuditLog::query()->where('action', 'work_item_comment_added')->sole()->payload_json)
+        ->toMatchArray(['status' => 'failure', 'error' => '403 Forbidden']);
 });

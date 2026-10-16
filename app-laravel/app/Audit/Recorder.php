@@ -66,6 +66,12 @@ class Recorder
     }
 
     /** @param array<string, mixed> $payload */
+    public function recordWorkItemCommentAdded(string $subjectType, string $subjectId, array $payload = []): void
+    {
+        $this->write('work_item_comment_added', $subjectType, $subjectId, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
     public function recordWorkItemLinked(string $subjectType, string $subjectId, array $payload = []): void
     {
         $this->write('work_item_linked', $subjectType, $subjectId, $payload);

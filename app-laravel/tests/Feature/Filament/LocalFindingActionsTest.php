@@ -301,3 +301,53 @@ it('renders linked work items on the local finding work items relation manager',
         ->assertSee('Rotate leaked API key')
         ->assertSee('Unlink');
 });
+
+it('posts the form comment on the created work item, and warns when the post fails', function () {
+    $tracker = bindFakeWorkItemTracker((new FakeTracker)->withProjects(new ProjectDto(key: 'APP', name: 'Application')));
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
+    $finding = highLocalFinding();
+    $data = ['tracker' => 'fake-tracker', 'project' => 'APP', 'item_type' => 'Bug', 'comment' => "## Triage\n\nConfirmed true positive."];
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableAction('createWorkItem', $finding, data: $data)
+        ->assertHasNoTableActionErrors()
+        ->assertNotified('Work item created');
+
+    expect($tracker->comments)->toBe([['key' => 'APP#1', 'markdown' => "## Triage\n\nConfirmed true positive."]]);
+
+    $tracker->withCommentFailure('403 Forbidden');
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableAction('createWorkItem', $finding, data: $data)
+        ->assertNotified('Work item created, but its comment was not posted');
+
+    expect(LocalFindingWorkItemLink::query()->where('work_item_id', 'APP#2')->exists())->toBeTrue();
+});
+
+it('rejects a form comment longer than the tracker accepts', function () {
+    $tracker = bindFakeWorkItemTracker((new FakeTracker)->withProjects(new ProjectDto(key: 'APP', name: 'Application')));
+    $user = localFindingTwoFactorUser();
+    $user->syncRoles(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $user->id, 'user-token');
+
+    Livewire::actingAs($user)
+        ->test(ListLocalFindings::class)
+        ->callTableAction('createWorkItem', highLocalFinding(), data: [
+            'tracker' => 'fake-tracker', 'project' => 'APP', 'item_type' => 'Bug', 'comment' => str_repeat('a', 32768),
+        ])
+        ->assertHasTableActionErrors(['comment' => 'max']);
+
+    expect($tracker->createCalls)->toBe(0);
+});
+
+/** A finding the findings list shows by default (it filters to open, high and critical). */
+function highLocalFinding(): LocalFinding
+{
+    return SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_SECRET, 'rule_id' => 'generic-api-key', 'title' => 'Hardcoded API key', 'severity' => 'HIGH', 'file_path' => 'config/services.php',
+    ]);
+}

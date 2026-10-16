@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SecurityEventResource\Pages;
 
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\SecurityEventResource;
+use App\Filament\Support\WorkItemCreatedNotification;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityContainer;
@@ -219,7 +220,7 @@ class ViewSecurityEvent extends ViewRecord
             return false;
         }
 
-        app(WorkItemService::class)->createForEvents(
+        $created = app(WorkItemService::class)->createForEvents(
             eventIds: [$this->eventRecord()->id],
             userId: $user->id,
             trackerId: $trackerId,
@@ -229,10 +230,11 @@ class ViewSecurityEvent extends ViewRecord
             priority: $this->nullableString($data['priority'] ?? null),
             assigneeId: $this->nullableString($data['assignee_id'] ?? null),
             parentId: $this->nullableString($data['parent_id'] ?? null),
+            comment: $this->nullableString($data['comment'] ?? null),
         );
 
         $this->refreshFormData([]);
-        Notification::make()->title('Work item created')->success()->send();
+        WorkItemCreatedNotification::send($created, 'Work item created');
 
         return true;
     }

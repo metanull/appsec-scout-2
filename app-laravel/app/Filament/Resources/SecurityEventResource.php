@@ -14,6 +14,7 @@ use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
+use App\Filament\Support\WorkItemCreatedNotification;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -618,7 +619,7 @@ class SecurityEventResource extends Resource
                                 return;
                             }
 
-                            app(WorkItemService::class)->createForEvents(
+                            $created = app(WorkItemService::class)->createForEvents(
                                 eventIds: [$record->id],
                                 userId: $user->id,
                                 trackerId: $trackerId,
@@ -628,9 +629,10 @@ class SecurityEventResource extends Resource
                                 priority: self::nullableString($data['priority'] ?? null),
                                 assigneeId: self::nullableString($data['assignee_id'] ?? null),
                                 parentId: self::nullableString($data['parent_id'] ?? null),
+                                comment: self::nullableString($data['comment'] ?? null),
                             );
 
-                            Notification::make()->title('Work item created')->success()->send();
+                            WorkItemCreatedNotification::send($created, 'Work item created');
                         }),
                     Action::make('linkExistingWorkItem')
                         ->label('Link existing work item')
@@ -717,7 +719,7 @@ class SecurityEventResource extends Resource
                             return;
                         }
 
-                        app(WorkItemService::class)->createForEvents(
+                        $created = app(WorkItemService::class)->createForEvents(
                             eventIds: array_values($records->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()),
                             userId: $user->id,
                             trackerId: $trackerId,
@@ -727,9 +729,10 @@ class SecurityEventResource extends Resource
                             priority: self::nullableString($data['priority'] ?? null),
                             assigneeId: self::nullableString($data['assignee_id'] ?? null),
                             parentId: self::nullableString($data['parent_id'] ?? null),
+                            comment: self::nullableString($data['comment'] ?? null),
                         );
 
-                        Notification::make()->title('Grouped work item created')->success()->send();
+                        WorkItemCreatedNotification::send($created, 'Grouped work item created');
                     })
                     ->deselectRecordsAfterCompletion(),
                 BulkAction::make('linkExistingWorkItemBulk')

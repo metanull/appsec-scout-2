@@ -39,12 +39,23 @@ final class MarkdownToAdf
      */
     public static function convert(string $markdown): array
     {
+        return self::convertUntruncated(self::truncateInput($markdown));
+    }
+
+    /**
+     * Converts without the description size cap, for text whose length the caller has already
+     * checked against the tracker's own limit (a comment).
+     *
+     * @return array{version: int, type: string, content: list<array<string, mixed>>}
+     */
+    public static function convertUntruncated(string $markdown): array
+    {
         $environment = new Environment;
         $environment->addExtension(new CommonMarkCoreExtension);
         $environment->addExtension(new TableExtension);
 
         $parser = new MarkdownParser($environment);
-        $document = $parser->parse(self::truncateInput($markdown));
+        $document = $parser->parse($markdown);
         $content = self::convertBlocks($document);
 
         if ($content === []) {

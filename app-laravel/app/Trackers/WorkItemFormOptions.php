@@ -13,6 +13,7 @@ use BackedEnum;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -47,7 +48,7 @@ final class WorkItemFormOptions
 
     /**
      * @param  list<SecurityEvent>  $events
-     * @return array<int, Placeholder|Select|TagsInput>
+     * @return array<int, Placeholder|Select|TagsInput|Textarea>
      */
     public function createSchema(array $events = []): array
     {
@@ -60,7 +61,7 @@ final class WorkItemFormOptions
 
     /**
      * @param  list<LocalFinding>  $findings
-     * @return array<int, Placeholder|Select|TagsInput>
+     * @return array<int, Placeholder|Select|TagsInput|Textarea>
      */
     public function createSchemaForFindings(array $findings = []): array
     {
@@ -74,7 +75,7 @@ final class WorkItemFormOptions
     /**
      * @param  list<string>  $ambiguityWarnings
      * @param  list<string>  $labelSuggestions
-     * @return array<int, Placeholder|Select|TagsInput>
+     * @return array<int, Placeholder|Select|TagsInput|Textarea>
      */
     private function buildCreateSchema(?TrackerProjectDefaultResolution $formDefault, array $ambiguityWarnings, array $labelSuggestions): array
     {
@@ -177,6 +178,13 @@ final class WorkItemFormOptions
                     $get->string('tracker', isNullable: true),
                     $value,
                 )),
+            Textarea::make('comment')
+                ->label('Comment')
+                ->helperText('Optional. Markdown, posted as a comment on the new work item once it is created (converted for Jira).')
+                ->rows(6)
+                ->autosize()
+                ->maxLength(fn (Get $get): ?int => $this->runtime->tracker((string) $get->string('tracker', isNullable: true))?->capabilities()->maxCommentChars)
+                ->columnSpanFull(),
         ];
     }
 

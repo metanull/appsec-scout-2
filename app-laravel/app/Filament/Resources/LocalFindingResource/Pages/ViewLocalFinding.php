@@ -7,6 +7,7 @@ use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
 use App\Assets\LocalFindingWorkItemService;
 use App\Filament\Resources\LocalFindingResource;
+use App\Filament\Support\WorkItemCreatedNotification;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
@@ -139,7 +140,7 @@ class ViewLocalFinding extends ViewRecord
             return false;
         }
 
-        app(LocalFindingWorkItemService::class)->createForFindings(
+        $created = app(LocalFindingWorkItemService::class)->createForFindings(
             findingIds: [$this->findingRecord()->id],
             userId: $user->id,
             trackerId: $trackerId,
@@ -149,10 +150,11 @@ class ViewLocalFinding extends ViewRecord
             priority: $this->nullableString($data['priority'] ?? null),
             assigneeId: $this->nullableString($data['assignee_id'] ?? null),
             parentId: $this->nullableString($data['parent_id'] ?? null),
+            comment: $this->nullableString($data['comment'] ?? null),
         );
 
         $this->refreshFormData([]);
-        Notification::make()->title('Work item created')->success()->send();
+        WorkItemCreatedNotification::send($created, 'Work item created');
 
         return true;
     }

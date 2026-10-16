@@ -6,6 +6,7 @@ use App\Audit\Recorder;
 use App\Models\SecurityEvent;
 use App\Models\WorkItemLink;
 use App\Trackers\Contracts\Tracker;
+use App\Trackers\Dto\CreatedWorkItem;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\WorkItemDto;
 use App\Triage\OperatorIntegrationRuntime;
@@ -19,6 +20,7 @@ final class WorkItemService
         private readonly OperatorIntegrationRuntime $runtime,
         private readonly Recorder $recorder,
         private readonly TrackerProjectLinker $linker,
+        private readonly WorkItemComment $comments,
     ) {}
 
     /**
@@ -35,7 +37,9 @@ final class WorkItemService
         ?string $priority = null,
         ?string $assigneeId = null,
         ?string $parentId = null,
-    ): WorkItemDto {
+        ?string $comment = null,
+    ): CreatedWorkItem {
+        $comment = $this->comments->validated($comment, $trackerId);
         $events = $this->events($eventIds);
 
         $isGrouped = count($events) > 1;
@@ -86,7 +90,11 @@ final class WorkItemService
             ]);
         });
 
-        return $workItem;
+        $commentError = $comment !== null
+            ? $this->comments->post($comment, $workItem, $trackerId, $userId, SecurityEvent::class, (string) $events[0]->id)
+            : null;
+
+        return new CreatedWorkItem($workItem, $commentError);
     }
 
     /** @param  list<int>  $eventIds */

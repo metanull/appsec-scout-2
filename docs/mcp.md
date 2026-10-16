@@ -91,7 +91,7 @@ to `dry_run: true` and describe the change first.
 | `list-pending-changes`, `push-pending-changes` | Review alert changes not yet pushed, and push them to their sources now with the user's own source credentials | `work-items.sync` and `sources.push-state` |
 | `discard-pending-changes` | Drop alert changes not yet pushed, without pushing them | `work-items.sync`, `sources.push-state` and `alerts.edit` |
 | `get-tracker-options` | Projects, item types, priorities and the suggested project, with the user's own tracker credentials | `work-items.create` |
-| `create-alerts-work-item`, `create-local-findings-work-item` | One ticket per selection; alerts and local findings never share a ticket | `work-items.create` |
+| `create-alerts-work-item`, `create-local-findings-work-item` | One ticket per selection; alerts and local findings never share a ticket. Title and description are generated; an optional Markdown `comment` is posted on the new ticket (`comment_error` reports a failed post) | `work-items.create` |
 | `fetch-alerts` | Queue a fetch from the sources for an asset, system or container (system credential) | `admin.queue` or `work-items.sync` |
 | `reload-alerts` | Queue a reload of specific alerts (up to 50) from their source, one request per alert — the cheap alternative to `fetch-alerts` (system credential) | `work-items.sync` |
 | `collect-repositories`, `run-static-analysis` | Queue repository collection (Trivy: SBOM, vulnerabilities, secrets) or static analysis for AzDO systems (system credential, one run at a time) | `admin.queue` |

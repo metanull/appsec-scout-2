@@ -159,7 +159,7 @@ Row actions (⋮ menu):
 | --- | --- |
 | **Alerts → Change state** | Choose a new state and give a comment (at least 10 characters). Stores a *pending* state plus a local comment and flags the alert **Pending sync**. The visible state does not change until it is pushed. |
 | **Alerts → Change severity** | Same, for severity. If the Source can't accept severity changes, the value stays as a local annotation when you push. |
-| **Alerts → Create work item** | Creates a Jira/GitHub issue **immediately**, using your **personal** tracker credential. Choose tracker, project, item type, and where supported priority, labels, assignee and parent. The issue is linked to the alert, and the tracker/project is remembered as the default for that System/Container. |
+| **Alerts → Create work item** | Creates a Jira/GitHub issue **immediately**, using your **personal** tracker credential. Choose tracker, project, item type, and where supported priority, labels, assignee and parent. The title and description are generated from the alert. The optional **Comment** (Markdown, e.g. your triage write-up) is posted as a comment on the new issue right after it is created, converted for Jira; it is limited to what the tracker accepts (Jira 32,767, GitHub 65,536 characters). If posting the comment fails, the issue still exists and is linked: a warning says so and the error is in the Error log, so you can add the comment by hand. The issue is linked to the alert, and the tracker/project is remembered as the default for that System/Container. |
 | **Alerts → Link existing work item** | Search for an existing issue and link it, without creating anything. |
 
 Bulk actions (select rows):

@@ -6,9 +6,11 @@ use App\Audit\Recorder;
 use App\Models\LocalFinding;
 use App\Models\LocalFindingWorkItemLink;
 use App\Trackers\Contracts\Tracker;
+use App\Trackers\Dto\CreatedWorkItem;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\TrackerProjectLinker;
+use App\Trackers\WorkItemComment;
 use App\Triage\OperatorIntegrationRuntime;
 use Illuminate\Database\DatabaseManager;
 
@@ -19,6 +21,7 @@ final class LocalFindingWorkItemService
         private readonly OperatorIntegrationRuntime $runtime,
         private readonly Recorder $recorder,
         private readonly TrackerProjectLinker $linker,
+        private readonly WorkItemComment $comments,
         private readonly LocalFindingWorkItemDescriptionBuilder $descriptions,
     ) {}
 
@@ -36,7 +39,9 @@ final class LocalFindingWorkItemService
         ?string $priority = null,
         ?string $assigneeId = null,
         ?string $parentId = null,
-    ): WorkItemDto {
+        ?string $comment = null,
+    ): CreatedWorkItem {
+        $comment = $this->comments->validated($comment, $trackerId);
         $findings = $this->findings($findingIds);
 
         $isGrouped = count($findings) > 1;
@@ -81,7 +86,11 @@ final class LocalFindingWorkItemService
             ]);
         });
 
-        return $workItem;
+        $commentError = $comment !== null
+            ? $this->comments->post($comment, $workItem, $trackerId, $userId, LocalFinding::class, (string) $findings[0]->id)
+            : null;
+
+        return new CreatedWorkItem($workItem, $commentError);
     }
 
     /** @param  list<int>  $findingIds */
