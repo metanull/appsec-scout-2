@@ -11,6 +11,7 @@ final readonly class PushOutcome
         public int $failed,
         public int $skipped,
         public int $resolvedLocalOnly,
+        public int $alreadyUpstream,
         public ?string $lastError,
     ) {}
 }

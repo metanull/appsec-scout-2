@@ -2,6 +2,7 @@
 
 use App\Credentials\Vault;
 use App\Mcp\Servers\AppSecScoutServer;
+use App\Mcp\Tools\Sync\DiscardPendingChangesTool;
 use App\Mcp\Tools\Sync\ListPendingChangesTool;
 use App\Mcp\Tools\Sync\PushPendingChangesTool;
 use App\Models\Enums\EventState;
@@ -78,7 +79,7 @@ it('pushes each source with the acting user\'s credential and reports refused so
         ->assertStructuredContent(fn ($json) => $json
             ->where('dry_run', false)
             ->where('pushed', [[
-                'source_id' => 'fake', 'succeeded' => 1, 'failed' => 0, 'skipped' => 0, 'resolved_local_only' => 0, 'last_error' => null,
+                'source_id' => 'fake', 'succeeded' => 1, 'failed' => 0, 'skipped' => 0, 'resolved_local_only' => 0, 'already_upstream' => 0, 'last_error' => null,
             ]])
             ->where('refused.0.source_id', 'gone')
             ->where('refused.0.alert_ids', [$unknown->id])
@@ -129,4 +130,47 @@ it('requires the Pending Sync permissions', function () {
         ->assertHasErrors(['Permission denied: this tool requires the work-items.sync permission.']);
     AppSecScoutServer::actingAs($triage)->tool(PushPendingChangesTool::class, ['alert_ids' => [$alert->id]])
         ->assertHasErrors(['Permission denied: this tool requires the work-items.sync permission.']);
+});
+
+it('describes a discard on a dry run without discarding anything', function () {
+    $alert = pendingAlert();
+
+    AppSecScoutServer::actingAs($this->sync)->tool(DiscardPendingChangesTool::class, ['alert_ids' => [$alert->id]])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('dry_run', true)
+            ->where('alerts.0.id', $alert->id)
+            ->where('alerts.0.pending_state', 'resolved')
+            ->etc());
+
+    expect($alert->fresh()?->is_dirty)->toBeTrue();
+});
+
+it('discards pending changes without pushing them', function () {
+    $alert = pendingAlert(['metadata' => ['pushRetryCount' => 3, 'lastPushError' => 'upstream error']]);
+
+    AppSecScoutServer::actingAs($this->sync)->tool(DiscardPendingChangesTool::class, ['alert_ids' => [$alert->id], 'dry_run' => false])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json->where('dry_run', false)->where('discarded', 1)->etc());
+
+    $alert->refresh();
+
+    expect($this->source->pushCalls)->toBe(0)
+        ->and($alert->is_dirty)->toBeFalse()
+        ->and($alert->pending_state)->toBeNull()
+        ->and($alert->state)->toBe(EventState::Open)
+        ->and($alert->metadata)->not->toHaveKey('pushRetryCount');
+});
+
+it('refuses to discard alerts without a pending change, or without alerts.edit', function () {
+    $clean = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => false]);
+    $alert = pendingAlert();
+
+    AppSecScoutServer::actingAs($this->sync)->tool(DiscardPendingChangesTool::class, ['alert_ids' => [$alert->id, $clean->id], 'dry_run' => false])
+        ->assertHasErrors(["Alert(s) {$clean->id} have no pending change. Nothing was discarded."]);
+
+    AppSecScoutServer::actingAs(mcpUser('Triage'))->tool(DiscardPendingChangesTool::class, ['alert_ids' => [$alert->id], 'dry_run' => false])
+        ->assertHasErrors(['Permission denied: this tool requires the work-items.sync permission.']);
+
+    expect($alert->fresh()?->is_dirty)->toBeTrue();
 });

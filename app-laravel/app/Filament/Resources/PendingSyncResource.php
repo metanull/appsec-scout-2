@@ -8,6 +8,7 @@ use App\Filament\Support\EventStateBadgeColor;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
+use App\Sync\PendingChangeDiscarder;
 use App\Sync\PendingStatePusher;
 use App\Sync\PushOutcome;
 use Filament\Actions\BulkAction;
@@ -160,6 +161,33 @@ class PendingSyncResource extends Resource
                         $records->groupBy('source_id')
                             ->each(fn (Collection $group) => self::pushGroup($group, $user));
                     }),
+                BulkAction::make('discardPending')
+                    ->label('Discard pending change')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->visible(fn (): bool => Gate::allows('alerts.edit'))
+                    ->requiresConfirmation()
+                    ->modalHeading('Discard the selected pending changes')
+                    ->modalDescription('Drop the selected alerts\' unpushed state, severity and comment changes without pushing them. Each alert keeps the state last read from its source, and a note on the alert records what was discarded. This cannot be undone.')
+                    ->action(function (Collection $records): void {
+                        Gate::authorize('work-items.sync');
+                        Gate::authorize('sources.push-state');
+                        Gate::authorize('alerts.edit');
+
+                        /** @var User|null $user */
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            abort(403);
+                        }
+
+                        $count = app(PendingChangeDiscarder::class)->discard(
+                            $records->filter(fn (Model $record): bool => $record instanceof SecurityEvent),
+                            $user,
+                        );
+
+                        Notification::make()->title("Discarded {$count} pending change(s)")->success()->send();
+                    }),
             ])
             ->recordUrl(fn (SecurityEvent $record): string => SecurityEventResource::getUrl('view', ['record' => $record]))
             ->emptyStateHeading('No pending sync')
@@ -190,7 +218,13 @@ class PendingSyncResource extends Resource
         $notification = Notification::make()->title("{$sourceId}: " . self::outcomeSummary($outcome));
 
         if ($outcome->failed > 0) {
-            $notification->body('Last error: ' . ($outcome->lastError ?? 'unknown') . '. Failed alerts stay pending; see the Error log.')->warning()->send();
+            $notification->body('Last error: ' . ($outcome->lastError ?? 'unknown') . '. Failed alerts stay pending; see the Error log, or discard their pending change.')->warning()->send();
+
+            return;
+        }
+
+        if ($outcome->skipped > 0) {
+            $notification->body('Skipped alerts already failed to push ' . PendingStatePusher::MAX_RETRIES . ' times and are no longer retried; discard their pending change to clear them.')->warning()->send();
 
             return;
         }
@@ -205,6 +239,7 @@ class PendingSyncResource extends Resource
             'failed' => $outcome->failed,
             'skipped' => $outcome->skipped,
             'kept local only' => $outcome->resolvedLocalOnly,
+            'already set at source' => $outcome->alreadyUpstream,
         ])->filter()->map(fn (int $count, string $label): string => "{$count} {$label}")->join(', ') ?: 'nothing to push';
     }
 

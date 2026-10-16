@@ -25,6 +25,7 @@ use App\Mcp\Tools\Operations\GetOperationsStatusTool;
 use App\Mcp\Tools\Operations\ListErrorsTool;
 use App\Mcp\Tools\Sbom\GetSbomTool;
 use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
+use App\Mcp\Tools\Sync\DiscardPendingChangesTool;
 use App\Mcp\Tools\Sync\ListPendingChangesTool;
 use App\Mcp\Tools\Sync\PushPendingChangesTool;
 use App\Mcp\Tools\Trackers\CreateAlertsWorkItemTool;
@@ -93,6 +94,7 @@ final class AppSecScoutServer extends Server
         CommentLocalFindingTool::class,
         ListPendingChangesTool::class,
         PushPendingChangesTool::class,
+        DiscardPendingChangesTool::class,
         GetTrackerOptionsTool::class,
         CreateAlertsWorkItemTool::class,
         CreateLocalFindingsWorkItemTool::class,

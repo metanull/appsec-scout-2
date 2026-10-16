@@ -21,7 +21,7 @@ use Laravel\Mcp\Server\Attributes\Title;
 
 #[Name('push-pending-changes')]
 #[Title('Push pending alert changes to their sources')]
-#[Description('Pushes the pending state, severity and comment changes of the given alerts (ids from list-pending-changes) to their sources now, with your own source credentials, one source at a time; each source reports its own outcome and a refused source does not stop the others. Changes a source cannot accept are kept locally with an explanatory comment. Defaults to a dry run that lists what would be pushed and whether your credentials are in place; call again with dry_run=false to push. Requires work-items.sync and sources.push-state.')]
+#[Description('Pushes the pending state, severity and comment changes of the given alerts (ids from list-pending-changes) to their sources now, with your own source credentials, one source at a time; each source reports its own outcome and a refused source does not stop the others. Changes a source cannot accept are kept locally with an explanatory comment; a change the source already holds (made there directly) is marked synced without pushing (already_upstream). Changes you no longer want pushed can be dropped with discard-pending-changes. Defaults to a dry run that lists what would be pushed and whether your credentials are in place; call again with dry_run=false to push. Requires work-items.sync and sources.push-state.')]
 final class PushPendingChangesTool extends AppSecTool
 {
     public function __construct(
@@ -84,6 +84,7 @@ final class PushPendingChangesTool extends AppSecTool
                 'failed' => $outcome->failed,
                 'skipped' => $outcome->skipped,
                 'resolved_local_only' => $outcome->resolvedLocalOnly,
+                'already_upstream' => $outcome->alreadyUpstream,
                 'last_error' => $outcome->lastError,
             ];
         }

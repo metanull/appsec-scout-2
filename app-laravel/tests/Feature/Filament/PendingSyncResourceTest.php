@@ -12,6 +12,7 @@ use App\Sources\Registry as SourceRegistry;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
 use Tests\Fakes\FakeSource;
 
 beforeEach(function () {
@@ -153,4 +154,45 @@ it('refuses a push when the user has no credential of their own for the source',
 
     expect($source->pushCalls)->toBe(0)
         ->and($event->fresh()?->is_dirty)->toBeTrue();
+});
+
+it('discards the selected pending changes without pushing them', function () {
+    $source = new FakeSource;
+    app()->bind('appsec-scout.source.fake', fn () => $source);
+    app()->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    app()->forgetInstance(SourceRegistry::class);
+
+    $stuck = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'state' => EventState::Open,
+        'is_dirty' => true,
+        'pending_state' => EventState::Dismissed,
+        'metadata' => ['pushRetryCount' => 3, 'lastPushError' => '409 Conflict'],
+    ]);
+    $kept = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
+
+    Livewire::actingAs(pendingSyncUser())
+        ->test(ListPendingSync::class)
+        ->callTableBulkAction('discardPending', [$stuck])
+        ->assertNotified('Discarded 1 pending change(s)')
+        ->assertCanNotSeeTableRecords([$stuck])
+        ->assertCanSeeTableRecords([$kept]);
+
+    expect($source->pushCalls)->toBe(0)
+        ->and($stuck->fresh()?->is_dirty)->toBeFalse()
+        ->and($stuck->fresh()?->state)->toBe(EventState::Open)
+        ->and($kept->fresh()?->is_dirty)->toBeTrue();
+});
+
+it('hides the discard action from a user without alerts.edit', function () {
+    $user = pendingSyncUser();
+    Role::findByName('Sync')->revokePermissionTo('alerts.edit');
+
+    $event = SecurityEvent::factory()->create(['source_id' => 'fake', 'is_dirty' => true, 'pending_state' => EventState::Resolved]);
+
+    Livewire::actingAs($user)
+        ->test(ListPendingSync::class)
+        ->assertTableBulkActionHidden('discardPending');
+
+    expect($event->fresh()?->is_dirty)->toBeTrue();
 });
