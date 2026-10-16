@@ -28,6 +28,7 @@ use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
 use App\Mcp\Tools\Sync\DiscardPendingChangesTool;
 use App\Mcp\Tools\Sync\ListPendingChangesTool;
 use App\Mcp\Tools\Sync\PushPendingChangesTool;
+use App\Mcp\Tools\Sync\ReloadAlertsTool;
 use App\Mcp\Tools\Trackers\CreateAlertsWorkItemTool;
 use App\Mcp\Tools\Trackers\CreateLocalFindingsWorkItemTool;
 use App\Mcp\Tools\Trackers\GetTrackerOptionsTool;
@@ -99,6 +100,7 @@ final class AppSecScoutServer extends Server
         CreateAlertsWorkItemTool::class,
         CreateLocalFindingsWorkItemTool::class,
         FetchAlertsTool::class,
+        ReloadAlertsTool::class,
         CollectRepositoriesTool::class,
         RunStaticAnalysisTool::class,
         GetOperationsStatusTool::class,

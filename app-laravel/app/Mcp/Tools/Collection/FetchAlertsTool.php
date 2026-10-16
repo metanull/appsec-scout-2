@@ -20,7 +20,7 @@ use Laravel\Mcp\Server\Attributes\Title;
 
 #[Name('fetch-alerts')]
 #[Title('Fetch alerts from the sources')]
-#[Description('Refreshes the alerts (and containers) of one asset, system or container from their sources (AzDO, AppScan, Detectify). Queues one background fetch per software system, run with the system credential; it returns immediately with what was queued, and new or updated alerts appear once the jobs finish (failures go to the Error log). A container refreshes the whole system its source reports it under. Requires admin.queue or work-items.sync.')]
+#[Description('Refreshes the alerts (and containers) of one asset, system or container from their sources (AzDO, AppScan, Detectify). Queues one background fetch per software system, run with the system credential; it returns immediately with what was queued, and new or updated alerts appear once the jobs finish (failures go to the Error log). A container refreshes the whole system its source reports it under; to refresh a few known alerts, reload-alerts is much cheaper. Requires admin.queue or work-items.sync.')]
 final class FetchAlertsTool extends AppSecTool
 {
     public function __construct(private readonly Recorder $recorder) {}
