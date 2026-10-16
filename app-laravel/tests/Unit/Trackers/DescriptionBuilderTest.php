@@ -69,6 +69,31 @@ it('builds the expected grouped markdown snapshot', function () {
     expect($builder->buildGrouped($events))->toBe(trackerFixtureText('DescriptionBuilder/grouped.md'));
 });
 
+it('shows the triaged severity and the source severity when a severity change is pending', function () {
+    $description = (new DescriptionBuilder)->buildSingle(makeEvent([
+        'severity' => EventSeverity::Critical,
+        'pending_severity' => EventSeverity::High,
+    ]));
+
+    expect($description)->toContain('- Severity: High (triaged in AppSec Scout; the source reports Critical)')
+        ->not->toContain('- Severity: Critical');
+});
+
+it('shows a single severity when no severity change is pending', function () {
+    $description = (new DescriptionBuilder)->buildSingle(makeEvent(['severity' => EventSeverity::Critical]));
+
+    expect($description)->toContain('- Severity: Critical' . "\n");
+});
+
+it('counts the triaged severity in the grouped severity table', function () {
+    $description = (new DescriptionBuilder)->buildGrouped([
+        makeEvent(['source_event_id' => 'evt-1', 'severity' => EventSeverity::Critical, 'pending_severity' => EventSeverity::Medium]),
+        makeEvent(['source_event_id' => 'evt-2', 'severity' => EventSeverity::Critical]),
+    ]);
+
+    expect($description)->toContain("| Critical | 1 |\n| Medium | 1 |");
+});
+
 it('builds a stable grouped snapshot for ten events', function () {
     $builder = new DescriptionBuilder;
 

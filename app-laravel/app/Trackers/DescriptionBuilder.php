@@ -116,7 +116,7 @@ final class DescriptionBuilder
     private function buildEventSummary(SecurityEvent $event): string
     {
         $lines = [
-            sprintf('- Severity: %s', $this->severityLabel($this->severityValue($event))),
+            $this->buildSeverityLine($event),
             sprintf('- Type: %s', $this->typeLabel($this->typeValue($event) ?? 'finding')),
             sprintf('- State: %s', $this->stateLabel($this->stateValue($event) ?? 'open')),
         ];
@@ -138,6 +138,26 @@ final class DescriptionBuilder
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Shows the severity triaged in AppSec Scout; when it differs from the one the source
+     * reports (a pending change, kept locally when the source cannot store it), shows both.
+     */
+    private function buildSeverityLine(SecurityEvent $event): string
+    {
+        $effective = $this->severityValue($event);
+        $reported = $this->stringValue($event->severity);
+
+        if ($effective === $reported) {
+            return sprintf('- Severity: %s', $this->severityLabel($effective));
+        }
+
+        return sprintf(
+            '- Severity: %s (triaged in AppSec Scout; the source reports %s)',
+            $this->severityLabel($effective),
+            $this->severityLabel($reported),
+        );
     }
 
     /**
@@ -511,9 +531,13 @@ final class DescriptionBuilder
         return $this->label($severity ?? 'informational');
     }
 
+    /**
+     * The effective severity: a pending (triaged, not yet pushed) severity wins over the
+     * one last read from the source.
+     */
     private function severityValue(SecurityEvent $event): ?string
     {
-        return $this->stringValue($event->severity);
+        return $this->stringValue($event->pending_severity) ?? $this->stringValue($event->severity);
     }
 
     private function typeValue(SecurityEvent $event): ?string
