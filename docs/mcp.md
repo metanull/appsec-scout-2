@@ -93,6 +93,7 @@ to `dry_run: true` and describe the change first.
 | `get-tracker-options` | Projects, item types, priorities and the suggested project, with the user's own tracker credentials | `work-items.create` |
 | `create-alerts-work-item`, `create-local-findings-work-item` | One ticket per selection; alerts and local findings never share a ticket | `work-items.create` |
 | `fetch-alerts` | Queue a fetch from the sources for an asset, system or container (system credential) | `admin.queue` or `work-items.sync` |
+| `reload-alerts` | Queue a reload of specific alerts (up to 50) from their source, one request per alert — the cheap alternative to `fetch-alerts` (system credential) | `work-items.sync` |
 | `collect-repositories`, `run-static-analysis` | Queue repository collection (Trivy: SBOM, vulnerabilities, secrets) or static analysis for AzDO systems (system credential, one run at a time) | `admin.queue` |
 | `get-operations-status` | Whether queued work finished or failed: latest fetch per source, recent collection and analysis runs, systems' last sync, error counts, queue backlog | `admin.queue` or `work-items.sync` |
 | `list-errors` | Error log entries (failed fetches, pushes, collections, MCP tool failures), filtered by scope, channel, level, date and text | `admin.errors` |

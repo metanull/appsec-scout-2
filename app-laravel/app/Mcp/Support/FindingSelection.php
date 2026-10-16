@@ -19,10 +19,10 @@ final class FindingSelection
 
     public const MIN_COMMENT = 10;
 
-    public static function idsSchema(JsonSchema $schema, string $what): Type
+    public static function idsSchema(JsonSchema $schema, string $what, int $max = self::MAX_IDS): Type
     {
-        return $schema->array()->items($schema->integer()->min(1))->min(1)->max(self::MAX_IDS)->required()
-            ->description("The {$what} ids to change (1-" . self::MAX_IDS . '). Every id must exist, otherwise nothing changes.');
+        return $schema->array()->items($schema->integer()->min(1))->min(1)->max($max)->required()
+            ->description("The {$what} ids to change (1-{$max}). Every id must exist, otherwise nothing changes.");
     }
 
     public static function commentSchema(JsonSchema $schema): Type
@@ -58,10 +58,10 @@ final class FindingSelection
      * @param  class-string<TModel>  $model
      * @return Collection<int, TModel>
      */
-    public static function resolve(Request $request, string $field, string $model, string $label): Collection
+    public static function resolve(Request $request, string $field, string $model, string $label, int $max = self::MAX_IDS): Collection
     {
         $validated = $request->validate([
-            $field => ['required', 'array', 'min:1', 'max:' . self::MAX_IDS],
+            $field => ['required', 'array', 'min:1', 'max:' . $max],
             $field . '.*' => ['integer', 'min:1', 'distinct'],
         ]);
 
