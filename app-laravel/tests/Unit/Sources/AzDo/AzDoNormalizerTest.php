@@ -185,6 +185,47 @@ it('preserves full rule description text in event descriptions', function () {
     expect($dto->description)->toBe("Short desc\n\nThis is a cross-site scripting vulnerability.");
 });
 
+it('decodes entity-encoded titles, descriptions and help texts', function () {
+    $alert = new AzDoAlert(
+        alertId: 7008,
+        alertType: 'code',
+        severity: 'high',
+        state: 'active',
+        title: 'Ensure that key vault secrets have &quot;content_type&quot; set',
+        tools: [
+            [
+                'name' => 'Checkov',
+                'rules' => [
+                    [
+                        'description' => 'Ensure &#39;Trusted Microsoft Services&#39; is enabled',
+                        'helpMessage' => "## Example\n\n```xml\n&lt;url&gt;http://repo.example/?a=1&amp;b=2&lt;/url&gt;\n```",
+                    ],
+                ],
+            ],
+        ],
+    );
+
+    $dto = AzDoNormalizer::toEvent($alert);
+
+    expect($dto->title)->toBe('Ensure that key vault secrets have "content_type" set')
+        ->and($dto->description)->toBe("Ensure 'Trusted Microsoft Services' is enabled")
+        ->and($dto->remediation)->toBe("## Example\n\n```xml\n<url>http://repo.example/?a=1&b=2</url>\n```");
+});
+
+it('keeps plain markdown help texts verbatim, including entities they show on purpose', function () {
+    $help = "Escape `<` as `&lt;` before writing it:\n\n```javascript\ndocument.write(\"<option>\" + value + \"</option>\");\n```";
+    $alert = new AzDoAlert(
+        alertId: 7009,
+        alertType: 'code',
+        severity: 'high',
+        state: 'active',
+        title: 'Client-side cross-site scripting',
+        tools: [['name' => 'CodeQL', 'rules' => [['helpMessage' => $help]]]],
+    );
+
+    expect(AzDoNormalizer::toEvent($alert)->remediation)->toBe($help);
+});
+
 it('stores dependency alert package context facts', function () {
     $project = new AzDoProject(id: 'project-001', name: 'SecurityProject');
     $repo = new AzDoRepository(

@@ -43,6 +43,32 @@ it('encodes table cell attrs as json objects, never arrays', function () {
     expect($json)->not->toContain('"attrs":[]');
 });
 
+it('keeps only the code mark on inline code inside bold or italic text', function () {
+    // Regression: Jira rejected a work-item comment with INVALID_INPUT because inline code
+    // inside bold text carried both the strong and the code mark, which ADF does not allow.
+    $paragraph = MarkdownToAdf::convertUntruncated('**Rule `CKV_TF_1` failed** and *see `main.tf`*')['content'][0]['content'];
+
+    expect($paragraph)->toEqual([
+        ['type' => 'text', 'text' => 'Rule ', 'marks' => [['type' => 'strong']]],
+        ['type' => 'text', 'text' => 'CKV_TF_1', 'marks' => [['type' => 'code']]],
+        ['type' => 'text', 'text' => ' failed', 'marks' => [['type' => 'strong']]],
+        ['type' => 'text', 'text' => ' and '],
+        ['type' => 'text', 'text' => 'see ', 'marks' => [['type' => 'em']]],
+        ['type' => 'text', 'text' => 'main.tf', 'marks' => [['type' => 'code']]],
+    ]);
+});
+
+it('keeps the link mark on inline code inside a bold link', function () {
+    $paragraph = MarkdownToAdf::convertUntruncated('**[`docs.md`](https://example.test)**')['content'][0]['content'];
+
+    expect($paragraph)->toEqual([
+        ['type' => 'text', 'text' => 'docs.md', 'marks' => [
+            ['type' => 'link', 'attrs' => ['href' => 'https://example.test']],
+            ['type' => 'code'],
+        ]],
+    ]);
+});
+
 it('truncates markdown input at sixteen kilobytes before conversion', function () {
     $markdown = str_repeat("Paragraph text that exceeds the size cap.\n\n", 1200);
     $adf = MarkdownToAdf::convert($markdown);

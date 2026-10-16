@@ -94,8 +94,9 @@ it('runs static analysis with force for an AzDO system', function () {
 
     Queue::assertPushed(DispatchStaticAnalysisRunsJob::class, fn (DispatchStaticAnalysisRunsJob $job): bool => $job->softwareSystemId === $system->id && $job->force);
 
+    // toEqual, not toBe: MySQL's JSON type reorders object keys, so key order is not stable.
     expect(AuditLog::query()->where('action', 'operations.run_static_analysis')->sole()->payload_json)
-        ->toBe(['force' => true, 'software_system_id' => $system->id, 'channel' => 'mcp']);
+        ->toEqual(['force' => true, 'software_system_id' => $system->id, 'channel' => 'mcp']);
 });
 
 it('queues nothing while a run of the same kind is in progress', function () {
