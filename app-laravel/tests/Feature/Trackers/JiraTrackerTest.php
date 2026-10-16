@@ -301,3 +301,26 @@ it('fetches available priorities from jira', function () {
 
     expect($priorities)->toBe(['Blocker', 'Critical', 'Major', 'Medium', 'Minor']);
 });
+
+it('adds a markdown comment to a jira issue as ADF, without the description size cap', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(201, [], '{"id":"10001"}')]));
+    $stack->push(Middleware::history($history));
+
+    $tracker = new JiraTracker(app(Vault::class));
+    injectJiraClient($tracker, new JiraClient('https://example.atlassian.net', 'ops@example.test', 'token', new Client(['handler' => $stack])));
+
+    $markdown = "## Triage\n\nConfirmed **true positive**.\n\n" . str_repeat('Evidence line. ', 1500);
+    $tracker->addComment('APP-101', $markdown);
+
+    $request = $history[0]['request'];
+    $payload = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    $text = json_encode($payload['body'], JSON_THROW_ON_ERROR);
+
+    expect($request->getMethod())->toBe('POST')
+        ->and($request->getUri()->getPath())->toEndWith('rest/api/3/issue/APP-101/comment')
+        ->and($payload['body']['type'])->toBe('doc')
+        ->and($payload['body']['content'][0]['type'])->toBe('heading')
+        ->and($text)->not->toContain('...(truncated)')
+        ->and(substr_count($text, 'Evidence line.'))->toBe(1500);
+});

@@ -43,6 +43,9 @@ interface Tracker
 
     public function updateWorkItem(string $workItemKey, UpdateWorkItemRequest $request): WorkItemDto;
 
+    /** Adds a Markdown comment to an existing work item, converted to the tracker's own format. */
+    public function addComment(string $workItemKey, string $markdown): void;
+
     /** @return iterable<WorkItemDto> */
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): iterable;
 

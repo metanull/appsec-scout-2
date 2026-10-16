@@ -181,3 +181,36 @@ it('refuses the tracker tools without work-items.create', function (string $tool
     'alerts' => [CreateAlertsWorkItemTool::class, ['alert_ids' => [1], 'tracker_id' => 'fake-tracker', 'project_key' => 'APP', 'item_type' => 'Bug']],
     'local findings' => [CreateLocalFindingsWorkItemTool::class, ['finding_ids' => [1], 'tracker_id' => 'fake-tracker', 'project_key' => 'APP', 'item_type' => 'Bug']],
 ]);
+
+it('previews the comment and refuses an oversized one on a dry run', function () {
+    $event = SecurityEvent::factory()->create();
+    $arguments = ['alert_ids' => [$event->id], 'tracker_id' => 'fake-tracker', 'project_key' => 'APP', 'item_type' => 'Bug'];
+
+    AppSecScoutServer::actingAs($this->planner)->tool(CreateAlertsWorkItemTool::class, [...$arguments, 'comment' => 'Confirmed true positive.'])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json->where('dry_run', true)->where('comment', 'Confirmed true positive.')->etc());
+
+    AppSecScoutServer::actingAs($this->planner)->tool(CreateAlertsWorkItemTool::class, [...$arguments, 'comment' => str_repeat('a', 32768)])
+        ->assertHasErrors(['The comment is 32768 characters long; Fake Tracker accepts at most 32767. Nothing was created.']);
+
+    expect($this->tracker->createCalls)->toBe(0);
+});
+
+it('posts the comment on the created work item and reports a failed post', function () {
+    $event = SecurityEvent::factory()->create();
+    $arguments = ['alert_ids' => [$event->id], 'tracker_id' => 'fake-tracker', 'project_key' => 'APP', 'item_type' => 'Bug', 'comment' => 'Confirmed true positive.', 'dry_run' => false];
+
+    AppSecScoutServer::actingAs($this->planner)->tool(CreateAlertsWorkItemTool::class, $arguments)
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json->where('work_item_id', 'APP#1')->where('comment_posted', true)->where('comment_error', null)->etc());
+
+    expect($this->tracker->comments)->toBe([['key' => 'APP#1', 'markdown' => 'Confirmed true positive.']]);
+
+    $this->tracker->withCommentFailure('403 Forbidden');
+
+    AppSecScoutServer::actingAs($this->planner)->tool(CreateAlertsWorkItemTool::class, $arguments)
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json->where('work_item_id', 'APP#2')->where('comment_posted', false)->where('comment_error', '403 Forbidden')->etc());
+
+    expect(WorkItemLink::query()->where('work_item_id', 'APP#2')->exists())->toBeTrue();
+});

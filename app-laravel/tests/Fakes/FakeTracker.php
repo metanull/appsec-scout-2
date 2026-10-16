@@ -17,6 +17,11 @@ final class FakeTracker implements Tracker
 {
     public int $createCalls = 0;
 
+    /** @var list<array{key: string, markdown: string}> */
+    public array $comments = [];
+
+    private ?string $commentFailure = null;
+
     public ?CreateWorkItemRequest $latestCreateWorkItemRequest = null;
 
     public int $getCalls = 0;
@@ -168,6 +173,22 @@ final class FakeTracker implements Tracker
         $this->workItems[$workItemKey] = $updated;
 
         return $updated;
+    }
+
+    public function addComment(string $workItemKey, string $markdown): void
+    {
+        if ($this->commentFailure !== null) {
+            throw new \RuntimeException($this->commentFailure);
+        }
+
+        $this->comments[] = ['key' => $workItemKey, 'markdown' => $markdown];
+    }
+
+    public function withCommentFailure(string $message): self
+    {
+        $this->commentFailure = $message;
+
+        return $this;
     }
 
     /** @return iterable<WorkItemDto> */

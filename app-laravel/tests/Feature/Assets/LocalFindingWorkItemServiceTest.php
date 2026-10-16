@@ -8,6 +8,7 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
 use App\Models\User;
+use App\Trackers\Dto\CreatedWorkItem;
 use App\Trackers\Dto\WorkItemDto;
 use Database\Seeders\RolePermissionSeeder;
 use Tests\Fakes\FakeTracker;
@@ -44,9 +45,10 @@ it('creates a work item for a single-id array and links it', function () {
 
     $link = LocalFindingWorkItemLink::query()->first();
 
-    expect($created)->toBeInstanceOf(WorkItemDto::class)
-        ->and($created->id)->toBe($link?->work_item_id)
-        ->and($created->url)->toBe($link?->work_item_url)
+    expect($created)->toBeInstanceOf(CreatedWorkItem::class)
+        ->and($created->commentError)->toBeNull()
+        ->and($created->workItem->id)->toBe($link?->work_item_id)
+        ->and($created->workItem->url)->toBe($link?->work_item_url)
         ->and($tracker->createCalls)->toBe(1)
         ->and($tracker->latestCreateWorkItemRequest?->title)->toContain('Jinja sandbox breakout')
         ->and($tracker->latestCreateWorkItemRequest?->description)->toContain('Sandbox escape via crafted template.')
@@ -324,4 +326,23 @@ it('unlinks a work item and records an audit row', function () {
 
     expect(LocalFindingWorkItemLink::count())->toBe(0)
         ->and(AuditLog::query()->where('action', 'work_item_unlinked')->where('subject_id', (string) $finding->id)->exists())->toBeTrue();
+});
+
+it('posts the operator comment on a local-finding work item', function () {
+    $tracker = bindFakeWorkItemTracker(new FakeTracker);
+    $finding = SecurityContainer::factory()->create()->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'CVE-2024-56201',
+        'title' => 'Jinja sandbox breakout',
+        'severity' => 'MEDIUM',
+        'file_path' => 'requirements.txt',
+    ]);
+
+    $created = app(LocalFindingWorkItemService::class)->createForFindings(
+        [$finding->id], User::factory()->create()->id, 'fake-tracker', 'APP', 'Bug', comment: 'Reachable from the public API.',
+    );
+
+    expect($created->commentError)->toBeNull()
+        ->and($tracker->comments)->toBe([['key' => $created->workItem->id, 'markdown' => 'Reachable from the public API.']])
+        ->and(AuditLog::query()->where('action', 'work_item_comment_added')->sole()->subject_type)->toBe(LocalFinding::class);
 });

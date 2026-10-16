@@ -9,6 +9,7 @@ use App\Mcp\Support\TrackerAccess;
 use App\Mcp\Tools\AppSecTool;
 use App\Models\LocalFinding;
 use App\Models\User;
+use App\Trackers\WorkItemComment;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -19,7 +20,7 @@ use Laravel\Mcp\Server\Attributes\Title;
 
 #[Name('create-local-findings-work-item')]
 #[Title('Create a work item for local findings')]
-#[Description('Creates ONE tracker work item (Jira issue / GitHub issue) for a selection of related local findings and links every finding to it; several findings produce one grouped ticket with a severity table and per-kind occurrences. Alerts and local findings never share a ticket: use create-alerts-work-item for alerts. Uses the acting user\'s personal tracker credentials. Defaults to a dry run showing the title and description that would be sent; call again with dry_run=false to create it. Requires work-items.create.')]
+#[Description('Creates ONE tracker work item (Jira issue / GitHub issue) for a selection of related local findings and links every finding to it; several findings produce one grouped ticket with a severity table and per-kind occurrences. Alerts and local findings never share a ticket: use create-alerts-work-item for alerts. The title and description are generated from the findings; put your own write-up in comment, which is posted on the new work item as a comment (if posting it fails, the work item stays created and comment_error says why). Uses the acting user\'s personal tracker credentials. Defaults to a dry run showing the title, description and comment that would be sent; call again with dry_run=false to create it. Requires work-items.create.')]
 final class CreateLocalFindingsWorkItemTool extends AppSecTool
 {
     public const MAX_FINDINGS = 50;
@@ -28,6 +29,7 @@ final class CreateLocalFindingsWorkItemTool extends AppSecTool
         private readonly TrackerAccess $trackers,
         private readonly LocalFindingWorkItemService $workItems,
         private readonly LocalFindingWorkItemDescriptionBuilder $descriptions,
+        private readonly WorkItemComment $comments,
     ) {}
 
     public function schema(JsonSchema $schema): array
@@ -51,6 +53,7 @@ final class CreateLocalFindingsWorkItemTool extends AppSecTool
         $findings = FindingSelection::resolve($request, 'finding_ids', LocalFinding::class, 'local finding')->load(['softwareSystem', 'owner']);
 
         $this->trackers->ensurePersonalCredentials($fields->tracker, $actor->id);
+        $this->comments->validated($fields->comment, $fields->tracker->id());
 
         if (FindingSelection::isDryRun($request)) {
             $list = array_values($findings->all());
@@ -76,14 +79,17 @@ final class CreateLocalFindingsWorkItemTool extends AppSecTool
             priority: $fields->priority,
             assigneeId: $fields->assigneeId,
             parentId: $fields->parentId,
+            comment: $fields->comment,
         );
 
         return Response::structured([
             'dry_run' => false,
             'tracker_id' => $fields->tracker->id(),
-            'work_item_id' => $created->id,
-            'url' => $created->url,
-            'title' => $created->title,
+            'work_item_id' => $created->workItem->id,
+            'url' => $created->workItem->url,
+            'title' => $created->workItem->title,
+            'comment_posted' => $fields->comment !== null && $created->commentError === null,
+            'comment_error' => $created->commentError,
             'linked_finding_ids' => $findings->modelKeys(),
         ]);
     }

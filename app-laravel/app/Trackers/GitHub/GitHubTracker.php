@@ -39,6 +39,7 @@ final class GitHubTracker implements Tracker
             supportsParent: false,
             supportedItemTypes: ['issue'],
             maxDescriptionBytes: 65536,
+            maxCommentChars: 65536,
         );
     }
 
@@ -94,6 +95,11 @@ final class GitHubTracker implements Tracker
     public function updateWorkItem(string $workItemKey, UpdateWorkItemRequest $request): WorkItemDto
     {
         return $this->getClient()->updateWorkItem($workItemKey, $request);
+    }
+
+    public function addComment(string $workItemKey, string $markdown): void
+    {
+        $this->getClient()->addComment($workItemKey, $markdown);
     }
 
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): iterable

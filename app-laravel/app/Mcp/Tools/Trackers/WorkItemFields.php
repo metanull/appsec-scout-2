@@ -21,6 +21,7 @@ final class WorkItemFields
         public readonly ?string $priority,
         public readonly ?string $assigneeId,
         public readonly ?string $parentId,
+        public readonly ?string $comment,
     ) {}
 
     /** @return array<string, Type> */
@@ -34,6 +35,7 @@ final class WorkItemFields
             'priority' => $schema->string()->max(100)->description('Priority name (Jira only).'),
             'assignee_id' => $schema->string()->max(200)->description('Assignee account id (Jira) or login (GitHub).'),
             'parent_id' => $schema->string()->max(200)->description('Parent issue key (Jira only).'),
+            'comment' => $schema->string()->max(65536)->description('Optional Markdown comment posted on the new work item once it is created (converted for Jira), e.g. your triage write-up. Checked against the tracker comment size limit (Jira 32,767, GitHub 65,536 characters) before anything is created.'),
             'dry_run' => FindingSelection::dryRunSchema($schema),
         ];
     }
@@ -49,6 +51,7 @@ final class WorkItemFields
             'priority' => ['nullable', 'string', 'max:100'],
             'assignee_id' => ['nullable', 'string', 'max:200'],
             'parent_id' => ['nullable', 'string', 'max:200'],
+            'comment' => ['nullable', 'string'],
         ]);
 
         TrackerAccess::ensureSupported($tracker, $validated);
@@ -61,6 +64,7 @@ final class WorkItemFields
             $validated['priority'] ?? null,
             $validated['assignee_id'] ?? null,
             $validated['parent_id'] ?? null,
+            $validated['comment'] ?? null,
         );
     }
 
@@ -75,6 +79,7 @@ final class WorkItemFields
             'priority' => $this->priority,
             'assignee_id' => $this->assigneeId,
             'parent_id' => $this->parentId,
+            'comment' => $this->comment,
         ];
     }
 }

@@ -210,3 +210,21 @@ it('returns empty reconciliation candidates for empty github project key', funct
 
     expect(iterator_to_array($tracker->reconciliationCandidates(''), false))->toBe([]);
 });
+
+it('adds a markdown comment to a github issue', function () {
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(201, [], '{"id":1}')]));
+    $stack->push(Middleware::history($history));
+
+    $tracker = new GitHubTracker(app(Vault::class));
+    injectGitHubClient($tracker, new GitHubClient('token', 'https://api.github.com', new Client(['handler' => $stack])));
+
+    $tracker->addComment('octo-org/appsec-scout#101', "## Triage\n\nConfirmed **true positive**.");
+
+    $request = $history[0]['request'];
+    $payload = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($request->getMethod())->toBe('POST')
+        ->and($request->getUri()->getPath())->toEndWith('repos/octo-org/appsec-scout/issues/101/comments')
+        ->and($payload)->toBe(['body' => "## Triage\n\nConfirmed **true positive**."]);
+});

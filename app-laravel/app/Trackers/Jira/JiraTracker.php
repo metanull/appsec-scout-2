@@ -39,6 +39,7 @@ final class JiraTracker implements Tracker
             supportsParent: true,
             supportedItemTypes: ['Bug', 'Task', 'Story', 'Epic'],
             maxDescriptionBytes: 16384,
+            maxCommentChars: 32767,
         );
     }
 
@@ -96,6 +97,11 @@ final class JiraTracker implements Tracker
     public function updateWorkItem(string $workItemKey, UpdateWorkItemRequest $request): WorkItemDto
     {
         return $this->getClient()->updateWorkItem($workItemKey, $request);
+    }
+
+    public function addComment(string $workItemKey, string $markdown): void
+    {
+        $this->getClient()->addComment($workItemKey, $markdown);
     }
 
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): iterable

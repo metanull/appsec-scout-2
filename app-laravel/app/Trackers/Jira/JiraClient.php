@@ -189,6 +189,13 @@ final class JiraClient
         return $this->getWorkItem($workItemKey) ?? throw new \RuntimeException("Missing Jira issue {$workItemKey} after update");
     }
 
+    public function addComment(string $workItemKey, string $markdown): void
+    {
+        $this->http->post("rest/api/3/issue/{$workItemKey}/comment", [
+            'json' => ['body' => MarkdownToAdf::convertUntruncated($markdown)],
+        ]);
+    }
+
     /** @return list<WorkItemDto> */
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): array
     {
