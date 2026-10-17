@@ -1,0 +1,4 @@
+#!/bin/sh
+# Prints the current TOTP code for the seeded accounts of the OSS Scanner image.
+cd /src/app-laravel || exit 1
+exec php -r 'require "vendor/autoload.php"; echo (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp(getenv("SCAN_TOTP_SECRET")), PHP_EOL;'
