@@ -115,6 +115,7 @@ class PendingSyncResource extends Resource
                         AzDoDismissalReason::AcceptedRisk => 'warning',
                         AzDoDismissalReason::FalsePositive => 'gray',
                         AzDoDismissalReason::NotDistributed => 'info',
+                        AzDoDismissalReason::AgreedToGuidance => 'primary',
                     })
                     ->placeholder('-')
                     ->toggleable(),

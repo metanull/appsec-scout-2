@@ -56,6 +56,28 @@ it('rejects a reason that does not apply to the alert type', function () {
         ->toThrow(ValidationException::class, 'does not apply to secret alerts');
 });
 
+it('accepts agreedToGuidance for license alerts only', function () {
+    $user = dismissalTriager();
+    $license = SecurityEvent::factory()->create(['source_id' => 'azdo', 'type' => EventType::License]);
+    $dependency = SecurityEvent::factory()->dependency()->create(['source_id' => 'azdo']);
+
+    app(StateChanger::class)->change($license, $user, EventState::Dismissed, 'License terms reviewed with legal.', AzDoDismissalReason::AgreedToGuidance);
+
+    expect($license->fresh()?->pending_dismissal_reason)->toBe(AzDoDismissalReason::AgreedToGuidance)
+        ->and(fn () => app(StateChanger::class)->change($dependency, $user, EventState::Dismissed, 'License terms reviewed with legal.', AzDoDismissalReason::AgreedToGuidance))
+        ->toThrow(ValidationException::class, 'does not apply to dependency alerts');
+});
+
+it('offers each type-specific reason only for its own alert type', function (EventType $type, array $expected) {
+    expect(array_map(fn (AzDoDismissalReason $reason): string => $reason->value, AzDoDismissalReason::applicableToAll([$type])))
+        ->toBe($expected);
+})->with([
+    'dependency' => [EventType::Dependency, ['acceptedRisk', 'falsePositive', 'notDistributed']],
+    'license' => [EventType::License, ['acceptedRisk', 'falsePositive', 'agreedToGuidance']],
+    'secret' => [EventType::Secret, ['acceptedRisk', 'falsePositive']],
+    'code' => [EventType::Vulnerability, ['acceptedRisk', 'falsePositive']],
+]);
+
 it('rejects a reason on anything but a dismissal', function () {
     $event = SecurityEvent::factory()->create(['source_id' => 'azdo']);
 
