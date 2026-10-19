@@ -89,6 +89,7 @@ final class ReconcileAllJob implements ShouldBeUnique, ShouldQueue
                 'links_existing' => $sweep->linksExisting(),
                 'projects_reconciled' => $sweep->projectsReconciled,
                 'projects_failed' => $sweep->projectsFailed(),
+                'projects_skipped' => $sweep->projectsSkipped,
             ],
             'error_message' => $sweep->failureSummary(),
         ]);

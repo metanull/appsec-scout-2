@@ -5,6 +5,7 @@ use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\GitHub\GitHubClient;
 use App\Trackers\GitHub\GitHubTracker;
+use App\Trackers\TrackerRateLimitExceededException;
 use Carbon\CarbonInterval;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
@@ -328,8 +329,14 @@ it('fails instead of waiting when the github search rate limit resets beyond the
 
     $tracker = githubSearchTracker([githubRateLimitRefusal(600)], $history);
 
-    expect(fn () => iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false))
-        ->toThrow(RuntimeException::class, 'GitHub search rate limit exceeded; it resets in 601 s');
+    try {
+        iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false);
+        $this->fail('Expected the search to give up on the rate limit.');
+    } catch (TrackerRateLimitExceededException $exception) {
+        expect($exception->getMessage())->toContain('GitHub search rate limit exceeded after 1 attempt(s)')
+            ->and($exception->getMessage())->toContain('(in 601 s)')
+            ->and($exception->resetsAt->getTimestamp())->toBe(now()->getTimestamp() + 601);
+    }
 
     Sleep::assertNeverSlept();
 });
@@ -342,7 +349,7 @@ it('gives up on a github search still rate limited after its retries', function 
     $tracker = githubSearchTracker([githubRateLimitRefusal(10), githubRateLimitRefusal(10), githubRateLimitRefusal(10)], $history);
 
     expect(fn () => iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false))
-        ->toThrow(ClientException::class);
+        ->toThrow(TrackerRateLimitExceededException::class, 'GitHub search rate limit exceeded after 3 attempt(s)');
 
     expect($history)->toHaveCount(3);
     Sleep::assertSlept(sleptSeconds(11), 2);
