@@ -4,6 +4,7 @@ use App\Audit\AuditLog;
 use App\Audit\Recorder;
 use App\Credentials\Credential;
 use App\Credentials\CredentialDecryptionException;
+use App\Credentials\CredentialOwnerNotDeclaredException;
 use App\Credentials\Vault;
 use App\Models\User;
 use App\Sync\CredentialResolver;
@@ -28,13 +29,13 @@ it('round-trips get after set', function () {
 
     $vault->set('azdo.pat', null, 'my-pat-value');
 
-    expect($vault->get('azdo.pat', null))->toBe('my-pat-value');
+    expect($vault->getSystem('azdo.pat'))->toBe('my-pat-value');
 });
 
 it('returns null for missing credential', function () {
     $vault = new Vault(new Recorder, app(CredentialResolver::class));
 
-    expect($vault->get('missing.key', null))->toBeNull();
+    expect($vault->getSystem('missing.key'))->toBeNull();
 });
 
 it('fails loudly when credential payload cannot be decrypted', function () {
@@ -44,7 +45,7 @@ it('fails loudly when credential payload cannot be decrypted', function () {
         'value' => 'invalid-payload',
     ]);
 
-    expect(fn () => vault()->get('azdo.pat', null))
+    expect(fn () => vault()->getSystem('azdo.pat'))
         ->toThrow(CredentialDecryptionException::class);
 });
 
@@ -57,7 +58,7 @@ it('replaces an undecryptable credential through set', function () {
 
     vault()->set('azdo.pat', null, 'fresh-token');
 
-    expect(vault()->get('azdo.pat', null))->toBe('fresh-token');
+    expect(vault()->getSystem('azdo.pat'))->toBe('fresh-token');
 });
 
 it('writes audit row on set with value redacted', function () {
@@ -74,13 +75,14 @@ it('writes audit row on set with value redacted', function () {
 
 it('forgets only the credential in the given owner scope and audits the deletion', function () {
     $user = User::factory()->create();
-    vault()->set('azdo.pat', null, 'system-token');
-    vault()->set('azdo.pat', $user->id, 'user-token');
+    $vault = vault();
+    $vault->set('azdo.pat', null, 'system-token');
+    $vault->set('azdo.pat', $user->id, 'user-token');
 
-    expect(vault()->forget('azdo.pat', null))->toBeTrue();
+    expect($vault->forget('azdo.pat', null))->toBeTrue();
 
     expect(Credential::query()->where('integration_key', 'azdo.pat')->whereNull('owner_user_id')->exists())->toBeFalse()
-        ->and(vault()->get('azdo.pat', $user->id))->toBe('user-token');
+        ->and($vault->runAsOwner($user->id, fn (): ?string => $vault->get('azdo.pat')))->toBe('user-token');
 
     $log = AuditLog::where('action', 'credential_change')->latest('id')->first();
     expect($log?->subject_id)->toBe('azdo.pat')
@@ -95,7 +97,7 @@ it('forgets an undecryptable credential', function () {
     ]);
 
     expect(vault()->forget('azdo.pat', null))->toBeTrue()
-        ->and(vault()->get('azdo.pat', null))->toBeNull();
+        ->and(vault()->getSystem('azdo.pat'))->toBeNull();
 });
 
 it('does not audit forgetting a credential that is not stored', function () {
@@ -110,7 +112,7 @@ it('updates existing credential on re-set', function () {
     $vault->set('azdo.pat', null, 'second-value');
 
     expect(Credential::count())->toBe(1)
-        ->and($vault->get('azdo.pat', null))->toBe('second-value');
+        ->and($vault->getSystem('azdo.pat'))->toBe('second-value');
 });
 
 it('test probe returns ok on success', function () {
@@ -151,11 +153,22 @@ it('system and user credentials are stored separately', function () {
     $vault->set('azdo.pat', null, 'system-token');
     $vault->set('azdo.pat', $user->id, 'user-token');
 
-    expect($vault->get('azdo.pat', null))->toBe('system-token')
-        ->and($vault->get('azdo.pat', $user->id))->toBe('user-token');
+    expect($vault->getSystem('azdo.pat'))->toBe('system-token')
+        ->and($vault->runAsOwner($user->id, fn (): ?string => $vault->get('azdo.pat')))->toBe('user-token');
 });
 
-it('does not resolve another users credential when fetching with a null owner', function () {
+it('refuses to read a credential without a declared owner instead of defaulting to system', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $vault = vault();
+    $vault->set('azdo.pat', null, 'system-token');
+
+    expect(fn () => $vault->get('azdo.pat'))
+        ->toThrow(CredentialOwnerNotDeclaredException::class, 'Credential [azdo.pat] was read without declaring its owner');
+});
+
+it('reads the system credential explicitly, whatever owner scope encloses the call', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
@@ -164,7 +177,16 @@ it('does not resolve another users credential when fetching with a null owner', 
     $vault->set('azdo.pat', null, 'system-token');
     $vault->set('azdo.pat', $user->id, 'user-token');
 
-    expect($vault->get('azdo.pat', null))->toBe('system-token');
+    expect($vault->getSystem('azdo.pat'))->toBe('system-token')
+        ->and($vault->runAsOwner($user->id, fn (): ?string => $vault->getSystem('azdo.pat')))->toBe('system-token');
+});
+
+it('never falls back to the system credential inside a user owner scope', function () {
+    $user = User::factory()->create();
+    $vault = vault();
+    $vault->set('azdo.pat', null, 'system-token');
+
+    expect($vault->runAsOwner($user->id, fn (): ?string => $vault->get('azdo.pat')))->toBeNull();
 });
 
 it('resolves the scoped owner set via runAsOwner regardless of the authenticated user', function () {
@@ -175,9 +197,25 @@ it('resolves the scoped owner set via runAsOwner regardless of the authenticated
     $vault->set('azdo.pat', null, 'system-token');
     $vault->set('azdo.pat', $user->id, 'user-token');
 
-    $resolved = $vault->runAsOwner(null, fn (): ?string => $vault->get('azdo.pat', null));
+    $resolved = $vault->runAsOwner(null, fn (): ?string => $vault->get('azdo.pat'));
 
     expect($resolved)->toBe('system-token');
+});
+
+it('restores the enclosing owner scope after a nested runAsOwner', function () {
+    $user = User::factory()->create();
+    $vault = vault();
+    $vault->set('azdo.pat', null, 'system-token');
+    $vault->set('azdo.pat', $user->id, 'user-token');
+
+    $resolved = $vault->runAsOwner($user->id, function () use ($vault): array {
+        $nested = $vault->runAsOwner(null, fn (): ?string => $vault->get('azdo.pat'));
+
+        return [$nested, $vault->get('azdo.pat')];
+    });
+
+    expect($resolved)->toBe(['system-token', 'user-token'])
+        ->and(fn () => $vault->get('azdo.pat'))->toThrow(CredentialOwnerNotDeclaredException::class);
 });
 
 it('returns the override value instead of the stored credential during the callback', function () {
@@ -186,11 +224,11 @@ it('returns the override value instead of the stored credential during the callb
 
     $resolved = $vault->runWithOverrides(
         ['azdo.pat' => 'explicit-pat'],
-        fn (): ?string => $vault->get('azdo.pat', null),
+        fn (): ?string => $vault->get('azdo.pat'),
     );
 
     expect($resolved)->toBe('explicit-pat')
-        ->and($vault->get('azdo.pat', null))->toBe('system-token');
+        ->and($vault->getSystem('azdo.pat'))->toBe('system-token');
 });
 
 it('restores the previous override state after the callback throws', function () {
@@ -204,7 +242,7 @@ it('restores the previous override state after the callback throws', function ()
         },
     ))->toThrow(RuntimeException::class, 'boom');
 
-    expect($vault->get('azdo.pat', null))->toBe('system-token');
+    expect($vault->getSystem('azdo.pat'))->toBe('system-token');
 });
 
 function vault(): Vault

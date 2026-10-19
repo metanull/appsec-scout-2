@@ -8,18 +8,18 @@ it('throws a decryption exception naming the key when a stored value cannot be d
     app(Vault::class)->set('azdo.pat', null, 'valid-secret');
     DB::table('credentials')->where('integration_key', 'azdo.pat')->update(['value' => 'garbage-not-ciphertext']);
 
-    expect(fn () => app(Vault::class)->get('azdo.pat', null))
+    expect(fn () => app(Vault::class)->getSystem('azdo.pat'))
         ->toThrow(CredentialDecryptionException::class, 'azdo.pat');
 });
 
 it('still returns null for a missing credential', function () {
-    expect(app(Vault::class)->get('azdo.pat', null))->toBeNull();
+    expect(app(Vault::class)->getSystem('azdo.pat'))->toBeNull();
 });
 
 it('still returns the plaintext for a decryptable credential', function () {
     app(Vault::class)->set('azdo.pat', null, 'valid-secret');
 
-    expect(app(Vault::class)->get('azdo.pat', null))->toBe('valid-secret');
+    expect(app(Vault::class)->getSystem('azdo.pat'))->toBe('valid-secret');
 });
 
 it('reports the decryption failure from a vault connection test instead of missing', function () {

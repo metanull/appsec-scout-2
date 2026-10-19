@@ -43,7 +43,7 @@ it('saves the Dependency-Track credentials system-scoped with an audit row', fun
         ->assertHasNoErrors();
 
     expect(Credential::query()->where('integration_key', 'dependencytrack.baseUrl')->whereNull('owner_user_id')->exists())->toBeTrue()
-        ->and(app(Vault::class)->get('dependencytrack.apiKey', null))->toBe('odt_new_key')
+        ->and(app(Vault::class)->getSystem('dependencytrack.apiKey'))->toBe('odt_new_key')
         ->and(AuditLog::query()->where('action', 'credential_change')->exists())->toBeTrue();
 });
 
@@ -73,7 +73,8 @@ it('fails the connection test on an unauthorized response without leaking the ke
         new Client(['handler' => HandlerStack::create(new MockHandler([new Response(401, [], 'Unauthorized')]))]),
     );
 
-    $result = $probe->testConnection();
+    // The System Credentials page runs the probe as the system owner; so does this test.
+    $result = app(Vault::class)->runAsOwner(null, fn () => $probe->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->toContain('401')
@@ -83,7 +84,8 @@ it('fails the connection test on an unauthorized response without leaking the ke
 it('fails the connection test when the API key is not configured', function () {
     $probe = new DependencyTrackSystemCredentials(app(Vault::class));
 
-    $result = $probe->testConnection();
+    // The System Credentials page runs the probe as the system owner; so does this test.
+    $result = app(Vault::class)->runAsOwner(null, fn () => $probe->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->toContain('not configured');

@@ -221,7 +221,7 @@ final class FakeTracker implements Tracker
     public function reconciliationCandidates(): iterable
     {
         $this->reconciliationCalls++;
-        $this->reconciliationTokens[] = app(Vault::class)->get("{$this->id}.token", null);
+        $this->reconciliationTokens[] = app(Vault::class)->get("{$this->id}.token");
 
         if ($this->reconciliationRateLimitResetsAt !== null) {
             throw new TrackerRateLimitExceededException('Rate limit exceeded', $this->reconciliationRateLimitResetsAt);

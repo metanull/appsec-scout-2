@@ -231,6 +231,24 @@ There are exactly two credential-resolution flows:
 Which flow applies is fixed by the kind of operation. A missing required credential fails with a
 clear error.
 
+Every credential read declares whose credential it is; there is no "no owner means system"
+default:
+
+- `Vault::get($key)` reads the owner declared by the enclosing `Vault::runAsOwner()` —
+  `SystemIntegrationRuntime` (system), `OperatorIntegrationRuntime` (the acting user), the
+  credential pages' connection tests, or the MCP code-access helper. A read outside any owner
+  scope throws `CredentialOwnerNotDeclaredException`, naming the key; it never silently becomes a
+  system read.
+- `Vault::getSystem($key)` is the explicit system read (`owner_user_id IS NULL`). Artisan commands
+  use it (no user is authenticated on the CLI): `vault:get`, `credentials:system:get`,
+  `credentials:system:export`, the `triage:codesearch` fallback, `dependencytrack:bootstrap` and
+  `sbom:export-dependency-track`. There is no CLI command that reads a user's credential.
+- Background jobs and queued listeners that read credentials declare the
+  `App\Credentials\RunWithSystemCredentials` job middleware (`runAsOwner(null)` around
+  `handle()`), so a job run synchronously inside a user's scope never inherits that user's
+  credentials. Jobs that read a key directly also use `getSystem()`. There is deliberately no global
+  "console means system" default: queue workers are console processes too.
+
 ## Related Documents
 
 - [docs/concepts/integration.md](concepts/integration.md) — the scheduling/dispatch mechanics for

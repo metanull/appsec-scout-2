@@ -59,7 +59,7 @@ it('reports bitbucket-repos connection failure', function () {
     $provider = new BitbucketRepos(app(Vault::class));
     injectBitbucketReposClient($provider, new BitbucketClient('myworkspace', 'test-token', 'https://api.bitbucket.org/2.0', $http));
 
-    $result = $provider->testConnection();
+    $result = app(Vault::class)->runAsOwner(null, fn () => $provider->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->not->toBeNull();
@@ -68,7 +68,7 @@ it('reports bitbucket-repos connection failure', function () {
 it('fails to build a client when the bitbucket-repos credential is not configured', function () {
     $provider = new BitbucketRepos(app(Vault::class));
 
-    $result = $provider->testConnection();
+    $result = app(Vault::class)->runAsOwner(null, fn () => $provider->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->toContain('bitbucket-repos.token');

@@ -104,7 +104,7 @@ final class OperatorIntegrationRuntime
 
             $value = $this->vault->runAsOwner(
                 $operatorUserId,
-                fn (): ?string => $this->vault->get($field->key, null),
+                fn (): ?string => $this->vault->get($field->key),
             );
 
             if (! is_string($value) || trim($value) === '') {

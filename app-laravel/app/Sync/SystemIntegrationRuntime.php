@@ -37,7 +37,7 @@ final class SystemIntegrationRuntime
                     continue;
                 }
 
-                $value = $this->vault->get($field->key, null);
+                $value = $this->vault->get($field->key);
 
                 if (! is_string($value) || trim($value) === '') {
                     return false;

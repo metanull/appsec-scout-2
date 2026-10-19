@@ -21,18 +21,36 @@ class Vault
     ) {}
 
     /**
+     * Read a credential of the owner declared by the enclosing `runAsOwner()`: a user's own
+     * credential, or the system credential under `runAsOwner(null)`. There is no implicit
+     * default, so a read outside any owner scope is a code defect, never a system read.
+     *
+     * @throws CredentialOwnerNotDeclaredException when no `runAsOwner()` scope encloses the read
      * @throws CredentialDecryptionException when a stored value cannot be decrypted
      *                                       (typically after an APP_KEY change)
      */
-    public function get(string $key, ?int $userId): ?string
+    public function get(string $key): ?string
     {
         if (array_key_exists($key, $this->valueOverrides)) {
             return $this->valueOverrides[$key];
         }
 
-        $credential = $this->resolveCredential($key, $userId);
+        if (! $this->hasScopedOwner) {
+            throw CredentialOwnerNotDeclaredException::forKey($key);
+        }
 
-        return $this->credentialValue($credential);
+        return $this->credentialValue($this->resolver->exact($key, $this->scopedOwnerId));
+    }
+
+    /**
+     * Read the system credential (owner_user_id NULL) explicitly, whatever owner scope encloses
+     * the call: for system operations such as Artisan commands and background jobs.
+     *
+     * @throws CredentialDecryptionException when a stored value cannot be decrypted
+     */
+    public function getSystem(string $key): ?string
+    {
+        return $this->credentialValue($this->resolver->exact($key, null));
     }
 
     public function set(string $key, ?int $userId, string $value, ?string $description = null): void

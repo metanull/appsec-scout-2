@@ -4,6 +4,8 @@ use App\Models\Attachment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 
+beforeEach(fn () => withoutDependencyTrackPush());
+
 it('imports pending scan reports and prints a summary', function () {
     $importPath = sys_get_temp_dir() . '/sbom-import-cmd-test-' . uniqid();
     $cursorPath = sys_get_temp_dir() . '/sbom-cursor-cmd-test-' . uniqid();

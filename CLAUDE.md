@@ -50,6 +50,11 @@ Two flows: system-triggered operations (background jobs, the Ops-page fetch/refr
 `assets:sync-azdo-projects`) resolve the system credential; user-triggered interactive actions resolve that specific user's own
 personal credential. A missing required credential fails with a clear error.
 
+Every read declares its owner: `Vault::get()` reads the owner set by `Vault::runAsOwner()` and
+throws outside one (no implicit system default); `Vault::getSystem()` is the explicit system read
+used by Artisan commands; jobs and queued listeners that read credentials declare the
+`App\Credentials\RunWithSystemCredentials` middleware. See docs/architecture.md (Credentials).
+
 ## Environment
 
 Docker is the only environment for development and usage. `docker-compose.yml` starts these services by default (no profile needed):

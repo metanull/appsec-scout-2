@@ -27,3 +27,14 @@ it('does not read user-owned credentials', function () {
 
     expect($exitCode)->not->toBe(0);
 });
+
+it('prints the system value even when a user owns the same key', function () {
+    $user = User::factory()->create();
+    app(Vault::class)->set('dependencytrack.apiKey', $user->id, 'user-owned-value');
+    app(Vault::class)->set('dependencytrack.apiKey', null, 'system-value');
+
+    $exitCode = Artisan::call('vault:get', ['key' => 'dependencytrack.apiKey']);
+
+    expect($exitCode)->toBe(0)
+        ->and(Artisan::output())->toBe('system-value');
+});

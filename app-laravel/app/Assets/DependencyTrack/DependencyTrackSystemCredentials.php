@@ -59,8 +59,8 @@ final class DependencyTrackSystemCredentials
     public function testConnection(): TestResult
     {
         try {
-            $baseUrl = $this->vault->get('dependencytrack.baseUrl', null) ?? 'http://dependencytrack-apiserver:8080';
-            $apiKey = $this->vault->get('dependencytrack.apiKey', null)
+            $baseUrl = $this->vault->get('dependencytrack.baseUrl') ?? 'http://dependencytrack-apiserver:8080';
+            $apiKey = $this->vault->get('dependencytrack.apiKey')
                 ?? throw new RuntimeException('Dependency-Track API key is not configured');
 
             $client = $this->httpClient ?? OutboundHttpFactory::create([

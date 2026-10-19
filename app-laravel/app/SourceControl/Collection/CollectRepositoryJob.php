@@ -7,6 +7,7 @@ use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
 use App\Assets\AzDoOwnerLookup;
 use App\Assets\AzDoScanResultDtoFactory;
+use App\Credentials\RunWithSystemCredentials;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
@@ -68,6 +69,12 @@ final class CollectRepositoryJob implements ShouldQueue
         public readonly int $repositoryCollectionRunId,
     ) {}
 
+    /** @return list<object> */
+    public function middleware(): array
+    {
+        return [new RunWithSystemCredentials];
+    }
+
     public function handle(
         AttachmentTargetResolver $resolver,
         AttachmentService $attachments,
@@ -75,7 +82,7 @@ final class CollectRepositoryJob implements ShouldQueue
     ): void {
         Log::info('Repository collection started.', $this->logContext('start'));
 
-        $pat = $vault->get('azdo-repos.pat', null)
+        $pat = $vault->getSystem('azdo-repos.pat')
             ?? throw new RuntimeException('AzDO Repos PAT not configured.');
 
         $scratchRoot = rtrim((string) config('repository_collection.workspace_path'), '/')

@@ -1,5 +1,7 @@
 <?php
 
+use App\Events\AttachmentStored;
+use App\Listeners\PushSbomAttachmentToDependencyTrack;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -51,6 +53,19 @@ function mcpItemIds(TestResponse $response): array
 function trackerFixtureText(string $path): string
 {
     return str_replace("\r\n", "\n", trim(file_get_contents(base_path('tests/Fixtures/Trackers/' . $path))));
+}
+
+/**
+ * Storing an SBOM for a container queues PushSbomAttachmentToDependencyTrack, which runs inline on
+ * the sync test queue and fails loudly without a Dependency-Track API key. Tests that store SBOMs
+ * for another purpose opt out of the push with this.
+ */
+function withoutDependencyTrackPush(): void
+{
+    app()->bind(PushSbomAttachmentToDependencyTrack::class, fn (): object => new class
+    {
+        public function handle(AttachmentStored $event): void {}
+    });
 }
 
 function bindFakeWorkItemTracker(FakeTracker $tracker): FakeTracker

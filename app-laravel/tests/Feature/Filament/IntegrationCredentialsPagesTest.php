@@ -261,7 +261,7 @@ it('repairs an undecryptable secret through the Replace flow', function () {
         ->assertHasNoErrors()
         ->assertSet('decryptFailed.fake_tracker_token', false);
 
-    expect(app(Vault::class)->get('fake-tracker.token', null))->toBe('replacement-token');
+    expect(app(Vault::class)->getSystem('fake-tracker.token'))->toBe('replacement-token');
 });
 
 it('rejects saving over an undecryptable secret without activating Replace', function () {

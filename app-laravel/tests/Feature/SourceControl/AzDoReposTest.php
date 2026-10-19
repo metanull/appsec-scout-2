@@ -56,7 +56,7 @@ it('reports azdo-repos connection failure', function () {
     $provider = new AzDoRepos(app(Vault::class));
     injectAzDoReposClient($provider, new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec));
 
-    $result = $provider->testConnection();
+    $result = app(Vault::class)->runAsOwner(null, fn () => $provider->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->not->toBeNull();
@@ -65,7 +65,7 @@ it('reports azdo-repos connection failure', function () {
 it('fails to build a client when the azdo-repos credential is not configured', function () {
     $provider = new AzDoRepos(app(Vault::class));
 
-    $result = $provider->testConnection();
+    $result = app(Vault::class)->runAsOwner(null, fn () => $provider->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->toContain('AzDO Repos PAT not configured');

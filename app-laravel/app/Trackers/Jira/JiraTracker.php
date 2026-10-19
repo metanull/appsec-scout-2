@@ -121,9 +121,9 @@ final class JiraTracker implements Tracker
             return $this->client;
         }
 
-        $host = $this->vault->get('jira.host', null) ?? throw new \RuntimeException('Missing Jira credential: jira.host');
-        $email = $this->vault->get('jira.email', null) ?? throw new \RuntimeException('Missing Jira credential: jira.email');
-        $apiToken = $this->vault->get('jira.api_token', null) ?? throw new \RuntimeException('Missing Jira credential: jira.api_token');
+        $host = $this->vault->get('jira.host') ?? throw new \RuntimeException('Missing Jira credential: jira.host');
+        $email = $this->vault->get('jira.email') ?? throw new \RuntimeException('Missing Jira credential: jira.email');
+        $apiToken = $this->vault->get('jira.api_token') ?? throw new \RuntimeException('Missing Jira credential: jira.api_token');
 
         $fingerprint = hash('sha256', implode('|', [$host, $email, $apiToken]));
 

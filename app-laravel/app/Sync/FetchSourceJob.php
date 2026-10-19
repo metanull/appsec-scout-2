@@ -90,6 +90,7 @@ final class FetchSourceJob implements ShouldBeUnique, ShouldQueue
             'systems_updated' => 0,
             'containers_created' => 0,
             'containers_updated' => 0,
+            RepositoryLinkSkips::COUNT_KEY => 0,
             'events_created' => 0,
             'events_updated' => 0,
         ];

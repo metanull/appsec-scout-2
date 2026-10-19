@@ -9,6 +9,7 @@ use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 
 beforeEach(function () {
+    withoutDependencyTrackPush();
     (new RolePermissionSeeder)->run();
 });
 

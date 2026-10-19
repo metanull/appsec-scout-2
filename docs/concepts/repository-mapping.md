@@ -45,6 +45,13 @@ repository records its own browse URL, provider, and default branch on the
 lacks a native identity; a container that carries its own identity gets none,
 because its identity is authoritative.
 
+The backfill builds the mapping from the Azure DevOps Repos organization
+(`azdo-repos.organization`, a Source Control system credential). AzDO as a
+Source does not require AzDO Repos, so when that organization is not configured
+the fetch carries on without the mapping, and the skip is made visible instead:
+the run's `counts_json` records `repository_links_skipped`, and one `warning`
+Error Log entry (channel `sync`) per run says why no mapping was created.
+
 ## What it does not drive
 
 - **Readiness.** The context-quality indicator is **"Code location"**: it is

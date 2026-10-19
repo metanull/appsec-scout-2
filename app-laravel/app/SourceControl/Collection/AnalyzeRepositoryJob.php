@@ -7,6 +7,7 @@ use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
 use App\Assets\AzDoOwnerLookup;
 use App\Assets\AzDoScanResultDtoFactory;
+use App\Credentials\RunWithSystemCredentials;
 use App\Credentials\Vault;
 use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
@@ -97,12 +98,18 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         public readonly bool $force = false,
     ) {}
 
+    /** @return list<object> */
+    public function middleware(): array
+    {
+        return [new RunWithSystemCredentials];
+    }
+
     public function handle(
         AttachmentTargetResolver $resolver,
         AttachmentService $attachments,
         Vault $vault,
     ): void {
-        $pat = $vault->get('azdo-repos.pat', null)
+        $pat = $vault->getSystem('azdo-repos.pat')
             ?? throw new RuntimeException('AzDO Repos PAT not configured.');
 
         $scratchRoot = rtrim((string) config('static_analysis_collection.workspace_path'), '/')

@@ -40,7 +40,7 @@ final class FetchSystemJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(SystemIntegrationRuntime $runtime, SourceContainerIngestor $containers, SourceEventIngestor $events): void
     {
-        $counts = ['containers_created' => 0, 'containers_updated' => 0, 'events_created' => 0, 'events_updated' => 0];
+        $counts = ['containers_created' => 0, 'containers_updated' => 0, RepositoryLinkSkips::COUNT_KEY => 0, 'events_created' => 0, 'events_updated' => 0];
         $system = SoftwareSystem::query()->find($this->softwareSystemId);
 
         try {

@@ -24,8 +24,8 @@ final class AzDoReposAccess
     public function credentials(User $user): array
     {
         [$pat, $organization] = $this->vault->runAsOwner($user->id, fn (): array => [
-            $this->vault->get('azdo-repos.pat', null),
-            $this->vault->get('azdo-repos.organization', null),
+            $this->vault->get('azdo-repos.pat'),
+            $this->vault->get('azdo-repos.organization'),
         ]);
 
         if (! is_string($pat) || trim($pat) === '' || ! is_string($organization) || trim($organization) === '') {

@@ -7,6 +7,8 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
 
+beforeEach(fn () => withoutDependencyTrackPush());
+
 it('rolls up software components and local findings from every child container', function () {
     $system = SoftwareSystem::factory()->create();
     $container = SecurityContainer::factory()->forSystem($system)->create();

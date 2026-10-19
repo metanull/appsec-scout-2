@@ -87,6 +87,7 @@ function fakeCollectorProcesses(?Closure $onTrivy = null): void
 }
 
 beforeEach(function () {
+    withoutDependencyTrackPush();
     config(['repository_collection.trivy_server_url' => 'http://trivy-server:4954']);
     config(['repository_collection.trivy_token_file' => storage_path('app/private/test-trivy-token')]);
     File::ensureDirectoryExists(storage_path('app/private'));

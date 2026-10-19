@@ -2,6 +2,7 @@
 
 namespace App\Sync;
 
+use App\Credentials\RunWithSystemCredentials;
 use App\Credentials\Vault;
 use App\Models\SecurityEvent;
 use App\Sources\AzDo\AzDoClient;
@@ -25,6 +26,12 @@ final class EnrichAzDoSecretJob implements ShouldQueue
         public readonly int $alertId,
     ) {}
 
+    /** @return list<object> */
+    public function middleware(): array
+    {
+        return [new RunWithSystemCredentials];
+    }
+
     public function handle(Vault $vault, ?AzDoClient $clientOverride = null): void
     {
         $event = SecurityEvent::find($this->eventId);
@@ -36,9 +43,9 @@ final class EnrichAzDoSecretJob implements ShouldQueue
         if ($clientOverride !== null) {
             $client = $clientOverride;
         } else {
-            $pat = $vault->get('azdo.pat', null) ?? throw new \RuntimeException('AzDO PAT not configured');
-            $org = $vault->get('azdo.organization', null) ?? throw new \RuntimeException('AzDO organization not configured');
-            $base = $vault->get('azdo.baseUrl', null) ?? 'https://dev.azure.com';
+            $pat = $vault->getSystem('azdo.pat') ?? throw new \RuntimeException('AzDO PAT not configured');
+            $org = $vault->getSystem('azdo.organization') ?? throw new \RuntimeException('AzDO organization not configured');
+            $base = $vault->getSystem('azdo.baseUrl') ?? 'https://dev.azure.com';
             $client = new AzDoClient($org, $pat, $base);
         }
         $alert = $client->getAlert($this->projectId, $this->repoId, $this->alertId);

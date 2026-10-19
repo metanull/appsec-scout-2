@@ -119,8 +119,11 @@ for the fuller distinction between this and an actual Source Control credential.
 
 Repository Mappings are always created manually (via the relation manager) with one exception:
 `assets:sync-azdo-projects` and the AzDO fetch cycle auto-create one for every AzDO repository
-Container, using the AzDO organization/project as the base URL (see
+Container that lacks its own code identity, using the AzDO Repos organization/project as the
+base URL (see
 [Ops](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
+Without the AzDO Repos organization no mapping is created and the run reports the skip (see
+[Repository Mapping](repository-mapping.md)).
 
 ## Curated Link
 

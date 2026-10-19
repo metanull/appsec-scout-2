@@ -1,6 +1,7 @@
 <?php
 
 use App\Assets\AzDoProjectLinker;
+use App\Assets\RepositoryMappingOutcome;
 use App\Credentials\Vault;
 use App\Models\Enums\RepositoryProviderType;
 use App\Models\RepositoryMapping;
@@ -66,7 +67,7 @@ it('creates a project-scoped repository mapping for an azdo repository container
         'metadata' => ['code.default_branch' => 'develop'],
     ]);
 
-    app(AzDoProjectLinker::class)->ensureRepositoryMapping($container);
+    ensureRepositoryMappingAsSystem($container);
 
     $mapping = RepositoryMapping::query()
         ->where('owner_type', SecurityContainer::class)
@@ -99,7 +100,7 @@ it('does not backfill a repository mapping when only the Source credential organ
         'kind' => 'repository',
     ]);
 
-    app(AzDoProjectLinker::class)->ensureRepositoryMapping($container);
+    ensureRepositoryMappingAsSystem($container);
 
     expect(RepositoryMapping::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(0);
 });
@@ -119,7 +120,7 @@ it('does not backfill a repository mapping when the container already carries it
         ],
     ]);
 
-    app(AzDoProjectLinker::class)->ensureRepositoryMapping($container);
+    ensureRepositoryMappingAsSystem($container);
 
     expect(RepositoryMapping::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(0);
 });
@@ -128,9 +129,8 @@ it('does not create a duplicate repository mapping on repeated calls', function 
     $system = SoftwareSystem::factory()->create(['source_id' => AzDoNormalizer::SOURCE_ID, 'name' => 'TelCodes']);
     $container = SecurityContainer::factory()->forSystem($system)->create(['kind' => 'repository', 'name' => 'tinc-front']);
 
-    $linker = app(AzDoProjectLinker::class);
-    $linker->ensureRepositoryMapping($container);
-    $linker->ensureRepositoryMapping($container);
+    ensureRepositoryMappingAsSystem($container);
+    ensureRepositoryMappingAsSystem($container);
 
     expect(RepositoryMapping::query()->where('owner_type', SecurityContainer::class)->where('owner_id', $container->id)->count())->toBe(1);
 });
@@ -142,9 +142,24 @@ it('skips non-repository containers and non-azdo systems', function () {
     $otherSystem = SoftwareSystem::factory()->create(['source_id' => 'asoc']);
     $otherContainer = SecurityContainer::factory()->forSystem($otherSystem)->create(['kind' => 'repository']);
 
-    $linker = app(AzDoProjectLinker::class);
-    $linker->ensureRepositoryMapping($pipelineContainer);
-    $linker->ensureRepositoryMapping($otherContainer);
+    ensureRepositoryMappingAsSystem($pipelineContainer);
+    ensureRepositoryMappingAsSystem($otherContainer);
 
     expect(RepositoryMapping::query()->count())->toBe(0);
 });
+
+it('reports a missing AzDO Repos organization instead of skipping silently', function () {
+    app(Vault::class)->set('azdo-repos.organization', null, '');
+
+    $system = SoftwareSystem::factory()->create(['source_id' => AzDoNormalizer::SOURCE_ID, 'name' => 'TelCodes']);
+    $container = SecurityContainer::factory()->forSystem($system)->create(['kind' => 'repository', 'name' => 'tinc-front']);
+
+    expect(ensureRepositoryMappingAsSystem($container))->toBe(RepositoryMappingOutcome::OrganizationNotConfigured)
+        ->and(RepositoryMapping::query()->count())->toBe(0);
+});
+
+/** Every sync path runs the linker inside SystemIntegrationRuntime, i.e. as the system owner. */
+function ensureRepositoryMappingAsSystem(SecurityContainer $container): RepositoryMappingOutcome
+{
+    return app(Vault::class)->runAsOwner(null, fn (): RepositoryMappingOutcome => app(AzDoProjectLinker::class)->ensureRepositoryMapping($container));
+}

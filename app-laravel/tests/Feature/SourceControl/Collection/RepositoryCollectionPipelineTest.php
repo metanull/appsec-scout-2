@@ -80,6 +80,7 @@ function fakeRealTrivyOutput(): void
 }
 
 beforeEach(function () {
+    withoutDependencyTrackPush();
     app(Vault::class)->set('azdo-repos.pat', null, 'fake-pat');
     app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 
