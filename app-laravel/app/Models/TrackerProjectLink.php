@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Audit\Recorder;
+use App\Sources\Context\SourceContextFacts;
 use Database\Factories\TrackerProjectLinkFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -25,6 +26,18 @@ class TrackerProjectLink extends Model
     /** @use HasFactory<TrackerProjectLinkFactory> */
     use HasFactory;
 
+    /** Metadata key recording how a link was created; absent on links added by hand. */
+    public const string METADATA_ORIGIN = 'origin';
+
+    /** Metadata key holding the browsable URL of the tracker project, as the tracker reported it. */
+    public const string METADATA_PROJECT_URL = 'tracker.project_url';
+
+    /** Learned when a work item was created or linked from an alert or finding. */
+    public const string ORIGIN_WORK_ITEM = 'work_item';
+
+    /** Learned by reconciliation from the project of a tracker issue that references an alert. */
+    public const string ORIGIN_RECONCILIATION = 'reconciliation';
+
     protected static function booted(): void
     {
         static::created(function (self $link): void {
@@ -37,6 +50,7 @@ class TrackerProjectLink extends Model
                 'project_name' => $link->project_name,
                 'is_default' => $link->is_default,
                 'created_by_user_id' => $link->created_by_user_id,
+                'origin' => $link->origin(),
             ]);
         });
 
@@ -73,6 +87,37 @@ class TrackerProjectLink extends Model
             'is_default' => 'boolean',
             'metadata' => 'array',
         ];
+    }
+
+    public function origin(): ?string
+    {
+        return $this->metadataString(self::METADATA_ORIGIN);
+    }
+
+    /**
+     * Whether only reconciliation suggested this link. Such a link never outranks one added
+     * by hand or learned from a work item when a default tracker project is resolved.
+     */
+    public function isLearnedByReconciliation(): bool
+    {
+        return $this->origin() === self::ORIGIN_RECONCILIATION;
+    }
+
+    public function projectUrl(): ?string
+    {
+        return $this->metadataString(self::METADATA_PROJECT_URL);
+    }
+
+    private function metadataString(string $key): ?string
+    {
+        $metadata = $this->getAttribute('metadata');
+
+        if (! is_array($metadata)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $metadata */
+        return SourceContextFacts::getString($metadata, $key);
     }
 
     /** @return MorphTo<Model, $this> */

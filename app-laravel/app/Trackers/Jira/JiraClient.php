@@ -215,22 +215,24 @@ final class JiraClient
         return array_values(array_map(fn (array $issue): WorkItemDto => $this->mapWorkItem($issue), $payload['issues'] ?? []));
     }
 
-    /** @return list<ReconciliationCandidateDto> */
-    public function searchForReconciliation(string $projectKey, int $limit = 500): array
+    /**
+     * Every labelled issue of the last year across all projects this credential can see, in
+     * one paged JQL search: candidates carry their own project, so no per-project search is
+     * needed and the matched project is the issue's current one, even after a move.
+     *
+     * @return list<ReconciliationCandidateDto>
+     */
+    public function searchForReconciliation(): array
     {
-        if (trim($projectKey) === '' || $limit <= 0) {
-            return [];
-        }
-
         $results = [];
         $nextPageToken = null;
-        $jql = $this->reconciliationJql($projectKey);
+        $jql = $this->reconciliationJql();
 
         do {
             $query = [
                 'jql' => $jql,
-                'fields' => 'summary,status,description,labels',
-                'maxResults' => min(100, max(1, $limit - count($results))),
+                'fields' => 'summary,status,description,labels,project',
+                'maxResults' => 100,
             ];
 
             if ($nextPageToken !== null) {
@@ -260,22 +262,32 @@ final class JiraClient
                     labels: array_values(array_map('strval', $fields['labels'] ?? [])),
                     extractedUrls: $extractedUrls,
                     searchStrategy: $jql,
+                    project: $this->mapIssueProject($fields['project'] ?? null),
                 );
-
-                if (count($results) >= $limit) {
-                    break;
-                }
             }
 
             $nextPageTokenValue = $payload['nextPageToken'] ?? null;
             $nextPageToken = is_string($nextPageTokenValue) && $nextPageTokenValue !== '' ? $nextPageTokenValue : null;
             $isLast = (bool) ($payload['isLast'] ?? true);
-        } while (! $isLast && $nextPageToken !== null && count($results) < $limit);
+        } while (! $isLast && $nextPageToken !== null);
 
         return $results;
     }
 
-    private function reconciliationJql(string $projectKey): string
+    private function mapIssueProject(mixed $project): ?ProjectDto
+    {
+        if (! is_array($project) || ! is_string($project['key'] ?? null) || $project['key'] === '') {
+            return null;
+        }
+
+        return new ProjectDto(
+            key: $project['key'],
+            name: is_string($project['name'] ?? null) ? $project['name'] : $project['key'],
+            url: rtrim($this->host, '/') . '/browse/' . $project['key'],
+        );
+    }
+
+    private function reconciliationJql(): string
     {
         $quotedLabels = array_map(
             static fn (string $label): string => '"' . addcslashes($label, '"\\') . '"',
@@ -284,11 +296,7 @@ final class JiraClient
 
         $labelsClause = $quotedLabels === [] ? '"security"' : implode(', ', $quotedLabels);
 
-        return sprintf(
-            'project = "%s" AND labels in (%s) AND created >= -365d ORDER BY created DESC',
-            addcslashes($projectKey, '"\\'),
-            $labelsClause,
-        );
+        return sprintf('labels in (%s) AND created >= -365d ORDER BY created DESC', $labelsClause);
     }
 
     /** @return array<string, mixed> */

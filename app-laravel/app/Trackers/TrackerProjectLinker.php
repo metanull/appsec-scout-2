@@ -14,7 +14,9 @@ use App\Sources\Context\SourceContextFacts;
 final class TrackerProjectLinker
 {
     /**
-     * Idempotently create tracker project links for the systems and containers of the given events.
+     * Idempotently create tracker project links for the systems and containers of the given
+     * events. The origin is recorded only when a link is created, so learning a link again
+     * never changes how it was first established; a project URL is merged into either.
      *
      * @param  list<SecurityEvent>  $events
      */
@@ -24,6 +26,8 @@ final class TrackerProjectLinker
         string $projectKey,
         ?string $projectName,
         ?int $userId,
+        ?string $projectUrl = null,
+        string $origin = TrackerProjectLink::ORIGIN_WORK_ITEM,
     ): void {
         $systemIds = [];
         $containerIds = [];
@@ -42,7 +46,7 @@ final class TrackerProjectLinker
             }
         }
 
-        $this->learnFromScopes($systemIds, $containerIds, $trackerId, $projectKey, $projectName, $userId);
+        $this->learnFromScopes($systemIds, $containerIds, $trackerId, $projectKey, $projectName, $userId, $projectUrl, $origin);
     }
 
     /**
@@ -76,7 +80,7 @@ final class TrackerProjectLinker
             }
         }
 
-        $this->learnFromScopes($systemIds, $containerIds, $trackerId, $projectKey, $projectName, $userId);
+        $this->learnFromScopes($systemIds, $containerIds, $trackerId, $projectKey, $projectName, $userId, null, TrackerProjectLink::ORIGIN_WORK_ITEM);
     }
 
     /**
@@ -90,16 +94,18 @@ final class TrackerProjectLinker
         string $projectKey,
         ?string $projectName,
         ?int $userId,
+        ?string $projectUrl,
+        string $origin,
     ): void {
         $systemIds = array_values(array_unique($systemIds));
         $containerIds = array_values(array_unique($containerIds));
 
         foreach ($systemIds as $systemId) {
-            $this->upsert(SoftwareSystem::class, $systemId, $trackerId, $projectKey, $projectName, $userId);
+            $this->upsert(SoftwareSystem::class, $systemId, $trackerId, $projectKey, $projectName, $userId, $projectUrl, $origin);
         }
 
         foreach ($containerIds as $containerId) {
-            $this->upsert(SecurityContainer::class, $containerId, $trackerId, $projectKey, $projectName, $userId);
+            $this->upsert(SecurityContainer::class, $containerId, $trackerId, $projectKey, $projectName, $userId, $projectUrl, $origin);
         }
     }
 
@@ -110,8 +116,14 @@ final class TrackerProjectLinker
         string $projectKey,
         ?string $projectName,
         ?int $userId,
+        ?string $projectUrl,
+        string $origin,
     ): void {
-        $metadata = $this->buildMetadata($trackerId, $projectKey, $projectName);
+        $metadata = SourceContextFacts::set(
+            $this->buildMetadata($trackerId, $projectKey, $projectName),
+            TrackerProjectLink::METADATA_PROJECT_URL,
+            $projectUrl,
+        );
 
         $existing = TrackerProjectLink::query()
             ->where('owner_type', $ownerType)
@@ -150,7 +162,7 @@ final class TrackerProjectLinker
             'project_name' => $projectName,
             'is_default' => false,
             'created_by_user_id' => $userId,
-            'metadata' => $metadata,
+            'metadata' => SourceContextFacts::set($metadata, TrackerProjectLink::METADATA_ORIGIN, $origin),
         ]);
     }
 

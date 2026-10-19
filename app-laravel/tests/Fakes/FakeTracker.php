@@ -3,6 +3,7 @@
 namespace Tests\Fakes;
 
 use App\Credentials\CredentialField;
+use App\Credentials\Vault;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\ProjectDto;
@@ -46,22 +47,30 @@ final class FakeTracker implements Tracker
     /** @var array<string, WorkItemDto> */
     private array $workItems = [];
 
-    /** @var array<string, list<ReconciliationCandidateDto>> */
-    private array $reconciliationCandidatesByProject = [];
+    /**
+     * The fake-tracker.token value each reconciliation search ran with, so tests can tell
+     * whose credential (system or a user's) a search used.
+     *
+     * @var list<?string>
+     */
+    public array $reconciliationTokens = [];
 
-    /** @var array<string, true> */
-    private array $reconciliationFailuresByProject = [];
+    /** @var list<ReconciliationCandidateDto> */
+    private array $reconciliationCandidates = [];
 
-    /** @var array<string, CarbonImmutable> */
-    private array $reconciliationRateLimitsByProject = [];
+    private bool $reconciliationFails = false;
+
+    private ?CarbonImmutable $reconciliationRateLimitResetsAt = null;
 
     private bool $connectionOk = true;
 
     private bool $fetchProjectsFails = false;
 
+    public function __construct(private readonly string $id = 'fake-tracker') {}
+
     public function id(): string
     {
-        return 'fake-tracker';
+        return $this->id;
     }
 
     public function displayName(): string
@@ -85,7 +94,7 @@ final class FakeTracker implements Tracker
     public function credentialFields(): array
     {
         return [
-            new CredentialField(key: 'fake-tracker.token', label: 'Token', isSecret: true, required: true),
+            new CredentialField(key: "{$this->id}.token", label: 'Token', isSecret: true, required: true),
         ];
     }
 
@@ -209,19 +218,20 @@ final class FakeTracker implements Tracker
     }
 
     /** @return iterable<ReconciliationCandidateDto> */
-    public function reconciliationCandidates(string $projectKey): iterable
+    public function reconciliationCandidates(): iterable
     {
         $this->reconciliationCalls++;
+        $this->reconciliationTokens[] = app(Vault::class)->get("{$this->id}.token", null);
 
-        if (isset($this->reconciliationRateLimitsByProject[$projectKey])) {
-            throw new TrackerRateLimitExceededException("Rate limit exceeded on project {$projectKey}", $this->reconciliationRateLimitsByProject[$projectKey]);
+        if ($this->reconciliationRateLimitResetsAt !== null) {
+            throw new TrackerRateLimitExceededException('Rate limit exceeded', $this->reconciliationRateLimitResetsAt);
         }
 
-        if (isset($this->reconciliationFailuresByProject[$projectKey])) {
-            throw new \RuntimeException("Reconciliation failed for project {$projectKey}");
+        if ($this->reconciliationFails) {
+            throw new \RuntimeException('Reconciliation search failed');
         }
 
-        return $this->reconciliationCandidatesByProject[$projectKey] ?? [];
+        return $this->reconciliationCandidates;
     }
 
     public function withProjects(ProjectDto ...$projects): self
@@ -259,23 +269,23 @@ final class FakeTracker implements Tracker
         return $this;
     }
 
-    public function withReconciliationCandidates(string $projectKey, ReconciliationCandidateDto ...$candidates): self
+    public function withReconciliationCandidates(ReconciliationCandidateDto ...$candidates): self
     {
-        $this->reconciliationCandidatesByProject[$projectKey] = $candidates;
+        $this->reconciliationCandidates = $candidates;
 
         return $this;
     }
 
-    public function withReconciliationFailure(string $projectKey): self
+    public function withReconciliationFailure(): self
     {
-        $this->reconciliationFailuresByProject[$projectKey] = true;
+        $this->reconciliationFails = true;
 
         return $this;
     }
 
-    public function withReconciliationRateLimit(string $projectKey, CarbonImmutable $resetsAt): self
+    public function withReconciliationRateLimit(CarbonImmutable $resetsAt): self
     {
-        $this->reconciliationRateLimitsByProject[$projectKey] = $resetsAt;
+        $this->reconciliationRateLimitResetsAt = $resetsAt;
 
         return $this;
     }

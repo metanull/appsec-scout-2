@@ -284,7 +284,7 @@ together, in depth, in
   [sources-trackers-source-control.md](sources-trackers-source-control.md#source-control-vs-repository-mapping--two-different-things-that-look-related)
   for how this differs from an actual Source Control credential.
 - **`TrackerProjectLink`** — maps a System or Container to a tracker project, and is what drives
-  default project selection and reconciliation scoping when [creating or linking a tracker
+  default project selection (never what reconciliation searches) when [creating or linking a tracker
   issue](triage.md#creating-and-linking-tracker-issues).
 
 ## Permission Summary

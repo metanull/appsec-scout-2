@@ -12,7 +12,6 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
 use App\Models\User;
-use App\Trackers\Dto\ProjectDto;
 use Database\Seeders\RolePermissionSeeder;
 use Tests\Fakes\FakeTracker;
 
@@ -55,18 +54,8 @@ it('renders navigation catalogs on system and container views when links exist',
     ]);
     $user->syncRoles(['Reader']);
 
-    bindFakeWorkItemTracker((new FakeTracker)->withProjects(
-        new ProjectDto(
-            key: 'APP',
-            name: 'App Project',
-            url: 'https://tracker.test/projects/APP',
-        ),
-        new ProjectDto(
-            key: 'OPS',
-            name: 'Ops Project',
-            url: 'https://tracker.test/projects/OPS',
-        ),
-    ));
+    // The navigation reads the project URL stored on each link; it never calls the tracker.
+    bindFakeWorkItemTracker(new FakeTracker);
 
     $system = SoftwareSystem::factory()->create([
         'name' => 'Acme App',
@@ -95,6 +84,7 @@ it('renders navigation catalogs on system and container views when links exist',
         'project_name' => 'App Project',
         'is_default' => false,
         'created_by_user_id' => $user->id,
+        'metadata' => [TrackerProjectLink::METADATA_PROJECT_URL => 'https://tracker.test/projects/APP'],
     ]);
 
     RepositoryMapping::factory()
@@ -133,6 +123,7 @@ it('renders navigation catalogs on system and container views when links exist',
         'project_name' => 'Ops Project',
         'is_default' => false,
         'created_by_user_id' => $user->id,
+        'metadata' => [TrackerProjectLink::METADATA_PROJECT_URL => 'https://tracker.test/projects/OPS'],
     ]);
 
     RepositoryMapping::factory()

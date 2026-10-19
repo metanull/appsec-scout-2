@@ -7,10 +7,7 @@ use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Support\WorkItemCreatedNotification;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
-use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
-use App\Models\SoftwareSystem;
-use App\Models\TrackerProjectLink;
 use App\Models\User;
 use App\Sync\RefetchEventJob;
 use App\Trackers\Reconciliation\ReconciliationService;
@@ -83,7 +80,7 @@ class ViewSecurityEvent extends ViewRecord
                 ->icon('heroicon-o-arrows-pointing-in')
                 ->visible(fn (): bool => Gate::allows('work-items.link') || Gate::allows('work-items.sync'))
                 ->requiresConfirmation()
-                ->modalDescription('Search configured tracker projects and link any existing work items that match this alert.')
+                ->modalDescription('Search every tracker configured with your own credentials and link any existing work items that reference this alert.')
                 ->action(fn (): bool => $this->dispatchReconcileEvent()),
             Action::make('addAttachment')
                 ->label('Add attachment')
@@ -287,14 +284,6 @@ class ViewSecurityEvent extends ViewRecord
             abort(403);
         }
 
-        if (! $this->hasApplicableTrackerMappings($this->eventRecord())) {
-            Notification::make()
-                ->title('No tracker project mapping for this system or container')
-                ->body('Searching every configured tracker project instead of a scoped one — results may be less precise. Add a Tracker Project Link to this alert\'s system or container to narrow this search next time.')
-                ->warning()
-                ->send();
-        }
-
         try {
             $results = app(ReconciliationService::class)->reconcileEvent($this->eventRecord(), $user->id);
         } catch (\Throwable $exception) {
@@ -326,32 +315,6 @@ class ViewSecurityEvent extends ViewRecord
         $this->refreshFormData([]);
 
         return true;
-    }
-
-    private function hasApplicableTrackerMappings(SecurityEvent $event): bool
-    {
-        $softwareSystemId = $event->getAttribute('software_system_id');
-        $containerId = $event->getAttribute('container_id');
-
-        $query = TrackerProjectLink::query();
-
-        $query->where(function ($scope) use ($softwareSystemId, $containerId): void {
-            if (is_int($softwareSystemId)) {
-                $scope->orWhere(function ($inner) use ($softwareSystemId): void {
-                    $inner->where('owner_type', SoftwareSystem::class)
-                        ->where('owner_id', $softwareSystemId);
-                });
-            }
-
-            if (is_int($containerId)) {
-                $scope->orWhere(function ($inner) use ($containerId): void {
-                    $inner->where('owner_type', SecurityContainer::class)
-                        ->where('owner_id', $containerId);
-                });
-            }
-        });
-
-        return $query->exists();
     }
 
     private function nullableString(mixed $value): ?string

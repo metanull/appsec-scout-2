@@ -19,10 +19,15 @@ use Psr\Http\Message\ResponseInterface;
 
 final class GitHubClient
 {
-    /** The search quota resets every minute, so a longer wait means something else is wrong. */
-    private const int SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS = 90;
+    /**
+     * Longest wait for a rate limit before giving up: enough for a secondary rate limit,
+     * while an exhausted hourly quota fails the call with its reset time instead.
+     */
+    private const int RATE_LIMIT_MAX_WAIT_SECONDS = 90;
 
-    private const int SEARCH_RATE_LIMIT_MAX_ATTEMPTS = 3;
+    private const int RATE_LIMIT_MAX_ATTEMPTS = 3;
+
+    private const int RECONCILIATION_PAGE_SIZE = 100;
 
     /** GitHub's documented minimum wait after a secondary rate limit that names no reset. */
     private const int SECONDARY_RATE_LIMIT_WAIT_SECONDS = 60;
@@ -33,6 +38,8 @@ final class GitHubClient
         string $token,
         string $baseUrl = 'https://api.github.com',
         ?Client $httpClient = null,
+        /** @var list<string> */
+        private readonly array $reconciliationLabels = ['security'],
     ) {
         if ($httpClient !== null) {
             $this->http = $httpClient;
@@ -195,78 +202,106 @@ final class GitHubClient
         ));
     }
 
-    /** @return list<ReconciliationCandidateDto> */
-    public function searchForReconciliation(string $projectKey, int $limit = 500): array
+    /**
+     * Every labelled issue created in the last year across all repositories this token can
+     * see, listed through the Issues API (core quota, 5,000 requests an hour) rather than one
+     * Search API call per repository (30 a minute). That endpoint requires every given label
+     * at once, so each configured label is listed on its own and the results deduplicated.
+     *
+     * @return list<ReconciliationCandidateDto>
+     */
+    public function searchForReconciliation(): array
     {
-        if (trim($projectKey) === '' || $limit <= 0) {
-            return [];
-        }
-
-        [$owner, $repo] = $this->splitProjectKey($projectKey);
-        $since = now()->subDays(365)->toDateString();
-        $queryString = sprintf('type:issue label:security repo:%s/%s created:>=%s', $owner, $repo, $since);
-
+        $cutoff = CarbonImmutable::now()->subDays(365);
         $results = [];
-        $page = 1;
-        $perPage = 100;
 
-        do {
-            $payload = $this->rateLimitedSearch([
-                'q' => $queryString,
-                'per_page' => min($perPage, max(1, $limit - count($results))),
-                'page' => $page,
-            ]);
+        foreach ($this->reconciliationLabels as $label) {
+            $strategy = sprintf('issues?filter=all&state=all&labels=%s created>=%s', $label, $cutoff->toDateString());
 
-            $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
+            for ($page = 1; ; $page++) {
+                $items = $this->rateLimitedGet('issues', [
+                    'filter' => 'all',
+                    'state' => 'all',
+                    'labels' => $label,
+                    'sort' => 'created',
+                    'direction' => 'desc',
+                    'per_page' => self::RECONCILIATION_PAGE_SIZE,
+                    'page' => $page,
+                ]);
 
-            foreach ($items as $item) {
-                if (! is_array($item)) {
-                    continue;
+                foreach ($items as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+
+                    // Newest first, so the first issue past the cutoff ends this label's listing.
+                    if (CarbonImmutable::parse((string) ($item['created_at'] ?? 'now'))->lessThan($cutoff)) {
+                        break 2;
+                    }
+
+                    // The Issues API lists pull requests as issues too.
+                    if (isset($item['pull_request'])) {
+                        continue;
+                    }
+
+                    $candidate = $this->mapReconciliationCandidate($item, $strategy);
+                    $results[$candidate->workItemId] = $candidate;
                 }
 
-                $number = (int) ($item['number'] ?? 0);
-                if ($number <= 0) {
-                    continue;
-                }
-
-                $results[] = new ReconciliationCandidateDto(
-                    trackerId: 'github',
-                    workItemId: sprintf('%s/%s#%d', $owner, $repo, $number),
-                    workItemUrl: isset($item['html_url']) ? (string) $item['html_url'] : null,
-                    title: (string) ($item['title'] ?? ''),
-                    state: $this->displayState((string) ($item['state'] ?? 'open'), isset($item['state_reason']) ? (string) $item['state_reason'] : null),
-                    labels: array_values(array_map(static fn (array|string $label): string => is_array($label) ? (string) ($label['name'] ?? '') : (string) $label, $item['labels'] ?? [])),
-                    extractedUrls: UrlExtractor::extractFromMarkdown((string) ($item['body'] ?? '')),
-                    searchStrategy: $queryString,
-                );
-
-                if (count($results) >= $limit) {
+                if (count($items) < self::RECONCILIATION_PAGE_SIZE) {
                     break;
                 }
             }
+        }
 
-            $totalCount = (int) ($payload['total_count'] ?? 0);
-            $page++;
-        } while ($items !== [] && count($results) < min($limit, $totalCount === 0 ? $limit : $totalCount));
+        return array_values($results);
+    }
 
-        return $results;
+    /** @param  array<mixed>  $item */
+    private function mapReconciliationCandidate(array $item, string $strategy): ReconciliationCandidateDto
+    {
+        $repository = is_array($item['repository'] ?? null) ? $item['repository'] : [];
+        $fullName = $repository['full_name'] ?? null;
+        $number = (int) ($item['number'] ?? 0);
+
+        if (! is_string($fullName) || $fullName === '' || $number <= 0) {
+            throw new \UnexpectedValueException('GitHub listed an issue without its repository or number.');
+        }
+
+        return new ReconciliationCandidateDto(
+            trackerId: 'github',
+            workItemId: sprintf('%s#%d', $fullName, $number),
+            workItemUrl: isset($item['html_url']) ? (string) $item['html_url'] : null,
+            title: (string) ($item['title'] ?? ''),
+            state: $this->displayState((string) ($item['state'] ?? 'open'), isset($item['state_reason']) ? (string) $item['state_reason'] : null),
+            labels: array_values(array_map(static fn (array|string $label): string => is_array($label) ? (string) ($label['name'] ?? '') : (string) $label, $item['labels'] ?? [])),
+            extractedUrls: UrlExtractor::extractFromMarkdown((string) ($item['body'] ?? '')),
+            searchStrategy: $strategy,
+            project: new ProjectDto(
+                key: $fullName,
+                name: $fullName,
+                url: isset($repository['html_url']) ? (string) $repository['html_url'] : null,
+                owner: isset($repository['owner']['login']) ? (string) $repository['owner']['login'] : null,
+                repository: isset($repository['name']) ? (string) $repository['name'] : null,
+            ),
+        );
     }
 
     /**
-     * Runs one Search API request for reconciliation, waiting out GitHub's search rate limit
-     * (about 30 requests a minute) instead of failing: it pauses once a response reports the
-     * quota spent, and retries a request refused with a rate-limit 403/429 after the wait
-     * GitHub asks for. A wait longer than the cap, or a refusal past the retry budget, throws
-     * TrackerRateLimitExceededException carrying the reset time.
+     * Runs one GET for reconciliation, waiting out a GitHub rate limit instead of failing:
+     * it pauses once a response reports the quota spent, and retries a request refused with
+     * a rate-limit 403/429 after the wait GitHub asks for. A wait longer than the cap, or a
+     * refusal past the retry budget, throws TrackerRateLimitExceededException carrying the
+     * reset time.
      *
      * @param  array<string, mixed>  $query
-     * @return array<string, mixed>
+     * @return array<mixed>
      */
-    private function rateLimitedSearch(array $query): array
+    private function rateLimitedGet(string $uri, array $query): array
     {
         for ($attempt = 1; ; $attempt++) {
             try {
-                $response = $this->http->get('search/issues', ['query' => $query]);
+                $response = $this->http->get($uri, ['query' => $query]);
             } catch (ClientException $exception) {
                 $wait = $this->rateLimitWaitSeconds($exception->getResponse());
 
@@ -274,11 +309,11 @@ final class GitHubClient
                     throw $exception;
                 }
 
-                if ($wait > self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS || $attempt >= self::SEARCH_RATE_LIMIT_MAX_ATTEMPTS) {
+                if ($wait > self::RATE_LIMIT_MAX_WAIT_SECONDS || $attempt >= self::RATE_LIMIT_MAX_ATTEMPTS) {
                     $resetsAt = CarbonImmutable::now()->addSeconds($wait);
 
                     throw new TrackerRateLimitExceededException(sprintf(
-                        'GitHub search rate limit exceeded after %d attempt(s); it resets at %s (in %d s).',
+                        'GitHub rate limit exceeded after %d attempt(s); it resets at %s (in %d s).',
                         $attempt,
                         $resetsAt->toIso8601String(),
                         $wait,
@@ -290,9 +325,12 @@ final class GitHubClient
                 continue;
             }
 
-            $this->pauseWhenSearchQuotaSpent($response);
+            $this->pauseWhenQuotaSpent($response);
 
-            return $this->decode($response);
+            /** @var array<mixed> $payload */
+            $payload = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+            return $payload;
         }
     }
 
@@ -321,7 +359,11 @@ final class GitHubClient
         return str_contains(strtolower($message), 'rate limit') ? self::SECONDARY_RATE_LIMIT_WAIT_SECONDS : null;
     }
 
-    private function pauseWhenSearchQuotaSpent(ResponseInterface $response): void
+    /**
+     * Waits for a spent quota to refill when that is close; a longer wait is left to the next
+     * request, which GitHub refuses and which then fails with the reset time.
+     */
+    private function pauseWhenQuotaSpent(ResponseInterface $response): void
     {
         if ($response->getHeaderLine('X-RateLimit-Remaining') !== '0') {
             return;
@@ -329,8 +371,8 @@ final class GitHubClient
 
         $wait = $this->secondsUntilRateLimitReset($response);
 
-        if ($wait !== null) {
-            Sleep::for(min($wait, self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS))->seconds();
+        if ($wait !== null && $wait <= self::RATE_LIMIT_MAX_WAIT_SECONDS) {
+            Sleep::for($wait)->seconds();
         }
     }
 

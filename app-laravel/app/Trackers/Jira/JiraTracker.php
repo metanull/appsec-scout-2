@@ -110,13 +110,9 @@ final class JiraTracker implements Tracker
     }
 
     /** @return iterable<ReconciliationCandidateDto> */
-    public function reconciliationCandidates(string $projectKey): iterable
+    public function reconciliationCandidates(): iterable
     {
-        if (trim($projectKey) === '') {
-            return [];
-        }
-
-        return $this->getClient()->searchForReconciliation($projectKey, 500);
+        return $this->getClient()->searchForReconciliation();
     }
 
     private function getClient(): JiraClient

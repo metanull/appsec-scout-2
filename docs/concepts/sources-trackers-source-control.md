@@ -61,7 +61,7 @@ and reconciliation on work items:
 | `createWorkItem($request)` | Turn one or more `SecurityEvent`s into a ticket. |
 | `getWorkItem($key)` / `updateWorkItem($key, $request)` | Point lookup / partial update of an existing item. |
 | `searchWorkItems($projectKey, $query)` | Manual "link an existing item" search. |
-| `reconciliationCandidates($projectKey)` | Bulk scan of a project's existing items, for heuristic auto-linking. |
+| `reconciliationCandidates()` | One tracker-wide scan of every recent labelled item the credential can see, each with its project, for URL-based auto-linking. |
 
 ### Source Control (`App\SourceControl\Contracts\SourceControlProvider`)
 
@@ -197,7 +197,7 @@ the *data model* rather than the integration registry:
   described above.
 
 Both have a precise resolution/fallback chain and drive real UI behavior (default project
-selection, reconciliation scope, "view in repo" links) purely based on whether a link exists —
+selection, tracker project navigation, "view in repo" links) purely based on whether a link exists —
 see [docs/concepts/links-and-defaults.md](links-and-defaults.md) for the full detail.
 
 A Source has no equivalent scoping step — `fetchSystems()`/`fetchContainers()` are full

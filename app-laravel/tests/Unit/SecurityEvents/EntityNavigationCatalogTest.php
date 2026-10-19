@@ -6,17 +6,11 @@ use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
 use App\SecurityEvents\EntityNavigationCatalog;
-use App\Trackers\Dto\ProjectDto;
 use Tests\Fakes\FakeTracker;
 
 it('builds a system navigation catalog from all supported sources', function () {
-    bindFakeWorkItemTracker((new FakeTracker)->withProjects(
-        new ProjectDto(
-            key: 'APP',
-            name: 'App Project',
-            url: 'https://tracker.test/projects/APP',
-        ),
-    ));
+    // Building navigation must never call a tracker: the project URL comes from the link.
+    $tracker = bindFakeWorkItemTracker(new FakeTracker);
 
     $system = new SoftwareSystem;
     $system->forceFill([
@@ -39,6 +33,7 @@ it('builds a system navigation catalog from all supported sources', function () 
             'tracker_id' => 'fake-tracker',
             'project_key' => 'APP',
             'project_name' => 'App Project',
+            'metadata' => [TrackerProjectLink::METADATA_PROJECT_URL => 'https://tracker.test/projects/APP'],
         ])),
     ]));
     $system->setRelation('repositoryMappings', collect([
@@ -58,6 +53,8 @@ it('builds a system navigation catalog from all supported sources', function () 
         'https://github.com/acme/acme-app',
     );
 
+    expect($tracker->fetchProjectsCalls)->toBe(0);
+
     expect($catalog)->toContainEqual([
         'label' => 'System curated',
         'url' => 'https://curated.example.com/system',
@@ -68,13 +65,8 @@ it('builds a system navigation catalog from all supported sources', function () 
 });
 
 it('builds a container navigation catalog from all supported sources', function () {
-    bindFakeWorkItemTracker((new FakeTracker)->withProjects(
-        new ProjectDto(
-            key: 'OPS',
-            name: 'Ops Project',
-            url: 'https://tracker.test/projects/OPS',
-        ),
-    ));
+    // Building navigation must never call a tracker: the project URL comes from the link.
+    $tracker = bindFakeWorkItemTracker(new FakeTracker);
 
     $container = new SecurityContainer;
     $container->forceFill([
@@ -97,6 +89,7 @@ it('builds a container navigation catalog from all supported sources', function 
             'tracker_id' => 'fake-tracker',
             'project_key' => 'OPS',
             'project_name' => 'Ops Project',
+            'metadata' => [TrackerProjectLink::METADATA_PROJECT_URL => 'https://tracker.test/projects/OPS'],
         ])),
     ]));
     $container->setRelation('repositoryMappings', collect([
