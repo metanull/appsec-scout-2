@@ -1,0 +1,5 @@
+#!/bin/sh
+# Starts the OSS Scanner image's local site on http://127.0.0.1:8000/. Safe to run again.
+cd /src/app-laravel || exit 1
+pgrep -f "artisan serve" >/dev/null || (php artisan serve --host=127.0.0.1 --port=8000 >/tmp/scout-serve.log 2>&1 &)
+until curl -sS -o /dev/null http://127.0.0.1:8000/up 2>/dev/null; do sleep 0.5; done
