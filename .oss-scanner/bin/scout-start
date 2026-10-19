@@ -1,5 +1,11 @@
 #!/bin/sh
 # Starts the OSS Scanner image's local site on http://127.0.0.1:8000/. Safe to run again.
 cd /src/app-laravel || exit 1
-pgrep -f "artisan serve" >/dev/null || (php artisan serve --host=127.0.0.1 --port=8000 >/tmp/scout-serve.log 2>&1 &)
-until curl -sS -o /dev/null http://127.0.0.1:8000/up 2>/dev/null; do sleep 0.5; done
+# "[a]rtisan serve" matches the server but not a shell whose own command line contains the pattern.
+pgrep -f "[a]rtisan serve" >/dev/null || (php artisan serve --host=127.0.0.1 --port=8000 >/tmp/scout-serve.log 2>&1 &)
+i=0
+until curl -sS -o /dev/null http://127.0.0.1:8000/up 2>/dev/null; do
+  i=$((i+1))
+  [ "$i" -le 120 ] || { echo "scout-start: no answer on :8000 after 60s, see /tmp/scout-serve.log" >&2; exit 1; }
+  sleep 0.5
+done

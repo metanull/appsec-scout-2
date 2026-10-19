@@ -79,7 +79,7 @@ RUN set -e; scout-start; \
     curl -fsS -o /dev/null http://127.0.0.1:8000/login; \
     scout-totp; \
     vendor/bin/pest --no-coverage tests/Feature/Auth tests/Unit || echo "WARNING: Pest reported failures"; \
-    pkill -f "artisan serve" || true
+    pkill -f "[a]rtisan serve" || true
 
 # Keep build products out of the checkout's `git status`.
 RUN printf 'app-laravel/.env\napp-laravel/database/scan.sqlite\n' >> /src/.git/info/exclude 2>/dev/null || true
