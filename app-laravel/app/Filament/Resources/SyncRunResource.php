@@ -127,7 +127,7 @@ class SyncRunResource extends Resource
                 SelectFilter::make('source_id')
                     ->options(fn (): array => SyncRun::query()->distinct()->pluck('source_id', 'source_id')->all()),
                 SelectFilter::make('status')
-                    ->options(['success' => 'Success', 'failure' => 'Failure', 'running' => 'Running']),
+                    ->options(['success' => 'Success', 'partial' => 'Partial', 'failure' => 'Failure', 'running' => 'Running']),
                 ...DateRangeFilters::for('started_at', 'Started from', 'Started until'),
             ])
             ->actions([

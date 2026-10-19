@@ -12,9 +12,20 @@ use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Reconciliation\UrlExtractor;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
+use Illuminate\Support\Sleep;
+use Psr\Http\Message\ResponseInterface;
+use RuntimeException;
 
 final class GitHubClient
 {
+    /** The search quota resets every minute, so a longer wait means something else is wrong. */
+    private const int SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS = 90;
+
+    private const int SEARCH_RATE_LIMIT_MAX_ATTEMPTS = 3;
+
+    /** GitHub's documented minimum wait after a secondary rate limit that names no reset. */
+    private const int SECONDARY_RATE_LIMIT_WAIT_SECONDS = 60;
+
     private readonly Client $http;
 
     public function __construct(
@@ -199,13 +210,11 @@ final class GitHubClient
         $perPage = 100;
 
         do {
-            $payload = $this->decode($this->http->get('search/issues', [
-                'query' => [
-                    'q' => $queryString,
-                    'per_page' => min($perPage, max(1, $limit - count($results))),
-                    'page' => $page,
-                ],
-            ]));
+            $payload = $this->rateLimitedSearch([
+                'q' => $queryString,
+                'per_page' => min($perPage, max(1, $limit - count($results))),
+                'page' => $page,
+            ]);
 
             $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
 
@@ -240,6 +249,96 @@ final class GitHubClient
         } while ($items !== [] && count($results) < min($limit, $totalCount === 0 ? $limit : $totalCount));
 
         return $results;
+    }
+
+    /**
+     * Runs one Search API request for reconciliation, waiting out GitHub's search rate limit
+     * (about 30 requests a minute) instead of failing: it pauses once a response reports the
+     * quota spent, and retries a request refused with a rate-limit 403/429 after the wait
+     * GitHub asks for. A wait longer than the cap, or a refusal past the retry budget, fails.
+     *
+     * @param  array<string, mixed>  $query
+     * @return array<string, mixed>
+     */
+    private function rateLimitedSearch(array $query): array
+    {
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                $response = $this->http->get('search/issues', ['query' => $query]);
+            } catch (ClientException $exception) {
+                $wait = $this->rateLimitWaitSeconds($exception->getResponse());
+
+                if ($wait === null || $attempt >= self::SEARCH_RATE_LIMIT_MAX_ATTEMPTS) {
+                    throw $exception;
+                }
+
+                if ($wait > self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS) {
+                    throw new RuntimeException(sprintf(
+                        'GitHub search rate limit exceeded; it resets in %d s, longer than the %d s reconciliation waits.',
+                        $wait,
+                        self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS,
+                    ), previous: $exception);
+                }
+
+                Sleep::for($wait)->seconds();
+
+                continue;
+            }
+
+            $this->pauseWhenSearchQuotaSpent($response);
+
+            return $this->decode($response);
+        }
+    }
+
+    /** Seconds GitHub asks to wait before retrying, or null when the refusal is not a rate limit. */
+    private function rateLimitWaitSeconds(ResponseInterface $response): ?int
+    {
+        if (! in_array($response->getStatusCode(), [403, 429], true)) {
+            return null;
+        }
+
+        $retryAfter = $response->getHeaderLine('Retry-After');
+
+        if ($retryAfter !== '' && ctype_digit($retryAfter)) {
+            return max(1, (int) $retryAfter);
+        }
+
+        if ($response->getHeaderLine('X-RateLimit-Remaining') === '0') {
+            return $this->secondsUntilRateLimitReset($response) ?? self::SECONDARY_RATE_LIMIT_WAIT_SECONDS;
+        }
+
+        // A secondary rate limit may come without either header; GitHub then asks for at
+        // least a minute's wait. Any other 403 (e.g. missing permission) is not retried.
+        $payload = json_decode((string) $response->getBody(), true);
+        $message = is_array($payload) && is_string($payload['message'] ?? null) ? $payload['message'] : '';
+
+        return str_contains(strtolower($message), 'rate limit') ? self::SECONDARY_RATE_LIMIT_WAIT_SECONDS : null;
+    }
+
+    private function pauseWhenSearchQuotaSpent(ResponseInterface $response): void
+    {
+        if ($response->getHeaderLine('X-RateLimit-Remaining') !== '0') {
+            return;
+        }
+
+        $wait = $this->secondsUntilRateLimitReset($response);
+
+        if ($wait !== null) {
+            Sleep::for(min($wait, self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS))->seconds();
+        }
+    }
+
+    private function secondsUntilRateLimitReset(ResponseInterface $response): ?int
+    {
+        $reset = $response->getHeaderLine('X-RateLimit-Reset');
+
+        if ($reset === '' || ! ctype_digit($reset)) {
+            return null;
+        }
+
+        // The quota refills at the reset second itself, so wait one second past it.
+        return max(1, (int) $reset - now()->getTimestamp() + 1);
     }
 
     /** @param  array<string, mixed>  $payload */

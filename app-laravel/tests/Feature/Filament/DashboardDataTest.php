@@ -159,6 +159,16 @@ it('formats a reconciliation sweep using its work-item link counts', function ()
     expect(DashboardData::formatCounts($run))->toBe('2 link(s) created, 5 already linked');
 });
 
+it('formats a partially failed reconciliation sweep with its failed project count', function () {
+    $run = new SyncRun([
+        'source_id' => 'reconciliation',
+        'status' => 'partial',
+        'counts_json' => ['links_created' => 2, 'links_existing' => 5, 'projects_reconciled' => 10, 'projects_failed' => 3],
+    ]);
+
+    expect(DashboardData::formatCounts($run))->toBe('2 link(s) created, 5 already linked, 3 project(s) failed');
+});
+
 it('formats an inventory sync run using its systems/containers counts', function () {
     $run = new SyncRun([
         'source_id' => 'inventory',
