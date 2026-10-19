@@ -12,6 +12,9 @@
 # Seeded accounts, password `password`, TOTP enrolled with the secret in $SCAN_TOTP_SECRET (`scout-totp` prints
 # the current code): reader@, triage@, plan@, sync@, admin@example.com, one per role.
 #
+# The build context is filtered by .oss-scanner/Dockerfile.dockerignore, not the root .dockerignore (which is for
+# production images and leaves out tracked files such as .git, .github and app-laravel/.env.testing.example).
+#
 # Kept in step with docker/Dockerfile's php-runtime stage: same PHP minor, same extensions.
 FROM php:8.4-cli-trixie
 
@@ -82,4 +85,6 @@ RUN set -e; scout-start; \
     pkill -f "[a]rtisan serve" || true
 
 # Keep build products out of the checkout's `git status`.
-RUN printf 'app-laravel/.env\napp-laravel/database/scan.sqlite\n' >> /src/.git/info/exclude 2>/dev/null || true
+RUN printf '%s\n' app-laravel/.env app-laravel/database/scan.sqlite \
+      app-laravel/public/css/filament/ app-laravel/public/fonts/filament/ app-laravel/public/js/filament/ \
+      >> /src/.git/info/exclude 2>/dev/null || true
