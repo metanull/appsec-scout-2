@@ -1,0 +1,18 @@
+# Build context for .oss-scanner/Dockerfile only. BuildKit reads <Dockerfile>.dockerignore beside the Dockerfile
+# instead of the root .dockerignore, which is written for production images and leaves out tracked files a scan should
+# see (.git, .github, legacy-code, .env.testing.example, the .gitignore files under app-laravel/storage).
+
+# Dependencies and build output: the build makes its own.
+app-laravel/vendor
+app-laravel/node_modules
+app-laravel/public/build
+
+# Local environment files with real settings; the tracked examples stay.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.testing.example
+
+# Local tools that are never committed.
+*.phar
+**/bfg*.jar
