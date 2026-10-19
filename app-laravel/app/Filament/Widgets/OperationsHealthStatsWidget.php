@@ -91,9 +91,18 @@ class OperationsHealthStatsWidget extends StatsOverviewWidget
 
         $counts = $run->getAttribute('counts_json');
         $counts = is_array($counts) ? $counts : [];
+        $created = (int) ($counts['links_created'] ?? 0);
+
+        // Some tracker projects could not be searched: their links may still be missing.
+        if ($run->status === 'partial') {
+            return Stat::make('Reconciliation', $finishedAt)
+                ->description(sprintf('%d new link(s) created, %d project(s) failed', $created, (int) ($counts['projects_failed'] ?? 0)))
+                ->color('warning')
+                ->icon('heroicon-o-arrow-path');
+        }
 
         return Stat::make('Reconciliation', $finishedAt)
-            ->description(sprintf('%d new link(s) created', (int) ($counts['links_created'] ?? 0)))
+            ->description(sprintf('%d new link(s) created', $created))
             ->color('success')
             ->icon('heroicon-o-arrow-path');
     }

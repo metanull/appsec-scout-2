@@ -23,7 +23,14 @@ final class ReconcileAllJob implements ShouldBeUnique, ShouldQueue
      */
     public const string RUN_SOURCE_ID = 'reconciliation';
 
-    public int $uniqueFor = 600;
+    /**
+     * A sweep waits out GitHub's Search API rate limit (about 30 searches a minute) across
+     * every repository the system token can see, so it can run for several minutes; the
+     * uniqueness lock must outlive it so a second sweep cannot start alongside.
+     */
+    public int $timeout = 1800;
+
+    public int $uniqueFor = 1800;
 
     public function uniqueId(): string
     {
@@ -40,7 +47,7 @@ final class ReconcileAllJob implements ShouldBeUnique, ShouldQueue
         ]);
 
         try {
-            $results = $service->reconcileAll();
+            $sweep = $service->reconcileAll();
         } catch (Throwable $exception) {
             $message = trim($exception->getMessage());
             $message = Str::limit(preg_replace('/\s+/', ' ', $message) ?? $message, 1000);
@@ -68,14 +75,22 @@ final class ReconcileAllJob implements ShouldBeUnique, ShouldQueue
             throw $exception;
         }
 
-        $created = count(array_filter($results, fn ($result): bool => $result->alreadyLinked === false));
-        $existing = count($results) - $created;
-
+        // Each failed tracker project already has its own ErrorLog row (written by the
+        // service as it happened); the run carries the counts and a summary.
         $run->update([
             'finished_at' => now(),
-            'status' => 'success',
-            'counts_json' => ['links_created' => $created, 'links_existing' => $existing],
-            'error_message' => null,
+            'status' => match (true) {
+                $sweep->projectsFailed() === 0 => 'success',
+                $sweep->projectsReconciled === 0 => 'failure',
+                default => 'partial',
+            },
+            'counts_json' => [
+                'links_created' => $sweep->linksCreated(),
+                'links_existing' => $sweep->linksExisting(),
+                'projects_reconciled' => $sweep->projectsReconciled,
+                'projects_failed' => $sweep->projectsFailed(),
+            ],
+            'error_message' => $sweep->failureSummary(),
         ]);
 
         event(new SyncRunFinished($run));

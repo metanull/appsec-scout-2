@@ -5,11 +5,14 @@ use App\Trackers\Dto\CreateWorkItemRequest;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\GitHub\GitHubClient;
 use App\Trackers\GitHub\GitHubTracker;
+use Carbon\CarbonInterval;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Sleep;
 
 if (! function_exists('githubFixture')) {
     function githubFixture(string $name): string
@@ -209,6 +212,140 @@ it('returns empty reconciliation candidates for empty github project key', funct
     ));
 
     expect(iterator_to_array($tracker->reconciliationCandidates(''), false))->toBe([]);
+});
+
+/**
+ * @param  list<Response>  $responses
+ * @param  array<int, array<string, mixed>>  $history
+ */
+function githubSearchTracker(array $responses, array &$history): GitHubTracker
+{
+    $stack = HandlerStack::create(new MockHandler($responses));
+    $stack->push(Middleware::history($history));
+
+    $tracker = new GitHubTracker(app(Vault::class));
+    injectGitHubClient($tracker, new GitHubClient('token', 'https://api.github.com', new Client(['handler' => $stack])));
+
+    return $tracker;
+}
+
+/** @param  array<string, string>  $headers */
+function githubSearchPage(int $number, int $totalCount, array $headers = []): Response
+{
+    return new Response(200, $headers, json_encode([
+        'total_count' => $totalCount,
+        'items' => [[
+            'number' => $number,
+            'title' => "Security issue {$number}",
+            'state' => 'open',
+            'html_url' => "https://github.com/octo-org/appsec-scout/issues/{$number}",
+            'labels' => [['name' => 'security']],
+            'body' => "See https://example.com/finding/{$number}",
+        ]],
+    ], JSON_THROW_ON_ERROR));
+}
+
+function githubRateLimitRefusal(int $resetInSeconds): Response
+{
+    return new Response(403, [
+        'X-RateLimit-Limit' => '30',
+        'X-RateLimit-Remaining' => '0',
+        'X-RateLimit-Reset' => (string) (now()->getTimestamp() + $resetInSeconds),
+    ], '{"message":"API rate limit exceeded for user ID 1."}');
+}
+
+function sleptSeconds(int $seconds): Closure
+{
+    return fn (CarbonInterval $duration): bool => (int) $duration->totalSeconds === $seconds;
+}
+
+it('waits out a github search rate limit refusal and retries the search', function () {
+    $this->freezeTime();
+    Sleep::fake();
+    $history = [];
+
+    $tracker = githubSearchTracker([githubRateLimitRefusal(30), githubSearchPage(101, 1)], $history);
+
+    $candidates = iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false);
+
+    expect($candidates)->toHaveCount(1)
+        ->and($candidates[0]->workItemId)->toBe('octo-org/appsec-scout#101')
+        ->and($history)->toHaveCount(2);
+
+    Sleep::assertSlept(sleptSeconds(31), 1);
+});
+
+it('pauses before the next github search once the search quota is spent', function () {
+    $this->freezeTime();
+    Sleep::fake();
+    $history = [];
+
+    $tracker = githubSearchTracker([
+        githubSearchPage(101, 2, ['X-RateLimit-Remaining' => '0', 'X-RateLimit-Reset' => (string) (now()->getTimestamp() + 20)]),
+        githubSearchPage(102, 2, ['X-RateLimit-Remaining' => '29']),
+    ], $history);
+
+    $candidates = iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false);
+
+    expect($candidates)->toHaveCount(2)
+        ->and($history)->toHaveCount(2);
+
+    Sleep::assertSlept(sleptSeconds(21), 1);
+});
+
+it('honours retry-after on a github secondary rate limit', function () {
+    Sleep::fake();
+    $history = [];
+
+    $tracker = githubSearchTracker([
+        new Response(429, ['Retry-After' => '45'], '{"message":"You have exceeded a secondary rate limit."}'),
+        githubSearchPage(101, 1),
+    ], $history);
+
+    expect(iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false))->toHaveCount(1);
+
+    Sleep::assertSlept(sleptSeconds(45), 1);
+});
+
+it('does not retry a github search refused for a reason other than the rate limit', function () {
+    Sleep::fake();
+    $history = [];
+
+    $tracker = githubSearchTracker([
+        new Response(403, [], '{"message":"Resource not accessible by personal access token"}'),
+    ], $history);
+
+    expect(fn () => iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false))
+        ->toThrow(ClientException::class);
+
+    Sleep::assertNeverSlept();
+});
+
+it('fails instead of waiting when the github search rate limit resets beyond the wait cap', function () {
+    $this->freezeTime();
+    Sleep::fake();
+    $history = [];
+
+    $tracker = githubSearchTracker([githubRateLimitRefusal(600)], $history);
+
+    expect(fn () => iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false))
+        ->toThrow(RuntimeException::class, 'GitHub search rate limit exceeded; it resets in 601 s');
+
+    Sleep::assertNeverSlept();
+});
+
+it('gives up on a github search still rate limited after its retries', function () {
+    $this->freezeTime();
+    Sleep::fake();
+    $history = [];
+
+    $tracker = githubSearchTracker([githubRateLimitRefusal(10), githubRateLimitRefusal(10), githubRateLimitRefusal(10)], $history);
+
+    expect(fn () => iterator_to_array($tracker->reconciliationCandidates('octo-org/appsec-scout'), false))
+        ->toThrow(ClientException::class);
+
+    expect($history)->toHaveCount(3);
+    Sleep::assertSlept(sleptSeconds(11), 2);
 });
 
 it('adds a markdown comment to a github issue', function () {

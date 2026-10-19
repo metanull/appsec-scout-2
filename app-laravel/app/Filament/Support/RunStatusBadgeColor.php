@@ -7,8 +7,8 @@ namespace App\Filament\Support;
 /**
  * Shared badge color for the status column on SyncRun, RepositoryCollectionRun,
  * and StaticAnalysisRun (and their Recent* dashboard widgets) — `running` and
- * `partial` share the same "still needs attention" warning color; only
- * SyncRun lacks a `partial` status, so it never reaches that branch.
+ * `partial` share the same "still needs attention" warning color (a SyncRun is
+ * `partial` only for a reconciliation sweep where some tracker projects failed).
  */
 final class RunStatusBadgeColor
 {

@@ -320,6 +320,17 @@ it('shows a failed reconciliation sweep as failed on the operations page', funct
         ->assertSee('Last run failed');
 });
 
+it('shows a partially failed reconciliation sweep with its failed project count', function () {
+    $admin = operationsAdmin();
+
+    reconciliationRun('partial', now(), ['links_created' => 2, 'links_existing' => 1, 'projects_reconciled' => 4, 'projects_failed' => 3], '3 tracker project(s) failed');
+
+    Livewire::actingAs($admin)
+        ->test(OperationsPage::class)
+        ->assertSee('2 new link(s) created, 3 project(s) failed')
+        ->assertDontSee('Last run failed');
+});
+
 it('prefers the most recently finished reconciliation run when a failure follows a success', function () {
     $admin = operationsAdmin();
 

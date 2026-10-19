@@ -3,6 +3,7 @@
 namespace App\Trackers\Reconciliation;
 
 use App\Audit\Recorder;
+use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
@@ -12,9 +13,12 @@ use App\Sync\SystemIntegrationRuntime;
 use App\Trackers\Contracts\Tracker;
 use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
+use App\Trackers\ReconcileAllJob;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\TrackerProjectLinker;
 use App\Triage\OperatorIntegrationRuntime;
+use Closure;
+use Exception;
 use Illuminate\Database\DatabaseManager;
 
 final class ReconciliationService
@@ -94,21 +98,29 @@ final class ReconciliationService
         return $results;
     }
 
-    /** @return list<ReconciliationResult> */
-    public function reconcileAll(): array
+    /**
+     * Sweeps every tracker project for issues referencing any alert. A failing tracker call
+     * (listing a tracker's projects, or searching one project) is recorded in the error log
+     * and returned as a failure, and the sweep carries on with the remaining projects.
+     */
+    public function reconcileAll(): ReconciliationSweep
     {
         if (SecurityEvent::query()->count() === 0) {
-            return [];
+            return new ReconciliationSweep([], 0, []);
         }
 
-        $pairs = $this->allTrackerPairs();
+        $failures = [];
+        $pairs = $this->allTrackerPairs(function (string $trackerId, Exception $exception) use (&$failures): void {
+            $failures[] = $this->recordSweepFailure(new ReconciliationFailure($trackerId, null, $exception));
+        });
 
         if ($pairs === []) {
-            return [];
+            return new ReconciliationSweep([], 0, $failures);
         }
 
         $index = EventUrlIndex::build(SecurityEvent::query()->orderBy('id')->lazyById(1000));
         $results = [];
+        $projectsReconciled = 0;
 
         foreach ($pairs as $pair) {
             $trackerId = $pair['tracker_id'];
@@ -121,11 +133,19 @@ final class ReconciliationService
                 continue;
             }
 
-            /** @var list<ReconciliationCandidateDto> $candidates */
-            $candidates = $this->systemRuntime->runTracker(
-                $trackerId,
-                fn (Tracker $tracker): array => iterator_to_array($tracker->reconciliationCandidates($projectKey), false),
-            );
+            try {
+                /** @var list<ReconciliationCandidateDto> $candidates */
+                $candidates = $this->systemRuntime->runTracker(
+                    $trackerId,
+                    fn (Tracker $tracker): array => iterator_to_array($tracker->reconciliationCandidates($projectKey), false),
+                );
+            } catch (Exception $exception) {
+                $failures[] = $this->recordSweepFailure(new ReconciliationFailure($trackerId, $projectKey, $exception));
+
+                continue;
+            }
+
+            $projectsReconciled++;
 
             foreach ($candidates as $candidate) {
                 foreach ($this->matchEventIdsForCandidate($index, $candidate) as $eventId) {
@@ -160,7 +180,26 @@ final class ReconciliationService
             }
         }
 
-        return $results;
+        return new ReconciliationSweep($results, $projectsReconciled, $failures);
+    }
+
+    private function recordSweepFailure(ReconciliationFailure $failure): ReconciliationFailure
+    {
+        ErrorLog::query()->create([
+            'level' => 'error',
+            'channel' => 'reconciliation',
+            'message' => $failure->describe(),
+            'context_json' => [
+                'source_id' => ReconcileAllJob::RUN_SOURCE_ID,
+                'tracker_id' => $failure->trackerId,
+                'project_key' => $failure->projectKey,
+                'exception' => $failure->exception::class,
+            ],
+            'trace' => $failure->exception->getTraceAsString(),
+            'occurred_at' => now(),
+        ]);
+
+        return $failure;
     }
 
     /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
@@ -199,8 +238,11 @@ final class ReconciliationService
             ->all());
     }
 
-    /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
-    private function allTrackerPairs(): array
+    /**
+     * @param  (Closure(string, Exception): void)|null  $onDiscoveryFailure  null: a tracker failing to list its projects aborts the caller
+     * @return list<array{tracker_id: string, project_key: string, project_name: ?string}>
+     */
+    private function allTrackerPairs(?Closure $onDiscoveryFailure = null): array
     {
         $linkedPairs = TrackerProjectLink::query()
             ->select(['tracker_id', 'project_key', 'project_name'])
@@ -216,7 +258,7 @@ final class ReconciliationService
         $seen = [];
         $merged = [];
 
-        foreach ([...$linkedPairs, ...$this->allTrackerProjectPairs()] as $pair) {
+        foreach ([...$linkedPairs, ...$this->allTrackerProjectPairs($onDiscoveryFailure)] as $pair) {
             $key = "{$pair['tracker_id']}\0{$pair['project_key']}";
 
             if (isset($seen[$key])) {
@@ -230,8 +272,11 @@ final class ReconciliationService
         return $merged;
     }
 
-    /** @return list<array{tracker_id: string, project_key: string, project_name: ?string}> */
-    private function allTrackerProjectPairs(): array
+    /**
+     * @param  (Closure(string, Exception): void)|null  $onFailure
+     * @return list<array{tracker_id: string, project_key: string, project_name: ?string}>
+     */
+    private function allTrackerProjectPairs(?Closure $onFailure): array
     {
         $pairs = [];
 
@@ -242,11 +287,21 @@ final class ReconciliationService
                 continue;
             }
 
-            /** @var list<ProjectDto> $projects */
-            $projects = $this->systemRuntime->runTracker(
-                $tracker->id(),
-                fn (Tracker $tracker): array => iterator_to_array($tracker->fetchProjects(), false),
-            );
+            try {
+                /** @var list<ProjectDto> $projects */
+                $projects = $this->systemRuntime->runTracker(
+                    $tracker->id(),
+                    fn (Tracker $tracker): array => iterator_to_array($tracker->fetchProjects(), false),
+                );
+            } catch (Exception $exception) {
+                if ($onFailure === null) {
+                    throw $exception;
+                }
+
+                $onFailure($tracker->id(), $exception);
+
+                continue;
+            }
 
             foreach ($projects as $project) {
                 $pairs[] = ['tracker_id' => $tracker->id(), 'project_key' => $project->key, 'project_name' => $project->name];
