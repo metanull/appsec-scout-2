@@ -2,6 +2,7 @@
 
 use App\Audit\AuditLog;
 use App\Mcp\Servers\AppSecScoutServer;
+use App\Mcp\Tools\Findings\GetAlertTool;
 use App\Mcp\Tools\Triage\ChangeAlertSeverityTool;
 use App\Mcp\Tools\Triage\ChangeAlertStateTool;
 use App\Mcp\Tools\Triage\ChangeLocalFindingSeverityTool;
@@ -48,7 +49,7 @@ function triageFinding(array $attributes = []): LocalFinding
 }
 
 it('describes an alert state change without applying it by default', function () {
-    $event = SecurityEvent::factory()->create(['state' => EventState::Open]);
+    $event = SecurityEvent::factory()->create(['source_id' => 'asoc', 'state' => EventState::Open]);
 
     AppSecScoutServer::actingAs($this->triager)->tool(ChangeAlertStateTool::class, [
         'alert_ids' => [$event->id],
@@ -203,3 +204,58 @@ it('refuses the write tools without alerts.edit', function (string $tool, array 
     'finding severity' => [ChangeLocalFindingSeverityTool::class, ['finding_ids' => [1], 'severity' => 'low', 'comment' => 'Not reachable at all.']],
     'finding comment' => [CommentLocalFindingTool::class, ['finding_id' => 1, 'body' => 'Hi']],
 ]);
+
+it('exposes dismissal_reason as an optional enum of the AzDO reasons', function () {
+    $schema = app(ChangeAlertStateTool::class)->toArray()['inputSchema'];
+
+    expect($schema['properties']['dismissal_reason']['enum'])->toBe(['acceptedRisk', 'falsePositive', 'notDistributed'])
+        ->and($schema['required'] ?? [])->not->toContain('dismissal_reason');
+});
+
+it('echoes the dismissal reason in the dry run for AzDO alerts only', function () {
+    $azdo = SecurityEvent::factory()->dependency()->create(['source_id' => 'azdo', 'state' => EventState::Open]);
+    $asoc = SecurityEvent::factory()->create(['source_id' => 'asoc', 'state' => EventState::Open]);
+
+    AppSecScoutServer::actingAs($this->triager)->tool(ChangeAlertStateTool::class, [
+        'alert_ids' => [$azdo->id, $asoc->id],
+        'state' => 'dismissed',
+        'dismissal_reason' => 'notDistributed',
+        'comment' => 'Build-only tooling, never shipped.',
+    ])->assertOk()->assertStructuredContent(fn ($json) => $json
+        ->where('dry_run', true)
+        ->where('changes.0.new_pending_dismissal_reason', 'notDistributed')
+        ->where('changes.1.new_pending_dismissal_reason', null)
+        ->etc());
+
+    expect($azdo->fresh()?->is_dirty)->toBeFalse();
+});
+
+it('refuses to dismiss an AzDO alert without a reason, even on a dry run', function () {
+    $event = SecurityEvent::factory()->create(['source_id' => 'azdo']);
+
+    AppSecScoutServer::actingAs($this->triager)->tool(ChangeAlertStateTool::class, [
+        'alert_ids' => [$event->id],
+        'state' => 'dismissed',
+        'comment' => 'Dismissed without saying why.',
+    ])->assertHasErrors(['Dismissing an Azure DevOps alert requires a dismissal reason.']);
+});
+
+it('applies the dismissal reason and shows it on the alert', function () {
+    $event = SecurityEvent::factory()->dependency()->create(['source_id' => 'azdo', 'state' => EventState::Open]);
+
+    AppSecScoutServer::actingAs($this->triager)->tool(ChangeAlertStateTool::class, [
+        'alert_ids' => [$event->id],
+        'state' => 'dismissed',
+        'dismissal_reason' => 'acceptedRisk',
+        'comment' => 'Build-only tooling, never shipped.',
+        'dry_run' => false,
+    ])->assertOk()->assertStructuredContent(fn ($json) => $json
+        ->where('applied.0.pending_dismissal_reason', 'acceptedRisk')
+        ->etc());
+
+    AppSecScoutServer::actingAs($this->triager)->tool(GetAlertTool::class, ['alert_id' => $event->id])
+        ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('pending.dismissal_reason', 'acceptedRisk')
+            ->etc());
+});

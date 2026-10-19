@@ -218,6 +218,7 @@ final class PendingStatePusher
         $event->forceFill([
             'state' => $event->pending_state,
             'pending_state' => null,
+            'pending_dismissal_reason' => null,
             'pending_comment' => null,
             'is_dirty' => $event->pending_severity !== null && $capabilities->canUpdateSeverity,
             'metadata' => $metadata,

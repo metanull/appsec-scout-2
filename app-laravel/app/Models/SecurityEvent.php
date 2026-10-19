@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Audit\AuditLog;
+use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -22,7 +23,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
     'file_path', 'start_line', 'end_line', 'snippet', 'commit_sha', 'branch', 'version_control_url',
     'source_data', 'metadata',
     'first_seen_at', 'last_seen_at', 'synced_at', 'updated_at',
-    'is_dirty', 'pending_state', 'pending_severity', 'pending_comment',
+    'is_dirty', 'pending_state', 'pending_dismissal_reason', 'pending_severity', 'pending_comment',
 ])]
 /**
  * @property bool $is_dirty
@@ -44,6 +45,7 @@ class SecurityEvent extends Model
             'state' => EventState::class,
             'type' => EventType::class,
             'pending_state' => EventState::class,
+            'pending_dismissal_reason' => AzDoDismissalReason::class,
             'pending_severity' => EventSeverity::class,
             'metadata' => 'array',
             'is_dirty' => 'boolean',

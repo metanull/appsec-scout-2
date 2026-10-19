@@ -74,6 +74,7 @@ final class GetAlertTool extends AppSecTool
             'metadata' => Format::arrayAttribute($event->getAttribute('metadata')),
             'pending' => [
                 'state' => Format::enum($event->getAttribute('pending_state')),
+                'dismissal_reason' => Format::enum($event->getAttribute('pending_dismissal_reason')),
                 'severity' => Format::enum($event->getAttribute('pending_severity')),
                 'comment' => $event->pending_comment,
                 'is_dirty' => (bool) $event->is_dirty,

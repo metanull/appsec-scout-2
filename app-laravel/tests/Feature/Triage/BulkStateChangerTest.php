@@ -14,6 +14,7 @@ beforeEach(function () {
 it('applies the same pending state and comment to five selected events', function () {
     $user = bulkTriageUser();
     $events = SecurityEvent::factory()->count(5)->create([
+        'source_id' => 'asoc',
         'state' => EventState::Open,
         'is_dirty' => false,
         'pending_state' => null,

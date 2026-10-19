@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\PendingSyncResource\Pages\ListPendingSync;
 use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
+use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
 use App\Models\User;
@@ -106,6 +107,17 @@ class PendingSyncResource extends Resource
                     ->badge()
                     ->color(fn (SecurityEvent $record): string => self::stateBadgeColor($record->pending_state))
                     ->placeholder('-'),
+                TextColumn::make('pending_dismissal_reason')
+                    ->label('Dismissal reason')
+                    ->badge()
+                    ->formatStateUsing(fn (AzDoDismissalReason $state): string => $state->label())
+                    ->color(fn (AzDoDismissalReason $state): string => match ($state) {
+                        AzDoDismissalReason::AcceptedRisk => 'warning',
+                        AzDoDismissalReason::FalsePositive => 'gray',
+                        AzDoDismissalReason::NotDistributed => 'info',
+                    })
+                    ->placeholder('-')
+                    ->toggleable(),
                 TextColumn::make('severity')
                     ->label('Current severity')
                     ->badge()

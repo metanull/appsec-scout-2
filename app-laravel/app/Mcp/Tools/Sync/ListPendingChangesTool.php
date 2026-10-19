@@ -70,6 +70,7 @@ final class ListPendingChangesTool extends AppSecTool
             'container' => FindingPresenter::named($event->container),
             'state' => Format::enum($event->getAttribute('state')),
             'pending_state' => Format::enum($event->getAttribute('pending_state')),
+            'pending_dismissal_reason' => Format::enum($event->getAttribute('pending_dismissal_reason')),
             'severity' => Format::enum($event->getAttribute('severity')),
             'pending_severity' => Format::enum($event->getAttribute('pending_severity')),
             'pending_comment' => $event->pending_comment,

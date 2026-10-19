@@ -5,6 +5,7 @@ namespace App\Filament\Resources\SecurityEventResource\Pages;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Support\WorkItemCreatedNotification;
+use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
@@ -40,10 +41,11 @@ class ViewSecurityEvent extends ViewRecord
                 ->label('Change state')
                 ->icon('heroicon-o-pencil-square')
                 ->visible(fn (): bool => Gate::allows('alerts.edit'))
-                ->form(SecurityEventResource::stateChangeForm())
+                ->form(fn (): array => SecurityEventResource::stateChangeForm([$this->eventRecord()]))
                 ->action(fn (array $data): bool => $this->changeState(
                     EventState::from((string) $data['new_state']),
                     (string) $data['comment'],
+                    SecurityEventResource::submittedDismissalReason($data),
                 )),
             Action::make('changeSeverity')
                 ->label('Change severity')
@@ -100,7 +102,7 @@ class ViewSecurityEvent extends ViewRecord
         ];
     }
 
-    public function changeState(EventState $newState, string $comment): bool
+    public function changeState(EventState $newState, string $comment, ?AzDoDismissalReason $dismissalReason = null): bool
     {
         Gate::authorize('alerts.edit');
 
@@ -111,7 +113,7 @@ class ViewSecurityEvent extends ViewRecord
             abort(403);
         }
 
-        app(StateChanger::class)->change($this->eventRecord(), $user, $newState, $comment);
+        app(StateChanger::class)->change($this->eventRecord(), $user, $newState, $comment, $dismissalReason);
         $this->refreshFormData([]);
 
         Notification::make()->title('State change queued for sync review')->success()->send();

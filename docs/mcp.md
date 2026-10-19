@@ -85,7 +85,7 @@ to `dry_run: true` and describe the change first.
 | `search-code` | Azure DevOps code search, optionally within one container's repository or one system's project, with the user's own AzDO Repos credential | `alerts.view` |
 | `get-code` | Numbered lines around an alert or local finding, or of any file of a container, read from Azure DevOps with the user's own AzDO Repos credential; a finding path that includes the build's checkout folder (e.g. `project/src/App.java`) is resolved to the longest trailing part that exists in the repository | `alerts.view` |
 | `list-sbom-components`, `get-sbom` | SBOM components with their vulnerabilities (local findings on the same package and version) | `alerts.view` |
-| `change-alert-state`, `change-alert-severity` | Pending until pushed from the Pending Sync page | `alerts.edit` (+ `alerts.bulk-edit` for several) |
+| `change-alert-state`, `change-alert-severity` | Pending until pushed from the Pending Sync page; dismissing an AzDO alert requires `dismissal_reason` (`acceptedRisk`, `falsePositive`, or `notDistributed` for dependency alerts) | `alerts.edit` (+ `alerts.bulk-edit` for several) |
 | `change-local-finding-status`, `change-local-finding-severity` | Applied immediately | `alerts.edit` (+ `alerts.bulk-edit` for several) |
 | `comment-alert`, `comment-local-finding` | Add a comment | `alerts.edit` |
 | `list-pending-changes`, `push-pending-changes` | Review alert changes not yet pushed, and push them to their sources now with the user's own source credentials | `work-items.sync` and `sources.push-state` |
