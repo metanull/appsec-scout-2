@@ -4,6 +4,7 @@ namespace App\Sources\AzDo;
 
 use App\Credentials\CredentialField;
 use App\Credentials\Vault;
+use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -151,11 +152,10 @@ final class AzDoSource implements QueuesEnrichmentJobs, Source
             return PushResult::failure('Missing project/repo mapping in event metadata');
         }
 
-        $dismissalReason = $metadata['dismissalReason'] ?? null;
         $targetState = self::resolveState($event->pending_state, $event->state);
         $update = AzDoNormalizer::mapStateToSource(
             $targetState,
-            is_string($dismissalReason) ? $dismissalReason : null,
+            self::dismissalReason($event, $metadata),
             $event->pending_comment,
         );
 
@@ -312,6 +312,25 @@ final class AzDoSource implements QueuesEnrichmentJobs, Source
         }
 
         return [];
+    }
+
+    /**
+     * The reason chosen at triage time, else the one in the alert's metadata (pending dismissals
+     * staged before a reason could be chosen); null leaves the normalizer's default.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    private static function dismissalReason(SecurityEvent $event, array $metadata): ?string
+    {
+        $chosen = $event->getAttribute('pending_dismissal_reason');
+
+        if ($chosen instanceof AzDoDismissalReason) {
+            return $chosen->value;
+        }
+
+        $fromMetadata = $metadata['dismissalReason'] ?? null;
+
+        return is_string($fromMetadata) ? $fromMetadata : null;
     }
 
     private static function resolveState(mixed $candidate, mixed $fallback): EventState

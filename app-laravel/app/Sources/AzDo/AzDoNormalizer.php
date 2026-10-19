@@ -2,6 +2,7 @@
 
 namespace App\Sources\AzDo;
 
+use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -454,7 +455,9 @@ final class AzDoNormalizer
     }
 
     /**
-     * Map local EventState to the AzDO upstream state update payload.
+     * Map local EventState to the AzDO upstream state update payload (`AlertStateUpdate`: `state`,
+     * `dismissedReason`, `dismissedComment`). A dismissal without a reason falls back to
+     * `falsePositive`, the reason pushed before operators could choose one.
      *
      * @return array<string, string>
      */
@@ -464,8 +467,8 @@ final class AzDoNormalizer
             EventState::Resolved => ['state' => 'fixed'],
             EventState::Dismissed => [
                 'state' => 'dismissed',
-                'dismissalReason' => $dismissalReason ?? 'falsePositive',
-                'dismissalMessage' => $dismissalMessage ?? 'Dismissed by AppSec Scout',
+                'dismissedReason' => $dismissalReason ?? AzDoDismissalReason::FalsePositive->value,
+                'dismissedComment' => $dismissalMessage ?? 'Dismissed by AppSec Scout',
             ],
             default => ['state' => 'active'],
         };

@@ -1,6 +1,7 @@
 <?php
 
 use App\Credentials\Vault;
+use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
@@ -298,25 +299,44 @@ it('enriches secret event with occurrences list', function () {
         ->and($enriched->metadata['occurrences'] ?? null)->toHaveCount(2);
 });
 
-it('pushes dismissed state with expected payload shape', function () {
+/**
+ * Pushes the event through an AzDoSource whose Advanced Security client records the request,
+ * and returns the decoded PATCH body.
+ *
+ * @param  array<string, mixed>  $attributes
+ * @return array<string, mixed>
+ */
+function pushAzDoDismissal(array $attributes): array
+{
     $history = [];
     $stack = HandlerStack::create(new MockHandler([
         new Response(200, [], '{}'),
     ]));
     $stack->push(Middleware::history($history));
 
-    $http = new Client(['handler' => new MockHandler]);
-    $advSec = new Client(['handler' => $stack]);
-
-    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec);
+    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', new Client(['handler' => new MockHandler]), new Client(['handler' => $stack]));
     $source = new AzDoSource(app(Vault::class));
     injectAzDoClient($source, $client);
 
-    $event = SecurityEvent::factory()->create([
+    $event = SecurityEvent::factory()->create(array_merge([
         'source_id' => 'azdo',
         'source_event_id' => '3001',
         'state' => EventState::Open,
         'pending_state' => EventState::Dismissed,
+        'pending_comment' => 'Reviewed after triage.',
+    ], $attributes));
+
+    expect($source->pushEventState($event)->ok)->toBeTrue()
+        ->and($history)->toHaveCount(1);
+
+    /** @var array<string, mixed> $body */
+    $body = json_decode((string) $history[0]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+    return $body;
+}
+
+it('pushes dismissed state with expected payload shape', function () {
+    $body = pushAzDoDismissal([
         'pending_comment' => 'False positive after review.',
         'metadata' => [
             'sourceProjectId' => 'project-001',
@@ -325,16 +345,35 @@ it('pushes dismissed state with expected payload shape', function () {
         ],
     ]);
 
-    $result = $source->pushEventState($event);
+    expect($body)->toBe([
+        'state' => 'dismissed',
+        'dismissedReason' => 'falsePositive',
+        'dismissedComment' => 'False positive after review.',
+    ]);
+});
 
-    expect($result->ok)->toBeTrue()
-        ->and($history)->toHaveCount(1);
-
-    $body = json_decode((string) $history[0]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+it('pushes the dismissal reason chosen at triage time over the metadata one', function () {
+    $body = pushAzDoDismissal([
+        'type' => EventType::Dependency,
+        'pending_dismissal_reason' => AzDoDismissalReason::AcceptedRisk,
+        'metadata' => [
+            'sourceProjectId' => 'project-001',
+            'sourceRepoId' => 'repo-001',
+            'dismissalReason' => 'falsePositive',
+        ],
+    ]);
 
     expect($body)->toBe([
         'state' => 'dismissed',
-        'dismissalReason' => 'falsePositive',
-        'dismissalMessage' => 'False positive after review.',
+        'dismissedReason' => 'acceptedRisk',
+        'dismissedComment' => 'Reviewed after triage.',
     ]);
+});
+
+it('pushes a dismissal staged without any reason as a false positive', function () {
+    $body = pushAzDoDismissal([
+        'metadata' => ['sourceProjectId' => 'project-001', 'sourceRepoId' => 'repo-001'],
+    ]);
+
+    expect($body['dismissedReason'])->toBe('falsePositive');
 });

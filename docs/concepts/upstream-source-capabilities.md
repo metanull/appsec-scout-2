@@ -17,6 +17,16 @@ for the `SourceCapabilities`/`TrackerCapabilities` shape.
 | **AppScan on Cloud (ASoC)** | Yes — `PUT Issues/Application/{appId}/Update`, `Status` field | **Ambiguous** — the published swagger schema lists a writable `Severity` field on the same update call, but ASoC's own behavior treats it as unsupported in practice. Needs live-tenant verification before this is ever relied on — don't assume it's settled either way | Yes — `Comment` rides the same `Status` update payload | **No** — the `Comments` endpoint is read-only (`GET` only); there is no create-comment operation |
 | **Detectify** | Yes — `POST vulnerabilities/uuid/{uuid}/{statusAction}/` | No — no severity-set endpoint exists anywhere in the API | **No** — the status-change endpoints take no comment/note field at all | **No** |
 
+**AzDO dismissal reason.** An AzDO dismissal also carries `dismissedReason` (the `DismissalType` enum of the
+alert update API, api-version 7.2-preview.1). The operator chooses it when staging the dismissal —
+required for AzDO alerts, in the Filament state-change forms and in MCP `change-alert-state`
+(`dismissal_reason`) — and it is kept in `security_events.pending_dismissal_reason` until the
+change is pushed or discarded. Offered values: `acceptedRisk`, `falsePositive` (code, dependency,
+secret and license alerts) and `notDistributed` (dependency alerts only — the dependency never
+ships to end users). The service-set values (`unknown`, `fixed`, `toolUpgrade`) and the license-only
+`agreedToGuidance` are not offered. A dismissal staged before the reason could be chosen pushes the
+reason in the alert's metadata, else `falsePositive`.
+
 None of the three connected sources expose an API for posting a comment independent of a status
 change — there is nowhere to send that request. `SourceCapabilities::canPushStandaloneComment`
 names this capability so a future Source can declare it; there is no `Source` contract method that

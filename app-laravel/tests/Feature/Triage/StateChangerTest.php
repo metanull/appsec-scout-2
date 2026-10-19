@@ -16,6 +16,7 @@ beforeEach(function () {
 it('changes alert state locally and records the pending review data', function () {
     $user = triageUser();
     $event = SecurityEvent::factory()->create([
+        'source_id' => 'asoc',
         'state' => EventState::Open,
         'is_dirty' => false,
         'pending_state' => null,

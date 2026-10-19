@@ -99,8 +99,8 @@ it('updates alert with expected patch request body', function () {
 
     $client->updateAlert('project-001', 'repo-001', 3001, [
         'state' => 'dismissed',
-        'dismissalReason' => 'falsePositive',
-        'dismissalMessage' => 'Reviewed by team',
+        'dismissedReason' => 'falsePositive',
+        'dismissedComment' => 'Reviewed by team',
     ]);
 
     expect($history)->toHaveCount(1);
@@ -111,8 +111,8 @@ it('updates alert with expected patch request body', function () {
     $payload = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
     expect($payload)->toBe([
         'state' => 'dismissed',
-        'dismissalReason' => 'falsePositive',
-        'dismissalMessage' => 'Reviewed by team',
+        'dismissedReason' => 'falsePositive',
+        'dismissedComment' => 'Reviewed by team',
     ]);
 });
 

@@ -15,6 +15,7 @@ use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
 use App\Filament\Support\WorkItemCreatedNotification;
+use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
@@ -44,6 +45,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -561,7 +563,7 @@ class SecurityEventResource extends Resource
                         ->label('Change state')
                         ->icon('heroicon-o-pencil-square')
                         ->visible(fn (): bool => self::currentUserCan('alerts.edit'))
-                        ->form(self::stateChangeForm())
+                        ->form(fn (SecurityEvent $record): array => self::stateChangeForm([$record]))
                         ->action(function (SecurityEvent $record, array $data): void {
                             /** @var User|null $user */
                             $user = Auth::user();
@@ -575,6 +577,7 @@ class SecurityEventResource extends Resource
                                 $user,
                                 EventState::from((string) $data['new_state']),
                                 (string) $data['comment'],
+                                self::submittedDismissalReason($data),
                             );
                         }),
                     Action::make('changeSeverity')
@@ -676,7 +679,7 @@ class SecurityEventResource extends Resource
                     ->icon('heroicon-o-pencil-square')
                     ->requiresConfirmation()
                     ->visible(fn (): bool => self::currentUserCan('alerts.bulk-edit'))
-                    ->form(self::stateChangeForm())
+                    ->form(fn (Collection $records): array => self::stateChangeForm($records))
                     ->action(function (Collection $records, array $data): void {
                         /** @var Collection<int, SecurityEvent> $records */
                         /** @var User|null $user */
@@ -691,6 +694,7 @@ class SecurityEventResource extends Resource
                             $user,
                             EventState::from((string) $data['new_state']),
                             (string) $data['comment'],
+                            self::submittedDismissalReason($data),
                         );
                     })
                     ->deselectRecordsAfterCompletion(),
@@ -1060,20 +1064,75 @@ class SecurityEventResource extends Resource
         return $user instanceof User ? $user->can($ability) : false;
     }
 
-    /** @return array<int, Select|Textarea> */
-    public static function stateChangeForm(): array
+    /**
+     * @param  iterable<mixed>  $records  the alerts being changed; an AzDO alert among them adds the dismissal reason
+     * @return array<int, Select|Textarea>
+     */
+    public static function stateChangeForm(iterable $records = []): array
     {
-        return [
+        $reasonOptions = self::dismissalReasonOptions($records);
+
+        return array_values(array_filter([
             Select::make('new_state')
                 ->label('New state')
                 ->required()
+                ->live()
                 ->options(self::eventStateOptions()),
+            $reasonOptions === null ? null : Select::make('dismissal_reason')
+                ->label('Dismissal reason')
+                ->helperText('Recorded with the dismissal in Azure DevOps.')
+                ->required()
+                ->options($reasonOptions)
+                ->visible(fn (Get $get): bool => $get('new_state') === EventState::Dismissed->value),
             Textarea::make('comment')
                 ->label('Comment')
                 ->required()
                 ->minLength(10)
                 ->rows(4),
-        ];
+        ]));
+    }
+
+    /**
+     * The dismissal reasons valid for every AzDO alert among the records, or null when none of
+     * them is an AzDO alert (no other source records a reason).
+     *
+     * @param  iterable<mixed>  $records
+     * @return array<string, string>|null
+     */
+    private static function dismissalReasonOptions(iterable $records): ?array
+    {
+        $types = [];
+
+        foreach ($records as $record) {
+            if (! $record instanceof SecurityEvent || ! AzDoDismissalReason::isRequiredFor($record)) {
+                continue;
+            }
+
+            $type = $record->getAttribute('type');
+            $types[] = $type instanceof EventType ? $type : EventType::from((string) $type);
+        }
+
+        if ($types === []) {
+            return null;
+        }
+
+        return collect(AzDoDismissalReason::applicableToAll($types))
+            ->mapWithKeys(fn (AzDoDismissalReason $reason): array => [$reason->value => $reason->label()])
+            ->all();
+    }
+
+    /**
+     * The dismissal reason submitted with a state-change form, kept only for a dismissal.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function submittedDismissalReason(array $data): ?AzDoDismissalReason
+    {
+        if (($data['new_state'] ?? null) !== EventState::Dismissed->value || ! is_string($data['dismissal_reason'] ?? null)) {
+            return null;
+        }
+
+        return AzDoDismissalReason::from($data['dismissal_reason']);
     }
 
     /** @return array<string, string> */

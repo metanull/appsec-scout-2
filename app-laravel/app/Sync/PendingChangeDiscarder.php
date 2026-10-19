@@ -3,11 +3,10 @@
 namespace App\Sync;
 
 use App\Audit\Recorder;
-use App\Models\Enums\EventSeverity;
-use App\Models\Enums\EventState;
 use App\Models\EventComment;
 use App\Models\SecurityEvent;
 use App\Models\User;
+use BackedEnum;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -48,6 +47,7 @@ final class PendingChangeDiscarder
         $metadata = is_array($metadata) ? $metadata : [];
         $dropped = [
             'pending_state' => self::value($event->getAttribute('pending_state')),
+            'pending_dismissal_reason' => self::value($event->getAttribute('pending_dismissal_reason')),
             'pending_severity' => self::value($event->getAttribute('pending_severity')),
             'pending_comment' => $event->pending_comment,
             'push_retry_count' => (int) ($metadata['pushRetryCount'] ?? 0),
@@ -58,6 +58,7 @@ final class PendingChangeDiscarder
 
         $event->forceFill([
             'pending_state' => null,
+            'pending_dismissal_reason' => null,
             'pending_severity' => null,
             'pending_comment' => null,
             'is_dirty' => false,
@@ -94,6 +95,6 @@ final class PendingChangeDiscarder
 
     private static function value(mixed $value): ?string
     {
-        return $value instanceof EventState || $value instanceof EventSeverity ? $value->value : (is_string($value) ? $value : null);
+        return $value instanceof BackedEnum ? (string) $value->value : (is_string($value) ? $value : null);
     }
 }
