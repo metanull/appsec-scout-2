@@ -51,6 +51,8 @@ function writeSbomResultLine(array $overrides = []): string
     ], $overrides), JSON_THROW_ON_ERROR);
 }
 
+beforeEach(fn () => withoutDependencyTrackPush());
+
 it('imports newly landed reports and advances the per-run cursor', function () {
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';

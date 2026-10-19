@@ -237,7 +237,11 @@ Dependency-Track is a separate, independent application (own Postgres database) 
 visualize dependencies — not part of the SbomScan/StaticAnalysis pipeline itself, but wired to
 receive its output automatically. Whenever an `Attachment` of kind `sbom` is stored for a
 Security Container, a queued listener
-(`App\Listeners\PushSbomAttachmentToDependencyTrack`) uploads it to Dependency-Track's API,
-provided a Dependency-Track API key is configured. A separate manual command,
+(`App\Listeners\PushSbomAttachmentToDependencyTrack`) uploads it to Dependency-Track's API with
+the system Dependency-Track credential. Dependency-Track is provisioned by the default stack
+(`dependencytrack-bootstrap`), so a missing API key is a misconfiguration: the listener fails
+(a failed job under `Operations -> Failed jobs`) with "Dependency-Track API key is not
+configured; run dependencytrack:bootstrap or set it under System Credentials" rather than
+skipping silently. A separate manual command,
 `sbom:export-dependency-track`, re-pushes every container's latest stored SBOM as a full resync,
 independent of the per-attachment listener.

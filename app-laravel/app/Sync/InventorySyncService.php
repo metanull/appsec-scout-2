@@ -44,7 +44,7 @@ final class InventorySyncService
     /**
      * @return array{
      *     projects_seen: int, systems_created: int, systems_updated: int, assets_created: int,
-     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int,
+     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int, repository_links_skipped: int,
      * }
      */
     public function sync(?string $onlyId = null, ?string $projectFilter = null, ?string $repoFilter = null): array
@@ -58,6 +58,7 @@ final class InventorySyncService
             'containers_created' => 0,
             'containers_updated' => 0,
             'repository_mappings_created' => 0,
+            RepositoryLinkSkips::COUNT_KEY => 0,
         ];
 
         $run = SyncRun::query()->create([
@@ -154,7 +155,7 @@ final class InventorySyncService
     /**
      * @param  array{
      *     projects_seen: int, systems_created: int, systems_updated: int, assets_created: int,
-     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int,
+     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int, repository_links_skipped: int,
      * }  $counts
      * @param  array{systems: list<string>, containers: list<string>}  $created
      */
@@ -235,7 +236,7 @@ final class InventorySyncService
      * @param  callable(SystemDto): iterable<ContainerDto>  $fetchContainers
      * @param  array{
      *     projects_seen: int, systems_created: int, systems_updated: int, assets_created: int,
-     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int,
+     *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int, repository_links_skipped: int,
      * }  $counts
      * @param  array{systems: list<string>, containers: list<string>}  $created
      * @return array{systemIds: list<int>, containerIds: list<int>}
@@ -282,7 +283,11 @@ final class InventorySyncService
                 }
 
                 $hadMapping = $container->repositoryMappings()->exists();
-                $this->linker->ensureRepositoryMapping($container);
+                $counts['repository_links_skipped'] = RepositoryLinkSkips::record(
+                    $this->linker->ensureRepositoryMapping($container),
+                    $counts['repository_links_skipped'],
+                    $id,
+                );
                 if (! $hadMapping && $container->repositoryMappings()->exists()) {
                     $counts['repository_mappings_created']++;
                 }

@@ -87,7 +87,7 @@ Artisan::command('triage:codesearch {search} {--pat=} {--organization=} {--scope
     $patOption = $this->option('pat');
     $pat = is_string($patOption) && $patOption !== ''
         ? $patOption
-        : $vault->get('azdo-repos.pat', null);
+        : $vault->getSystem('azdo-repos.pat');
 
     if (! is_string($pat) || $pat === '') {
         $this->error('AzDO PAT not provided via --pat, and no system credential "azdo-repos.pat" is configured.');
@@ -98,7 +98,7 @@ Artisan::command('triage:codesearch {search} {--pat=} {--organization=} {--scope
     $organizationOption = $this->option('organization');
     $organization = is_string($organizationOption) && $organizationOption !== ''
         ? $organizationOption
-        : $vault->get('azdo-repos.organization', null);
+        : $vault->getSystem('azdo-repos.organization');
 
     if (! is_string($organization) || $organization === '') {
         $this->error('AzDO organization not provided via --organization, and no system credential "azdo-repos.organization" is configured.');
@@ -233,6 +233,7 @@ Artisan::command(
             ['Security containers created', $counts['containers_created']],
             ['Security containers updated', $counts['containers_updated']],
             ['Repository mappings created', $counts['repository_mappings_created']],
+            ['Repository mappings skipped (AzDO Repos organization not configured)', $counts['repository_links_skipped']],
         ]);
 
         return self::SUCCESS;
@@ -266,12 +267,12 @@ Artisan::command(
         $baseUrlOption = $this->option('base-url');
         $baseUrl = is_string($baseUrlOption) && $baseUrlOption !== ''
             ? $baseUrlOption
-            : ($vault->get('dependencytrack.baseUrl', null) ?? 'http://dependencytrack-apiserver:8080');
+            : ($vault->getSystem('dependencytrack.baseUrl') ?? 'http://dependencytrack-apiserver:8080');
         $team = (string) $this->option('team');
         $adminUsername = (string) $this->option('admin-username');
         $force = (bool) $this->option('force');
 
-        $existingApiKey = $vault->get('dependencytrack.apiKey', null);
+        $existingApiKey = $vault->getSystem('dependencytrack.apiKey');
 
         if ($existingApiKey !== null && ! $force && $clientFactory->make($existingApiKey, $baseUrl)->ping()) {
             $vault->set('dependencytrack.baseUrl', null, $baseUrl);
@@ -281,7 +282,7 @@ Artisan::command(
         }
 
         $adminClient = $adminClientFactory->make($baseUrl);
-        $adminPassword = $vault->get('dependencytrack.adminPassword', null) ?? (string) $this->option('admin-password');
+        $adminPassword = $vault->getSystem('dependencytrack.adminPassword') ?? (string) $this->option('admin-password');
 
         try {
             $token = $adminClient->login($adminUsername, $adminPassword);
@@ -375,7 +376,7 @@ Artisan::command(
         $apiKeyOption = $this->option('api-key');
         $apiKey = is_string($apiKeyOption) && $apiKeyOption !== ''
             ? $apiKeyOption
-            : $vault->get('dependencytrack.apiKey', null);
+            : $vault->getSystem('dependencytrack.apiKey');
 
         if ($apiKey === null) {
             $this->error('Dependency-Track API key is not configured. Run `php artisan dependencytrack:bootstrap` first, or pass --api-key.');
@@ -386,7 +387,7 @@ Artisan::command(
         $baseUrlOption = $this->option('base-url');
         $baseUrl = is_string($baseUrlOption) && $baseUrlOption !== ''
             ? $baseUrlOption
-            : ($vault->get('dependencytrack.baseUrl', null) ?? 'http://dependencytrack-apiserver:8080');
+            : ($vault->getSystem('dependencytrack.baseUrl') ?? 'http://dependencytrack-apiserver:8080');
         $containerId = $this->option('container');
         $projectVersion = (string) $this->option('project-version');
 
@@ -573,7 +574,7 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
         $fields = [];
 
         foreach ($source->credentialFields() as $field) {
-            $fields[$field->key] = app(Vault::class)->get($field->key, null);
+            $fields[$field->key] = app(Vault::class)->getSystem($field->key);
         }
 
         $integrations[$source->id()] = [
@@ -587,7 +588,7 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
         $fields = [];
 
         foreach ($tracker->credentialFields() as $field) {
-            $fields[$field->key] = app(Vault::class)->get($field->key, null);
+            $fields[$field->key] = app(Vault::class)->getSystem($field->key);
         }
 
         $integrations[$tracker->id()] = [
@@ -601,7 +602,7 @@ Artisan::command('credentials:system:export {path}', function (SourceRegistry $s
         $fields = [];
 
         foreach ($sourceControl->credentialFields() as $field) {
-            $fields[$field->key] = app(Vault::class)->get($field->key, null);
+            $fields[$field->key] = app(Vault::class)->getSystem($field->key);
         }
 
         $integrations[$sourceControl->id()] = [
@@ -662,7 +663,7 @@ Artisan::command('credentials:system:get {key}', function (SourceRegistry $sourc
         return self::FAILURE;
     }
 
-    $value = $vault->get($key, null);
+    $value = $vault->getSystem($key);
 
     if ($value === null) {
         $this->error(sprintf('System credential "%s" is not configured.', $key));
@@ -880,7 +881,7 @@ Artisan::command('credentials:system:import {path}', function (SourceRegistry $s
 
 Artisan::command('vault:get {key}', function (Vault $vault): int {
     $key = (string) $this->argument('key');
-    $value = $vault->get($key, null);
+    $value = $vault->getSystem($key);
 
     if ($value === null) {
         $this->error(sprintf('Vault key "%s" is not configured.', $key));

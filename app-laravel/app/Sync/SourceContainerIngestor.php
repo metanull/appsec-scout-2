@@ -20,7 +20,8 @@ final class SourceContainerIngestor
     ) {}
 
     /**
-     * @param  array<string, int>  $counts  incremented in place: containers_created / containers_updated
+     * @param  array<string, int>  $counts  incremented in place: containers_created / containers_updated,
+     *                                      and repository_links_skipped (see RepositoryLinkSkips)
      * @return array<string, int> "{sourceSystemId}:{sourceContainerId}" and "{sourceContainerId}" => container id
      */
     public function ingest(Source $source, SoftwareSystem $system, SystemDto $systemDto, array &$counts): array
@@ -29,7 +30,11 @@ final class SourceContainerIngestor
 
         foreach ($source->fetchContainers($systemDto) as $containerDto) {
             ['container' => $container, 'wasCreated' => $isNew] = $this->upserter->upsertContainer($system, $containerDto);
-            $this->azDoProjectLinker->ensureRepositoryMapping($container);
+            $counts[RepositoryLinkSkips::COUNT_KEY] = RepositoryLinkSkips::record(
+                $this->azDoProjectLinker->ensureRepositoryMapping($container),
+                $counts[RepositoryLinkSkips::COUNT_KEY] ?? 0,
+                $system->source_id,
+            );
 
             $containerIdMap[$systemDto->sourceSystemId . ':' . $containerDto->sourceContainerId] = $container->id;
             $containerIdMap[$containerDto->sourceContainerId] = $container->id;

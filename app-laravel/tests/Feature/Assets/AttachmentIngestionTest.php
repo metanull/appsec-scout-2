@@ -20,6 +20,8 @@ function staticAnalysisFixture(string $name): string
     return (string) file_get_contents(base_path("tests/Fixtures/StaticAnalysis/{$name}"));
 }
 
+beforeEach(fn () => withoutDependencyTrackPush());
+
 it('parses an sbom attachment into software components on the owning container', function () {
     $system = SoftwareSystem::factory()->create();
     $container = SecurityContainer::factory()->forSystem($system)->create();

@@ -52,34 +52,39 @@ final class AzDoProjectLinker
         $this->softwareAssets->attach($asset, $system);
     }
 
-    public function ensureRepositoryMapping(SecurityContainer $container): void
+    /**
+     * Reads the AzDO Repos organization through the enclosing credential owner scope, so it must
+     * run inside SystemIntegrationRuntime (every sync path does).
+     */
+    public function ensureRepositoryMapping(SecurityContainer $container): RepositoryMappingOutcome
     {
         if ($container->kind !== 'repository') {
-            return;
+            return RepositoryMappingOutcome::Handled;
         }
 
         $system = $container->softwareSystem;
 
         if (! $system instanceof SoftwareSystem || $system->source_id !== AzDoNormalizer::SOURCE_ID) {
-            return;
+            return RepositoryMappingOutcome::Handled;
         }
 
         if ($container->repositoryMappings()->exists()) {
-            return;
+            return RepositoryMappingOutcome::Handled;
         }
 
         // A container that resolves to its own code identity needs no mapping to
         // build code links.
         if ($this->identityResolver->containerIdentity($container) !== null) {
-            return;
+            return RepositoryMappingOutcome::Handled;
         }
 
         // Repo linking uses the Source Control organization (azdo-repos.*),
-        // distinct from the alert-ingestion Source credential (azdo.*).
+        // distinct from the alert-ingestion Source credential (azdo.*). AzDO as a Source does
+        // not require AzDO Repos, so a missing organization is reported, not fatal.
         $organization = $this->azdoRepos->organization();
 
         if ($organization === null) {
-            return;
+            return RepositoryMappingOutcome::OrganizationNotConfigured;
         }
 
         $baseUrl = 'https://dev.azure.com/' . rawurlencode($organization) . '/' . rawurlencode($system->name);
@@ -101,5 +106,7 @@ final class AzDoProjectLinker
         } catch (ValidationException) {
             // Best-effort: an unsafe/duplicate derived mapping should not break the sync.
         }
+
+        return RepositoryMappingOutcome::Handled;
     }
 }

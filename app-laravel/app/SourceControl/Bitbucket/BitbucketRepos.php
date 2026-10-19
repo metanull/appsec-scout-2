@@ -90,8 +90,8 @@ final class BitbucketRepos implements EnumeratesInventory, SourceControlProvider
             return $this->client;
         }
 
-        $token = $this->vault->get('bitbucket-repos.token', null) ?? throw new \RuntimeException('Missing Bitbucket credential: bitbucket-repos.token');
-        $workspace = $this->vault->get('bitbucket-repos.workspace', null) ?? throw new \RuntimeException('Missing Bitbucket credential: bitbucket-repos.workspace');
+        $token = $this->vault->get('bitbucket-repos.token') ?? throw new \RuntimeException('Missing Bitbucket credential: bitbucket-repos.token');
+        $workspace = $this->vault->get('bitbucket-repos.workspace') ?? throw new \RuntimeException('Missing Bitbucket credential: bitbucket-repos.workspace');
         $fingerprint = hash('sha256', implode('|', [$workspace, $token]));
 
         if ($this->client === null || $this->clientFingerprint !== $fingerprint) {

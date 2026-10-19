@@ -56,18 +56,38 @@ it('pushes a newly stored sbom attachment straight to dependency-track', functio
         ->and($body['projectVersion'])->toBe('latest');
 });
 
-it('does not push to dependency-track when no api key is configured', function () {
+it('fails loudly instead of skipping when no dependency-track api key is configured', function () {
     $history = [];
     bindFakeDependencyTrackFactoryForAttachmentPushTest($history);
 
     $container = SecurityContainer::factory()->create(['name' => 'unconfigured-repo']);
 
-    app(AttachmentService::class)->attachTo(
+    // The sync test queue runs the queued listener inline, so its failure surfaces here; on the
+    // real queue it is a failed job, and the attachment itself is already committed either way.
+    expect(fn () => app(AttachmentService::class)->attachTo(
         $container,
         'sbom',
         'application/json',
         'sbom.cdx.json',
         (string) file_get_contents(base_path('tests/Fixtures/Trivy/cyclonedx-sample.json')),
+    ))->toThrow(RuntimeException::class, 'Dependency-Track API key is not configured; run dependencytrack:bootstrap or set it under System Credentials.');
+
+    expect($history)->toHaveCount(0)
+        ->and($container->attachments()->where('kind', 'sbom')->count())->toBe(1);
+});
+
+it('does not require a dependency-track api key for non-sbom attachments', function () {
+    $history = [];
+    bindFakeDependencyTrackFactoryForAttachmentPushTest($history);
+
+    $container = SecurityContainer::factory()->create(['name' => 'backend-api']);
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'vulnerabilities',
+        'application/json',
+        'vuln.sarif.json',
+        (string) file_get_contents(base_path('tests/Fixtures/Trivy/vuln-sarif-sample.json')),
     );
 
     expect($history)->toHaveCount(0);

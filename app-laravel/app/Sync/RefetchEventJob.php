@@ -3,6 +3,7 @@
 namespace App\Sync;
 
 use App\Audit\Recorder;
+use App\Credentials\RunWithSystemCredentials;
 use App\Models\SecurityEvent;
 use App\Sources\Registry;
 use Illuminate\Bus\Queueable;
@@ -14,6 +15,17 @@ final class RefetchEventJob implements ShouldQueue
     use Dispatchable, Queueable;
 
     public function __construct(public readonly int $eventId) {}
+
+    /**
+     * The source reads its credential through the ambient owner scope; this declares it is the
+     * system one, whoever queued the refetch.
+     *
+     * @return list<object>
+     */
+    public function middleware(): array
+    {
+        return [new RunWithSystemCredentials];
+    }
 
     public function handle(Registry $registry, Upserter $upserter, Recorder $recorder): void
     {

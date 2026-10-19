@@ -57,7 +57,7 @@ it('reports github-repos connection failure', function () {
         new Client(['handler' => $stack]),
     ));
 
-    $result = $provider->testConnection();
+    $result = app(Vault::class)->runAsOwner(null, fn () => $provider->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->not->toBeNull();
@@ -66,7 +66,7 @@ it('reports github-repos connection failure', function () {
 it('fails to build a client when the github-repos credential is not configured', function () {
     $provider = new GitHubRepos(app(Vault::class));
 
-    $result = $provider->testConnection();
+    $result = app(Vault::class)->runAsOwner(null, fn () => $provider->testConnection());
 
     expect($result->ok)->toBeFalse()
         ->and($result->error)->toContain('Missing GitHub credential: github-repos.token');

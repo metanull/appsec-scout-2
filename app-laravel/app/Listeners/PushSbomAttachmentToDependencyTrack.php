@@ -5,16 +5,21 @@ namespace App\Listeners;
 use App\Assets\AttachmentIngestionService;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
+use App\Credentials\RunWithSystemCredentials;
 use App\Credentials\Vault;
 use App\Events\AttachmentStored;
 use App\Models\SecurityContainer;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use RuntimeException;
 
 /**
  * Pushes a freshly stored SBOM straight to Dependency-Track, scoped to the one
  * container it belongs to — not the full resync that `sbom:export-dependency-track`
- * performs. A no-op for any other attachment kind, any non-container owner, or when
- * Dependency-Track isn't configured yet.
+ * performs, with the system Dependency-Track credential. A no-op for any other attachment
+ * kind or any non-container owner.
+ *
+ * Dependency-Track is provisioned by the default stack (dependencytrack-bootstrap), so a
+ * missing API key is a misconfiguration: the push fails loudly instead of skipping.
  */
 class PushSbomAttachmentToDependencyTrack implements ShouldQueue
 {
@@ -22,6 +27,12 @@ class PushSbomAttachmentToDependencyTrack implements ShouldQueue
         private readonly DependencyTrackClientFactory $clientFactory,
         private readonly Vault $vault,
     ) {}
+
+    /** @return list<object> */
+    public function middleware(AttachmentStored $event): array
+    {
+        return [new RunWithSystemCredentials];
+    }
 
     public function handle(AttachmentStored $event): void
     {
@@ -37,13 +48,10 @@ class PushSbomAttachmentToDependencyTrack implements ShouldQueue
             return;
         }
 
-        $apiKey = $this->vault->get('dependencytrack.apiKey', null);
+        $apiKey = $this->vault->getSystem('dependencytrack.apiKey')
+            ?? throw new RuntimeException('Dependency-Track API key is not configured; run dependencytrack:bootstrap or set it under System Credentials.');
 
-        if ($apiKey === null) {
-            return;
-        }
-
-        $baseUrl = $this->vault->get('dependencytrack.baseUrl', null) ?? 'http://dependencytrack-apiserver:8080';
+        $baseUrl = $this->vault->getSystem('dependencytrack.baseUrl') ?? 'http://dependencytrack-apiserver:8080';
 
         $exporter = new DependencyTrackExporter($this->clientFactory->make($apiKey, $baseUrl));
         $exporter->export($owner, 'latest');

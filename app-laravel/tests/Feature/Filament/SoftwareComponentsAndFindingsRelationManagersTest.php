@@ -14,6 +14,7 @@ use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    withoutDependencyTrackPush();
     (new RolePermissionSeeder)->run();
 });
 
