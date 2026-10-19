@@ -208,7 +208,7 @@ it('refuses the write tools without alerts.edit', function (string $tool, array 
 it('exposes dismissal_reason as an optional enum of the AzDO reasons', function () {
     $schema = app(ChangeAlertStateTool::class)->toArray()['inputSchema'];
 
-    expect($schema['properties']['dismissal_reason']['enum'])->toBe(['acceptedRisk', 'falsePositive', 'notDistributed'])
+    expect($schema['properties']['dismissal_reason']['enum'])->toBe(['acceptedRisk', 'falsePositive', 'notDistributed', 'agreedToGuidance'])
         ->and($schema['required'] ?? [])->not->toContain('dismissal_reason');
 });
 

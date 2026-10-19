@@ -22,9 +22,9 @@ alert update API, api-version 7.2-preview.1). The operator chooses it when stagi
 required for AzDO alerts, in the Filament state-change forms and in MCP `change-alert-state`
 (`dismissal_reason`) — and it is kept in `security_events.pending_dismissal_reason` until the
 change is pushed or discarded. Offered values: `acceptedRisk`, `falsePositive` (code, dependency,
-secret and license alerts) and `notDistributed` (dependency alerts only — the dependency never
-ships to end users). The service-set values (`unknown`, `fixed`, `toolUpgrade`) and the license-only
-`agreedToGuidance` are not offered. A dismissal staged before the reason could be chosen pushes the
+secret and license alerts), `notDistributed` (dependency alerts only — the dependency never
+ships to end users) and `agreedToGuidance` (license alerts only — the license guidance is followed).
+The service-set values (`unknown`, `fixed`, `toolUpgrade`) are not offered. A dismissal staged before the reason could be chosen pushes the
 reason in the alert's metadata, else `falsePositive`.
 
 None of the three connected sources expose an API for posting a comment independent of a status

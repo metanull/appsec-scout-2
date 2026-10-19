@@ -22,7 +22,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 
 #[Name('change-alert-state')]
 #[Title('Change alert state')]
-#[Description('Changes the state of one or more alerts, with a justification comment (at least 10 characters) added to each. The change becomes pending: it is pushed back to the source later from the Pending Sync page, not by this tool. Defaults to a dry run that lists what would change; call again with dry_run=false to apply. All ids must exist or nothing changes. Dismissing an Azure DevOps (source_id azdo) alert requires dismissal_reason, which AzDO records with the dismissal: acceptedRisk, falsePositive, or notDistributed (dependency alerts only: the dependency never ships to end users). Other sources and other states take no dismissal_reason. Requires alerts.edit, plus alerts.bulk-edit for more than one alert.')]
+#[Description('Changes the state of one or more alerts, with a justification comment (at least 10 characters) added to each. The change becomes pending: it is pushed back to the source later from the Pending Sync page, not by this tool. Defaults to a dry run that lists what would change; call again with dry_run=false to apply. All ids must exist or nothing changes. Dismissing an Azure DevOps (source_id azdo) alert requires dismissal_reason, which AzDO records with the dismissal: acceptedRisk, falsePositive, notDistributed (dependency alerts only: the dependency never ships to end users), or agreedToGuidance (license alerts only: the license guidance is followed). Other sources and other states take no dismissal_reason. Requires alerts.edit, plus alerts.bulk-edit for more than one alert.')]
 #[IsIdempotent]
 final class ChangeAlertStateTool extends AppSecTool
 {

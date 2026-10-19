@@ -370,6 +370,16 @@ it('pushes the dismissal reason chosen at triage time over the metadata one', fu
     ]);
 });
 
+it('pushes agreedToGuidance for a license alert', function () {
+    $body = pushAzDoDismissal([
+        'type' => EventType::License,
+        'pending_dismissal_reason' => AzDoDismissalReason::AgreedToGuidance,
+        'metadata' => ['sourceProjectId' => 'project-001', 'sourceRepoId' => 'repo-001'],
+    ]);
+
+    expect($body['dismissedReason'])->toBe('agreedToGuidance');
+});
+
 it('pushes a dismissal staged without any reason as a false positive', function () {
     $body = pushAzDoDismissal([
         'metadata' => ['sourceProjectId' => 'project-001', 'sourceRepoId' => 'repo-001'],
