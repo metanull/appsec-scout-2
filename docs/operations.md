@@ -290,7 +290,10 @@ places:
   searched, with the failed-project count in its counts and a summary in its error message.
   GitHub's Search API allows about 30 searches a minute, so the sweep waits out GitHub's rate
   limit (`X-RateLimit-Reset` / `Retry-After`) rather than failing, and can take several minutes
-  when the system token sees many repositories.
+  when the system token sees many repositories. If the limit still cannot be waited out (more
+  than 90 s to reset, or three refusals in a row), the sweep stops searching that tracker for the
+  rest of the run: its remaining projects count as skipped and failed, and one Error log row gives
+  their number and the reset time.
 
 Both require `work-items.link` or `work-items.sync`. Every new link produces an audit row. Full
 detail in [docs/concepts/triage.md](concepts/triage.md#reconciliation-the-same-linking-mechanism-two-triggers).

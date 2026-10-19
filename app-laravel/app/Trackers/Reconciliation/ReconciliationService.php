@@ -16,6 +16,7 @@ use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\ReconcileAllJob;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\TrackerProjectLinker;
+use App\Trackers\TrackerRateLimitExceededException;
 use App\Triage\OperatorIntegrationRuntime;
 use Closure;
 use Exception;
@@ -101,7 +102,8 @@ final class ReconciliationService
     /**
      * Sweeps every tracker project for issues referencing any alert. A failing tracker call
      * (listing a tracker's projects, or searching one project) is recorded in the error log
-     * and returned as a failure, and the sweep carries on with the remaining projects.
+     * and returned as a failure, and the sweep carries on with the remaining projects — except
+     * a tracker that ran out of rate limit, whose remaining projects are skipped for this sweep.
      */
     public function reconcileAll(): ReconciliationSweep
     {
@@ -121,6 +123,10 @@ final class ReconciliationService
         $index = EventUrlIndex::build(SecurityEvent::query()->orderBy('id')->lazyById(1000));
         $results = [];
         $projectsReconciled = 0;
+        /** @var array<string, TrackerRateLimitExceededException> $rateLimited */
+        $rateLimited = [];
+        /** @var array<string, int> $skippedByTracker */
+        $skippedByTracker = [];
 
         foreach ($pairs as $pair) {
             $trackerId = $pair['tracker_id'];
@@ -133,6 +139,14 @@ final class ReconciliationService
                 continue;
             }
 
+            // Every further call would be refused until the limit resets, and would only keep
+            // the limit exhausted, so the tracker's remaining projects wait for the next sweep.
+            if (isset($rateLimited[$trackerId])) {
+                $skippedByTracker[$trackerId] = ($skippedByTracker[$trackerId] ?? 0) + 1;
+
+                continue;
+            }
+
             try {
                 /** @var list<ReconciliationCandidateDto> $candidates */
                 $candidates = $this->systemRuntime->runTracker(
@@ -141,6 +155,10 @@ final class ReconciliationService
                 );
             } catch (Exception $exception) {
                 $failures[] = $this->recordSweepFailure(new ReconciliationFailure($trackerId, $projectKey, $exception));
+
+                if ($exception instanceof TrackerRateLimitExceededException) {
+                    $rateLimited[$trackerId] = $exception;
+                }
 
                 continue;
             }
@@ -180,7 +198,33 @@ final class ReconciliationService
             }
         }
 
-        return new ReconciliationSweep($results, $projectsReconciled, $failures);
+        foreach ($skippedByTracker as $trackerId => $skipped) {
+            $this->recordRateLimitSkip($trackerId, $skipped, $rateLimited[$trackerId]);
+        }
+
+        return new ReconciliationSweep($results, $projectsReconciled, $failures, array_sum($skippedByTracker));
+    }
+
+    private function recordRateLimitSkip(string $trackerId, int $skipped, TrackerRateLimitExceededException $exception): void
+    {
+        ErrorLog::query()->create([
+            'level' => 'error',
+            'channel' => 'reconciliation',
+            'message' => sprintf(
+                'Skipped %d remaining project(s) of tracker %s: its rate limit resets at %s.',
+                $skipped,
+                $trackerId,
+                $exception->resetsAt->toIso8601String(),
+            ),
+            'context_json' => [
+                'source_id' => ReconcileAllJob::RUN_SOURCE_ID,
+                'tracker_id' => $trackerId,
+                'projects_skipped' => $skipped,
+                'rate_limit_resets_at' => $exception->resetsAt->toIso8601String(),
+            ],
+            'trace' => null,
+            'occurred_at' => now(),
+        ]);
     }
 
     private function recordSweepFailure(ReconciliationFailure $failure): ReconciliationFailure

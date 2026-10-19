@@ -8,9 +8,11 @@ use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
 use App\Models\TrackerProjectLink;
 use App\Models\WorkItemLink;
+use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\ReconcileAllJob;
 use App\Trackers\Reconciliation\ReconciliationService;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -33,7 +35,7 @@ it('records a successful sweep as a reconciliation sync run with its link counts
         ->and($run->status)->toBe('success')
         ->and($run->finished_at)->not->toBeNull()
         ->and($run->error_message)->toBeNull()
-        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 1, 'projects_reconciled' => 1, 'projects_failed' => 0]);
+        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 1, 'projects_reconciled' => 1, 'projects_failed' => 0, 'projects_skipped' => 0]);
 });
 
 it('records a sweep where one project failed as a partial run and keeps the other projects links', function () {
@@ -47,7 +49,7 @@ it('records a sweep where one project failed as a partial run and keeps the othe
         ->and($run->finished_at)->not->toBeNull()
         ->and($run->error_message)->toContain('1 tracker project(s) failed, 1 reconciled')
         ->and($run->error_message)->toContain('fake-tracker project BROKEN')
-        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 0, 'projects_reconciled' => 1, 'projects_failed' => 1])
+        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 0, 'projects_reconciled' => 1, 'projects_failed' => 1, 'projects_skipped' => 0])
         ->and(WorkItemLink::query()->where('work_item_id', 'OK#1')->exists())->toBeTrue()
         ->and(ErrorLog::query()->where('channel', 'reconciliation')->sole()->context_json)->toMatchArray(['tracker_id' => 'fake-tracker', 'project_key' => 'BROKEN']);
 });
@@ -63,8 +65,28 @@ it('records a sweep where every project failed as a failure run without rethrowi
         ->and($run->finished_at)->not->toBeNull()
         ->and($run->error_message)->toContain('Failed to list projects')
         ->and($run->error_message)->toContain('Reconciliation failed for project APP')
-        ->and($run->counts_json)->toBe(['links_created' => 0, 'links_existing' => 0, 'projects_reconciled' => 0, 'projects_failed' => 2])
+        ->and($run->counts_json)->toBe(['links_created' => 0, 'links_existing' => 0, 'projects_reconciled' => 0, 'projects_failed' => 2, 'projects_skipped' => 0])
         ->and(ErrorLog::query()->where('channel', 'reconciliation')->count())->toBe(2);
+});
+
+it('counts the projects skipped after a tracker rate limit as not reconciled', function () {
+    bindFakeWorkItemTracker((new FakeTracker)
+        ->withProjects(
+            new ProjectDto(key: 'OK', name: 'OK'),
+            new ProjectDto(key: 'LIMITED', name: 'Limited'),
+            new ProjectDto(key: 'LAST', name: 'Last'),
+        )
+        ->withReconciliationRateLimit('LIMITED', CarbonImmutable::parse('2026-10-19 12:00:00')));
+
+    SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/OK%231']);
+
+    (new ReconcileAllJob)->handle(app(ReconciliationService::class));
+
+    $run = SyncRun::query()->where('source_id', ReconcileAllJob::RUN_SOURCE_ID)->sole();
+
+    expect($run->status)->toBe('partial')
+        ->and($run->error_message)->toContain('2 tracker project(s) failed (1 skipped after a rate limit), 1 reconciled')
+        ->and($run->counts_json)->toBe(['links_created' => 0, 'links_existing' => 0, 'projects_reconciled' => 1, 'projects_failed' => 2, 'projects_skipped' => 1]);
 });
 
 it('writes no reconciliation cache key', function () {

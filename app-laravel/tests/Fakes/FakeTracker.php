@@ -10,8 +10,10 @@ use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\UserDto;
 use App\Trackers\Dto\WorkItemDto;
+use App\Trackers\TrackerRateLimitExceededException;
 use App\Trackers\ValueObjects\TestResult;
 use App\Trackers\ValueObjects\TrackerCapabilities;
+use Carbon\CarbonImmutable;
 
 final class FakeTracker implements Tracker
 {
@@ -49,6 +51,9 @@ final class FakeTracker implements Tracker
 
     /** @var array<string, true> */
     private array $reconciliationFailuresByProject = [];
+
+    /** @var array<string, CarbonImmutable> */
+    private array $reconciliationRateLimitsByProject = [];
 
     private bool $connectionOk = true;
 
@@ -208,6 +213,10 @@ final class FakeTracker implements Tracker
     {
         $this->reconciliationCalls++;
 
+        if (isset($this->reconciliationRateLimitsByProject[$projectKey])) {
+            throw new TrackerRateLimitExceededException("Rate limit exceeded on project {$projectKey}", $this->reconciliationRateLimitsByProject[$projectKey]);
+        }
+
         if (isset($this->reconciliationFailuresByProject[$projectKey])) {
             throw new \RuntimeException("Reconciliation failed for project {$projectKey}");
         }
@@ -260,6 +269,13 @@ final class FakeTracker implements Tracker
     public function withReconciliationFailure(string $projectKey): self
     {
         $this->reconciliationFailuresByProject[$projectKey] = true;
+
+        return $this;
+    }
+
+    public function withReconciliationRateLimit(string $projectKey, CarbonImmutable $resetsAt): self
+    {
+        $this->reconciliationRateLimitsByProject[$projectKey] = $resetsAt;
 
         return $this;
     }

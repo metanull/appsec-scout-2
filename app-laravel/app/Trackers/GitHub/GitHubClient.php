@@ -10,11 +10,12 @@ use App\Trackers\Dto\UpdateWorkItemRequest;
 use App\Trackers\Dto\UserDto;
 use App\Trackers\Dto\WorkItemDto;
 use App\Trackers\Reconciliation\UrlExtractor;
+use App\Trackers\TrackerRateLimitExceededException;
+use Carbon\CarbonImmutable;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use Illuminate\Support\Sleep;
 use Psr\Http\Message\ResponseInterface;
-use RuntimeException;
 
 final class GitHubClient
 {
@@ -255,7 +256,8 @@ final class GitHubClient
      * Runs one Search API request for reconciliation, waiting out GitHub's search rate limit
      * (about 30 requests a minute) instead of failing: it pauses once a response reports the
      * quota spent, and retries a request refused with a rate-limit 403/429 after the wait
-     * GitHub asks for. A wait longer than the cap, or a refusal past the retry budget, fails.
+     * GitHub asks for. A wait longer than the cap, or a refusal past the retry budget, throws
+     * TrackerRateLimitExceededException carrying the reset time.
      *
      * @param  array<string, mixed>  $query
      * @return array<string, mixed>
@@ -268,16 +270,19 @@ final class GitHubClient
             } catch (ClientException $exception) {
                 $wait = $this->rateLimitWaitSeconds($exception->getResponse());
 
-                if ($wait === null || $attempt >= self::SEARCH_RATE_LIMIT_MAX_ATTEMPTS) {
+                if ($wait === null) {
                     throw $exception;
                 }
 
-                if ($wait > self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS) {
-                    throw new RuntimeException(sprintf(
-                        'GitHub search rate limit exceeded; it resets in %d s, longer than the %d s reconciliation waits.',
+                if ($wait > self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS || $attempt >= self::SEARCH_RATE_LIMIT_MAX_ATTEMPTS) {
+                    $resetsAt = CarbonImmutable::now()->addSeconds($wait);
+
+                    throw new TrackerRateLimitExceededException(sprintf(
+                        'GitHub search rate limit exceeded after %d attempt(s); it resets at %s (in %d s).',
+                        $attempt,
+                        $resetsAt->toIso8601String(),
                         $wait,
-                        self::SEARCH_RATE_LIMIT_MAX_WAIT_SECONDS,
-                    ), previous: $exception);
+                    ), $resetsAt, $exception);
                 }
 
                 Sleep::for($wait)->seconds();

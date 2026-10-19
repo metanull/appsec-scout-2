@@ -11,6 +11,7 @@ use App\Models\WorkItemLink;
 use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\Reconciliation\ReconciliationService;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RolePermissionSeeder;
 use Tests\Fakes\FakeTracker;
 
@@ -235,6 +236,44 @@ it('records a failing project search and keeps reconciling the remaining project
     expect($error->message)->toBe('Reconciliation of fake-tracker project BROKEN failed: Reconciliation failed for project BROKEN')
         ->and($error->context_json)->toMatchArray(['source_id' => 'reconciliation', 'tracker_id' => 'fake-tracker', 'project_key' => 'BROKEN'])
         ->and($error->trace)->not->toBeEmpty();
+});
+
+it('stops searching a tracker for the rest of the sweep once it runs out of rate limit', function () {
+    $resetsAt = CarbonImmutable::parse('2026-10-19 12:00:00');
+    $tracker = (new FakeTracker)
+        ->withProjects(
+            new ProjectDto(key: 'LIMITED', name: 'Limited'),
+            new ProjectDto(key: 'NEXT', name: 'Next'),
+            new ProjectDto(key: 'LAST', name: 'Last'),
+        )
+        ->withReconciliationRateLimit('LIMITED', $resetsAt)
+        ->withReconciliationCandidates('NEXT', new ReconciliationCandidateDto(
+            trackerId: 'fake-tracker',
+            workItemId: 'NEXT#1',
+            workItemUrl: 'https://tracker.test/NEXT%231',
+            title: 'Not searched this sweep',
+            state: 'Open',
+            labels: ['security'],
+            extractedUrls: ['https://tracker.test/NEXT%231'],
+            searchStrategy: 'project=NEXT',
+        ));
+    bindFakeWorkItemTracker($tracker);
+
+    SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/NEXT%231']);
+
+    $sweep = app(ReconciliationService::class)->reconcileAll();
+
+    expect($tracker->reconciliationCalls)->toBe(1)
+        ->and($sweep->projectsReconciled)->toBe(0)
+        ->and($sweep->projectsSkipped)->toBe(2)
+        ->and($sweep->projectsFailed())->toBe(3)
+        ->and($sweep->failures[0]->projectKey)->toBe('LIMITED')
+        ->and(WorkItemLink::query()->where('work_item_id', 'NEXT#1')->exists())->toBeFalse();
+
+    $skip = ErrorLog::query()->where('channel', 'reconciliation')->where('message', 'like', 'Skipped%')->sole();
+
+    expect($skip->message)->toBe('Skipped 2 remaining project(s) of tracker fake-tracker: its rate limit resets at ' . $resetsAt->toIso8601String() . '.')
+        ->and($skip->context_json)->toMatchArray(['tracker_id' => 'fake-tracker', 'projects_skipped' => 2]);
 });
 
 it('still fails a single-alert reconciliation when the tracker cannot list its projects', function () {
