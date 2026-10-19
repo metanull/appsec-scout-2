@@ -3,7 +3,8 @@
 namespace App\Trackers\Dto;
 
 /**
- * DTO used by bulk reconciliation scans.
+ * DTO used by bulk reconciliation scans. The project is the tracker project the work item
+ * currently belongs to, as reported by the tracker itself.
  */
 final readonly class ReconciliationCandidateDto
 {
@@ -20,5 +21,6 @@ final readonly class ReconciliationCandidateDto
         public array $labels,
         public array $extractedUrls,
         public string $searchStrategy,
+        public ?ProjectDto $project = null,
     ) {}
 }

@@ -129,7 +129,7 @@ Actions:
 | --- | --- | --- |
 | Fetch source | `admin.queue` or `work-items.sync` | Dispatches `FetchSourceJob` for one chosen Source right now |
 | Refresh tracker | `admin.queue` or `work-items.sync` | Dispatches `RefreshWorkItemsJob` for one chosen Tracker right now |
-| Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links; each sweep is recorded on the Sync Runs page under the `reconciliation` source, with its links-created/already-linked/failed-project counts; a sweep where some tracker projects failed is recorded as `partial` and one where all failed as `failure`, with an error summary (see [Work Item Reconciliation](#work-item-reconciliation)) |
+| Reconcile all tracker links | `admin.queue` or `work-items.sync` | Dispatches `ReconcileAllJob`, sweeping every alert for missing work-item links; each sweep is recorded on the Sync Runs page under the `reconciliation` source, with its links-created/already-linked/failed-tracker counts; a sweep where some trackers failed is recorded as `partial` and one where all failed as `failure`, with an error summary (see [Work Item Reconciliation](#work-item-reconciliation)) |
 | Sync inventory | `admin.queue` | Dispatches `SyncInventoryJob`, syncing `SoftwareSystem`/`SecurityContainer` rows from every registered Source and every Source Control provider that supports it; each run is recorded on the Sync Runs page under the `inventory` source, and a completed run writes an `inventory_sync_completed` audit entry with the counts and created systems/containers |
 | Collect repositories | `admin.queue` | Dispatches `DispatchRepositoryCollectionRunsJob`, queuing a batched SBOM/vulnerability/secret Trivy scan of every Azure DevOps repository, run by the isolated `collector` container on the `repository-collection` queue |
 | Run static analysis | `admin.queue` | Dispatches `DispatchStaticAnalysisRunsJob`, queuing a batched Roslynator/SpotBugs static analysis sweep of every Azure DevOps repository, run by the isolated `static-analysis-collector` container on the `static-analysis` queue. Repositories whose default-branch head commit has not moved since their last clean analysis are skipped without being cloned, and reported as `repositories_skipped` in the run counts. A **Force full re-analysis** toggle on the action bypasses every skip for that sweep — run one forced sweep after upgrading the collector image, since an unchanged commit alone cannot tell that the analysers or rules changed. The audit entry records which mode ran. See [docs/concepts/static-analysis-collection.md](concepts/static-analysis-collection.md#skipping-unchanged-repositories) |
@@ -264,37 +264,39 @@ error.
 
 Each Software System and each Security Container can have one or more Tracker Project Links — a
 mapping of `(tracker_id, project_key)` controlling which project new work items are created in and
-which projects are searched during reconciliation. Links are created manually (via the relation
-manager on the System/Container's Filament page) or auto-learned whenever a work item is created or
-linked from an alert. A global Jira default project key stored in tracker configuration
-(`TrackerConfig`) is used as a fallback when no link exists for the alert's system/container. Full
-resolution order in [docs/concepts/links-and-defaults.md](concepts/links-and-defaults.md).
+which tracker project the System/Container's navigation links point at. They never decide what
+reconciliation searches. Links are created manually (via the relation manager on the
+System/Container's Filament page), auto-learned whenever a work item is created or linked from an
+alert, or auto-learned by reconciliation from the project of each tracker issue that references an
+alert. A global Jira default project key stored in tracker configuration (`TrackerConfig`) is used
+as a fallback when no link exists for the alert's system/container. Full resolution order in
+[docs/concepts/links-and-defaults.md](concepts/links-and-defaults.md).
 
 ## Work Item Reconciliation
 
 Reconciliation finds missing alert-to-work-item links by matching an alert's own URL against text
-mined from candidate tracker issues, without an operator manually searching. It runs from two
-places:
+mined from tracker issues, without an operator manually searching. Each tracker is searched once,
+tracker-wide, for every issue of the last year carrying a reconciliation label
+(`config/reconciliation.php`): Jira with a single paged JQL across all projects, GitHub with the
+Issues API (`GET /issues?filter=all`, one listing per label) across every repository the token can
+see — never one search per project. Each matched issue reports the project it belongs to, and that
+project is learned as a Tracker Project Link of the matched alert's System and Container (origin
+`reconciliation`, with the project's URL). It runs from two places, each with its own credentials:
 
 - **Alert detail page** — "Find existing work items" calls `ReconciliationService::reconcileEvent()`
-  synchronously, scoped to the alert's own Tracker Project Links when one exists (falling back to
-  every configured project, with a warning, when it doesn't).
+  synchronously, with the operator's own tracker credentials only (Profile → Integrations). Every
+  tracker the operator has configured is searched; an operator with no tracker credentials of
+  their own gets a clear error — a system credential is never used for this user-triggered action.
 - **Operations page** — "Reconcile all tracker links" dispatches `ReconcileAllJob`, sweeping every
-  alert in the background. The sweep records a `SyncRun` under the `reconciliation` source, so its
+  alert in the background with system credentials only, across every tracker whose system
+  credentials are complete. The sweep records a `SyncRun` under the `reconciliation` source, so its
   last-run time, outcome and link counts survive a container restart; a per-alert reconciliation
-  from the alert detail page deliberately records no run. The sweep searches every project of
-  every configured tracker, not only the linked ones, so it can discover issues in projects never
-  linked before. A tracker project whose listing or search fails gets its own Error log row
-  (channel `reconciliation`, with the tracker and project) and the sweep moves on to the next
-  project: the run is `partial` when some projects failed and `failure` only when none could be
-  searched, with the failed-project count in its counts and a summary in its error message.
-  GitHub's Search API allows about 30 searches a minute, so the sweep waits out GitHub's rate
-  limit (`X-RateLimit-Reset` / `Retry-After`) rather than failing, and can take several minutes
-  when the system token sees many repositories. If the limit still cannot be waited out (more
-  than 90 s to reset, or three refusals in a row), the sweep stops searching that tracker for the
-  rest of the run: its remaining projects count as skipped and failed, and one Error log row gives
-  their number and the reset time.
-
+  from the alert detail page deliberately records no run. A tracker whose search fails gets its own
+  Error log row (channel `reconciliation`, with the tracker) and the sweep moves on to the next
+  tracker: the run is `partial` when some trackers failed and `failure` only when none could be
+  searched, with the failed-tracker count in its counts and a summary in its error message. A
+  GitHub rate limit that resets within 90 s is waited out (`X-RateLimit-Reset` / `Retry-After`);
+  a longer one, or three refusals in a row, fails that tracker for this run with the reset time.
 Both require `work-items.link` or `work-items.sync`. Every new link produces an audit row. Full
 detail in [docs/concepts/triage.md](concepts/triage.md#reconciliation-the-same-linking-mechanism-two-triggers).
 

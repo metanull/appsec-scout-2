@@ -4,14 +4,13 @@ use App\Credentials\Vault;
 use App\Events\SyncRunFinished;
 use App\Models\ErrorLog;
 use App\Models\SecurityEvent;
-use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
-use App\Models\TrackerProjectLink;
 use App\Models\WorkItemLink;
 use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
 use App\Trackers\ReconcileAllJob;
 use App\Trackers\Reconciliation\ReconciliationService;
+use App\Trackers\Registry;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Support\Facades\Cache;
@@ -20,7 +19,7 @@ use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
-    // Reconciliation only discovers projects for trackers whose credentials are configured.
+    // The sweep only searches trackers configured with system credentials.
     app(Vault::class)->set('fake-tracker.token', null, 'fake-token');
 });
 
@@ -35,10 +34,10 @@ it('records a successful sweep as a reconciliation sync run with its link counts
         ->and($run->status)->toBe('success')
         ->and($run->finished_at)->not->toBeNull()
         ->and($run->error_message)->toBeNull()
-        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 1, 'projects_reconciled' => 1, 'projects_failed' => 0, 'projects_skipped' => 0]);
+        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 1, 'trackers_reconciled' => 1, 'trackers_failed' => 0]);
 });
 
-it('records a sweep where one project failed as a partial run and keeps the other projects links', function () {
+it('records a sweep where one tracker failed as a partial run and keeps the other tracker links', function () {
     seedPartiallyFailingReconcileAllSweep();
 
     (new ReconcileAllJob)->handle(app(ReconciliationService::class));
@@ -47,14 +46,14 @@ it('records a sweep where one project failed as a partial run and keeps the othe
 
     expect($run->status)->toBe('partial')
         ->and($run->finished_at)->not->toBeNull()
-        ->and($run->error_message)->toContain('1 tracker project(s) failed, 1 reconciled')
-        ->and($run->error_message)->toContain('fake-tracker project BROKEN')
-        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 0, 'projects_reconciled' => 1, 'projects_failed' => 1, 'projects_skipped' => 0])
+        ->and($run->error_message)->toContain('1 tracker(s) failed, 1 reconciled')
+        ->and($run->error_message)->toContain('Reconciliation of tracker fake-broken failed')
+        ->and($run->counts_json)->toBe(['links_created' => 1, 'links_existing' => 0, 'trackers_reconciled' => 1, 'trackers_failed' => 1])
         ->and(WorkItemLink::query()->where('work_item_id', 'OK#1')->exists())->toBeTrue()
-        ->and(ErrorLog::query()->where('channel', 'reconciliation')->sole()->context_json)->toMatchArray(['tracker_id' => 'fake-tracker', 'project_key' => 'BROKEN']);
+        ->and(ErrorLog::query()->where('channel', 'reconciliation')->sole()->context_json)->toMatchArray(['tracker_id' => 'fake-broken']);
 });
 
-it('records a sweep where every project failed as a failure run without rethrowing', function () {
+it('records a sweep where every tracker failed as a failure run without rethrowing', function () {
     seedFailingReconcileAllSweep();
 
     (new ReconcileAllJob)->handle(app(ReconciliationService::class));
@@ -63,20 +62,13 @@ it('records a sweep where every project failed as a failure run without rethrowi
 
     expect($run->status)->toBe('failure')
         ->and($run->finished_at)->not->toBeNull()
-        ->and($run->error_message)->toContain('Failed to list projects')
-        ->and($run->error_message)->toContain('Reconciliation failed for project APP')
-        ->and($run->counts_json)->toBe(['links_created' => 0, 'links_existing' => 0, 'projects_reconciled' => 0, 'projects_failed' => 2, 'projects_skipped' => 0])
-        ->and(ErrorLog::query()->where('channel', 'reconciliation')->count())->toBe(2);
+        ->and($run->error_message)->toContain('Reconciliation search failed')
+        ->and($run->counts_json)->toBe(['links_created' => 0, 'links_existing' => 0, 'trackers_reconciled' => 0, 'trackers_failed' => 1])
+        ->and(ErrorLog::query()->where('channel', 'reconciliation')->count())->toBe(1);
 });
 
-it('counts the projects skipped after a tracker rate limit as not reconciled', function () {
-    bindFakeWorkItemTracker((new FakeTracker)
-        ->withProjects(
-            new ProjectDto(key: 'OK', name: 'OK'),
-            new ProjectDto(key: 'LIMITED', name: 'Limited'),
-            new ProjectDto(key: 'LAST', name: 'Last'),
-        )
-        ->withReconciliationRateLimit('LIMITED', CarbonImmutable::parse('2026-10-19 12:00:00')));
+it('records a rate-limited tracker as failed with its reset time', function () {
+    bindFakeWorkItemTracker((new FakeTracker)->withReconciliationRateLimit(CarbonImmutable::parse('2026-10-19 12:00:00')));
 
     SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/OK%231']);
 
@@ -84,9 +76,9 @@ it('counts the projects skipped after a tracker rate limit as not reconciled', f
 
     $run = SyncRun::query()->where('source_id', ReconcileAllJob::RUN_SOURCE_ID)->sole();
 
-    expect($run->status)->toBe('partial')
-        ->and($run->error_message)->toContain('2 tracker project(s) failed (1 skipped after a rate limit), 1 reconciled')
-        ->and($run->counts_json)->toBe(['links_created' => 0, 'links_existing' => 0, 'projects_reconciled' => 1, 'projects_failed' => 2, 'projects_skipped' => 1]);
+    expect($run->status)->toBe('failure')
+        ->and($run->error_message)->toContain('Rate limit exceeded')
+        ->and($run->counts_json)->toBe(['links_created' => 0, 'links_existing' => 0, 'trackers_reconciled' => 0, 'trackers_failed' => 1]);
 });
 
 it('writes no reconciliation cache key', function () {
@@ -124,32 +116,12 @@ it('fires SyncRunFinished when a sweep fails', function () {
  */
 function seedReconcileAllSweep(): void
 {
-    $tracker = (new FakeTracker)->withReconciliationCandidates(
-        'APP',
-        new ReconciliationCandidateDto(
-            trackerId: 'fake-tracker',
-            workItemId: 'APP#1',
-            workItemUrl: 'https://tracker.test/APP%231',
-            title: 'New link',
-            state: 'Open',
-            labels: ['security'],
-            extractedUrls: ['https://tracker.test/APP%231'],
-            searchStrategy: 'project=APP',
-        ),
-        new ReconciliationCandidateDto(
-            trackerId: 'fake-tracker',
-            workItemId: 'APP#2',
-            workItemUrl: 'https://tracker.test/APP%232',
-            title: 'Existing link',
-            state: 'Open',
-            labels: ['security'],
-            extractedUrls: ['https://tracker.test/APP%232'],
-            searchStrategy: 'project=APP',
-        ),
-    );
-    bindFakeWorkItemTracker($tracker);
+    bindFakeWorkItemTracker((new FakeTracker)->withReconciliationCandidates(
+        jobCandidate('APP#1'),
+        jobCandidate('APP#2'),
+    ));
 
-    $newEvent = SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/APP%231']);
+    SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/APP%231']);
     $linkedEvent = SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/APP%232']);
 
     WorkItemLink::query()->create([
@@ -163,68 +135,42 @@ function seedReconcileAllSweep(): void
         'created_at' => now(),
         'synced_at' => now(),
     ]);
-
-    foreach ([$newEvent, $linkedEvent] as $event) {
-        TrackerProjectLink::query()->create([
-            'owner_type' => SoftwareSystem::class,
-            'owner_id' => $event->softwareSystem->id,
-            'tracker_id' => 'fake-tracker',
-            'project_key' => 'APP',
-            'project_name' => 'APP',
-            'is_default' => false,
-            'created_by_user_id' => null,
-            'metadata' => null,
-        ]);
-    }
 }
 
-/** Seeds a sweep over two linked projects where BROKEN fails and OK produces one new link. */
+/** Seeds a sweep over two trackers where fake-broken fails and fake-tracker produces one new link. */
 function seedPartiallyFailingReconcileAllSweep(): void
 {
-    bindFakeWorkItemTracker((new FakeTracker)
-        ->withReconciliationFailure('BROKEN')
-        ->withReconciliationCandidates('OK', new ReconciliationCandidateDto(
-            trackerId: 'fake-tracker',
-            workItemId: 'OK#1',
-            workItemUrl: 'https://tracker.test/OK%231',
-            title: 'New link',
-            state: 'Open',
-            labels: ['security'],
-            extractedUrls: ['https://tracker.test/OK%231'],
-            searchStrategy: 'project=OK',
-        )));
+    bindFakeWorkItemTracker((new FakeTracker)->withReconciliationCandidates(jobCandidate('OK#1')));
 
-    $event = SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/OK%231']);
+    app(Vault::class)->set('fake-broken.token', null, 'broken-token');
+    app()->bind('appsec-scout.tracker.fake-broken', fn () => (new FakeTracker('fake-broken'))->withReconciliationFailure());
+    app()->tag(['appsec-scout.tracker.fake-broken'], 'appsec-scout.tracker');
+    app()->forgetInstance(Registry::class);
 
-    foreach (['BROKEN', 'OK'] as $projectKey) {
-        TrackerProjectLink::query()->create([
-            'owner_type' => SoftwareSystem::class,
-            'owner_id' => $event->softwareSystem->id,
-            'tracker_id' => 'fake-tracker',
-            'project_key' => $projectKey,
-            'project_name' => $projectKey,
-            'is_default' => false,
-            'created_by_user_id' => null,
-            'metadata' => null,
-        ]);
-    }
+    SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/OK%231']);
 }
 
-/** Seeds a sweep whose tracker fails both to list its projects and to search its one linked project. */
+/** Seeds a sweep whose only tracker fails its search. */
 function seedFailingReconcileAllSweep(): void
 {
-    bindFakeWorkItemTracker((new FakeTracker)->withFetchProjectsFailure()->withReconciliationFailure('APP'));
+    bindFakeWorkItemTracker((new FakeTracker)->withReconciliationFailure());
 
-    $event = SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/APP%235']);
+    SecurityEvent::factory()->secret()->create(['url' => 'https://tracker.test/APP%235']);
+}
 
-    TrackerProjectLink::query()->create([
-        'owner_type' => SoftwareSystem::class,
-        'owner_id' => $event->softwareSystem->id,
-        'tracker_id' => 'fake-tracker',
-        'project_key' => 'APP',
-        'project_name' => 'APP',
-        'is_default' => false,
-        'created_by_user_id' => null,
-        'metadata' => null,
-    ]);
+function jobCandidate(string $workItemId): ReconciliationCandidateDto
+{
+    $url = 'https://tracker.test/' . rawurlencode($workItemId);
+
+    return new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: $workItemId,
+        workItemUrl: $url,
+        title: 'Issue ' . $workItemId,
+        state: 'Open',
+        labels: ['security'],
+        extractedUrls: [$url],
+        searchStrategy: 'labels=security',
+        project: new ProjectDto(key: 'APP', name: 'APP'),
+    );
 }

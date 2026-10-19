@@ -4,9 +4,9 @@ use App\Credentials\Vault;
 use App\Filament\Resources\SecurityEventResource;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
 use App\Models\SecurityEvent;
-use App\Models\SoftwareSystem;
 use App\Models\User;
 use App\Models\WorkItemLink;
+use App\Trackers\Dto\ProjectDto;
 use App\Trackers\Dto\ReconciliationCandidateDto;
 use Database\Seeders\RolePermissionSeeder;
 use Livewire\Livewire;
@@ -14,8 +14,8 @@ use Tests\Fakes\FakeTracker;
 
 beforeEach(function () {
     (new RolePermissionSeeder)->run();
-    // Reconciliation only discovers projects for trackers whose credentials are configured.
-    app(Vault::class)->set('fake-tracker.token', null, 'fake-token');
+    // A system credential alone must never let a user-triggered reconciliation search.
+    app(Vault::class)->set('fake-tracker.token', null, 'system-token');
 });
 
 it('shows per-event reconciliation action to plan users but hides it for readers', function () {
@@ -34,72 +34,38 @@ it('shows per-event reconciliation action to plan users but hides it for readers
         ->assertSee('Find existing work items');
 });
 
-it('creates a new work-item link when per-event reconciliation finds matches', function () {
+it('creates a new work-item link with the operator own tracker credential', function () {
     $plan = reconciliationFilamentUser(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $plan->id, 'user-token');
 
-    $tracker = (new FakeTracker)->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
-        trackerId: 'fake-tracker',
-        workItemId: 'APP#500',
-        workItemUrl: 'https://tracker.test/APP%23500',
-        title: 'Matched issue',
-        state: 'Open',
-        labels: ['security'],
-        extractedUrls: ['https://tracker.test/APP%23500'],
-        searchStrategy: 'project=APP',
+    $tracker = bindFakeWorkItemTracker((new FakeTracker)->withReconciliationCandidates(
+        actionCandidate('APP#500', 'https://tracker.test/APP%23500'),
     ));
-    bindFakeWorkItemTracker($tracker);
 
-    $event = SecurityEvent::factory()->create([
-        'url' => 'https://tracker.test/APP%23500',
-    ]);
-
-    $event->softwareSystem->trackerProjectLinks()->create([
-        'tracker_id' => 'fake-tracker',
-        'project_key' => 'APP',
-        'project_name' => 'APP',
-        'is_default' => false,
-        'created_by_user_id' => $plan->id,
-        'metadata' => null,
-    ]);
+    $event = SecurityEvent::factory()->create(['url' => 'https://tracker.test/APP%23500']);
 
     Livewire::actingAs($plan)
         ->test(ViewSecurityEvent::class, ['record' => $event->getRouteKey()])
-        ->callAction('reconcileWorkItems');
+        ->callAction('reconcileWorkItems')
+        ->assertNotified('1 new work item links found');
 
-    expect(WorkItemLink::query()
-        ->where('event_id', $event->id)
-        ->where('tracker_id', 'fake-tracker')
-        ->where('work_item_id', 'APP#500')
-        ->exists())->toBeTrue();
+    expect($tracker->reconciliationTokens)->toBe(['user-token'])
+        ->and(WorkItemLink::query()
+            ->where('event_id', $event->id)
+            ->where('tracker_id', 'fake-tracker')
+            ->where('work_item_id', 'APP#500')
+            ->exists())->toBeTrue();
 });
 
 it('keeps links unchanged when per-event reconciliation finds no new matches', function () {
     $plan = reconciliationFilamentUser(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $plan->id, 'user-token');
 
-    $tracker = (new FakeTracker)->withReconciliationCandidates('APP', new ReconciliationCandidateDto(
-        trackerId: 'fake-tracker',
-        workItemId: 'APP#404',
-        workItemUrl: 'https://tracker.test/APP%23404',
-        title: 'Unrelated issue',
-        state: 'Open',
-        labels: ['security'],
-        extractedUrls: ['https://tracker.test/APP%23999'],
-        searchStrategy: 'project=APP',
+    bindFakeWorkItemTracker((new FakeTracker)->withReconciliationCandidates(
+        actionCandidate('APP#404', 'https://tracker.test/APP%23999'),
     ));
-    bindFakeWorkItemTracker($tracker);
 
-    $event = SecurityEvent::factory()->create([
-        'url' => 'https://tracker.test/APP%23404',
-    ]);
-
-    $event->softwareSystem->trackerProjectLinks()->create([
-        'tracker_id' => 'fake-tracker',
-        'project_key' => 'APP',
-        'project_name' => 'APP',
-        'is_default' => false,
-        'created_by_user_id' => $plan->id,
-        'metadata' => null,
-    ]);
+    $event = SecurityEvent::factory()->create(['url' => 'https://tracker.test/APP%23404']);
 
     Livewire::actingAs($plan)
         ->test(ViewSecurityEvent::class, ['record' => $event->getRouteKey()])
@@ -108,68 +74,31 @@ it('keeps links unchanged when per-event reconciliation finds no new matches', f
     expect(WorkItemLink::query()->where('event_id', $event->id)->count())->toBe(0);
 });
 
-it('warns and still searches every tracker project when the alert has no scoped mapping', function () {
+it('refuses to search with system credentials when the operator has no tracker credentials', function () {
     $plan = reconciliationFilamentUser(['Plan']);
 
-    $tracker = (new FakeTracker)->withReconciliationCandidates('OTHER', new ReconciliationCandidateDto(
-        trackerId: 'fake-tracker',
-        workItemId: 'OTHER#1',
-        workItemUrl: 'https://tracker.test/OTHER%231',
-        title: 'Matched via unscoped fallback',
-        state: 'Open',
-        labels: ['security'],
-        extractedUrls: ['https://tracker.test/OTHER%231'],
-        searchStrategy: 'project=OTHER',
+    $tracker = bindFakeWorkItemTracker((new FakeTracker)->withReconciliationCandidates(
+        actionCandidate('APP#500', 'https://tracker.test/APP%23500'),
     ));
-    bindFakeWorkItemTracker($tracker);
 
-    // A tracker project link exists somewhere in the system (an unrelated System), but NOT on
-    // this alert's own System/Container — this is exactly the condition that previously made
-    // the UI block the action entirely with an info toast, even though the reconciliation
-    // service itself would search every linked project as a fallback.
-    $unrelatedSystem = SoftwareSystem::factory()->create();
-    $unrelatedSystem->trackerProjectLinks()->create([
-        'tracker_id' => 'fake-tracker',
-        'project_key' => 'OTHER',
-        'project_name' => 'OTHER',
-        'is_default' => false,
-        'created_by_user_id' => $plan->id,
-    ]);
-
-    $event = SecurityEvent::factory()->create([
-        'url' => 'https://tracker.test/OTHER%231',
-    ]);
+    $event = SecurityEvent::factory()->create(['url' => 'https://tracker.test/APP%23500']);
 
     Livewire::actingAs($plan)
         ->test(ViewSecurityEvent::class, ['record' => $event->getRouteKey()])
         ->callAction('reconcileWorkItems')
-        ->assertNotified('No tracker project mapping for this system or container');
+        ->assertNotified('Reconciliation failed');
 
-    expect(WorkItemLink::query()
-        ->where('event_id', $event->id)
-        ->where('tracker_id', 'fake-tracker')
-        ->where('work_item_id', 'OTHER#1')
-        ->exists())->toBeTrue();
+    expect($tracker->reconciliationCalls)->toBe(0)
+        ->and(WorkItemLink::query()->where('event_id', $event->id)->count())->toBe(0);
 });
 
 it('surfaces a clear notification instead of a raw error when the tracker call fails', function () {
     $plan = reconciliationFilamentUser(['Plan']);
+    app(Vault::class)->set('fake-tracker.token', $plan->id, 'user-token');
 
-    $tracker = (new FakeTracker)->withReconciliationFailure('APP');
-    bindFakeWorkItemTracker($tracker);
+    bindFakeWorkItemTracker((new FakeTracker)->withReconciliationFailure());
 
-    $event = SecurityEvent::factory()->create([
-        'url' => 'https://tracker.test/APP%23500',
-    ]);
-
-    $event->softwareSystem->trackerProjectLinks()->create([
-        'tracker_id' => 'fake-tracker',
-        'project_key' => 'APP',
-        'project_name' => 'APP',
-        'is_default' => false,
-        'created_by_user_id' => $plan->id,
-        'metadata' => null,
-    ]);
+    $event = SecurityEvent::factory()->create(['url' => 'https://tracker.test/APP%23500']);
 
     Livewire::actingAs($plan)
         ->test(ViewSecurityEvent::class, ['record' => $event->getRouteKey()])
@@ -178,6 +107,21 @@ it('surfaces a clear notification instead of a raw error when the tracker call f
 
     expect(WorkItemLink::query()->where('event_id', $event->id)->count())->toBe(0);
 });
+
+function actionCandidate(string $workItemId, string $referencedUrl): ReconciliationCandidateDto
+{
+    return new ReconciliationCandidateDto(
+        trackerId: 'fake-tracker',
+        workItemId: $workItemId,
+        workItemUrl: 'https://tracker.test/' . rawurlencode($workItemId),
+        title: 'Issue ' . $workItemId,
+        state: 'Open',
+        labels: ['security'],
+        extractedUrls: [$referencedUrl],
+        searchStrategy: 'labels=security',
+        project: new ProjectDto(key: 'APP', name: 'APP'),
+    );
+}
 
 function reconciliationFilamentUser(array $roles): User
 {

@@ -96,7 +96,7 @@ progress in the tabs on the same page (*Activity* / *Problems*), or on *Sync Run
 | --- | --- |
 | **Operations → Fetch source** | Pick a Source (*Azure DevOps Advanced Security*, *HCL AppScan on Cloud*, *Detectify*). Queues a job that uses the **system** credential to pull new and changed alerts since that source's last successful run, upserts them as Alerts, and refreshes the Systems/Containers seen along the way. Recorded as a Sync Run. |
 | **Operations → Refresh tracker** | Pick a Tracker (*GitHub Issues*, *Jira Cloud*). Queues a job that re-reads every work item already linked to an alert and updates its title, state and URL locally. Nothing new is created. |
-| **Operations → Reconcile all tracker links** | (confirm) Queues a sweep that searches tracker projects for existing issues mentioning an alert's URL and links any it finds. Use it after people created tickets by hand outside AppSec Scout. Recorded as a Sync Run under `reconciliation`. |
+| **Operations → Reconcile all tracker links** | (confirm) Queues a sweep that searches every tracker configured with system credentials for existing issues mentioning an alert's URL and links any it finds. Use it after people created tickets by hand outside AppSec Scout. Recorded as a Sync Run under `reconciliation`. |
 | **Operations → Sync inventory** | (confirm, Admin) Queues a job that creates or updates Software Systems and Containers from every Source and Source Control provider that has system credentials. It **does not fetch alerts**. Run it first on a fresh install so alerts have somewhere to land. Recorded under `inventory`. |
 | **Operations → Collect repositories** | (confirm, Admin) Clones every Azure DevOps repository visible to the `azdo-repos` system credential and runs Trivy on each: SBOM, vulnerabilities and secrets. Results are attached to the matching Container and parsed into **Dependencies** and **Local Findings**. SBOMs are also pushed to Dependency-Track. Runs in the separate `collector` container; follow it on *Collection Runs*. |
 | **Operations → Run static analysis** | (confirm, Admin) Same sweep, but runs Opengrep, Roslynator (.NET) and SpotBugs + Find Security Bugs (Java). Repositories whose head commit hasn't changed since the last clean analysis are skipped. Tick **Force full re-analysis** to re-analyse everything, e.g. after upgrading the collector image. Results appear as Local Findings; follow it on *Analysis Runs*. |
@@ -227,8 +227,9 @@ work items** (see above). They need:
 - a **personal** tracker credential under *Profile integrations* (GitHub *Personal Access
   Token*, or Jira *Host URL* + *Email* + *API Token*);
 - ideally, a **Tracker project link** on the System or Container, so the right project is
-  pre-selected. It is learned automatically the first time you create or link an issue, and
-  can be edited by hand (see [Inventory pages](#inventory-pages)).
+  pre-selected. It is learned automatically the first time you create or link an issue, or
+  when reconciliation finds an issue referencing one of the System's alerts, and can be edited
+  by hand (see [Inventory pages](#inventory-pages)).
 
 Keep linked issue states current with **Operations → Refresh tracker**. Pick up issues created
 outside the app with **Operations → Reconcile all tracker links**. The *Alerts by Work Item
@@ -262,7 +263,7 @@ Shared tabs on Assets, Systems and Containers:
 | Tab | Actions and their effect |
 | --- | --- |
 | **Curated links** | **Add curated link** (label, kind, URL), **Edit**, **Delete**. Shown in the "Links & References" section. |
-| **Tracker project links** | **Add project link** (tracker, project key, *Default project for this owner*), **Edit**, **Delete**. Sets the default tracker/project on work-item forms and limits where *Find existing work items* searches. |
+| **Tracker project links** | **Add project link** (tracker, project key, *Default project for this owner*), **Edit**, **Delete**. Sets the default tracker/project on work-item forms. Never limits where *Find existing work items* searches. |
 | **Repository mappings** | **Add mapping** (provider, repository, default branch, path prefix), **Edit**, **Delete**. Used to build source-code links on alerts. A Container's mapping overrides its System's. |
 | **Attachments** | **Add attachment** (kind, file). An `sbom`, `vulnerabilities`, `secrets` or code-quality report is parsed into Dependencies / Local Findings, and an SBOM on a Container is also sent to Dependency-Track. **Download**, **Delete**. |
 | **Dependencies** / **Local findings** | Read-only, with **Download SBOM** / **Download findings** when a report is attached. |

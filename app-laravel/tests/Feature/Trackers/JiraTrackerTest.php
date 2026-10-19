@@ -172,7 +172,7 @@ it('maps jira projects with consistent key and name fields', function () {
         ->and($projects[0]->name)->toBe('Application');
 });
 
-it('fetches reconciliation candidates from jira with adf extraction and pagination', function () {
+it('fetches reconciliation candidates across every jira project with adf extraction and pagination', function () {
     $history = [];
     $stack = HandlerStack::create(new MockHandler([
         new Response(200, [], json_encode([
@@ -184,6 +184,7 @@ it('fetches reconciliation candidates from jira with adf extraction and paginati
                     'summary' => 'Security finding one',
                     'status' => ['name' => 'Open'],
                     'labels' => ['security'],
+                    'project' => ['id' => '10001', 'key' => 'APP', 'name' => 'Application', 'self' => 'https://example.atlassian.net/rest/api/3/project/10001'],
                     'description' => [
                         'type' => 'doc',
                         'content' => [[
@@ -204,11 +205,12 @@ it('fetches reconciliation candidates from jira with adf extraction and paginati
         new Response(200, [], json_encode([
             'isLast' => true,
             'issues' => [[
-                'key' => 'APP-102',
+                'key' => 'OPS-102',
                 'fields' => [
                     'summary' => 'Security finding two',
                     'status' => ['name' => 'Open'],
                     'labels' => ['vulnerability'],
+                    'project' => ['id' => '10002', 'key' => 'OPS', 'name' => 'Operations'],
                     'description' => [
                         'type' => 'doc',
                         'content' => [[
@@ -233,30 +235,26 @@ it('fetches reconciliation candidates from jira with adf extraction and paginati
         new Client(['handler' => $stack]),
     ));
 
-    $candidates = iterator_to_array($tracker->reconciliationCandidates('APP'), false);
+    $candidates = iterator_to_array($tracker->reconciliationCandidates(), false);
 
     expect($candidates)->toHaveCount(2)
         ->and($candidates[0]->workItemId)->toBe('APP-101')
         ->and($candidates[0]->extractedUrls)->toContain('https://example.com/finding/101')
-        ->and($candidates[1]->workItemId)->toBe('APP-102')
+        ->and($candidates[0]->project?->key)->toBe('APP')
+        ->and($candidates[0]->project?->name)->toBe('Application')
+        ->and($candidates[0]->project?->url)->toBe('https://example.atlassian.net/browse/APP')
+        ->and($candidates[1]->workItemId)->toBe('OPS-102')
         ->and($candidates[1]->extractedUrls)->toContain('https://example.com/finding/102')
+        ->and($candidates[1]->project?->key)->toBe('OPS')
         ->and($history)->toHaveCount(2);
 
+    parse_str($history[0]['request']->getUri()->getQuery(), $firstPageQuery);
     parse_str($history[1]['request']->getUri()->getQuery(), $secondPageQuery);
 
-    expect($secondPageQuery['nextPageToken'] ?? null)->toBe('page-2');
-});
-
-it('returns empty reconciliation candidates for empty jira project key', function () {
-    $tracker = new JiraTracker(app(Vault::class));
-    injectJiraClient($tracker, new JiraClient(
-        'https://example.atlassian.net',
-        'ops@example.test',
-        'token',
-        new Client(['handler' => new MockHandler([])]),
-    ));
-
-    expect(iterator_to_array($tracker->reconciliationCandidates(''), false))->toBe([]);
+    expect($firstPageQuery['jql'])->toBe('labels in ("security", "vulnerability", "appsec-scout") AND created >= -365d ORDER BY created DESC')
+        ->and($firstPageQuery['jql'])->not->toContain('project')
+        ->and(explode(',', (string) $firstPageQuery['fields']))->toContain('project')
+        ->and($secondPageQuery['nextPageToken'] ?? null)->toBe('page-2');
 });
 
 it('searches work items matching by key and by summary', function () {

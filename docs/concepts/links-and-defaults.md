@@ -13,8 +13,8 @@ generates a URL, and one does nothing but render as-is.
 | Can attach to | System, Container (the model still allows Asset, but the Filament relation manager for it was removed — see below) | Asset, System, Container | Asset, System, Container, **and individual Alerts** |
 | Precedence when resolving for an Alert | Container → System → tracker-specific global fallback | Container → System | N/A — never resolved, always just rendered |
 | Asset-level entries ever consulted for an Alert? | **No** — `SecurityEvent` has no relation to `SoftwareAsset` | **No** — same reason | N/A |
-| What it drives | Default tracker/project preselection; reconciliation scope | "View in repo" / "View file" links | Nothing — informational only |
-| Created how | Manually, or auto-learned after creating/linking a work item | Manually only | Manually only |
+| What it drives | Default tracker/project preselection; tracker project navigation links (never what reconciliation searches) | "View in repo" / "View file" links | Nothing — informational only |
+| Created how | Manually, auto-learned after creating/linking a work item, or auto-learned by reconciliation | Manually only | Manually only |
 
 ## Tracker Project Link
 
@@ -77,27 +77,27 @@ appsec-scout remembers that System→project pairing for next time, without you 
 anything up front — but if a second, different project ever gets used for the same System, you
 have to break the tie manually or defaults stop resolving at that level.
 
+Reconciliation learns links the same way, from the other direction: every tracker issue it
+matches to an alert reports the project it belongs to (Jira's `fields.project`, GitHub's
+`repository`), and `learnFromEvents()` records that project for the matched alert's System and
+Container, with the project's URL. These links carry `metadata.origin = reconciliation` (links
+learned from a work item carry `work_item`; links added by hand carry none). The origin is set only
+when a link is created — learning an existing link again only merges in its URL — and it matters
+for default resolution: a reconciliation-learned link never competes with a link added by hand or
+learned from a work item at the same level, so it can't turn a resolving default into an
+ambiguity. It is used only where nothing else is linked at that level, or once an operator marks
+it `is_default`.
+
 This auto-learning is one of four independent auto-linking mechanisms in the app; see
 [docs/concepts/automated-discovery.md](automated-discovery.md) for how it compares to the other
 three (Asset auto-creation, Work Item reconciliation, Local Finding correlation).
 
-### Reconciliation scoping
+### Reconciliation never reads these links
 
-[Reconciliation](triage.md#reconciliation-the-same-linking-mechanism-two-triggers) uses the exact
-same Container/System `TrackerProjectLink` lookup to decide which tracker projects to search for
-candidate matches.
-
-`ReconciliationService::reconcileEvent()` itself, if the alert's System/Container has **no**
-scoped links at all, silently **widens to every tracker/project pair that has a link anywhere in
-the system** — it never returns "nothing to search." The "Find existing work items" button on the
-alert detail page runs the same pre-check only to decide whether to show a **warning**
-notification ("Searching every configured tracker project instead of a scoped one — results may be
-less precise. Add a Tracker Project Link to this alert's system or container to narrow this search
-next time."), then unconditionally calls the service either way — a System/Container with no
-`TrackerProjectLink` at all does not block reconciliation from the UI, it just searches more
-broadly and tells the operator so. `reconcileAll()` (the background, Operations-page-triggered
-sweep of every alert) has no scoping concept at all — it always searches every linked project.
-
+[Reconciliation](triage.md#reconciliation-the-same-linking-mechanism-two-triggers) does not use
+Tracker Project Links to decide what to search: it runs one tracker-wide search per tracker and
+matches alerts purely by URL, so a System/Container with no link is reconciled exactly like one
+with links. Links only flow out of reconciliation (see above), never into it.
 ## Repository Mapping
 
 A `RepositoryMapping` says "this System/Container corresponds to this repository" — structured
@@ -146,10 +146,9 @@ consumers of `CuratedLink::` outside its own relation manager and service turns 
   silent: the create/link work-item forms now show a warning naming the ambiguous level so it's
   visible before it causes confusion. There is still no database-level constraint preventing more
   than one `is_default` link per level+tracker — the warning is the only safeguard today.
-- **"Reconcile work items" ("Find existing work items") always runs**, even with no
-  `TrackerProjectLink` on the alert's System or Container — it just widens the search to every
-  configured tracker project and warns that results may be less precise. Add a `TrackerProjectLink`
-  to narrow the search next time.
+- **"Find existing work items" searches every tracker you have configured under Profile →
+  Integrations**, tracker-wide, whatever `TrackerProjectLink`s exist — adding one never narrows
+  or widens it.
 - **To make "View in repo"/"View file" links appear on an alert**, add a `RepositoryMapping` at
   the Container level (preferred, since it wins) or the System level — this is unrelated to
   whether a Source Control credential is configured; the link is generated, not fetched.

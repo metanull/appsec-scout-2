@@ -7,7 +7,6 @@ use App\Models\RepositoryMapping;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\TrackerProjectLink;
-use App\Trackers\Registry as TrackerRegistry;
 
 /**
  * Builds deduplicated navigation link catalogs for software systems and
@@ -17,11 +16,6 @@ use App\Trackers\Registry as TrackerRegistry;
  */
 final class EntityNavigationCatalog
 {
-    /** @var array<string, ?string> */
-    private array $trackerProjectUrlCache = [];
-
-    public function __construct(private readonly TrackerRegistry $trackerRegistry) {}
-
     /**
      * @return list<array{label: string, url: string, kind: string, kind_label: string, external: bool}>
      */
@@ -180,9 +174,10 @@ final class EntityNavigationCatalog
 
         foreach ($links as $link) {
             $label = trim(sprintf('%s: %s', $link->tracker_id, $link->project_name ?? $link->project_key));
-            $url = $this->resolveTrackerProjectUrl($link->tracker_id, $link->project_key);
 
-            $add($label, $url, 'tracker', $priority);
+            // The URL the tracker reported when the link was learned: building navigation
+            // never calls a tracker, which would run with no user's credentials.
+            $add($label, $link->projectUrl(), 'tracker', $priority);
         }
     }
 
@@ -230,32 +225,5 @@ final class EntityNavigationCatalog
         }
 
         return 'source';
-    }
-
-    private function resolveTrackerProjectUrl(string $trackerId, string $projectKey): ?string
-    {
-        $cacheKey = $trackerId . '|' . $projectKey;
-
-        if (array_key_exists($cacheKey, $this->trackerProjectUrlCache)) {
-            return $this->trackerProjectUrlCache[$cacheKey];
-        }
-
-        $tracker = $this->trackerRegistry->find($trackerId);
-
-        if ($tracker === null) {
-            return $this->trackerProjectUrlCache[$cacheKey] = null;
-        }
-
-        try {
-            foreach ($tracker->fetchProjects() as $project) {
-                if ($project->key === $projectKey && $project->url !== null && SourceLinkHelper::isSafeUrl($project->url)) {
-                    return $this->trackerProjectUrlCache[$cacheKey] = $project->url;
-                }
-            }
-        } catch (\Throwable) {
-            return $this->trackerProjectUrlCache[$cacheKey] = null;
-        }
-
-        return $this->trackerProjectUrlCache[$cacheKey] = null;
     }
 }

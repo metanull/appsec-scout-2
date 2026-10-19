@@ -4,6 +4,7 @@ use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
+use App\Models\TrackerProjectLink;
 use App\Trackers\Defaults\TrackerProjectDefaultResolver;
 use App\Trackers\TrackerConfigRepository;
 
@@ -262,4 +263,61 @@ it('returns no grouped finding default when findings resolve to different projec
 
     expect($result->hasDefault())->toBeFalse()
         ->and($result->reasonText)->toContain('different projects');
+});
+
+it('keeps resolving a chosen system project when reconciliation learns another one', function () {
+    $system = SoftwareSystem::factory()->create();
+    $event = SecurityEvent::factory()->create(['software_system_id' => $system->id, 'container_id' => null]);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'SYS', 'project_name' => 'System Project', 'is_default' => false]);
+    $system->trackerProjectLinks()->create([
+        'tracker_id' => 'jira',
+        'project_key' => 'SEC',
+        'project_name' => 'Security',
+        'is_default' => false,
+        'metadata' => [TrackerProjectLink::METADATA_ORIGIN => TrackerProjectLink::ORIGIN_RECONCILIATION],
+    ]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForEvent($event, 'jira');
+
+    expect($result->hasDefault())->toBeTrue()
+        ->and($result->projectKey)->toBe('SYS')
+        ->and($result->source)->toBe('system_mapping');
+});
+
+it('resolves a project only reconciliation learned when nothing else is linked', function () {
+    $system = SoftwareSystem::factory()->create();
+    $event = SecurityEvent::factory()->create(['software_system_id' => $system->id, 'container_id' => null]);
+
+    $system->trackerProjectLinks()->create([
+        'tracker_id' => 'jira',
+        'project_key' => 'SEC',
+        'project_name' => 'Security',
+        'is_default' => false,
+        'metadata' => [TrackerProjectLink::METADATA_ORIGIN => TrackerProjectLink::ORIGIN_RECONCILIATION],
+    ]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForEvent($event, 'jira');
+
+    expect($result->hasDefault())->toBeTrue()
+        ->and($result->projectKey)->toBe('SEC');
+});
+
+it('honours a reconciliation-learned project an operator marked as the default', function () {
+    $system = SoftwareSystem::factory()->create();
+    $event = SecurityEvent::factory()->create(['software_system_id' => $system->id, 'container_id' => null]);
+
+    $system->trackerProjectLinks()->create(['tracker_id' => 'jira', 'project_key' => 'SYS', 'project_name' => 'System Project', 'is_default' => false]);
+    $system->trackerProjectLinks()->create([
+        'tracker_id' => 'jira',
+        'project_key' => 'SEC',
+        'project_name' => 'Security',
+        'is_default' => true,
+        'metadata' => [TrackerProjectLink::METADATA_ORIGIN => TrackerProjectLink::ORIGIN_RECONCILIATION],
+    ]);
+
+    $result = app(TrackerProjectDefaultResolver::class)->resolveForEvent($event, 'jira');
+
+    expect($result->hasDefault())->toBeTrue()
+        ->and($result->projectKey)->toBe('SEC');
 });

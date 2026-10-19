@@ -357,9 +357,19 @@ final class TrackerProjectDefaultResolver
             return ['resolution' => null, 'warning' => null];
         }
 
-        if ($links->count() === 1) {
-            $selected = $links->first();
+        // Links only reconciliation suggested count only where nobody chose a project: they
+        // must not turn a link added by hand or learned from a work item into an ambiguity,
+        // unless an operator has since marked one as the default.
+        /** @var EloquentCollection<int, TrackerProjectLink> $chosen */
+        $chosen = $links->reject(fn (TrackerProjectLink $link): bool => $link->isLearnedByReconciliation() && ! $link->is_default)->values();
 
+        if ($chosen->isNotEmpty()) {
+            $links = $chosen;
+        }
+
+        $selected = $links->count() === 1 ? $links->first() : null;
+
+        if ($selected instanceof TrackerProjectLink) {
             return [
                 'resolution' => TrackerProjectDefaultResolution::resolved(
                     trackerId: $trackerId,

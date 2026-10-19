@@ -24,9 +24,9 @@ final class ReconcileAllJob implements ShouldBeUnique, ShouldQueue
     public const string RUN_SOURCE_ID = 'reconciliation';
 
     /**
-     * A sweep waits out GitHub's Search API rate limit (about 30 searches a minute) across
-     * every repository the system token can see, so it can run for several minutes; the
-     * uniqueness lock must outlive it so a second sweep cannot start alongside.
+     * A sweep pages through every recent labelled work item of every tracker and may wait
+     * out a short GitHub rate limit, so it can run for minutes; the uniqueness lock must
+     * outlive it so a second sweep cannot start alongside.
      */
     public int $timeout = 1800;
 
@@ -75,21 +75,20 @@ final class ReconcileAllJob implements ShouldBeUnique, ShouldQueue
             throw $exception;
         }
 
-        // Each failed tracker project already has its own ErrorLog row (written by the
-        // service as it happened); the run carries the counts and a summary.
+        // Each failed tracker already has its own ErrorLog row (written by the service as it
+        // happened); the run carries the counts and a summary.
         $run->update([
             'finished_at' => now(),
             'status' => match (true) {
-                $sweep->projectsFailed() === 0 => 'success',
-                $sweep->projectsReconciled === 0 => 'failure',
+                $sweep->trackersFailed() === 0 => 'success',
+                $sweep->trackersReconciled === 0 => 'failure',
                 default => 'partial',
             },
             'counts_json' => [
                 'links_created' => $sweep->linksCreated(),
                 'links_existing' => $sweep->linksExisting(),
-                'projects_reconciled' => $sweep->projectsReconciled,
-                'projects_failed' => $sweep->projectsFailed(),
-                'projects_skipped' => $sweep->projectsSkipped,
+                'trackers_reconciled' => $sweep->trackersReconciled,
+                'trackers_failed' => $sweep->trackersFailed(),
             ],
             'error_message' => $sweep->failureSummary(),
         ]);

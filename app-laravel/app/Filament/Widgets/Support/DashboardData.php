@@ -63,10 +63,10 @@ final class DashboardData
         if (array_key_exists('links_created', $counts)) {
             $created = (int) ($counts['links_created'] ?? 0);
             $existing = (int) ($counts['links_existing'] ?? 0);
-            $failed = (int) ($counts['projects_failed'] ?? 0);
+            $failed = (int) ($counts['trackers_failed'] ?? 0);
 
             return $failed > 0
-                ? "{$created} link(s) created, {$existing} already linked, {$failed} project(s) failed"
+                ? "{$created} link(s) created, {$existing} already linked, {$failed} tracker(s) failed"
                 : "{$created} link(s) created, {$existing} already linked";
         }
 

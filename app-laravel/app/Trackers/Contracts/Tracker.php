@@ -50,9 +50,12 @@ interface Tracker
     public function searchWorkItems(string $projectKey, string $query, int $limit = 20): iterable;
 
     /**
+     * Every recent labelled work item across all projects the current credential can see,
+     * each carrying the project it belongs to: one tracker-wide search, never per project.
+     *
      * @return iterable<ReconciliationCandidateDto>
      *
      * @throws \Throwable
      */
-    public function reconciliationCandidates(string $projectKey): iterable;
+    public function reconciliationCandidates(): iterable;
 }

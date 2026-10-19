@@ -108,13 +108,9 @@ final class GitHubTracker implements Tracker
     }
 
     /** @return iterable<ReconciliationCandidateDto> */
-    public function reconciliationCandidates(string $projectKey): iterable
+    public function reconciliationCandidates(): iterable
     {
-        if (trim($projectKey) === '') {
-            return [];
-        }
-
-        return $this->getClient()->searchForReconciliation($projectKey, 500);
+        return $this->getClient()->searchForReconciliation();
     }
 
     private function getClient(): GitHubClient
@@ -133,6 +129,9 @@ final class GitHubTracker implements Tracker
 
         $this->clientFingerprint = $fingerprint;
 
-        return $this->client = new GitHubClient($token);
+        $labels = config('reconciliation.github.reconciliation_labels', ['security']);
+        $reconciliationLabels = is_array($labels) ? array_values(array_filter(array_map('strval', $labels), static fn (string $label): bool => $label !== '')) : ['security'];
+
+        return $this->client = new GitHubClient($token, reconciliationLabels: $reconciliationLabels);
     }
 }
