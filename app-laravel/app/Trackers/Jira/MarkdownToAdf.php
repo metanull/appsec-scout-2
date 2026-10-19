@@ -234,12 +234,26 @@ final class MarkdownToAdf
             $node instanceof Text => self::textNodes($node->getLiteral(), $marks),
             $node instanceof Strong => self::convertInlineChildren($node, [...$marks, ['type' => 'strong']]),
             $node instanceof Emphasis => self::convertInlineChildren($node, [...$marks, ['type' => 'em']]),
-            $node instanceof Code => self::textNodes($node->getLiteral(), [...$marks, ['type' => 'code']]),
+            $node instanceof Code => self::textNodes($node->getLiteral(), self::codeMarks($marks)),
             $node instanceof Link => self::convertInlineChildren($node, [...$marks, ['type' => 'link', 'attrs' => ['href' => $node->getUrl()]]]),
             $node instanceof Newline => [['type' => 'hardBreak']],
             $node instanceof HtmlInline => self::textNodes($node->getLiteral(), $marks),
             default => self::textNodes(self::plainText($node), $marks),
         };
+    }
+
+    /**
+     * ADF allows only a link alongside the code mark: Jira rejects inline code that also
+     * carries strong, em or any other mark (e.g. code inside bold text) as INVALID_INPUT.
+     *
+     * @param  list<array<string, mixed>>  $marks
+     * @return list<array<string, mixed>>
+     */
+    private static function codeMarks(array $marks): array
+    {
+        $links = array_values(array_filter($marks, fn (array $mark): bool => $mark['type'] === 'link'));
+
+        return [...$links, ['type' => 'code']];
     }
 
     /**

@@ -69,7 +69,7 @@ final class AzDoNormalizer
         return new EventDto(
             sourceEventId: (string) $alert->alertId,
             sourceSystemId: '',
-            title: $alert->title,
+            title: self::decodeEntityEncodedText($alert->title),
             severity: self::mapSeverity($alert->severity),
             state: self::mapState($alert->state),
             type: $type,
@@ -77,7 +77,7 @@ final class AzDoNormalizer
             ruleId: $rule['opaqueId'] ?? $rule['id'] ?? null,
             fingerprint: self::buildFingerprint($alert, $repoId),
             url: $alertWebUrl,
-            remediation: $rule['helpMessage'] ?? null,
+            remediation: self::decodeEntityEncodedText($rule['helpMessage'] ?? null),
             filePath: $location['filePath'] ?? null,
             startLine: self::startLine($location),
             endLine: self::endLine($location),
@@ -244,7 +244,24 @@ final class AzDoNormalizer
             $parts[] = $fullDescription;
         }
 
-        return $parts !== [] ? implode("\n\n", $parts) : null;
+        return $parts !== [] ? self::decodeEntityEncodedText(implode("\n\n", $parts)) : null;
+    }
+
+    /**
+     * Advanced Security returns some rule texts HTML-encoded (Checkov titles carry `&quot;`,
+     * CodeQL help code samples carry `&lt;`/`&gt;`), others as plain Markdown with raw `<`.
+     * Decode only text that is entity-encoded throughout — it has entities and no raw angle
+     * bracket — so plain Markdown, including entities it shows on purpose, is kept verbatim.
+     *
+     * @return ($text is null ? null : string)
+     */
+    private static function decodeEntityEncodedText(?string $text): ?string
+    {
+        if ($text === null || ! str_contains($text, '&') || strpbrk($text, '<>') !== false) {
+            return $text;
+        }
+
+        return html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
     /**
