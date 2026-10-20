@@ -9,6 +9,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Sources\Contracts\ReadsUpstreamState;
 use App\Sources\Dto\EventDto;
 use App\Sources\Registry as SourceRegistry;
 use App\Sources\ValueObjects\PushResult;
@@ -337,6 +338,35 @@ it('reports both errors when a push fails and the alert cannot be read back', fu
         ->and($outcome->lastError)->toBe('upstream error (Reading the alert back from the source also failed: read refused)')
         ->and($event->is_dirty)->toBeTrue()
         ->and($event->metadata['pushRetryCount'])->toBe(1);
+});
+
+it('confirms a refused push with the source\'s own state read when it has one', function () {
+    $source = bindFakePushSource((new class extends FakeSource implements ReadsUpstreamState
+    {
+        public function fetchRawEvent(SecurityEvent $event): EventDto
+        {
+            throw new RuntimeException('full read refused');
+        }
+
+        public function fetchUpstreamState(SecurityEvent $event): EventState
+        {
+            return EventState::Dismissed;
+        }
+    })->withPushFailure());
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'fake',
+        'state' => EventState::Open,
+        'pending_state' => EventState::Dismissed,
+        'is_dirty' => true,
+        'metadata' => [],
+    ]);
+
+    $outcome = app(PendingStatePusher::class)->push(collect([$event]), pushOperator());
+
+    expect($source->pushCalls)->toBe(1)
+        ->and($outcome->alreadyUpstream)->toBe(1)
+        ->and($outcome->failed)->toBe(0)
+        ->and($event->fresh()?->is_dirty)->toBeFalse();
 });
 
 function upstreamDto(SecurityEvent $event, EventState $state): EventDto

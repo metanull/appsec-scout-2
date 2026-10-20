@@ -12,6 +12,7 @@ use App\Sources\Dto\EventDto;
 use App\Sources\Dto\SystemDto;
 use App\Sync\EnrichAzDoSecretJob;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
@@ -386,4 +387,78 @@ it('pushes a dismissal staged without any reason as a false positive', function 
     ]);
 
     expect($body['dismissedReason'])->toBe('falsePositive');
+});
+
+/**
+ * Reads the upstream state of alert 3001 (project-001/repo-001) against the given advanced-security responses.
+ *
+ * @param  list<Response>  $responses
+ * @param  list<array<string, mixed>>  $history
+ */
+function readAzDoUpstreamState(array $responses, array &$history): EventState
+{
+    $stack = HandlerStack::create(new MockHandler($responses));
+    $stack->push(Middleware::history($history));
+
+    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', new Client(['handler' => new MockHandler]), new Client(['handler' => $stack]));
+    $source = new AzDoSource(app(Vault::class));
+    injectAzDoClient($source, $client);
+
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'azdo',
+        'source_event_id' => '3001',
+        'metadata' => ['sourceProjectId' => 'project-001', 'sourceRepoId' => 'repo-001'],
+    ]);
+
+    return $source->fetchUpstreamState($event);
+}
+
+function azdoSequenceError(): Response
+{
+    return new Response(400, [], '{"message":"Sequence contains more than one element","typeName":"System.InvalidOperationException, mscorlib"}');
+}
+
+it('reads the upstream state from the single-alert endpoint', function () {
+    $history = [];
+
+    $state = readAzDoUpstreamState([
+        new Response(200, [], '{"alertId":3001,"alertType":"dependency","state":"dismissed","title":"x"}'),
+    ], $history);
+
+    expect($state)->toBe(EventState::Dismissed)
+        ->and($history)->toHaveCount(1)
+        ->and($history[0]['request']->getUri()->getPath())->toEndWith('project-001/_apis/alert/repositories/repo-001/alerts/3001');
+});
+
+it('reads the upstream state through the alert list when the single-alert endpoint answers 400', function () {
+    $history = [];
+
+    $state = readAzDoUpstreamState([
+        azdoSequenceError(),
+        new Response(200, [], '{"count":1,"value":[{"alertId":3001,"alertType":"dependency","state":"dismissed","title":"x"}]}'),
+    ], $history);
+
+    expect($state)->toBe(EventState::Dismissed)
+        ->and($history)->toHaveCount(2)
+        ->and($history[1]['request']->getUri()->getPath())->toEndWith('project-001/_apis/alert/repositories/repo-001/alerts')
+        ->and(urldecode($history[1]['request']->getUri()->getQuery()))->toContain('criteria.alertIds=3001');
+});
+
+it('reports both reads when the alert list does not have the alert either', function () {
+    $history = [];
+
+    expect(fn () => readAzDoUpstreamState([
+        azdoSequenceError(),
+        new Response(200, [], '{"count":0,"value":[]}'),
+    ], $history))->toThrow(RuntimeException::class, 'The alert list has no alert 3001 either.');
+});
+
+it('does not read the alert list for a single-alert failure other than 400', function () {
+    $history = [];
+
+    expect(function () use (&$history) {
+        readAzDoUpstreamState([new Response(404, [], '{"message":"not found"}')], $history);
+    })->toThrow(ClientException::class);
+
+    expect($history)->toHaveCount(1);
 });

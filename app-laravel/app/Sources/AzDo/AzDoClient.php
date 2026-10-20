@@ -188,6 +188,26 @@ final class AzDoClient
         return AzDoAlert::fromArray($data);
     }
 
+    /** One alert read through the repository's alert list (`criteria.alertIds`), without details. */
+    public function findListedAlert(string $projectName, string $repoId, int $alertId): ?AzDoAlert
+    {
+        $response = $this->advSecHttp->get(
+            "{$projectName}/_apis/alert/repositories/{$repoId}/alerts",
+            ['query' => ['criteria.alertIds' => $alertId, 'api-version' => self::API_VERSION]],
+        );
+
+        /** @var array{value: list<array<string,mixed>>} $data */
+        $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+        foreach ($data['value'] as $item) {
+            if ((int) ($item['alertId'] ?? 0) === $alertId) {
+                return AzDoAlert::fromArray($item);
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @return list<array<string, mixed>>
      */

@@ -9,6 +9,7 @@ use App\Models\EventComment;
 use App\Models\SecurityEvent;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Sources\Contracts\ReadsUpstreamState;
 use App\Sources\Contracts\Source;
 use App\Triage\OperatorIntegrationRuntime;
 use Illuminate\Support\Collection;
@@ -193,7 +194,9 @@ final class PendingStatePusher
     private function upstreamState(Source $source, SecurityEvent $event): EventState|string
     {
         try {
-            return $source->fetchRawEvent($event)->state;
+            return $source instanceof ReadsUpstreamState
+                ? $source->fetchUpstreamState($event)
+                : $source->fetchRawEvent($event)->state;
         } catch (\Throwable $e) {
             return $e->getMessage();
         }
