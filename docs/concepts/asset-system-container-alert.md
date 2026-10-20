@@ -250,7 +250,13 @@ live Source — "leaves it unset (never guesses) otherwise," per its own doc com
 heuristics, scoped to the finding's own Asset/System/Container:
 
 - **Vulnerability findings** — matched against `SecurityEvent`s of type `Dependency` by exact
-  package name (case-insensitive) and version.
+  package name (case-insensitive) and version, and the same advisory: the finding's rule id
+  (Trivy reports the CVE, or the GHSA id when there is no CVE) must equal the Alert's CVE or
+  GHSA id. The same package version usually carries several advisories, and Trivy reports each
+  as its own finding, so package and version alone would link a finding to the wrong Alert. The
+  AzDO normalizer reads the package from the alert's `component` logical location
+  (`"<Ecosystem> <name> <version>"`) and the advisory ids from the rule's
+  `additionalProperties` (`cveId`, `advisoryId`).
 - **Secret findings** — matched against `SecurityEvent`s of type `Secret` with the identical
   `file_path`, within 2 lines of the reported line number.
 - **Code-quality findings are never correlated** — there's no Alert-side equivalent to match

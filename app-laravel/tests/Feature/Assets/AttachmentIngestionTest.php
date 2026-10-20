@@ -494,7 +494,7 @@ it('upserts a large SARIF spanning multiple chunks, sweeps and correlates correc
     // runs correctly across the whole set, not just within the first chunk.
     $matchedEvent = SecurityEvent::factory()->forContainer($container)->create([
         'type' => EventType::Dependency,
-        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4']],
+        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4'], 'security' => ['cve' => 'CVE-2024-600']],
     ]);
 
     $findings = array_map(fn (int $i): array => [

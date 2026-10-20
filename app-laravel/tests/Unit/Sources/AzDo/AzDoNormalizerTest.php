@@ -294,3 +294,42 @@ it('does not store unsafe reconstructed alert urls in link metadata', function (
             'url' => 'file:///backend-api/alerts/4004',
         ]);
 });
+
+it('reads the package and advisory of a dependency alert as Advanced Security reports them', function () {
+    // Shape of a real Advanced Security dependency alert: the package is only in the component
+    // logical location, the advisory ids only in the rule's additionalProperties.
+    $alert = AzDoAlert::fromArray([
+        'alertId' => 21212,
+        'alertType' => 'dependency',
+        'severity' => 'medium',
+        'state' => 'active',
+        'title' => 'ip-address: Address6 builds an unbounded parse diagnostic (CVE-2026-101911)',
+        'logicalLocations' => [
+            ['fullyQualifiedName' => 'Npm ip-address 10.1.0', 'kind' => 'rootDependency'],
+            ['fullyQualifiedName' => 'Npm ip-address 10.1.0', 'kind' => 'component'],
+        ],
+        'tools' => [[
+            'name' => 'Advanced Security Dependency Scanning',
+            'rules' => [[
+                'opaqueId' => 'DEP1001_GHSA-h3mg-xc3c-68pw',
+                'friendlyName' => 'GHSA-h3mg-xc3c-68pw',
+                'additionalProperties' => ['cveId' => 'CVE-2026-101911', 'advisoryId' => 'GHSA-h3mg-xc3c-68pw'],
+            ]],
+        ]],
+    ]);
+
+    $dto = AzDoNormalizer::toEvent(
+        $alert,
+        'repo-001',
+        new AzDoProject(id: 'project-001', name: 'SecurityProject'),
+        new AzDoRepository(id: 'repo-001', name: 'backend-api', webUrl: 'https://dev.azure.com/testorg/SecurityProject/_git/backend-api', apiUrl: 'https://dev.azure.com/testorg/SecurityProject/_apis/git/repositories/repo-001'),
+    );
+    $metadata = $dto->metadata ?? [];
+
+    expect(SourceContextFacts::get($metadata, SourceContextFacts::PACKAGE_NAME))->toBe('ip-address')
+        ->and(SourceContextFacts::get($metadata, SourceContextFacts::PACKAGE_VERSION))->toBe('10.1.0')
+        ->and(SourceContextFacts::get($metadata, SourceContextFacts::PACKAGE_ECOSYSTEM))->toBe('npm')
+        ->and(SourceContextFacts::get($metadata, SourceContextFacts::SECURITY_CVE))->toBe('CVE-2026-101911')
+        ->and(SourceContextFacts::get($metadata, SourceContextFacts::SECURITY_ADVISORY))->toBe('GHSA-h3mg-xc3c-68pw')
+        ->and($metadata['cve'] ?? null)->toBe('CVE-2026-101911');
+});

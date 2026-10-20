@@ -38,6 +38,8 @@ final class SourceContextFacts
 
     public const SECURITY_CWE = 'security.cwe';
 
+    public const SECURITY_ADVISORY = 'security.advisory';
+
     public const PACKAGE_NAME = 'package.name';
 
     public const PACKAGE_VERSION = 'package.version';
@@ -71,6 +73,7 @@ final class SourceContextFacts
             self::CODE_FILE_PATH,
             self::SECURITY_CVE,
             self::SECURITY_CWE,
+            self::SECURITY_ADVISORY,
             self::PACKAGE_NAME,
             self::PACKAGE_VERSION,
             self::PACKAGE_ECOSYSTEM,

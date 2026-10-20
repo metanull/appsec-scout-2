@@ -17,6 +17,7 @@ it('exposes the minimum supported schema keys', function () {
         'code.file_path',
         'security.cve',
         'security.cwe',
+        'security.advisory',
         'package.name',
         'package.version',
         'package.ecosystem',

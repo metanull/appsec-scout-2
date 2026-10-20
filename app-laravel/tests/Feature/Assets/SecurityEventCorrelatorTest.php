@@ -19,7 +19,7 @@ it('correlates a vulnerability finding to a matching dependency alert by package
         'type' => EventType::Dependency,
         'severity' => EventSeverity::High,
         'state' => EventState::Open,
-        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4', 'ecosystem' => 'pip']],
+        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4', 'ecosystem' => 'pip'], 'security' => ['cve' => 'CVE-2024-56201']],
     ]);
 
     $finding = $container->localFindings()->create([
@@ -45,7 +45,7 @@ it('does not correlate a vulnerability finding when the package name or version 
 
     SecurityEvent::factory()->forContainer($container)->create([
         'type' => EventType::Dependency,
-        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.5']],
+        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.5'], 'security' => ['cve' => 'CVE-2024-56201']],
     ]);
 
     $finding = $container->localFindings()->create([
@@ -58,6 +58,99 @@ it('does not correlate a vulnerability finding when the package name or version 
     ]);
 
     app(SecurityEventCorrelator::class)->correlate($finding);
+
+    expect($finding->fresh()->correlated_security_event_id)->toBeNull();
+});
+
+/**
+ * Metadata as AzDoNormalizer stores it for a real Advanced Security dependency alert.
+ *
+ * @return array<string, mixed>
+ */
+function azdoDependencyMetadata(string $cve, string $advisory): array
+{
+    return [
+        'package' => ['name' => 'ip-address', 'version' => '10.1.0', 'ecosystem' => 'npm'],
+        'cve' => $cve,
+        'security' => ['cve' => $cve, 'advisory' => $advisory],
+        'logicalLocations' => [
+            ['fullyQualifiedName' => 'Npm ip-address 10.1.0', 'kind' => 'rootDependency'],
+            ['fullyQualifiedName' => 'Npm ip-address 10.1.0', 'kind' => 'component'],
+        ],
+    ];
+}
+
+it('correlates a vulnerability finding to the AzDO dependency alert for the same advisory', function () {
+    $container = SecurityContainer::factory()->create();
+
+    SecurityEvent::factory()->forContainer($container)->create([
+        'type' => EventType::Dependency,
+        'rule_id' => 'DEP1001_GHSA-aaaa-bbbb-cccc',
+        'metadata' => azdoDependencyMetadata('CVE-2026-100001', 'GHSA-aaaa-bbbb-cccc'),
+    ]);
+    $event = SecurityEvent::factory()->forContainer($container)->create([
+        'type' => EventType::Dependency,
+        'rule_id' => 'DEP1001_GHSA-h3mg-xc3c-68pw',
+        'metadata' => azdoDependencyMetadata('CVE-2026-101911', 'GHSA-h3mg-xc3c-68pw'),
+    ]);
+
+    $finding = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'CVE-2026-101911',
+        'title' => 'ip-address: unbounded parse diagnostic',
+        'file_path' => 'package-lock.json',
+        'start_line' => 1063,
+        'package_name' => 'ip-address',
+        'package_version' => '10.1.0',
+    ]);
+
+    app(SecurityEventCorrelator::class)->correlateBatch([$finding], $container);
+
+    expect($finding->fresh()->correlated_security_event_id)->toBe($event->id)
+        ->and($finding->fresh()->correlation_method)->toBe('package_version');
+});
+
+it('correlates a vulnerability finding reported under a GHSA id to the AzDO alert for that advisory', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $event = SecurityEvent::factory()->forContainer($container)->create([
+        'type' => EventType::Dependency,
+        'metadata' => azdoDependencyMetadata('CVE-2026-101911', 'GHSA-h3mg-xc3c-68pw'),
+    ]);
+
+    $finding = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'ghsa-h3mg-xc3c-68pw',
+        'title' => 'ip-address: unbounded parse diagnostic',
+        'file_path' => 'package-lock.json',
+        'package_name' => 'IP-Address',
+        'package_version' => '10.1.0',
+    ]);
+
+    app(SecurityEventCorrelator::class)->correlate($finding);
+
+    expect($finding->fresh()->correlated_security_event_id)->toBe($event->id);
+});
+
+it('does not correlate a vulnerability finding to an alert for another advisory on the same package version', function () {
+    $container = SecurityContainer::factory()->create();
+
+    SecurityEvent::factory()->forContainer($container)->create([
+        'type' => EventType::Dependency,
+        'metadata' => azdoDependencyMetadata('CVE-2026-100001', 'GHSA-aaaa-bbbb-cccc'),
+    ]);
+
+    $finding = $container->localFindings()->create([
+        'kind' => LocalFinding::KIND_VULNERABILITY,
+        'rule_id' => 'CVE-2026-101911',
+        'title' => 'ip-address: unbounded parse diagnostic',
+        'file_path' => 'package-lock.json',
+        'package_name' => 'ip-address',
+        'package_version' => '10.1.0',
+    ]);
+
+    app(SecurityEventCorrelator::class)->correlate($finding);
+    app(SecurityEventCorrelator::class)->correlateBatch([$finding], $container);
 
     expect($finding->fresh()->correlated_security_event_id)->toBeNull();
 });
@@ -112,7 +205,7 @@ it('correlateBatch produces the same results as calling correlate() once per fin
 
     $dependencyEvent = SecurityEvent::factory()->forContainer($container)->create([
         'type' => EventType::Dependency,
-        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4']],
+        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4'], 'security' => ['cve' => 'CVE-2024-56201']],
     ]);
     $secretEvent = SecurityEvent::factory()->forContainer($container)->create([
         'type' => EventType::Secret,
@@ -162,7 +255,7 @@ it('correlateBatch matches via a SoftwareAsset owner using pre-resolved software
 
     $event = SecurityEvent::factory()->forSystem($system)->create([
         'type' => EventType::Dependency,
-        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4']],
+        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4'], 'security' => ['cve' => 'CVE-2024-56201']],
     ]);
 
     $finding = LocalFinding::query()->create([
@@ -188,14 +281,14 @@ it('correlateBatch issues a small, constant number of queries regardless of how 
 
     SecurityEvent::factory()->forContainer($container)->create([
         'type' => EventType::Dependency,
-        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4']],
+        'metadata' => ['package' => ['name' => 'Jinja2', 'version' => '3.1.4'], 'security' => ['cve' => 'CVE-2024-56201']],
     ]);
 
     $findings = collect(range(1, 5))->map(fn (int $i) => $container->localFindings()->create([
         'kind' => LocalFinding::KIND_VULNERABILITY,
-        'rule_id' => "CVE-2024-{$i}",
+        'rule_id' => 'CVE-2024-56201',
         'title' => 'Jinja sandbox breakout',
-        'file_path' => 'requirements.txt',
+        'file_path' => "service-{$i}/requirements.txt",
         'package_name' => 'Jinja2',
         'package_version' => '3.1.4',
     ]));

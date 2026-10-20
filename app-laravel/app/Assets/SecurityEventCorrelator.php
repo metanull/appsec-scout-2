@@ -8,6 +8,7 @@ use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareSystem;
+use App\Sources\Context\SourceContextFacts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -16,9 +17,9 @@ use Illuminate\Support\Collection;
  * SecurityEvent synced from a live source (AzDO/ASoC/Detectify). Only sets a
  * correlation when confident; leaves it unset (never guesses) otherwise.
  *
- * Vulnerabilities correlate on (owner + package name + package version),
- * since Trivy and a source's own dependency scanner rarely agree on the
- * exact line within a lockfile. Secrets correlate on (owner + exact file
+ * Vulnerabilities correlate on (owner + package name + package version +
+ * advisory), since Trivy and a source's own dependency scanner rarely agree
+ * on the exact line within a lockfile. Secrets correlate on (owner + exact file
  * path + line proximity), since there is no package identity to anchor on.
  *
  * This only works because our pipeline always runs `trivy fs` against a
@@ -142,12 +143,33 @@ final class SecurityEventCorrelator
 
             if (is_string($name) && is_string($version)
                 && strcasecmp($name, $finding->package_name) === 0
-                && $version === $finding->package_version) {
+                && $version === $finding->package_version
+                && $this->sharesAdvisory($finding, $metadata)) {
                 return [$event, 'package_version'];
             }
         }
 
         return null;
+    }
+
+    /**
+     * One package version usually carries several advisories, and Trivy reports each as its own
+     * finding under its CVE (or GHSA id when there is none), so the finding's rule id must name
+     * the alert's own advisory.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    private function sharesAdvisory(LocalFinding $finding, array $metadata): bool
+    {
+        foreach ([SourceContextFacts::SECURITY_CVE, SourceContextFacts::SECURITY_ADVISORY] as $key) {
+            $advisory = SourceContextFacts::getString($metadata, $key);
+
+            if ($advisory !== null && strcasecmp($advisory, (string) $finding->rule_id) === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
