@@ -266,6 +266,76 @@ final class AzDoNormalizer
     }
 
     /**
+     * Advanced Security names a dependency alert's package in its `component` logical location
+     * and its advisory in the rule's additionalProperties (cveId, advisoryId).
+     *
+     * @param  array<string, mixed>  $meta
+     * @return array<string, mixed>
+     */
+    private static function withDependencyIdentity(array $meta, AzDoAlert $alert): array
+    {
+        $package = self::componentPackage($alert->logicalLocations);
+
+        if ($package !== null) {
+            $meta = SourceContextFacts::set($meta, SourceContextFacts::PACKAGE_NAME, $package['name']);
+            $meta = SourceContextFacts::set($meta, SourceContextFacts::PACKAGE_VERSION, $package['version']);
+            $meta = SourceContextFacts::set($meta, SourceContextFacts::PACKAGE_ECOSYSTEM, $package['ecosystem']);
+        }
+
+        $properties = $alert->tools[0]['rules'][0]['additionalProperties'] ?? null;
+
+        if (! is_array($properties)) {
+            return $meta;
+        }
+
+        $cveId = $properties['cveId'] ?? null;
+
+        if (is_string($cveId) && $cveId !== '') {
+            $meta['cve'] = $cveId;
+            $meta = SourceContextFacts::set($meta, SourceContextFacts::SECURITY_CVE, $cveId);
+        }
+
+        $advisoryId = $properties['advisoryId'] ?? null;
+
+        if (is_string($advisoryId) && $advisoryId !== '') {
+            $meta = SourceContextFacts::set($meta, SourceContextFacts::SECURITY_ADVISORY, $advisoryId);
+        }
+
+        return $meta;
+    }
+
+    /**
+     * A `component` location's fullyQualifiedName is "<Ecosystem> <name> <version>",
+     * e.g. "Npm ip-address 10.1.0".
+     *
+     * @param  list<array<string, mixed>>  $logicalLocations
+     * @return array{name: string, version: string, ecosystem: string}|null
+     */
+    private static function componentPackage(array $logicalLocations): ?array
+    {
+        foreach ($logicalLocations as $location) {
+            $qualifiedName = $location['fullyQualifiedName'] ?? null;
+
+            if (($location['kind'] ?? null) !== 'component' || ! is_string($qualifiedName)) {
+                continue;
+            }
+
+            $parts = explode(' ', trim($qualifiedName));
+
+            if (count($parts) < 3) {
+                continue;
+            }
+
+            $version = (string) array_pop($parts);
+            $ecosystem = (string) array_shift($parts);
+
+            return ['name' => implode(' ', $parts), 'version' => $version, 'ecosystem' => strtolower($ecosystem)];
+        }
+
+        return null;
+    }
+
+    /**
      * @param  array<string, mixed>  $location
      * @return array<string, mixed>
      */
@@ -337,6 +407,8 @@ final class AzDoNormalizer
                 $meta = SourceContextFacts::set($meta, SourceContextFacts::SECURITY_CVE, $alert->additionalData['cveId']);
             }
         }
+
+        $meta = self::withDependencyIdentity($meta, $alert);
 
         if ($alert->logicalLocations !== []) {
             $meta['logicalLocations'] = $alert->logicalLocations;
