@@ -10,6 +10,7 @@ use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\SecurityEvent;
 use App\Sources\Contracts\QueuesEnrichmentJobs;
+use App\Sources\Contracts\ReadsUpstreamState;
 use App\Sources\Contracts\Source;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\EventDto;
@@ -19,9 +20,10 @@ use App\Sources\ValueObjects\SourceCapabilities;
 use App\Sources\ValueObjects\TestResult;
 use App\Sync\EnrichAzDoSecretJob;
 use Carbon\Carbon;
+use GuzzleHttp\Exception\ClientException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
-final class AzDoSource implements QueuesEnrichmentJobs, Source
+final class AzDoSource implements QueuesEnrichmentJobs, ReadsUpstreamState, Source
 {
     private ?AzDoClient $client = null;
 
@@ -180,6 +182,42 @@ final class AzDoSource implements QueuesEnrichmentJobs, Source
         $alert = $client->getAlert($projectId, $repoId, $alertId);
 
         return $this->buildEventDto($alert, $projectId, $repoId);
+    }
+
+    /**
+     * AzDO answers 400 ("Sequence contains more than one element") on the single-alert endpoint
+     * for some alerts while its alert list still reports them, so a 400 there is answered by
+     * reading the same alert through the list. Any other failure, or an alert missing from the
+     * list, is reported with the original error.
+     */
+    public function fetchUpstreamState(SecurityEvent $event): EventState
+    {
+        $client = $this->getClient();
+        $metadata = self::metadataArray($event);
+
+        $projectId = is_string($metadata['sourceProjectId'] ?? null) ? $metadata['sourceProjectId'] : '';
+        $repoId = is_string($metadata['sourceRepoId'] ?? null) ? $metadata['sourceRepoId'] : '';
+        $alertId = (int) $event->source_event_id;
+
+        try {
+            return AzDoNormalizer::mapState($client->getAlert($projectId, $repoId, $alertId)->state);
+        } catch (ClientException $e) {
+            if ($e->getResponse()->getStatusCode() !== 400) {
+                throw $e;
+            }
+
+            try {
+                $listed = $client->findListedAlert($projectId, $repoId, $alertId);
+            } catch (\Throwable $listError) {
+                throw new \RuntimeException("{$e->getMessage()} (Reading it through the alert list also failed: {$listError->getMessage()})", 0, $e);
+            }
+
+            if ($listed === null) {
+                throw new \RuntimeException("{$e->getMessage()} (The alert list has no alert {$alertId} either.)", 0, $e);
+            }
+
+            return AzDoNormalizer::mapState($listed->state);
+        }
     }
 
     public function enrichEvent(SecurityEvent $event): ?EventDto
