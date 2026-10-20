@@ -133,7 +133,7 @@ it('addresses writeback to the source-reported system of a re-linked alert', fun
     $history = [];
     $stack = HandlerStack::create(new MockHandler([
         new Response(200, [], '{"Token":"token-1"}'),
-        new Response(200, [], '{}'),
+        new Response(200, [], '{"NProvidedIssues":1,"NUpdatedIssues":1}'),
     ]));
     $stack->push(Middleware::history($history));
 

@@ -61,7 +61,7 @@ it('pushes event state with expected body shape and odata filter', function () {
     $history = [];
     $stack = HandlerStack::create(new MockHandler([
         new Response(200, [], '{"Token":"token-1"}'),
-        new Response(200, [], '{}'),
+        new Response(200, [], '{"NProvidedIssues":1,"NUpdatedIssues":1,"NInheritedIssues":0,"NStatusConflictIssues":0}'),
     ]));
     $stack->push(Middleware::history($history));
 
@@ -87,13 +87,46 @@ it('pushes event state with expected body shape and odata filter', function () {
     expect($result->ok)->toBeTrue()
         ->and($history)->toHaveCount(2);
 
-    $payload = json_decode((string) $history[1]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    $request = $history[1]['request'];
+    parse_str($request->getUri()->getQuery(), $query);
+    $payload = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
 
-    expect($payload)->toBe([
-        'Status' => 'Noise',
-        'Comment' => 'False positive',
-        'odataFilter' => 'Id eq 1005',
+    expect($request->getMethod())->toBe('PUT')
+        ->and($request->getUri()->getPath())->toBe('api/v4/Issues/Application/app-001')
+        ->and($query)->toBe(['odataFilter' => 'Id eq 1005'])
+        ->and($payload)->toBe([
+            'Status' => 'Noise',
+            'Comment' => 'False positive',
+        ]);
+});
+
+it('fails the push when the filter matches no issue', function () {
+    $stack = HandlerStack::create(new MockHandler([
+        new Response(200, [], '{"Token":"token-1"}'),
+        new Response(200, [], '{"NProvidedIssues":0,"NUpdatedIssues":0,"NInheritedIssues":0,"NStatusConflictIssues":0}'),
+    ]));
+
+    $client = new AsocClient('key-id', 'key-secret', 'https://cloud.appscan.com', new Client(['handler' => $stack]));
+
+    $source = new AsocSource(app(Vault::class));
+    injectAsocClient($source, $client);
+
+    $event = SecurityEvent::factory()->create([
+        'source_id' => 'asoc',
+        'source_event_id' => '1006',
+        'state' => EventState::Open,
+        'pending_state' => EventState::Dismissed,
+        'pending_comment' => 'False positive',
+        'software_system_id' => SoftwareSystem::factory()->create([
+            'source_system_id' => 'app-002',
+            'source_id' => 'asoc',
+        ])->id,
     ]);
+
+    $result = $source->pushEventState($event->fresh(['softwareSystem']));
+
+    expect($result->ok)->toBeFalse()
+        ->and($result->error)->toContain('no issue 1006 in application app-002');
 });
 
 it('enriches remediation article, sanitizes html, and uses cache on second call', function () {

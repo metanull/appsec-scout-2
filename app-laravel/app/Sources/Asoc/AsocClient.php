@@ -68,15 +68,24 @@ final class AsocClient
         return $result;
     }
 
+    /**
+     * ASoC v4 "Update filtered issues": the issue is selected by the `odataFilter` query
+     * parameter, and the body holds only the new values. A filter that matches no issue
+     * still answers 200, so an empty match is reported as a failure.
+     */
     public function updateIssue(string $appId, string $issueId, string $status, ?string $comment = null): void
     {
-        $this->request('PUT', "api/v4/Issues/Application/{$appId}/Update", [
+        $result = $this->request('PUT', 'api/v4/Issues/Application/' . rawurlencode($appId), [
+            'query' => ['odataFilter' => "Id eq {$issueId}"],
             'json' => [
                 'Status' => $status,
                 'Comment' => $comment ?? '',
-                'odataFilter' => "Id eq {$issueId}",
             ],
         ]);
+
+        if ((int) ($result['NProvidedIssues'] ?? 0) === 0) {
+            throw new \RuntimeException("ASoC found no issue {$issueId} in application {$appId} to update");
+        }
     }
 
     public function getIssueArticleMarkdown(
