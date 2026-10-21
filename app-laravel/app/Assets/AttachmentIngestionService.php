@@ -39,6 +39,7 @@ final class AttachmentIngestionService
         private readonly SarifFindingParser $sarifParser,
         private readonly SecurityEventCorrelator $correlator,
         private readonly StaleRecordSweeper $sweeper,
+        private readonly LocalFindingScanReconciler $reconciler,
     ) {}
 
     public function ingest(Attachment $attachment): void
@@ -190,10 +191,11 @@ final class AttachmentIngestionService
             }
 
             // The whole SARIF file parsed and every finding upserted without throwing, so this
-            // is a complete pass of this report's tool — safe to auto-resolve what that tool
-            // no longer reports. Findings of the other tools reporting the same kind (Roslynator,
-            // SpotBugs and Opengrep all report code_quality) are not this pass's to judge.
-            $this->sweeper->sweepFindingsAsResolved($owner, $kind, $attachment->kind, $touchedIds);
+            // is a complete pass of this report's tool — safe to resolve what that tool no
+            // longer reports, and reopen what it reports again. Findings of the other tools
+            // reporting the same kind (Roslynator, SpotBugs and Opengrep all report
+            // code_quality) are not this pass's to judge.
+            $this->reconciler->reconcile($owner, $kind, $attachment, $touchedIds);
         });
     }
 

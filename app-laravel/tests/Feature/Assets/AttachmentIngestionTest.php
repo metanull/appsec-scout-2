@@ -1,6 +1,8 @@
 <?php
 
 use App\Assets\AttachmentService;
+use App\Assets\LocalFindingStatusChanger;
+use App\Audit\AuditLog;
 use App\Models\Enums\EventState;
 use App\Models\Enums\EventType;
 use App\Models\LocalFinding;
@@ -9,6 +11,7 @@ use App\Models\SecurityEvent;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
+use App\Models\User;
 
 function trivyFixture(string $name): string
 {
@@ -711,4 +714,79 @@ it('only resolves the code-quality findings of the tool whose report is being im
     expect($status('CA2100'))->toBe(EventState::Open)
         ->and($status('CA5350'))->toBe(EventState::Resolved)
         ->and($status('csharp.sqli'))->toBe(EventState::Open);
+});
+
+it('resolves every not-yet-closed finding a re-scan no longer reports, with a comment and an audit entry', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'first.json', minimalVulnerabilitySarif([
+        ['ruleId' => 'CVE-2024-0001', 'filePath' => 'requirements.txt', 'startLine' => 1],
+        ['ruleId' => 'CVE-2024-0002', 'filePath' => 'requirements.txt', 'startLine' => 2],
+    ]));
+    $inProgress = LocalFinding::query()->where('owner_id', $container->id)->where('rule_id', 'CVE-2024-0001')->sole();
+    $acknowledged = LocalFinding::query()->where('owner_id', $container->id)->where('rule_id', 'CVE-2024-0002')->sole();
+    $inProgress->forceFill(['status' => EventState::InProgress])->save();
+    $acknowledged->forceFill(['status' => EventState::Acknowledged])->save();
+
+    $report = $service->attachTo($container, 'vulnerabilities', 'application/json', 'second.json', minimalVulnerabilitySarif([]));
+
+    $inProgress->refresh();
+    expect($inProgress->status)->toBe(EventState::Resolved)
+        ->and($acknowledged->fresh()->status)->toBe(EventState::Resolved)
+        ->and($inProgress->resolved_by_scan_at)->not->toBeNull()
+        ->and($inProgress->status_before_scan_resolution)->toBe('in_progress')
+        ->and($inProgress->comments()->sole()->body)->toBe(sprintf('No longer reported by the vulnerabilities scan of %s (report #%d); resolved automatically.', now()->toDateString(), $report->id))
+        ->and($inProgress->comments()->sole()->author_user_id)->toBeNull();
+
+    $audit = AuditLog::query()->where('action', 'state_change')->where('subject_id', (string) $inProgress->id)->sole();
+    expect($audit->payload_json)->toMatchArray(['previous_status' => 'in_progress', 'new_status' => 'resolved', 'report_id' => $report->id]);
+});
+
+it('reopens a finding the scan resolved, with its earlier status, when a later scan reports it again', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+    $report = fn (array $findings): string => minimalVulnerabilitySarif($findings);
+    $finding = ['ruleId' => 'CVE-2024-0001', 'filePath' => 'requirements.txt', 'startLine' => 1];
+
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'first.json', $report([$finding]));
+    $row = LocalFinding::query()->where('owner_id', $container->id)->sole();
+    $row->forceFill(['status' => EventState::InProgress])->save();
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'second.json', $report([]));
+
+    $third = $service->attachTo($container, 'vulnerabilities', 'application/json', 'third.json', $report([$finding]));
+
+    $row->refresh();
+    expect($row->status)->toBe(EventState::InProgress)
+        ->and($row->resolved_by_scan_at)->toBeNull()
+        ->and($row->status_before_scan_resolution)->toBeNull()
+        ->and($row->comments()->orderByDesc('id')->first()->body)->toBe(sprintf('Reported again by the vulnerabilities scan of %s (report #%d); status restored to in_progress.', now()->toDateString(), $third->id));
+});
+
+it('does not reopen a finding an operator resolved when a later scan reports it again', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+    $finding = ['ruleId' => 'CVE-2024-0001', 'filePath' => 'requirements.txt', 'startLine' => 1];
+
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'first.json', minimalVulnerabilitySarif([$finding]));
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'second.json', minimalVulnerabilitySarif([]));
+    $row = LocalFinding::query()->where('owner_id', $container->id)->sole();
+    app(LocalFindingStatusChanger::class)->change($row, User::factory()->create(), EventState::Resolved, 'Fixed by the upgrade to 2.0.');
+
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'third.json', minimalVulnerabilitySarif([$finding]));
+
+    expect($row->fresh()->status)->toBe(EventState::Resolved)
+        ->and($row->fresh()->resolved_by_scan_at)->toBeNull();
+});
+
+it('resolves nothing when a report cannot be ingested completely', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'first.json', minimalVulnerabilitySarif([
+        ['ruleId' => 'CVE-2024-0001', 'filePath' => 'requirements.txt', 'startLine' => 1],
+    ]));
+
+    expect(fn () => $service->attachTo($container, 'vulnerabilities', 'application/json', 'broken.json', '{"version": "2.1.0", "runs": [{'))
+        ->toThrow(InvalidArgumentException::class, 'The SARIF report is not valid JSON');
+
+    expect(LocalFinding::query()->where('owner_id', $container->id)->sole()->status)->toBe(EventState::Open);
 });

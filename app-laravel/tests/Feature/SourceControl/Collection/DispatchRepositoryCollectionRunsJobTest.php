@@ -57,7 +57,7 @@ beforeEach(function () {
 
             if ($outputPath !== null) {
                 File::ensureDirectoryExists(dirname($outputPath));
-                File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+                File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
             }
         }
 
@@ -168,7 +168,7 @@ it('completes as partial when one of several repository jobs fails', function ()
 
             if ($outputPath !== null) {
                 File::ensureDirectoryExists(dirname($outputPath));
-                File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+                File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
             }
         }
 

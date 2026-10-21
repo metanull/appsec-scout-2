@@ -37,6 +37,7 @@ class LocalFinding extends Model
             'start_line' => 'integer',
             'end_line' => 'integer',
             'status' => EventState::class,
+            'resolved_by_scan_at' => 'datetime',
             'overridden_severity' => EventSeverity::class,
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',

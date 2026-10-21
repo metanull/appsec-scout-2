@@ -15,8 +15,8 @@ beforeEach(function () {
 it('zips both vulnerability and secret attachments for a single container', function () {
     $container = SecurityContainer::factory()->create(['name' => 'payments-api']);
 
-    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"vuln":true}');
-    app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"secret":true}');
+    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"runs":[],"vuln":true}');
+    app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"runs":[],"secret":true}');
 
     $path = app(FindingsZipBuilder::class)->build($container);
 
@@ -36,8 +36,8 @@ it('zips both vulnerability and secret attachments for a single container', func
 it('zips code-quality attachments for dotnet, java, and opengrep kinds alongside vulnerabilities and secrets', function () {
     $container = SecurityContainer::factory()->create(['name' => 'payments-api']);
 
-    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"vuln":true}');
-    app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"secret":true}');
+    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"runs":[],"vuln":true}');
+    app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"runs":[],"secret":true}');
     app(AttachmentService::class)->attachTo($container, 'code-quality-dotnet', 'application/json', 'dotnet.json', '{"runs":[]}');
     app(AttachmentService::class)->attachTo($container, 'code-quality-java', 'application/json', 'java.json', '{"runs":[]}');
     app(AttachmentService::class)->attachTo($container, 'code-quality-opengrep', 'application/json', 'opengrep.json', '{"runs":[]}');
@@ -63,8 +63,8 @@ it('zips findings from every descendant container for a software system', functi
     $containerA = SecurityContainer::factory()->forSystem($system)->create(['name' => 'service-a']);
     $containerB = SecurityContainer::factory()->forSystem($system)->create(['name' => 'service-b']);
 
-    app(AttachmentService::class)->attachTo($containerA, 'vulnerabilities', 'application/json', 'a.json', '{"a":true}');
-    app(AttachmentService::class)->attachTo($containerB, 'secrets', 'application/json', 'b.json', '{"b":true}');
+    app(AttachmentService::class)->attachTo($containerA, 'vulnerabilities', 'application/json', 'a.json', '{"runs":[],"a":true}');
+    app(AttachmentService::class)->attachTo($containerB, 'secrets', 'application/json', 'b.json', '{"runs":[],"b":true}');
 
     $path = app(FindingsZipBuilder::class)->build($system);
 
@@ -84,8 +84,8 @@ it('zips findings from every descendant container for a software asset across sy
     $containerA = SecurityContainer::factory()->forSystem($systemA)->create(['name' => 'service-a']);
     $containerB = SecurityContainer::factory()->forSystem($systemB)->create(['name' => 'service-b']);
 
-    app(AttachmentService::class)->attachTo($containerA, 'vulnerabilities', 'application/json', 'a.json', '{"a":true}');
-    app(AttachmentService::class)->attachTo($containerB, 'secrets', 'application/json', 'b.json', '{"b":true}');
+    app(AttachmentService::class)->attachTo($containerA, 'vulnerabilities', 'application/json', 'a.json', '{"runs":[],"a":true}');
+    app(AttachmentService::class)->attachTo($containerB, 'secrets', 'application/json', 'b.json', '{"runs":[],"b":true}');
 
     $path = app(FindingsZipBuilder::class)->build($asset);
 
@@ -109,7 +109,7 @@ it('downloads a findings zip for a container', function () {
     $user->syncRoles(['Reader']);
 
     $container = SecurityContainer::factory()->create(['name' => 'payments-api']);
-    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"vuln":true}');
+    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"runs":[],"vuln":true}');
 
     $this->actingAs($user)
         ->get(route('security-containers.findings.download', ['container' => $container->id]))
@@ -123,7 +123,7 @@ it('downloads a findings zip for a software system', function () {
 
     $system = SoftwareSystem::factory()->create(['name' => 'payments-service']);
     $container = SecurityContainer::factory()->forSystem($system)->create();
-    app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"secret":true}');
+    app(AttachmentService::class)->attachTo($container, 'secrets', 'application/json', 'secrets.json', '{"runs":[],"secret":true}');
 
     $this->actingAs($user)
         ->get(route('software-systems.findings.download', ['system' => $system->id]))
@@ -138,7 +138,7 @@ it('downloads a findings zip for a software asset', function () {
     $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
     $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id]);
     $container = SecurityContainer::factory()->forSystem($system)->create();
-    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"vuln":true}');
+    app(AttachmentService::class)->attachTo($container, 'vulnerabilities', 'application/json', 'vuln.json', '{"runs":[],"vuln":true}');
 
     $this->actingAs($user)
         ->get(route('assets.findings.download', ['asset' => $asset->id]))

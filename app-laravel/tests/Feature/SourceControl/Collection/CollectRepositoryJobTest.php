@@ -75,7 +75,7 @@ function fakeCollectorProcesses(?Closure $onTrivy = null): void
             if ($outputPath !== null) {
                 File::ensureDirectoryExists(dirname($outputPath));
                 File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx')
-                    ? '{"components":[]}'
+                    ? '{"bomFormat":"CycloneDX","components":[]}'
                     : '{"runs":[]}');
             }
 
@@ -283,7 +283,7 @@ it('does not let one failing Trivy scan prevent the other two from attaching', f
 
         if ($outputPath !== null) {
             File::ensureDirectoryExists(dirname($outputPath));
-            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
         }
 
         return Process::result(exitCode: 0);
@@ -306,7 +306,7 @@ it('counts a repository as failed for the run when one Trivy scan fails but the 
 
         if ($outputPath !== null) {
             File::ensureDirectoryExists(dirname($outputPath));
-            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
         }
 
         return Process::result(exitCode: 0);
@@ -354,7 +354,7 @@ it('marks the run partial when one repository is fully clean and another has a f
 
         if ($outputPath !== null) {
             File::ensureDirectoryExists(dirname($outputPath));
-            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
         }
 
         return Process::result(exitCode: 0);
@@ -435,7 +435,7 @@ it('records a ToolInvocation row with outcome failed and a non-null output_tail 
 
         if ($outputPath !== null) {
             File::ensureDirectoryExists(dirname($outputPath));
-            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"components":[]}' : '{"runs":[]}');
+            File::put($outputPath, str_contains(implode(' ', $parts), 'cyclonedx') ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
         }
 
         return Process::result(exitCode: 0);

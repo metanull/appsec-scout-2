@@ -2,7 +2,6 @@
 
 namespace App\Assets;
 
-use App\Models\Enums\EventState;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
 use App\Models\SoftwareComponent;
@@ -12,7 +11,7 @@ use App\Models\SoftwareSystem;
  * Mark-and-sweep staleness for rows populated by a full enumeration/scan pass — Source
  * fetchSystems()/fetchContainers(), Source Control fetchProjects()/fetchRepositories(), or an
  * Attachment ingestion. Given the ids touched during one complete pass, marks every other
- * existing row in the same scope as removed (or, for LocalFinding, resolved), and un-marks a
+ * existing row in the same scope as removed, and un-marks a
  * SoftwareSystem/SecurityContainer/SoftwareComponent that reappears in a later pass.
  *
  * Callers must only invoke a sweep method after a pass finishes without throwing — a partial
@@ -65,25 +64,5 @@ final class StaleRecordSweeper
                 ->whereIn('id', $touchedIds)->whereNotNull('removed_at')
                 ->update(['removed_at' => null]);
         }
-    }
-
-    /**
-     * Auto-resolves LocalFinding rows of the given kind and report kind (the tool that reported
-     * them — several tools report code_quality on the same owner) that dropped out of that
-     * tool's latest scan,
-     * unless an operator already moved them to a different status — a resolved status is never
-     * reverted here on reappearance, since automation must never override a manual decision and
-     * there is no way to tell a sweep-set Resolved apart from an operator-set one.
-     *
-     * @param  list<int>  $touchedIds
-     */
-    public function sweepFindingsAsResolved(SoftwareAsset|SoftwareSystem|SecurityContainer $owner, string $kind, string $reportKind, array $touchedIds): void
-    {
-        $owner->localFindings()
-            ->where('kind', $kind)
-            ->where('report_kind', $reportKind)
-            ->whereNotIn('id', $touchedIds)
-            ->where('status', EventState::Open->value)
-            ->update(['status' => EventState::Resolved->value]);
     }
 }

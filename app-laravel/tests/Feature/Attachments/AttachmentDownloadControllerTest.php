@@ -16,7 +16,7 @@ it('downloads an attachment for its owning software asset', function () {
     $user->syncRoles(['Reader']);
 
     $asset = SoftwareAsset::factory()->create();
-    $attachment = app(AttachmentService::class)->attachTo($asset, 'sbom', 'application/json', 'sbom.json', '{"components":[]}');
+    $attachment = app(AttachmentService::class)->attachTo($asset, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX","components":[]}');
 
     $this->actingAs($user)
         ->get(route('assets.attachments.download', ['asset' => $asset->id, 'attachment' => $attachment->id]))
@@ -31,7 +31,7 @@ it('returns 404 when the attachment does not belong to the requested software sy
 
     $systemA = SoftwareSystem::factory()->create();
     $systemB = SoftwareSystem::factory()->create();
-    $attachment = app(AttachmentService::class)->attachTo($systemA, 'sbom', 'application/json', 'sbom.json', '{}');
+    $attachment = app(AttachmentService::class)->attachTo($systemA, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX"}');
 
     $this->actingAs($user)
         ->get(route('software-systems.attachments.download', ['system' => $systemB->id, 'attachment' => $attachment->id]))
@@ -54,7 +54,7 @@ it('returns 404 when the attachment does not belong to the requested security co
 
 it('requires the alerts.view permission', function () {
     $asset = SoftwareAsset::factory()->create();
-    $attachment = app(AttachmentService::class)->attachTo($asset, 'sbom', 'application/json', 'sbom.json', '{}');
+    $attachment = app(AttachmentService::class)->attachTo($asset, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX"}');
 
     $userWithoutPermission = User::factory()->create();
     $userWithoutPermission->syncRoles([]);

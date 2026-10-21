@@ -2,6 +2,7 @@
 
 namespace App\Assets\Parsers;
 
+use InvalidArgumentException;
 use JsonException;
 
 /**
@@ -22,11 +23,16 @@ final class CycloneDxSbomParser
      */
     public function parse(string $payload): array
     {
+        // An unreadable SBOM must fail the import rather than read as "no components": the
+        // import marks every component it did not see as removed.
         try {
-            /** @var array<string, mixed> $data */
             $data = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return [];
+        } catch (JsonException $exception) {
+            throw new InvalidArgumentException('The SBOM is not valid JSON: ' . $exception->getMessage(), previous: $exception);
+        }
+
+        if (! is_array($data) || ($data['bomFormat'] ?? null) !== 'CycloneDX') {
+            throw new InvalidArgumentException('The SBOM is not a CycloneDX document (no "bomFormat": "CycloneDX").');
         }
 
         $components = $data['components'] ?? null;

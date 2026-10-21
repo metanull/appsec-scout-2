@@ -49,12 +49,18 @@ it('parses a secret sarif result with a pre-masked match and no package fields',
         ->and($finding->metadata['result']['message']['text'])->toContain('****');
 });
 
-it('returns an empty list for invalid json', function () {
-    expect(app(SarifFindingParser::class)->parse('not json'))->toBe([]);
+it('refuses invalid json, so a broken report never reads as a report without findings', function () {
+    expect(fn () => app(SarifFindingParser::class)->parse('not json'))
+        ->toThrow(InvalidArgumentException::class, 'The SARIF report is not valid JSON');
 });
 
-it('returns an empty list when there are no runs', function () {
-    expect(app(SarifFindingParser::class)->parse('{"version":"2.1.0"}'))->toBe([]);
+it('refuses a report without runs', function () {
+    expect(fn () => app(SarifFindingParser::class)->parse('{"version":"2.1.0"}'))
+        ->toThrow(InvalidArgumentException::class, 'The SARIF report has no "runs" array.');
+});
+
+it('returns an empty list for a report whose runs found nothing', function () {
+    expect(app(SarifFindingParser::class)->parse('{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Trivy"}},"results":[]}]}'))->toBe([]);
 });
 
 it('derives severity from level for a Roslynator result with no Trivy-style Severity field', function () {

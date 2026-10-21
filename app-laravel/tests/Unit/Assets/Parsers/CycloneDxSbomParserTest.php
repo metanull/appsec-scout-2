@@ -46,8 +46,14 @@ it('still skips application-type components without a purl', function () {
     expect(collect($components)->pluck('name'))->not->toContain('src/DiffingTool.Service/packages.lock.json');
 });
 
-it('returns an empty list for invalid json', function () {
-    expect((new CycloneDxSbomParser)->parse('not json'))->toBe([]);
+it('refuses invalid json, so a broken SBOM never reads as an SBOM without components', function () {
+    expect(fn () => (new CycloneDxSbomParser)->parse('not json'))
+        ->toThrow(InvalidArgumentException::class, 'The SBOM is not valid JSON');
+});
+
+it('refuses a document that is not CycloneDX', function () {
+    expect(fn () => (new CycloneDxSbomParser)->parse('{"components":[]}'))
+        ->toThrow(InvalidArgumentException::class, 'The SBOM is not a CycloneDX document');
 });
 
 it('returns an empty list when there are no components', function () {
