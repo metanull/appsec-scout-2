@@ -76,6 +76,22 @@ supplied through a per-job-scoped `.netrc`/`.git-credentials`, never as a proces
 shell string), then runs the same three `trivy fs` invocations against the shared `trivy-server`
 container SbomScan uses: SBOM as CycloneDX, vulnerabilities and secrets as SARIF.
 
+For every `pom.xml`, Trivy fetches the parent and BOM POMs over HTTP, and does so in each of the
+three scans. Maven Central answers a sweep's burst of those requests with `429 Too Many
+Requests`, then blocks Trivy's user agent from that IP for 30 minutes (`Retry-After: 1800`).
+Trivy treats this as fatal, so every Java repository in the sweep failed within a second. Each
+job therefore writes a per-job Maven `settings.xml` under its scratch root and passes it to Trivy
+as `MAVEN_HOME`, which keeps `HOME` and Trivy's own cache untouched. That `settings.xml` mirrors
+`central` to `repository_collection.maven_mirror_url`, set through the
+`REPOSITORY_COLLECTION_MAVEN_MIRROR_URL` variable in the root `.env`. The default is Google's
+official Maven Central mirror; point it at a corporate repository manager when one exists.
+Repositories that a `pom.xml` declares itself, such as an Azure Artifacts feed, are left alone.
+An empty value sends Trivy to Maven Central directly.
+
+When a scan produces no report, the Error log message includes Trivy's exit code and its `FATAL`
+error, or the end of stderr when there is no `FATAL` line. The scan's `ToolInvocation`
+`output_tail` keeps the stderr tail. The Trivy token is redacted from both.
+
 Results are written **directly**, in-process — reusing `App\Assets\AttachmentTargetResolver` and
 `App\Assets\AzDoScanResultDtoFactory` exactly as `PendingSbomScanImporter` does for
 `run.jsonl` lines, then `App\Assets\AttachmentService::attachTo()`. There is no `run.jsonl`, no
