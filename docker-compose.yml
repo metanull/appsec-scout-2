@@ -311,6 +311,9 @@ services:
             SKIP_APP_BOOTSTRAP: "1"
             TRIVY_SERVER_URL: "${TRIVY_SERVER_URL:-http://trivy-server:4954}"
             REPOSITORY_COLLECTION_WORKSPACE: /workspace-scratch
+            # Maven Central mirror Trivy resolves POMs through (see config/repository_collection.php).
+            # No value: passed through only when set in the root .env, so the config default applies otherwise.
+            REPOSITORY_COLLECTION_MAVEN_MIRROR_URL:
             # Overrides the shared .env's LOG_STACK/LOG_LEVEL for this container only (env vars set
             # here take precedence over the .env file phpdotenv loads from the app_storage volume) —
             # adds Laravel's built-in `stderr` channel so collector activity is visible via

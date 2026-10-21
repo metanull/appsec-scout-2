@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
+use XMLWriter;
 
 /**
  * Clones one Azure DevOps repository, runs Trivy against it (SBOM as
@@ -96,9 +97,10 @@ final class CollectRepositoryJob implements ShouldQueue
 
             if ($cloned) {
                 $securityContainer = $this->resolveOwner($resolver);
+                $trivyEnvironment = $this->trivyEnvironment($scratchRoot);
 
                 foreach ($this->reportKinds() as $report) {
-                    $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $report);
+                    $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $trivyEnvironment, $report);
                 }
             }
         } finally {
@@ -276,12 +278,57 @@ final class CollectRepositoryJob implements ShouldQueue
         ];
     }
 
-    /** @param array{kind: string, extraArgs: list<string>, extension: string} $report */
+    /**
+     * Trivy reads Maven's global settings from $MAVEN_HOME/conf/settings.xml, so a per-job
+     * MAVEN_HOME under the scratch root redirects `central` to the configured mirror without
+     * touching HOME (which also holds Trivy's own cache directory).
+     *
+     * @return array<string, string>
+     */
+    private function trivyEnvironment(string $scratchRoot): array
+    {
+        $mirrorUrl = (string) config('repository_collection.maven_mirror_url');
+
+        if ($mirrorUrl === '') {
+            return [];
+        }
+
+        $mavenHome = $scratchRoot . '/maven';
+        File::ensureDirectoryExists($mavenHome . '/conf');
+        File::put($mavenHome . '/conf/settings.xml', $this->mavenMirrorSettings($mirrorUrl));
+
+        return ['MAVEN_HOME' => $mavenHome];
+    }
+
+    private function mavenMirrorSettings(string $mirrorUrl): string
+    {
+        $xml = new XMLWriter;
+        $xml->openMemory();
+        $xml->startDocument('1.0', 'UTF-8');
+        $xml->startElement('settings');
+        $xml->startElement('mirrors');
+        $xml->startElement('mirror');
+        $xml->writeElement('id', 'appsec-scout-central-mirror');
+        $xml->writeElement('mirrorOf', 'central');
+        $xml->writeElement('url', $mirrorUrl);
+        $xml->endElement();
+        $xml->endElement();
+        $xml->endElement();
+        $xml->endDocument();
+
+        return $xml->outputMemory();
+    }
+
+    /**
+     * @param  array<string, string>  $trivyEnvironment
+     * @param  array{kind: string, extraArgs: list<string>, extension: string}  $report
+     */
     private function scanAndAttach(
         AttachmentService $attachments,
         SecurityContainer $securityContainer,
         string $workDir,
         string $scratchRoot,
+        array $trivyEnvironment,
         array $report,
     ): void {
         $trivyServerUrl = (string) config('repository_collection.trivy_server_url');
@@ -309,7 +356,7 @@ final class CollectRepositoryJob implements ShouldQueue
         );
 
         try {
-            $result = Process::timeout(self::PER_SCAN_TIMEOUT)->run($command);
+            $result = Process::env($trivyEnvironment)->timeout(self::PER_SCAN_TIMEOUT)->run($command);
         } catch (Throwable $e) {
             $this->logFailure($report['kind'], $e->getMessage(), $e);
             $this->recordToolInvocation($securityContainer, $tool, $command, 'failed', null, $startedAt, now(), $e->getMessage());
@@ -318,9 +365,10 @@ final class CollectRepositoryJob implements ShouldQueue
         }
 
         if ($result->failed() || ! File::exists($outputPath) || File::size($outputPath) === 0) {
-            $message = 'Trivy scan did not produce output.';
-            $this->logFailure($report['kind'], $message);
-            $this->recordToolInvocation($securityContainer, $tool, $command, 'failed', $result->exitCode(), $startedAt, now(), $message);
+            $errorOutput = str_replace($token, '***REDACTED***', $result->errorOutput());
+            $message = $this->scanFailureMessage($result->exitCode(), $errorOutput);
+            $this->logFailure($report['kind'], $message, extra: ['exit_code' => $result->exitCode()]);
+            $this->recordToolInvocation($securityContainer, $tool, $command, 'failed', $result->exitCode(), $startedAt, now(), trim($errorOutput) !== '' ? $errorOutput : $message);
 
             return;
         }
@@ -351,6 +399,20 @@ final class CollectRepositoryJob implements ShouldQueue
             'attachment_id' => $attachment->id,
             'size_bytes' => $attachment->size_bytes,
         ]));
+    }
+
+    /**
+     * Trivy logs INFO/WARN lines first and ends a failed run with a FATAL entry (which may span
+     * several lines), so the message keeps everything from the last FATAL on — or, when there is
+     * none, the end of stderr.
+     */
+    private function scanFailureMessage(?int $exitCode, string $errorOutput): string
+    {
+        $message = "Trivy scan did not produce output (exit code {$exitCode}).";
+        $fatalAt = strrpos($errorOutput, 'FATAL');
+        $detail = trim($fatalAt === false ? $errorOutput : substr($errorOutput, $fatalAt));
+
+        return $detail === '' ? $message : $message . ' ' . $this->tail($detail, 1000);
     }
 
     private function trivyToolName(string $kind): string
@@ -451,11 +513,12 @@ final class CollectRepositoryJob implements ShouldQueue
         return str_starts_with($content, "\xEF\xBB\xBF") ? substr($content, 3) : $content;
     }
 
-    private function logFailure(string $operation, string $message, ?Throwable $exception = null): void
+    /** @param  array<string, mixed>  $extra */
+    private function logFailure(string $operation, string $message, ?Throwable $exception = null, array $extra = []): void
     {
         $this->degraded = true;
 
-        $context = $this->logContext($operation);
+        $context = $this->logContext($operation, $extra);
 
         // Not Log::error() — see failed()'s identical comment.
         Log::channel('single')->error($message, $context);

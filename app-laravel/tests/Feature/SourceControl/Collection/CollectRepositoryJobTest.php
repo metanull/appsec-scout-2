@@ -452,3 +452,91 @@ it('records a ToolInvocation row with outcome failed and a non-null output_tail 
         ->and($invocation->outcome)->toBe('failed')
         ->and($invocation->output_tail)->not->toBeNull();
 });
+
+// ---------------------------------------------------------------------------
+// Maven Central mirror — Central rate-limits Trivy's burst of POM requests
+// with a 30-minute 429 block, so every scan resolves `central` via a mirror.
+// ---------------------------------------------------------------------------
+
+it('points every Trivy scan at the configured Maven Central mirror', function () {
+    config(['repository_collection.maven_mirror_url' => 'https://maven-mirror.example.test/maven2/?a=1&b=2']);
+    $mirrors = [];
+
+    Process::fake(function ($process) use (&$mirrors) {
+        $parts = $process->command;
+
+        if (($parts[0] ?? null) === 'trivy') {
+            $mavenHome = $process->environment['MAVEN_HOME'] ?? null;
+            $settings = $mavenHome !== null ? simplexml_load_file($mavenHome . '/conf/settings.xml') : false;
+            $mirrors[] = $settings === false ? null : [(string) $settings->mirrors->mirror->mirrorOf, (string) $settings->mirrors->mirror->url];
+
+            $outputPath = $parts[array_search('--output', $parts, true) + 1];
+            File::ensureDirectoryExists(dirname($outputPath));
+            File::put($outputPath, in_array('cyclonedx', $parts, true) ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), repositoryCollectionRunForJobTest()->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    expect($mirrors)->toBe(array_fill(0, 3, ['central', 'https://maven-mirror.example.test/maven2/?a=1&b=2']));
+});
+
+it('lets Trivy reach Maven Central directly when no mirror is configured', function () {
+    config(['repository_collection.maven_mirror_url' => '']);
+    $environments = [];
+
+    Process::fake(function ($process) use (&$environments) {
+        $parts = $process->command;
+
+        if (($parts[0] ?? null) === 'trivy') {
+            $environments[] = $process->environment;
+
+            $outputPath = $parts[array_search('--output', $parts, true) + 1];
+            File::ensureDirectoryExists(dirname($outputPath));
+            File::put($outputPath, in_array('cyclonedx', $parts, true) ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), repositoryCollectionRunForJobTest()->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    expect($environments)->toBe([[], [], []]);
+});
+
+it('records Trivy\'s exit code and fatal error when a scan fails', function () {
+    $stderr = "2026-10-21T15:51:20Z\tINFO\t[secret] Secret scanning is enabled\n"
+        . "2026-10-21T15:51:22Z\tFATAL\tError\tremote Maven repository returned 429 Too Many Requests for https://repo.maven.apache.org/maven2/x.pom. Retry-After: 1800.\n"
+        . "The repository blocks all subsequent requests from this IP until the block clears.\n";
+
+    fakeCollectorProcesses(fn (array $parts) => Process::result(exitCode: 1, errorOutput: $stderr));
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), repositoryCollectionRunForJobTest()->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->where('context_json->operation', AttachmentIngestionService::KIND_SECRETS)->firstOrFail();
+    $invocation = ToolInvocation::query()->where('tool', 'trivy-secret')->firstOrFail();
+
+    expect($errorLog->message)->toStartWith('Trivy scan did not produce output (exit code 1). FATAL')
+        ->and($errorLog->message)->toContain('429 Too Many Requests')
+        ->and($errorLog->message)->toContain('blocks all subsequent requests')
+        ->and($errorLog->message)->not->toContain('Secret scanning is enabled')
+        ->and($errorLog->context_json['exit_code'])->toBe(1)
+        ->and($invocation->output_tail)->toContain('Secret scanning is enabled')
+        ->and($invocation->output_tail)->toContain('429 Too Many Requests');
+});
+
+it('never stores the Trivy token from Trivy\'s own error output', function () {
+    fakeCollectorProcesses(fn (array $parts) => Process::result(exitCode: 1, errorOutput: "FATAL\tauthentication failed with token fake-token\n"));
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), repositoryCollectionRunForJobTest()->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    expect(ErrorLog::query()->where('message', 'like', '%fake-token%')->exists())->toBeFalse()
+        ->and(ToolInvocation::query()->where('output_tail', 'like', '%fake-token%')->exists())->toBeFalse()
+        ->and(ErrorLog::query()->where('message', 'like', '%***REDACTED***%')->count())->toBe(3);
+});

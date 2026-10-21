@@ -35,4 +35,24 @@ return [
 
     'trivy_timeout' => env('REPOSITORY_COLLECTION_TRIVY_TIMEOUT', '15m'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Maven Central mirror
+    |--------------------------------------------------------------------------
+    |
+    | Trivy resolves every pom.xml's parent and BOM POMs over HTTP. Maven
+    | Central answers a collection sweep's burst of those requests with 429
+    | Too Many Requests and then blocks Trivy's user agent from this IP for
+    | 30 minutes, which Trivy treats as fatal — every Java repository after
+    | the first then fails. CollectRepositoryJob therefore hands Trivy a
+    | per-job Maven settings.xml mirroring `central` to this URL (Google's
+    | official Maven Central mirror by default; point it at a corporate
+    | repository manager if one exists). Repositories a pom.xml declares
+    | itself are untouched. An empty value sends Trivy to Maven Central
+    | directly.
+    |
+    */
+
+    'maven_mirror_url' => env('REPOSITORY_COLLECTION_MAVEN_MIRROR_URL', 'https://maven-central.storage-download.googleapis.com/maven2/'),
+
 ];
