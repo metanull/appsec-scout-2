@@ -5,10 +5,7 @@ namespace App\Assets;
 use App\Assets\Parsers\SarifArtifactUriNormalizer;
 use App\Audit\Recorder;
 use App\Models\LocalFinding;
-use App\Models\LocalFindingComment;
-use App\Models\LocalFindingWorkItemLink;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,6 +24,7 @@ final class LocalFindingFilePathRepairer
     public function __construct(
         private readonly SarifArtifactUriNormalizer $normalizer,
         private readonly Recorder $recorder,
+        private readonly LocalFindingMerger $merger,
     ) {}
 
     /**
@@ -69,7 +67,16 @@ final class LocalFindingFilePathRepairer
         }
 
         $relative = $this->normalizer->normalize($finding->file_path, $root);
-        $newHash = LocalFinding::computeDedupHash((string) $finding->rule_id, $relative, $finding->start_line);
+        $metadata = $finding->getAttribute('metadata');
+        $newHash = LocalFinding::identityHash(
+            (string) $finding->kind,
+            (string) $finding->rule_id,
+            $relative,
+            $finding->start_line,
+            $finding->package_name,
+            $finding->package_version,
+            LocalFinding::sarifFingerprint(is_array($metadata) ? ($metadata['result'] ?? null) : null),
+        );
 
         $twin = LocalFinding::query()
             ->where('owner_type', $finding->owner_type)
@@ -111,44 +118,7 @@ final class LocalFindingFilePathRepairer
 
     private function mergeIntoTwin(LocalFinding $stale, LocalFinding $twin): void
     {
-        $movedComments = LocalFindingComment::query()->where('local_finding_id', $stale->id)->update(['local_finding_id' => $twin->id]);
-        $movedWorkItemLinks = LocalFindingWorkItemLink::query()->where('local_finding_id', $stale->id)->update(['local_finding_id' => $twin->id]);
-
-        $twinUpdates = [
-            'first_seen_at' => $this->earliest(
-                $stale->first_seen_at === null ? null : Carbon::parse((string) $stale->first_seen_at),
-                $twin->first_seen_at === null ? null : Carbon::parse((string) $twin->first_seen_at),
-            ),
-        ];
-
-        if ($stale->correlated_security_event_id !== null && $twin->correlated_security_event_id === null) {
-            $twinUpdates['correlated_security_event_id'] = $stale->correlated_security_event_id;
-            $twinUpdates['correlation_method'] = $stale->correlation_method;
-        }
-
-        $twin->forceFill($twinUpdates)->save();
-
-        $staleId = $stale->id;
-        $stale->delete();
-
-        $this->recorder->recordLocalFindingMerged(LocalFinding::class, (string) $twin->id, [
-            'merged_from_id' => $staleId,
-            'moved_comments' => $movedComments,
-            'moved_work_item_links' => $movedWorkItemLinks,
-        ]);
-    }
-
-    private function earliest(?Carbon $a, ?Carbon $b): ?Carbon
-    {
-        if ($a === null) {
-            return $b;
-        }
-
-        if ($b === null) {
-            return $a;
-        }
-
-        return $a->lt($b) ? $a : $b;
+        $this->merger->merge($stale, $twin);
     }
 
     /**

@@ -219,7 +219,7 @@ final class AttachmentIngestionService
             'file_path' => $finding->filePath,
             'start_line' => $finding->startLine,
             'end_line' => $finding->endLine,
-            'dedup_hash' => LocalFinding::computeDedupHash($finding->ruleId, $finding->filePath, $finding->startLine),
+            'dedup_hash' => $this->identityHash($kind, $finding),
             'package_name' => $finding->packageName,
             'package_version' => $finding->packageVersion,
             'metadata' => json_encode($finding->metadata, JSON_THROW_ON_ERROR),
@@ -233,20 +233,21 @@ final class AttachmentIngestionService
         // PostgreSQL rejects an upsert whose batch hits the same conflict key twice
         // ("ON CONFLICT DO UPDATE command cannot affect row a second time"), while
         // MySQL and SQLite apply the rows in order. A SARIF report can contain two
-        // results sharing (rule_id, file_path, start_line) — the same dedup_hash —
-        // so collapse duplicates to the last occurrence up front; owner_type/
-        // owner_id/kind are constant here, leaving dedup_hash as the effective key.
+        // results with the same identity (e.g. one package version reported at two
+        // places in a lockfile), so collapse duplicates to the last occurrence up
+        // front; owner_type/owner_id/kind are constant here, leaving dedup_hash as
+        // the effective key.
         $rows = array_values(array_column($rows, null, 'dedup_hash'));
 
         foreach (array_chunk($rows, 500) as $chunk) {
-            // first_seen_at/created_at, and the identity columns (rule_id/file_path/start_line,
-            // which dedup_hash is itself derived from) are deliberately excluded from the
-            // update-columns list — first_seen_at must survive re-scans, and the identity
-            // columns are already guaranteed identical whenever dedup_hash matches.
+            // first_seen_at/created_at and rule_id/file_path (part of every identity, so
+            // already identical whenever dedup_hash matches) are deliberately excluded from the
+            // update-columns list — first_seen_at must survive re-scans. start_line is updated:
+            // a vulnerability or fingerprinted finding keeps its identity when its line moves.
             LocalFinding::query()->upsert(
                 $chunk,
                 ['owner_type', 'owner_id', 'kind', 'dedup_hash'],
-                ['attachment_id', 'title', 'description', 'severity', 'end_line', 'package_name', 'package_version', 'metadata', 'software_system_id', 'software_asset_id', 'last_seen_at', 'updated_at'],
+                ['attachment_id', 'title', 'description', 'severity', 'start_line', 'end_line', 'package_name', 'package_version', 'metadata', 'software_system_id', 'software_asset_id', 'last_seen_at', 'updated_at'],
             );
         }
 
@@ -271,13 +272,14 @@ final class AttachmentIngestionService
         foreach ($findings as $finding) {
             $record = $owner->localFindings()->firstOrNew([
                 'kind' => $kind,
-                'rule_id' => $finding->ruleId,
-                'file_path' => $finding->filePath,
-                'start_line' => $finding->startLine,
+                'dedup_hash' => $this->identityHash($kind, $finding),
             ]);
             $isNew = ! $record->exists;
 
             $record->fill([
+                'rule_id' => $finding->ruleId,
+                'file_path' => $finding->filePath,
+                'start_line' => $finding->startLine,
                 'attachment_id' => $attachment->id,
                 'title' => $finding->title,
                 'description' => $finding->description,
@@ -299,6 +301,19 @@ final class AttachmentIngestionService
         }
 
         return $touchedIds;
+    }
+
+    private function identityHash(string $kind, ParsedFinding $finding): string
+    {
+        return LocalFinding::identityHash(
+            $kind,
+            $finding->ruleId,
+            $finding->filePath,
+            $finding->startLine,
+            $finding->packageName,
+            $finding->packageVersion,
+            LocalFinding::sarifFingerprint($finding->metadata['result'] ?? null),
+        );
     }
 
     /**
