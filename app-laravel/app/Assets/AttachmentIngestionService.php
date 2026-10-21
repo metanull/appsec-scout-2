@@ -190,9 +190,10 @@ final class AttachmentIngestionService
             }
 
             // The whole SARIF file parsed and every finding upserted without throwing, so this
-            // is a complete pass — safe to auto-resolve anything of this kind not seen this
-            // time.
-            $this->sweeper->sweepFindingsAsResolved($owner, $kind, $touchedIds);
+            // is a complete pass of this report's tool — safe to auto-resolve what that tool
+            // no longer reports. Findings of the other tools reporting the same kind (Roslynator,
+            // SpotBugs and Opengrep all report code_quality) are not this pass's to judge.
+            $this->sweeper->sweepFindingsAsResolved($owner, $kind, $attachment->kind, $touchedIds);
         });
     }
 
@@ -212,6 +213,7 @@ final class AttachmentIngestionService
         $rows = array_map(fn (ParsedFinding $finding): array => [
             'attachment_id' => $attachment->id,
             'kind' => $kind,
+            'report_kind' => $attachment->kind,
             'rule_id' => $finding->ruleId,
             'title' => $finding->title,
             'description' => $finding->description,
@@ -247,7 +249,7 @@ final class AttachmentIngestionService
             LocalFinding::query()->upsert(
                 $chunk,
                 ['owner_type', 'owner_id', 'kind', 'dedup_hash'],
-                ['attachment_id', 'title', 'description', 'severity', 'start_line', 'end_line', 'package_name', 'package_version', 'metadata', 'software_system_id', 'software_asset_id', 'last_seen_at', 'updated_at'],
+                ['attachment_id', 'report_kind', 'title', 'description', 'severity', 'start_line', 'end_line', 'package_name', 'package_version', 'metadata', 'software_system_id', 'software_asset_id', 'last_seen_at', 'updated_at'],
             );
         }
 
@@ -281,6 +283,7 @@ final class AttachmentIngestionService
                 'file_path' => $finding->filePath,
                 'start_line' => $finding->startLine,
                 'attachment_id' => $attachment->id,
+                'report_kind' => $attachment->kind,
                 'title' => $finding->title,
                 'description' => $finding->description,
                 'severity' => $finding->severity,

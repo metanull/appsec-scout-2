@@ -189,7 +189,9 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
   Finding identity" below; a true unique `(owner, purl)` constraint for Dependency), bumping
   `last_seen_at` and keeping the row's status, comments, work-item links and correlation. After
   a complete, successful pass, `App\Assets\StaleRecordSweeper` diffs the ids touched this run
-  against everything previously present in that same `(owner, kind)` scope: a Local Finding no
+  against everything previously present in that same scope — `(owner, kind, report_kind)` for a
+  Local Finding, `report_kind` being the scan report (attachment kind) that reported it, since
+  Roslynator, SpotBugs and Opengrep all report `code_quality` on one repository: a Local Finding no
   longer reported auto-transitions to `status = Resolved` (never overriding a status an operator
   already set manually), and a Dependency no longer reported gets `removed_at` set — cleared again
   if it reappears in a later scan. The sweep only runs once the whole parse/upsert loop finishes

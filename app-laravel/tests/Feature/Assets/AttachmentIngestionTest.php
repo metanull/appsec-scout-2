@@ -678,3 +678,37 @@ function vulnerabilitySarif(array $findings): string
         ]],
     ], JSON_THROW_ON_ERROR);
 }
+
+function codeQualitySarif(string $tool, array $ruleIds): string
+{
+    return json_encode(['version' => '2.1.0', 'runs' => [[
+        'tool' => ['driver' => ['name' => $tool, 'rules' => array_map(fn (string $id): array => ['id' => $id, 'shortDescription' => ['text' => "{$id} description"]], $ruleIds)]],
+        'results' => array_map(fn (string $id): array => [
+            'ruleId' => $id,
+            'level' => 'warning',
+            'message' => ['text' => "{$id} finding"],
+            'locations' => [['physicalLocation' => ['artifactLocation' => ['uri' => 'src/App.cs'], 'region' => ['startLine' => 10]]]],
+        ], $ruleIds),
+    ]]], JSON_THROW_ON_ERROR);
+}
+
+it('only resolves the code-quality findings of the tool whose report is being imported', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+
+    $service->attachTo($container, 'code-quality-dotnet', 'application/json', 'roslynator.sarif', codeQualitySarif('Roslynator', ['CA2100', 'CA5350']));
+    $service->attachTo($container, 'code-quality-opengrep', 'application/json', 'opengrep.sarif', codeQualitySarif('Opengrep', ['csharp.sqli']));
+
+    $status = fn (string $rule): EventState => LocalFinding::query()->where('owner_id', $container->id)->where('rule_id', $rule)->sole()->status;
+
+    expect($status('CA2100'))->toBe(EventState::Open)
+        ->and($status('CA5350'))->toBe(EventState::Open)
+        ->and($status('csharp.sqli'))->toBe(EventState::Open)
+        ->and(LocalFinding::query()->where('rule_id', 'CA2100')->sole()->report_kind)->toBe('code-quality-dotnet');
+
+    $service->attachTo($container, 'code-quality-dotnet', 'application/json', 'roslynator.sarif', codeQualitySarif('Roslynator', ['CA2100']));
+
+    expect($status('CA2100'))->toBe(EventState::Open)
+        ->and($status('CA5350'))->toBe(EventState::Resolved)
+        ->and($status('csharp.sqli'))->toBe(EventState::Open);
+});

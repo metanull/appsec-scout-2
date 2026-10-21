@@ -68,17 +68,20 @@ final class StaleRecordSweeper
     }
 
     /**
-     * Auto-resolves LocalFinding rows of the given kind that dropped out of the latest scan,
+     * Auto-resolves LocalFinding rows of the given kind and report kind (the tool that reported
+     * them — several tools report code_quality on the same owner) that dropped out of that
+     * tool's latest scan,
      * unless an operator already moved them to a different status — a resolved status is never
      * reverted here on reappearance, since automation must never override a manual decision and
      * there is no way to tell a sweep-set Resolved apart from an operator-set one.
      *
      * @param  list<int>  $touchedIds
      */
-    public function sweepFindingsAsResolved(SoftwareAsset|SoftwareSystem|SecurityContainer $owner, string $kind, array $touchedIds): void
+    public function sweepFindingsAsResolved(SoftwareAsset|SoftwareSystem|SecurityContainer $owner, string $kind, string $reportKind, array $touchedIds): void
     {
         $owner->localFindings()
             ->where('kind', $kind)
+            ->where('report_kind', $reportKind)
             ->whereNotIn('id', $touchedIds)
             ->where('status', EventState::Open->value)
             ->update(['status' => EventState::Resolved->value]);

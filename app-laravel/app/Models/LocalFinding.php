@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 #[Fillable([
     'owner_type', 'owner_id', 'attachment_id',
     'software_system_id', 'software_asset_id',
-    'kind', 'rule_id', 'title', 'description', 'severity',
+    'kind', 'report_kind', 'rule_id', 'title', 'description', 'severity',
     'file_path', 'start_line', 'end_line', 'dedup_hash',
     'package_name', 'package_version', 'metadata',
     'correlated_security_event_id', 'correlation_method',
