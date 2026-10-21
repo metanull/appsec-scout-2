@@ -157,8 +157,15 @@ final class AzDoClient
                 /** @var array{value: list<array<string,mixed>>} $data */
                 $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
 
+                // `criteria.alertType=secret` also returns every dismissed alert of the other
+                // types, without its locations. Kept, that copy would overwrite the full one the
+                // alert's own type listed earlier in the same fetch.
                 foreach ($data['value'] as $item) {
-                    $all[] = AzDoAlert::fromArray($item);
+                    $alert = AzDoAlert::fromArray($item);
+
+                    if ($alert->alertType === $alertType) {
+                        $all[] = $alert;
+                    }
                 }
 
                 $continuationToken = $response->getHeaderLine('x-ms-continuationtoken') ?: null;
