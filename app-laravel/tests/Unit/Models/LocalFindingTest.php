@@ -77,3 +77,36 @@ it('defaults message, help, tags and level to empty when metadata is null', func
         ->and($finding->tags())->toBe([])
         ->and($finding->sarifLevel())->toBeNull();
 });
+
+it('identifies a vulnerability by advisory, manifest, package and version, not by its line', function () {
+    $hash = fn (?int $line, string $version = '10.1.0', string $rule = 'CVE-2026-101911') => LocalFinding::identityHash(LocalFinding::KIND_VULNERABILITY, $rule, 'package-lock.json', $line, 'ip-address', $version, null);
+
+    expect($hash(1063))->toBe($hash(2210))
+        ->and($hash(1063, '10.1.1'))->not->toBe($hash(1063))
+        ->and($hash(1063, '10.1.0', 'CVE-2026-100001'))->not->toBe($hash(1063))
+        ->and($hash(1063))->not->toBe(LocalFinding::computeDedupHash('CVE-2026-101911', 'package-lock.json', 1063));
+});
+
+it('identifies a finding by its scanner fingerprint, not by its line, when the scanner provides one', function () {
+    $hash = fn (?int $line, ?string $fingerprint) => LocalFinding::identityHash(LocalFinding::KIND_CODE_QUALITY, 'js.eval-detected', 'src/app.js', $line, null, null, $fingerprint);
+
+    expect($hash(3, '{"matchBasedId/v1":"c670"}'))->toBe($hash(5, '{"matchBasedId/v1":"c670"}'))
+        ->and($hash(3, '{"matchBasedId/v1":"9f1e"}'))->not->toBe($hash(3, '{"matchBasedId/v1":"c670"}'))
+        ->and($hash(3, null))->toBe(LocalFinding::computeDedupHash('js.eval-detected', 'src/app.js', 3));
+});
+
+it('keeps the line in the identity of a secret or vulnerability without package or fingerprint', function () {
+    expect(LocalFinding::identityHash(LocalFinding::KIND_SECRET, 'github-pat', 'config.php', 12, null, null, null))
+        ->toBe(LocalFinding::computeDedupHash('github-pat', 'config.php', 12))
+        ->and(LocalFinding::identityHash(LocalFinding::KIND_VULNERABILITY, 'CVE-1', 'go.sum', 7, 'pkg', null, null))
+        ->toBe(LocalFinding::computeDedupHash('CVE-1', 'go.sum', 7));
+});
+
+it('reads a canonical SARIF fingerprint, preferring fingerprints over partialFingerprints', function () {
+    expect(LocalFinding::sarifFingerprint(['fingerprints' => ['b' => '2', 'a' => '1'], 'partialFingerprints' => ['x' => '9']]))
+        ->toBe('{"a":"1","b":"2"}')
+        ->and(LocalFinding::sarifFingerprint(['fingerprints' => ['a' => ''], 'partialFingerprints' => ['primaryLocationLineHash' => 'ab12:1']]))
+        ->toBe('{"primaryLocationLineHash":"ab12:1"}')
+        ->and(LocalFinding::sarifFingerprint(['ruleId' => 'CVE-1']))->toBeNull()
+        ->and(LocalFinding::sarifFingerprint(null))->toBeNull();
+});

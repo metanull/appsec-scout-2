@@ -139,9 +139,53 @@ it('populates dedup_hash on every ingested finding', function () {
 
     $finding = LocalFinding::query()->where('owner_id', $container->id)->firstOrFail();
 
-    expect($finding->dedup_hash)->toBe(
-        LocalFinding::computeDedupHash($finding->rule_id, $finding->file_path, $finding->start_line),
-    );
+    expect($finding->dedup_hash)->toBe($finding->currentIdentityHash());
+});
+
+it('keeps a vulnerability finding and its triage when the package moves to another lockfile line', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+    $report = fn (int $line): string => vulnerabilitySarif([
+        ['ruleId' => 'CVE-2026-101911', 'filePath' => 'package-lock.json', 'startLine' => $line, 'packageName' => 'ip-address', 'packageVersion' => '10.1.0'],
+    ]);
+
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'first.sarif', $report(1063));
+    $finding = LocalFinding::query()->where('owner_id', $container->id)->sole();
+    $finding->forceFill(['status' => EventState::Dismissed])->save();
+    $finding->comments()->create(['body' => 'Dismissed as a duplicate of the AzDO alert.', 'created_at' => now()]);
+
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'second.sarif', $report(2210));
+
+    $after = LocalFinding::query()->where('owner_id', $container->id)->sole();
+    expect($after->id)->toBe($finding->id)
+        ->and($after->start_line)->toBe(2210)
+        ->and($after->status)->toBe(EventState::Dismissed)
+        ->and($after->comments()->count())->toBe(1);
+});
+
+it('keeps a fingerprinted code finding open as the same row when its line moves', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+    $report = fn (int $line): string => json_encode(['version' => '2.1.0', 'runs' => [[
+        'tool' => ['driver' => ['name' => 'Opengrep', 'rules' => [['id' => 'js.eval-detected', 'shortDescription' => ['text' => 'eval() with a non-literal argument']]]]],
+        'results' => [[
+            'ruleId' => 'js.eval-detected',
+            'level' => 'warning',
+            'message' => ['text' => 'Detected eval with a dynamic argument.'],
+            'fingerprints' => ['matchBasedId/v1' => 'c67005e16d68_0'],
+            'locations' => [['physicalLocation' => ['artifactLocation' => ['uri' => 'src/app.js'], 'region' => ['startLine' => $line]]]],
+        ]],
+    ]]], JSON_THROW_ON_ERROR);
+
+    $service->attachTo($container, 'code-quality-opengrep', 'application/json', 'first.sarif', $report(3));
+    $first = LocalFinding::query()->where('owner_id', $container->id)->sole();
+
+    $service->attachTo($container, 'code-quality-opengrep', 'application/json', 'second.sarif', $report(5));
+
+    $after = LocalFinding::query()->where('owner_id', $container->id)->sole();
+    expect($after->id)->toBe($first->id)
+        ->and($after->start_line)->toBe(5)
+        ->and($after->status)->toBe(EventState::Open);
 });
 
 it('parses a secrets attachment into local findings', function () {

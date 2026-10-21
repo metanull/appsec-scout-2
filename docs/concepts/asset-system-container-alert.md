@@ -185,8 +185,9 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
   "Unlink" action. A Dependency (`SoftwareComponent`) still has to go through the Alert it's
   correlated to, or a Curated Link, if it needs a tracker ticket.
 - **Re-scanning updates and marks what disappeared.** Re-uploading a fresh SARIF/SBOM for the same
-  owner upserts on a natural key (`(owner, kind, rule_id, file_path, start_line)` for Local
-  Finding; a true unique `(owner, purl)` constraint for Dependency), bumping `last_seen_at`. After
+  owner upserts on a natural key (`(owner, kind, dedup_hash)` for Local Finding — see "Local
+  Finding identity" below; a true unique `(owner, purl)` constraint for Dependency), bumping
+  `last_seen_at` and keeping the row's status, comments, work-item links and correlation. After
   a complete, successful pass, `App\Assets\StaleRecordSweeper` diffs the ids touched this run
   against everything previously present in that same `(owner, kind)` scope: a Local Finding no
   longer reported auto-transitions to `status = Resolved` (never overriding a status an operator
@@ -212,8 +213,24 @@ scanned tree was cloned into, recorded on `attachments.source_root` by whichever
 the attachment — is stripped as a prefix when present. Trivy's own findings are unaffected: Trivy
 already emits a relative `uri` alongside `uriBaseId`, and that SARIF indirection is deliberately
 never resolved. Because `file_path` is stable across scratch/clone directories, so is
-`dedup_hash` (`rule_id` + `file_path` + `start_line`), which is what lets a re-scan from a fresh
-clone upsert onto the same row instead of creating a duplicate.
+`dedup_hash`, which is what lets a re-scan from a fresh clone upsert onto the same row instead of
+creating a duplicate.
+
+**Local Finding identity.** `dedup_hash` is `LocalFinding::identityHash()`, chosen so a finding
+whose line merely moved is still the same row, with its triage intact:
+
+- a vulnerability with a package: `rule_id` + `file_path` (the manifest) + `package_name` +
+  `package_version` — the line of a package in a lockfile moves with almost any dependency change;
+- otherwise, when the SARIF result carries `fingerprints` (else `partialFingerprints`) —
+  Opengrep's `matchBasedId/v1` survives line moves; Trivy emits none: `rule_id` + `file_path` +
+  that fingerprint;
+- otherwise `rule_id` + `file_path` + `start_line`.
+
+`start_line`/`end_line` are therefore updated on re-scan. Rows stored under the older,
+always-line-based identity were re-keyed by a migration (`App\Assets\LocalFindingIdentityRekeyer`),
+which merged rows that now share an identity into the one carrying the operator's work (a status
+decision, then links, comments and a severity override, then the most recently seen) through
+`App\Assets\LocalFindingMerger`, moving comments and work-item links onto it.
 
 Severity is derived per-finding, not per-kind: the parser first looks for a Trivy-style
 `Severity: ...` line inside the SARIF `message.text` free text (SARIF has no first-class severity

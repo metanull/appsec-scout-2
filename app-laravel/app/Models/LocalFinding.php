@@ -44,7 +44,7 @@ class LocalFinding extends Model
     }
 
     /**
-     * dedup_hash is fully derivable from (rule_id, file_path, start_line), so every write path
+     * dedup_hash is fully derivable from the row (see identityHash()), so every write path
      * gets a correct value for free here rather than each caller having to remember to compute
      * and set it — the column is NOT NULL and carries the real unique constraint (see the
      * local_findings migrations), so nothing should ever have to set it explicitly.
@@ -57,11 +57,7 @@ class LocalFinding extends Model
             // genuinely null at runtime for any caller that didn't set it explicitly.
             // @phpstan-ignore identical.alwaysFalse
             if ($finding->dedup_hash === null) {
-                $finding->dedup_hash = self::computeDedupHash(
-                    (string) $finding->rule_id,
-                    (string) $finding->file_path,
-                    $finding->start_line,
-                );
+                $finding->dedup_hash = $finding->currentIdentityHash();
             }
         });
     }
@@ -208,5 +204,78 @@ class LocalFinding extends Model
     public static function computeDedupHash(string $ruleId, string $filePath, ?int $startLine): string
     {
         return sha1($ruleId . "\0" . $filePath . "\0" . ($startLine === null ? '' : (string) $startLine));
+    }
+
+    /**
+     * The identity a re-scan matches this finding on, so a finding whose line merely moved keeps
+     * its status, comments and links. A vulnerability is the same finding for as long as the
+     * same advisory affects the same package version in the same manifest, wherever the package
+     * sits in the lockfile. Otherwise a stable scanner fingerprint (e.g. Opengrep's
+     * matchBasedId) identifies the match regardless of its line; only without one does the line
+     * stay part of the identity (computeDedupHash()).
+     */
+    public static function identityHash(
+        string $kind,
+        string $ruleId,
+        string $filePath,
+        ?int $startLine,
+        ?string $packageName,
+        ?string $packageVersion,
+        ?string $fingerprint,
+    ): string {
+        if ($kind === self::KIND_VULNERABILITY && $packageName !== null && $packageName !== '' && $packageVersion !== null && $packageVersion !== '') {
+            return sha1(implode("\0", ['package', $ruleId, $filePath, $packageName, $packageVersion]));
+        }
+
+        if ($fingerprint !== null) {
+            return sha1(implode("\0", ['fingerprint', $ruleId, $filePath, $fingerprint]));
+        }
+
+        return self::computeDedupHash($ruleId, $filePath, $startLine);
+    }
+
+    /**
+     * A SARIF result's stable fingerprint: its `fingerprints`, else its `partialFingerprints`,
+     * as a canonical string. Null when the scanner provides neither (Trivy, for one).
+     */
+    public static function sarifFingerprint(mixed $result): ?string
+    {
+        if (! is_array($result)) {
+            return null;
+        }
+
+        foreach (['fingerprints', 'partialFingerprints'] as $key) {
+            $fingerprints = $result[$key] ?? null;
+
+            if (! is_array($fingerprints)) {
+                continue;
+            }
+
+            $fingerprints = array_filter($fingerprints, fn (mixed $value): bool => is_string($value) && $value !== '');
+
+            if ($fingerprints !== []) {
+                ksort($fingerprints);
+
+                return json_encode($fingerprints, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            }
+        }
+
+        return null;
+    }
+
+    /** identityHash() of this row as it is stored now. */
+    public function currentIdentityHash(): string
+    {
+        $metadata = $this->getAttribute('metadata');
+
+        return self::identityHash(
+            (string) $this->kind,
+            (string) $this->rule_id,
+            (string) $this->file_path,
+            $this->start_line,
+            $this->package_name,
+            $this->package_version,
+            self::sarifFingerprint(is_array($metadata) ? ($metadata['result'] ?? null) : null),
+        );
     }
 }

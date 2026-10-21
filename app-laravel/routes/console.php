@@ -957,7 +957,7 @@ Artisan::command('local-findings:backfill-dedup-hash', function (): int {
         ->chunkById(500, function (Collection $findings) use (&$backfilled): void {
             foreach ($findings as $finding) {
                 $finding->forceFill([
-                    'dedup_hash' => LocalFinding::computeDedupHash($finding->rule_id, $finding->file_path, $finding->start_line),
+                    'dedup_hash' => $finding->currentIdentityHash(),
                 ])->save();
                 $backfilled++;
             }
