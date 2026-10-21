@@ -25,8 +25,11 @@ final class LocalFindingStatusChanger
 
             $previousStatus = $finding->getAttribute('status');
 
+            // An operator's decision replaces the scan's: a later scan must not reopen it.
             $finding->forceFill([
                 'status' => $newStatus,
+                'resolved_by_scan_at' => null,
+                'status_before_scan_resolution' => null,
                 'updated_at' => now(),
             ])->save();
 

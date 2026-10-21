@@ -188,15 +188,26 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
   owner upserts on a natural key (`(owner, kind, dedup_hash)` for Local Finding — see "Local
   Finding identity" below; a true unique `(owner, purl)` constraint for Dependency), bumping
   `last_seen_at` and keeping the row's status, comments, work-item links and correlation. After
-  a complete, successful pass, `App\Assets\StaleRecordSweeper` diffs the ids touched this run
-  against everything previously present in that same scope — `(owner, kind, report_kind)` for a
-  Local Finding, `report_kind` being the scan report (attachment kind) that reported it, since
-  Roslynator, SpotBugs and Opengrep all report `code_quality` on one repository: a Local Finding no
-  longer reported auto-transitions to `status = Resolved` (never overriding a status an operator
-  already set manually), and a Dependency no longer reported gets `removed_at` set — cleared again
-  if it reappears in a later scan. The sweep only runs once the whole parse/upsert loop finishes
-  without throwing, so a partial scan (e.g. a malformed SARIF entry mid-file) can never be
-  misread as "everything else is gone." The same `removed_at` treatment now also applies to
+  a complete, successful pass, the ids touched this run are compared with everything previously
+  present in the same scope:
+  - **Local Findings** — `App\Assets\LocalFindingScanReconciler`, scoped to
+    `(owner, kind, report_kind)`, `report_kind` being the scan report (attachment kind) that
+    reported the finding, since Roslynator, SpotBugs and Opengrep all report `code_quality` on one
+    repository. A finding no longer reported that is Open, Acknowledged or In progress becomes
+    Resolved, with `resolved_by_scan_at` and `status_before_scan_resolution` recorded, an
+    authorless comment ("No longer reported by the vulnerabilities scan of 2026-10-21 (report
+    #123); resolved automatically.") and a `state_change` audit entry. A finding the scan resolved
+    that a later report contains again is reopened with its earlier status, again with a comment
+    and an audit entry. Dismissed findings, and findings an operator resolved (any status change
+    through `LocalFindingStatusChanger` clears the scan marker), are never touched.
+  - **Dependencies** — `App\Assets\StaleRecordSweeper` sets `removed_at` on a component no longer
+    reported, cleared again if it reappears.
+
+  Both only run once the whole report parsed and upserted without throwing. The parsers refuse a
+  report that is not valid JSON, a SARIF report without `runs`, and an SBOM without
+  `"bomFormat": "CycloneDX"`, so a truncated or corrupt report fails the import (and is logged)
+  instead of reading as "everything is gone"; a valid report with no results still resolves what
+  it no longer contains. The same `removed_at` treatment now also applies to
   `SoftwareSystem`/`SecurityContainer` after a full Source or Source Control inventory sync (see
   [docs/concepts/sbom-and-static-analysis.md](sbom-and-static-analysis.md#related-inventory-sync-assetssync-azdo-projects-appsyncinventorysyncservice)).
 

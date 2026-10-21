@@ -93,7 +93,7 @@ it('deletes owned curated links and attachments when the asset is deleted', func
         'kind' => 'sbom',
         'mime' => 'application/json',
         'name' => 'sbom.json',
-        'payload' => '{"components":[]}',
+        'payload' => '{"bomFormat":"CycloneDX","components":[]}',
         'size_bytes' => 20,
         'created_at' => now(),
     ]);

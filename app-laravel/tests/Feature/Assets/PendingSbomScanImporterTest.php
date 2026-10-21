@@ -57,7 +57,7 @@ it('imports newly landed reports and advances the per-run cursor', function () {
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     $stats = app(PendingSbomScanImporter::class)->importPending();
@@ -83,7 +83,7 @@ it('enriches an ops-first system and container with the same facts a source sync
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     app(PendingSbomScanImporter::class)->importPending();
@@ -128,7 +128,7 @@ it('never overwrites an already-existing source-synced system or container', fun
 
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     app(PendingSbomScanImporter::class)->importPending();
@@ -152,7 +152,7 @@ it('does not reimport lines already covered by the cursor', function () {
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     $importer = app(PendingSbomScanImporter::class);
@@ -169,14 +169,14 @@ it('imports only newly appended lines on a subsequent run', function () {
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     $importer = app(PendingSbomScanImporter::class);
     $importer->importPending();
 
     File::ensureDirectoryExists($runDir . '/Billing');
-    File::put($runDir . '/Billing/billing-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Billing/billing-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::append($runDir . '/run.jsonl', writeSbomResultLine([
         'project' => 'Billing',
         'repository' => 'billing-api',
@@ -215,7 +215,7 @@ it('skips a run directory marked with .skip-import', function () {
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
     File::put($runDir . '/.skip-import', '');
 
@@ -242,7 +242,7 @@ it('aborts without importing or touching the cursor when the database is unreach
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     DB::shouldReceive('select')->once()->with('select 1')->andThrow(new RuntimeException('database unreachable'));
@@ -260,7 +260,7 @@ it('aborts without importing or touching the cursor when the queue backend is un
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     $fakeConnection = Mockery::mock();
@@ -292,7 +292,7 @@ it('keeps a cursor whose run directory still exists on disk', function () {
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl', writeSbomResultLine() . "\n");
 
     app(PendingSbomScanImporter::class)->importPending();
@@ -310,9 +310,9 @@ it('aborts mid-run without advancing the cursor when an unexpected error occurs 
     [$importPath, $cursorPath] = setUpSbomTestDirectories();
     $runDir = $importPath . '/20260101T000000Z';
     File::ensureDirectoryExists($runDir . '/Payments');
-    File::put($runDir . '/Payments/payments-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Payments/payments-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::ensureDirectoryExists($runDir . '/Billing');
-    File::put($runDir . '/Billing/billing-api.cdx.json', '{"components":[]}');
+    File::put($runDir . '/Billing/billing-api.cdx.json', '{"bomFormat":"CycloneDX","components":[]}');
     File::put($runDir . '/run.jsonl',
         writeSbomResultLine() . "\n" .
         writeSbomResultLine([

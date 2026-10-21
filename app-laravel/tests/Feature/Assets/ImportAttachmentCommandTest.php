@@ -39,7 +39,7 @@ it('fails when the software system does not exist and --system-name is omitted',
 });
 
 it('creates a software system and attaches a file when --system-name is provided', function () {
-    $path = tempAttachmentFile('{"components":[]}');
+    $path = tempAttachmentFile('{"bomFormat":"CycloneDX","components":[]}');
 
     $this->artisan('assets:import-attachment', [
         'source' => 'azdo',
@@ -67,7 +67,7 @@ it('converges with a software system row created by a live source sync', functio
         'name' => 'Synced From AzDO',
     ]);
 
-    $path = tempAttachmentFile('{"components":[]}');
+    $path = tempAttachmentFile('{"bomFormat":"CycloneDX","components":[]}');
 
     $this->artisan('assets:import-attachment', [
         'source' => 'azdo',

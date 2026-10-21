@@ -3,6 +3,7 @@
 namespace App\Assets\Parsers;
 
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use JsonException;
 
 /**
@@ -25,17 +26,18 @@ final class SarifFindingParser
      */
     public function parse(string $payload, ?string $sourceRoot = null): array
     {
+        // An unreadable report must fail the import rather than read as "no findings": the
+        // import resolves every finding of the tool it did not see.
         try {
-            /** @var array<string, mixed> $data */
             $data = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return [];
+        } catch (JsonException $exception) {
+            throw new InvalidArgumentException('The SARIF report is not valid JSON: ' . $exception->getMessage(), previous: $exception);
         }
 
-        $runs = $data['runs'] ?? null;
+        $runs = is_array($data) ? ($data['runs'] ?? null) : null;
 
         if (! is_array($runs)) {
-            return [];
+            throw new InvalidArgumentException('The SARIF report has no "runs" array.');
         }
 
         $parsed = [];

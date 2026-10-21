@@ -18,8 +18,8 @@ it('zips every descendant container sbom for a software system', function () {
     $containerA = SecurityContainer::factory()->forSystem($system)->create(['name' => 'service-a']);
     $containerB = SecurityContainer::factory()->forSystem($system)->create(['name' => 'service-b']);
 
-    app(AttachmentService::class)->attachTo($containerA, 'sbom', 'application/json', 'a.json', '{"a":true}');
-    app(AttachmentService::class)->attachTo($containerB, 'sbom', 'application/json', 'b.json', '{"b":true}');
+    app(AttachmentService::class)->attachTo($containerA, 'sbom', 'application/json', 'a.json', '{"bomFormat":"CycloneDX","a":true}');
+    app(AttachmentService::class)->attachTo($containerB, 'sbom', 'application/json', 'b.json', '{"bomFormat":"CycloneDX","b":true}');
 
     $path = app(SbomZipBuilder::class)->build($system);
 
@@ -43,8 +43,8 @@ it('zips every descendant container sbom for a software asset across systems', f
     $containerA = SecurityContainer::factory()->forSystem($systemA)->create(['name' => 'service-a']);
     $containerB = SecurityContainer::factory()->forSystem($systemB)->create(['name' => 'service-b']);
 
-    app(AttachmentService::class)->attachTo($containerA, 'sbom', 'application/json', 'a.json', '{"a":true}');
-    app(AttachmentService::class)->attachTo($containerB, 'sbom', 'application/json', 'b.json', '{"b":true}');
+    app(AttachmentService::class)->attachTo($containerA, 'sbom', 'application/json', 'a.json', '{"bomFormat":"CycloneDX","a":true}');
+    app(AttachmentService::class)->attachTo($containerB, 'sbom', 'application/json', 'b.json', '{"bomFormat":"CycloneDX","b":true}');
 
     $path = app(SbomZipBuilder::class)->build($asset);
 
@@ -70,7 +70,7 @@ it('downloads a zip of sboms for a software system', function () {
 
     $system = SoftwareSystem::factory()->create(['name' => 'payments-service']);
     $container = SecurityContainer::factory()->forSystem($system)->create(['name' => 'payments-api']);
-    app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', '{"components":[]}');
+    app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX","components":[]}');
 
     $this->actingAs($user)
         ->get(route('software-systems.sbom.download', ['system' => $system->id]))
@@ -85,7 +85,7 @@ it('downloads a zip of sboms for a software asset', function () {
     $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
     $system = SoftwareSystem::factory()->create(['software_asset_id' => $asset->id]);
     $container = SecurityContainer::factory()->forSystem($system)->create(['name' => 'payments-api']);
-    app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', '{"components":[]}');
+    app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX","components":[]}');
 
     $this->actingAs($user)
         ->get(route('assets.sbom.download', ['asset' => $asset->id]))

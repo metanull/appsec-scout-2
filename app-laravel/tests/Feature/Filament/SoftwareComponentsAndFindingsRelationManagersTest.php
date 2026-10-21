@@ -162,7 +162,7 @@ it('shows the download sbom action only when there is something to download', fu
     $user->syncRoles(['Reader']);
 
     $containerWithSbom = SecurityContainer::factory()->create();
-    app(AttachmentService::class)->attachTo($containerWithSbom, 'sbom', 'application/json', 'sbom.json', '{"components":[]}');
+    app(AttachmentService::class)->attachTo($containerWithSbom, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX","components":[]}');
 
     $containerWithoutSbom = SecurityContainer::factory()->create();
 
@@ -187,7 +187,7 @@ it('shows the download sbom action for a system when a descendant container has 
 
     $system = SoftwareSystem::factory()->create();
     $container = SecurityContainer::factory()->forSystem($system)->create();
-    app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', '{"components":[]}');
+    app(AttachmentService::class)->attachTo($container, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX","components":[]}');
 
     $emptySystem = SoftwareSystem::factory()->create();
     SecurityContainer::factory()->forSystem($emptySystem)->create();
@@ -242,7 +242,7 @@ it('shows the download findings action only when there is something to download'
     $user->syncRoles(['Reader']);
 
     $containerWithFindings = SecurityContainer::factory()->create();
-    app(AttachmentService::class)->attachTo($containerWithFindings, 'vulnerabilities', 'application/json', 'vuln.json', '{"vuln":true}');
+    app(AttachmentService::class)->attachTo($containerWithFindings, 'vulnerabilities', 'application/json', 'vuln.json', '{"runs":[],"vuln":true}');
 
     $containerWithoutFindings = SecurityContainer::factory()->create();
 

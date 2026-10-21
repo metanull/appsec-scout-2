@@ -117,7 +117,7 @@ it('returns a container\'s SBOM catalog with each component\'s vulnerabilities',
         'kind' => 'sbom',
         'mime' => 'application/json',
         'name' => $name,
-        'payload' => '{"components":[]}',
+        'payload' => '{"bomFormat":"CycloneDX","components":[]}',
         'size_bytes' => 17,
         'created_at' => $at,
     ]);
