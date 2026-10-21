@@ -152,3 +152,20 @@ it('reads the default branch when none is given, and reports a missing file clea
         ->and(fn () => $client->getFileContent('p', 'r', '/missing.txt', 'main'))
         ->toThrow(InvalidArgumentException::class, 'File /missing.txt not found in the repository at branch main.');
 });
+
+it('keeps only the alerts of the listed type', function () {
+    // Advanced Security answers criteria.alertType=secret with every dismissed alert, whatever
+    // its type, and without the locations its own type's listing carries.
+    $advSec = new Client(['handler' => new MockHandler([
+        new Response(200, [], json_encode(['value' => [
+            ['alertId' => 1, 'alertType' => 'secret', 'state' => 'dismissed', 'title' => 'Leaked token'],
+            ['alertId' => 2, 'alertType' => 'dependency', 'state' => 'dismissed', 'title' => 'ip-address advisory'],
+            ['alertId' => 3, 'alertType' => 'code', 'state' => 'dismissed', 'title' => 'SQL injection'],
+        ]], JSON_THROW_ON_ERROR)),
+    ])]);
+    $client = new AzDoClient('testorg', 'pat', 'https://dev.azure.com', new Client(['handler' => new MockHandler]), $advSec);
+
+    $alerts = $client->listAlerts('project-001', 'repo-001', 'secret');
+
+    expect(array_map(fn ($alert) => $alert->alertId, $alerts))->toBe([1]);
+});
