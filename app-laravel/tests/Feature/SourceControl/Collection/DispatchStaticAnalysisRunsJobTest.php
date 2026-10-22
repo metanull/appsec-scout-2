@@ -390,3 +390,30 @@ it('fails a scoped analysis run for a system it cannot analyse', function (Closu
     'removed system' => [fn () => SoftwareSystem::factory()->azdo()->create(['removed_at' => now()]), 'is no longer reported by its source'],
     'missing system' => [fn () => null, 'Software system #999999 no longer exists.'],
 ]);
+
+it('dispatches the batch on the configured static-analysis connection', function () {
+    Bus::fake();
+    config(['static_analysis_collection.queue_connection' => 'redis-static-analysis']);
+
+    bindRealAzDoReposWithFakeClientForStaticAnalysis([
+        new Response(200, [], staticAnalysisDispatcherFixture('projects.json')),
+        new Response(200, [], staticAnalysisDispatcherFixture('repositories.json')),
+        new Response(200, [], '{"value":[]}'),
+    ]);
+
+    (new DispatchStaticAnalysisRunsJob)->handle(app(SystemIntegrationRuntime::class));
+
+    Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->jobs->isNotEmpty()
+        && $batch->connection() === 'redis-static-analysis'
+        && $batch->queue() === 'static-analysis');
+});
+
+it('analyses on a Redis connection that never hands a running AnalyzeRepositoryJob to a second worker', function () {
+    $connection = config('queue.connections.redis-static-analysis');
+    $jobTimeout = (new ReflectionProperty(AnalyzeRepositoryJob::class, 'timeout'))->getDefaultValue();
+
+    expect($connection['driver'])->toBe('redis')
+        ->and($connection['queue'])->toBe('static-analysis')
+        ->and($connection['retry_after'])->toBeGreaterThan($jobTimeout)
+        ->and($connection['retry_after'])->toBeGreaterThan(config('queue.connections.redis.retry_after'));
+});

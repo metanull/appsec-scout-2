@@ -67,7 +67,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      * with an unusually large number of solutions can still exceed this —
      * collect-static-analysis.sh accepts the same unbounded-per-repo risk
      * today (only per-step timeouts exist there too); not a new gap this
-     * job introduces.
+     * job introduces. The `redis-static-analysis` connection's retry_after
+     * (config/queue.php) must stay above this value.
      */
     public int $timeout = 10800;
 

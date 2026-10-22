@@ -78,6 +78,31 @@ return [
             'after_commit' => false,
         ],
 
+        // The same Redis queue as `redis`, for CollectRepositoryJob only (the collector
+        // container's worker names this connection). Its retry_after must exceed
+        // CollectRepositoryJob::$timeout (7200), or Redis hands a still-running job to a
+        // second worker on the queue. Kept separate so `redis` retries crashed default-queue
+        // jobs after half an hour, not two hours.
+        'redis-collection' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'repository-collection',
+            'retry_after' => (int) env('REDIS_COLLECTION_QUEUE_RETRY_AFTER', 7260),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
+        // As `redis-collection`, for AnalyzeRepositoryJob (the static-analysis-collector
+        // container's worker). Its retry_after must exceed AnalyzeRepositoryJob::$timeout (10800).
+        'redis-static-analysis' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'static-analysis',
+            'retry_after' => (int) env('REDIS_STATIC_ANALYSIS_QUEUE_RETRY_AFTER', 10860),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

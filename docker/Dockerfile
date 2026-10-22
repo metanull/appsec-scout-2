@@ -295,8 +295,10 @@ RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \
 # own purge step for the full rationale.
 RUN apt-get purge -y linux-libc-dev
 
+# redis-collection: the queue connection whose retry_after outlasts CollectRepositoryJob's
+# timeout (app-laravel/config/queue.php), so a running job is never handed out twice.
 # -v: full exception traces on job failure go to stdout, not just a one-line summary.
-CMD ["php", "artisan", "queue:work", "--queue=repository-collection", "--tries=3", "--timeout=1800", "--max-time=3600", "-v"]
+CMD ["php", "artisan", "queue:work", "redis-collection", "--queue=repository-collection", "--tries=3", "--timeout=1800", "--max-time=3600", "-v"]
 
 # --- static-analysis-collector (published): lean CLI-only worker — git + the Laravel
 # app's PHP runtime, plus the .NET/Java build+analysis toolchain (Roslynator, SpotBugs +
@@ -339,7 +341,9 @@ ENV PATH="${PATH}:/usr/local/dotnet-tools" \
 # step for the full linux-libc-dev rationale.
 RUN apt-get purge -y linux-libc-dev
 
-CMD ["php", "artisan", "queue:work", "--queue=static-analysis", "--tries=3", "--timeout=1800", "--max-time=3600"]
+# redis-static-analysis: the queue connection whose retry_after outlasts
+# AnalyzeRepositoryJob's timeout (app-laravel/config/queue.php).
+CMD ["php", "artisan", "queue:work", "redis-static-analysis", "--queue=static-analysis", "--tries=3", "--timeout=1800", "--max-time=3600"]
 
 # --- ops (local only, never published): a sandboxed, ephemeral container for hands-on
 # appsec investigation — code analysis, secret scanning, dependency auditing, SBOM
