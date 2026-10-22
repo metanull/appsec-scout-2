@@ -21,11 +21,13 @@ use App\Jobs\PruneAuditLogs;
 use App\Jobs\PruneErrorLogs;
 use App\Jobs\PruneFailedJobs;
 use App\Jobs\PruneToolInvocations;
+use App\Mcp\Support\McpClientConfig;
 use App\Models\Attachment;
 use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
+use App\Models\User;
 use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\AzDo\AzDoNormalizer;
 use App\Sources\Contracts\Source;
@@ -78,6 +80,33 @@ Artisan::command('appsec:bootstrap-admin {--email=} {--password=} {--name=Admin}
 
     return self::SUCCESS;
 })->purpose('Create the first AppSec Scout admin account when no users exist');
+
+Artisan::command('mcp:client-config {email : The AppSec Scout user the MCP server acts as} {--format=json : json (claude_desktop_config.json) or claude-code (a `claude mcp add` command)}', function (McpClientConfig $config): int {
+    $email = Str::lower(trim((string) $this->argument('email')));
+    $user = User::query()->where('email', $email)->first();
+
+    if ($user === null) {
+        $this->error("No user with email {$email}.");
+
+        return self::FAILURE;
+    }
+
+    try {
+        $output = match ($this->option('format')) {
+            'json' => $config->desktopConfigJson($user),
+            'claude-code' => $config->claudeCodeCommand($user),
+            default => throw new InvalidArgumentException('Unknown --format: use json or claude-code.'),
+        };
+    } catch (RuntimeException|InvalidArgumentException $exception) {
+        $this->error($exception->getMessage());
+
+        return self::FAILURE;
+    }
+
+    $this->line($output);
+
+    return self::SUCCESS;
+})->purpose('Print the ready-to-paste MCP client configuration for one user');
 
 Artisan::command('triage:codesearch {search} {--pat=} {--organization=} {--scope=} {--attach-to=}', function (Vault $vault): int {
     $search = (string) $this->argument('search');

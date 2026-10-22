@@ -35,9 +35,24 @@ registered as the local server `appsec-scout` (`app-laravel/routes/ai.php`).
 
 ## Register the server
 
-Replace `<repo>` with the repository path (e.g. `E:/appsec-scout-2`) and `<email>` with the
-user's email. `--project-directory` makes Docker Compose read the repository's `.env`, so the
-same `COMPOSE_FILE` mode (MySQL / PostgreSQL / GHCR) as the running stack applies.
+The ready-to-paste configuration for the signed-in user is on **Profile → Integrations**, in the
+**Claude (MCP server)** section: the Claude Desktop JSON and the `claude mcp add` command, with
+copy buttons. To print it from a terminal on the machine that runs the stack, e.g. for another
+tool:
+
+```bash
+docker compose --project-name appsec-scout-2 exec -T app php artisan mcp:client-config <email>
+```
+
+This prints the Claude Desktop JSON; add `--format=claude-code` for the `claude mcp add` command.
+The generated configuration addresses the stack by its Compose project name, which
+`docker-compose.yml` passes to the `app` container as `MCP_CLIENT_COMPOSE_PROJECT`, so it works
+from any directory.
+
+To write it by hand instead, replace `<repo>` with the repository path (e.g. `E:/appsec-scout-2`)
+and `<email>` with the user's email. `--project-directory` makes Docker Compose read the
+repository's `.env`, so the same `COMPOSE_FILE` mode (MySQL / PostgreSQL / GHCR) as the running
+stack applies. `--project-name appsec-scout-2` works too while the stack is running.
 
 **Claude Code** (from any terminal, logged in with your Claude subscription):
 
