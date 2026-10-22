@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Assets;
 
+use App\Assets\Sbom\ContainerSbomMerger;
 use App\Models\Attachment;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareAsset;
@@ -13,32 +14,30 @@ use Illuminate\Support\Str;
 use ZipArchive;
 
 /**
- * Bundles every descendant container's most recent SBOM attachment for a
- * System or Asset into a single zip file, since SBOM data is only ever
- * collected at the container level.
+ * Bundles every descendant container's complete SBOM (its latest lock-file and committed-archive
+ * reports merged, see ContainerSbomMerger) for a System or Asset into a single zip file, since
+ * SBOM data is only ever collected at the container level.
  */
 final class SbomZipBuilder
 {
-    public function __construct(private readonly ContainerHierarchyResolver $containers) {}
+    private const KINDS = [AttachmentIngestionService::KIND_SBOM, AttachmentIngestionService::KIND_SBOM_ARCHIVES];
+
+    public function __construct(
+        private readonly ContainerHierarchyResolver $containers,
+        private readonly ContainerSbomMerger $sboms,
+    ) {}
 
     public function hasSbomAttachment(SoftwareAsset|SoftwareSystem|SecurityContainer $owner): bool
     {
         if ($owner instanceof SecurityContainer) {
-            return $owner->attachments()->where('kind', 'sbom')->exists();
+            return $this->sboms->hasSbom($owner);
         }
 
         return Attachment::query()
-            ->where('kind', 'sbom')
+            ->whereIn('kind', self::KINDS)
             ->where('owner_type', SecurityContainer::class)
             ->whereIn('owner_id', $this->containers->containersFor($owner)->pluck('id'))
             ->exists();
-    }
-
-    public function latestAttachmentId(SecurityContainer $container): ?int
-    {
-        $id = $container->attachments()->where('kind', 'sbom')->latest('created_at')->value('id');
-
-        return $id !== null ? (int) $id : null;
     }
 
     public function build(SoftwareSystem|SoftwareAsset $owner): ?string
@@ -46,13 +45,13 @@ final class SbomZipBuilder
         $entries = [];
 
         foreach ($this->containers->containersFor($owner) as $container) {
-            $attachment = $container->attachments()->where('kind', 'sbom')->latest('created_at')->first();
+            $sbom = $this->sboms->forContainer($container);
 
-            if ($attachment === null) {
+            if ($sbom === null) {
                 continue;
             }
 
-            $entries[$this->sanitizeEntryName($container->name)] = $attachment->payload;
+            $entries[$this->sanitizeEntryName($container->name)] = $sbom;
         }
 
         if ($entries === []) {

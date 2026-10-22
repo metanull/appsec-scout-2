@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Assets\AttachmentIngestionService;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
+use App\Assets\Sbom\ContainerSbomMerger;
 use App\Credentials\RunWithSystemCredentials;
 use App\Credentials\Vault;
 use App\Events\AttachmentStored;
@@ -15,8 +16,10 @@ use RuntimeException;
 /**
  * Pushes a freshly stored SBOM straight to Dependency-Track, scoped to the one
  * container it belongs to — not the full resync that `sbom:export-dependency-track`
- * performs, with the system Dependency-Track credential. A no-op for any other attachment
- * kind or any non-container owner.
+ * performs, with the system Dependency-Track credential. Either SBOM report (`sbom` or
+ * `sbom-archives`) triggers it, and each push uploads the container's two reports merged, since
+ * Dependency-Track replaces a project's whole BOM on every upload. A no-op for any other
+ * attachment kind or any non-container owner.
  *
  * Dependency-Track is provisioned by the default stack (dependencytrack-bootstrap), so a
  * missing API key is a misconfiguration: the push fails loudly instead of skipping.
@@ -26,6 +29,7 @@ class PushSbomAttachmentToDependencyTrack implements ShouldQueue
     public function __construct(
         private readonly DependencyTrackClientFactory $clientFactory,
         private readonly Vault $vault,
+        private readonly ContainerSbomMerger $sboms,
     ) {}
 
     /** @return list<object> */
@@ -38,7 +42,7 @@ class PushSbomAttachmentToDependencyTrack implements ShouldQueue
     {
         $attachment = $event->attachment;
 
-        if ($attachment->kind !== AttachmentIngestionService::KIND_SBOM) {
+        if (! in_array($attachment->kind, [AttachmentIngestionService::KIND_SBOM, AttachmentIngestionService::KIND_SBOM_ARCHIVES], true)) {
             return;
         }
 
@@ -53,7 +57,7 @@ class PushSbomAttachmentToDependencyTrack implements ShouldQueue
 
         $baseUrl = $this->vault->getSystem('dependencytrack.baseUrl') ?? 'http://dependencytrack-apiserver:8080';
 
-        $exporter = new DependencyTrackExporter($this->clientFactory->make($apiKey, $baseUrl));
+        $exporter = new DependencyTrackExporter($this->clientFactory->make($apiKey, $baseUrl), $this->sboms);
         $exporter->export($owner, 'latest');
     }
 }

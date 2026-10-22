@@ -2,6 +2,7 @@
 
 use App\Assets\DependencyTrack\DependencyTrackClient;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
+use App\Assets\Sbom\ContainerSbomMerger;
 use App\Models\SecurityContainer;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -35,7 +36,7 @@ it('uploads the latest stored sbom attachment for the container', function () {
     $stack->push(Middleware::history($history));
 
     $client = new DependencyTrackClient('api-key', 'http://dependencytrack-apiserver:8080', new Client(['handler' => $stack]));
-    $exporter = new DependencyTrackExporter($client);
+    $exporter = new DependencyTrackExporter($client, new ContainerSbomMerger);
 
     $exporter->export($container, 'latest');
 
@@ -65,7 +66,7 @@ it('downgrades an unsupported specVersion 1.7 payload to 1.6 before uploading', 
     $stack->push(Middleware::history($history));
 
     $client = new DependencyTrackClient('api-key', 'http://dependencytrack-apiserver:8080', new Client(['handler' => $stack]));
-    $exporter = new DependencyTrackExporter($client);
+    $exporter = new DependencyTrackExporter($client, new ContainerSbomMerger);
 
     $exporter->export($container, 'latest');
 
@@ -82,8 +83,37 @@ it('throws when the container has no sbom attachment', function () {
     $client = new DependencyTrackClient('api-key', 'http://dependencytrack-apiserver:8080', new Client([
         'handler' => new MockHandler([]),
     ]));
-    $exporter = new DependencyTrackExporter($client);
+    $exporter = new DependencyTrackExporter($client, new ContainerSbomMerger);
 
     expect(fn () => $exporter->export($container, 'latest'))
         ->toThrow(RuntimeException::class, 'No SBOM attachment found for container "no-sbom-repo".');
+});
+
+it('uploads the lock-file and committed-archive SBOMs merged into one BOM', function () {
+    $container = SecurityContainer::factory()->create(['name' => 'Phoenix-JBoss']);
+
+    foreach (['sbom' => 'pkg:maven/org.example/app@1.0.0', 'sbom-archives' => 'pkg:maven/org.apache.struts/struts2-core@2.3.16.3'] as $kind => $purl) {
+        $container->attachments()->create([
+            'kind' => $kind,
+            'mime' => 'application/json',
+            'name' => "{$kind}.json",
+            'payload' => json_encode(['bomFormat' => 'CycloneDX', 'specVersion' => '1.7', 'components' => [['bom-ref' => $purl, 'type' => 'library', 'name' => $purl, 'purl' => $purl]]], JSON_THROW_ON_ERROR),
+            'size_bytes' => 10,
+            'created_at' => now(),
+        ]);
+    }
+
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{}')]));
+    $stack->push(Middleware::history($history));
+
+    (new DependencyTrackExporter(new DependencyTrackClient('api-key', 'http://dependencytrack-apiserver:8080', new Client(['handler' => $stack])), new ContainerSbomMerger))
+        ->export($container, 'latest');
+
+    $body = json_decode((string) $history[0]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    $uploadedBom = json_decode((string) base64_decode((string) $body['bom'], true), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($history)->toHaveCount(1)
+        ->and(array_column($uploadedBom['components'], 'purl'))->toBe(['pkg:maven/org.example/app@1.0.0', 'pkg:maven/org.apache.struts/struts2-core@2.3.16.3'])
+        ->and($uploadedBom['specVersion'])->toBe('1.6');
 });

@@ -134,3 +134,36 @@ it('does not push sbom attachments belonging to a non-container owner', function
 
     expect($history)->toHaveCount(0);
 });
+
+it('pushes the merged SBOM when a committed-archive SBOM is stored', function () {
+    $history = [];
+    bindFakeDependencyTrackFactoryForAttachmentPushTest($history);
+    app(Vault::class)->set('dependencytrack.apiKey', null, 'vault-key');
+
+    $container = SecurityContainer::factory()->create(['name' => 'Phoenix-JBoss']);
+    $container->attachments()->create([
+        'kind' => 'sbom',
+        'mime' => 'application/json',
+        'name' => 'sbom.cdx.json',
+        'payload' => (string) file_get_contents(base_path('tests/Fixtures/Trivy/cyclonedx-sample.json')),
+        'size_bytes' => 2,
+        'created_at' => now()->subMinute(),
+    ]);
+
+    app(AttachmentService::class)->attachTo(
+        $container,
+        'sbom-archives',
+        'application/json',
+        'archives.cdx.json',
+        json_encode(['bomFormat' => 'CycloneDX', 'specVersion' => '1.6', 'components' => [[
+            'bom-ref' => 'struts', 'type' => 'library', 'name' => 'struts2-core', 'version' => '2.3.16.3', 'purl' => 'pkg:maven/org.apache.struts/struts2-core@2.3.16.3',
+        ]]], JSON_THROW_ON_ERROR),
+    );
+
+    $body = json_decode((string) $history[0]['request']->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    $purls = array_column(json_decode((string) base64_decode((string) $body['bom'], true), true, 512, JSON_THROW_ON_ERROR)['components'], 'purl');
+
+    expect($history)->toHaveCount(1)
+        ->and($purls)->toContain('pkg:maven/org.apache.struts/struts2-core@2.3.16.3')
+        ->and(count($purls))->toBeGreaterThan(1);
+});

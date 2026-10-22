@@ -4,22 +4,28 @@ declare(strict_types=1);
 
 namespace App\Assets\DependencyTrack;
 
+use App\Assets\Sbom\ContainerSbomMerger;
 use App\Models\SecurityContainer;
 use RuntimeException;
 
+/**
+ * Uploads a container's complete SBOM (lock files plus committed archives, see
+ * ContainerSbomMerger) as its Dependency-Track project's BOM. Dependency-Track replaces a
+ * project's whole BOM on every upload, so the two SBOM reports are always uploaded together.
+ */
 final class DependencyTrackExporter
 {
-    public function __construct(private readonly DependencyTrackClient $client) {}
+    public function __construct(
+        private readonly DependencyTrackClient $client,
+        private readonly ContainerSbomMerger $sboms,
+    ) {}
 
     public function export(SecurityContainer $container, string $projectVersion): void
     {
-        $attachment = $container->attachments()->where('kind', 'sbom')->latest('created_at')->first();
+        $sbom = $this->sboms->forContainer($container)
+            ?? throw new RuntimeException(sprintf('No SBOM attachment found for container "%s".', $container->name));
 
-        if ($attachment === null) {
-            throw new RuntimeException(sprintf('No SBOM attachment found for container "%s".', $container->name));
-        }
-
-        $this->client->uploadBom($container->name, $projectVersion, self::downgradeUnsupportedSpecVersion($attachment->payload));
+        $this->client->uploadBom($container->name, $projectVersion, self::downgradeUnsupportedSpecVersion($sbom));
     }
 
     /**

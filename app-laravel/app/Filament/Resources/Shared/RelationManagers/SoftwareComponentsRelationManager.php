@@ -82,10 +82,7 @@ class SoftwareComponentsRelationManager extends RelationManager
         $owner = $this->sbomOwner();
 
         return match (true) {
-            $owner instanceof SecurityContainer => route('security-containers.attachments.download', [
-                'container' => $owner->getKey(),
-                'attachment' => app(SbomZipBuilder::class)->latestAttachmentId($owner),
-            ]),
+            $owner instanceof SecurityContainer => route('security-containers.sbom.download', ['container' => $owner->getKey()]),
             $owner instanceof SoftwareSystem => route('software-systems.sbom.download', ['system' => $owner->getKey()]),
             $owner instanceof SoftwareAsset => route('assets.sbom.download', ['asset' => $owner->getKey()]),
         };
