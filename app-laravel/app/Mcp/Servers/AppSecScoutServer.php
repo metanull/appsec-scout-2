@@ -70,6 +70,9 @@ use Laravel\Mcp\Server\Tool;
     TEXT)]
 final class AppSecScoutServer extends Server
 {
+    /** The local handle `mcp:start` takes (routes/ai.php) and the name clients register it under. */
+    public const HANDLE = 'appsec-scout';
+
     /** @var array<int, class-string<Tool>> */
     protected array $tools = [
         WhoAmITool::class,
