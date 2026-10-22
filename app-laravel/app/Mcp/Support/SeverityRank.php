@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Support;
 
+use App\Assets\Sbom\ComponentAlertMatcher;
 use App\Assets\Sbom\ComponentVulnerabilityMatcher;
 use App\Models\Enums\EventSeverity;
 use App\Models\LocalFinding;
@@ -20,7 +21,7 @@ final class SeverityRank
 
     public static function ofAlert(SecurityEvent $alert): string
     {
-        return Format::enum($alert->getAttribute('severity')) ?? ComponentVulnerabilityMatcher::UNKNOWN;
+        return ComponentAlertMatcher::bucket($alert);
     }
 
     /**

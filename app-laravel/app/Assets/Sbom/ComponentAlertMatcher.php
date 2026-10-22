@@ -4,6 +4,7 @@ namespace App\Assets\Sbom;
 
 use App\Database\TextSearch;
 use App\Filament\Resources\SecurityEventResource\Support\SecurityEventTableQuery;
+use App\Models\Enums\EventSeverity;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareComponent;
@@ -67,6 +68,25 @@ final class ComponentAlertMatcher
         }
 
         return $matches;
+    }
+
+    /**
+     * The same summary shape ComponentVulnerabilityMatcher gives local findings.
+     *
+     * @param  list<SecurityEvent>  $alerts
+     * @return array{count: int, max_severity: string|null, by_severity: array<string, int>}
+     */
+    public function summarize(array $alerts): array
+    {
+        return ComponentVulnerabilityMatcher::summarizeBuckets(array_map(self::bucket(...), $alerts));
+    }
+
+    /** An alert's severity as one of the five levels, or "unknown". */
+    public static function bucket(SecurityEvent $alert): string
+    {
+        $severity = $alert->getAttribute('severity');
+
+        return $severity instanceof EventSeverity ? $severity->value : ComponentVulnerabilityMatcher::UNKNOWN;
     }
 
     /**
