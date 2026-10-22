@@ -23,6 +23,8 @@ use App\Mcp\Tools\Inventory\RestoreContainerSourceLinkTool;
 use App\Mcp\Tools\Inventory\UnlinkSystemFromAssetTool;
 use App\Mcp\Tools\Operations\GetOperationsStatusTool;
 use App\Mcp\Tools\Operations\ListErrorsTool;
+use App\Mcp\Tools\Sbom\FindAdvisoryImpactTool;
+use App\Mcp\Tools\Sbom\FindPackageUsageTool;
 use App\Mcp\Tools\Sbom\GetSbomTool;
 use App\Mcp\Tools\Sbom\ListSbomComponentsTool;
 use App\Mcp\Tools\Sync\DiscardPendingChangesTool;
@@ -86,6 +88,8 @@ final class AppSecScoutServer extends Server
         GetLocalFindingTool::class,
         ListSbomComponentsTool::class,
         GetSbomTool::class,
+        FindPackageUsageTool::class,
+        FindAdvisoryImpactTool::class,
         GetTriageSummaryTool::class,
         FindSimilarFindingsTool::class,
         SearchCodeTool::class,
