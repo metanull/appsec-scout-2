@@ -51,6 +51,11 @@ beforeEach(function () {
         $command = $process->command;
         $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
 
+        // The job inspects the cloned tree for committed archives, so the clone must exist.
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            File::ensureDirectoryExists((string) end($parts));
+        }
+
         if (($parts[0] ?? null) === 'trivy') {
             $outputIndex = array_search('--output', $parts, true);
             $outputPath = $outputIndex !== false ? $parts[$outputIndex + 1] : null;
@@ -160,6 +165,10 @@ it('completes as partial when one of several repository jobs fails', function ()
 
         if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone' && str_contains(implode(' ', $parts), 'frontend-app')) {
             return Process::result(exitCode: 1, errorOutput: 'fatal: could not read from remote repository');
+        }
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            File::ensureDirectoryExists((string) end($parts));
         }
 
         if (($parts[0] ?? null) === 'trivy') {

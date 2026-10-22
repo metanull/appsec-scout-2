@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 #[Fillable([
-    'owner_type', 'owner_id', 'attachment_id',
+    'owner_type', 'owner_id', 'attachment_id', 'report_kind',
     'software_system_id', 'software_asset_id',
     'name', 'version', 'ecosystem', 'purl', 'license', 'metadata',
     'first_seen_at', 'last_seen_at', 'removed_at',

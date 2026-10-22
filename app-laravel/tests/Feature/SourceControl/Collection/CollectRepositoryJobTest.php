@@ -5,9 +5,12 @@ use App\Assets\AttachmentService;
 use App\Assets\AttachmentTargetResolver;
 use App\Credentials\Vault;
 use App\Models\Attachment;
+use App\Models\Enums\EventState;
 use App\Models\ErrorLog;
+use App\Models\LocalFinding;
 use App\Models\RepositoryCollectionRun;
 use App\Models\SecurityContainer;
+use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
 use App\Models\ToolInvocation;
 use App\SourceControl\Collection\CollectRepositoryJob;
@@ -54,6 +57,28 @@ function collectRepositoryJobDependencies(): array
     return [app(AttachmentTargetResolver::class), app(AttachmentService::class), app(Vault::class)];
 }
 
+/**
+ * Stands in for `git clone`: creates the clone's working tree (the last argument) holding the
+ * given files, since the job inspects the tree for committed archives. A no-op for any other
+ * command.
+ *
+ * @param  list<string>  $files
+ */
+function createClonedTree(array $parts, array $files = []): void
+{
+    if (($parts[0] ?? null) !== 'git' || ($parts[1] ?? null) !== 'clone') {
+        return;
+    }
+
+    $workDir = (string) end($parts);
+    File::ensureDirectoryExists($workDir);
+
+    foreach ($files as $file) {
+        File::ensureDirectoryExists(dirname($workDir . '/' . $file));
+        File::put($workDir . '/' . $file, 'PK');
+    }
+}
+
 function fakeCollectorProcesses(?Closure $onTrivy = null): void
 {
     Process::fake(function ($process) use ($onTrivy) {
@@ -61,6 +86,8 @@ function fakeCollectorProcesses(?Closure $onTrivy = null): void
         $parts = is_array($command) ? $command : preg_split('/\s+/', (string) $command);
 
         if (($parts[0] ?? null) === 'git') {
+            createClonedTree($parts);
+
             return Process::result(exitCode: 0);
         }
 
@@ -464,6 +491,7 @@ it('points every Trivy scan at the configured Maven Central mirror', function ()
 
     Process::fake(function ($process) use (&$mirrors) {
         $parts = $process->command;
+        createClonedTree($parts);
 
         if (($parts[0] ?? null) === 'trivy') {
             $mavenHome = $process->environment['MAVEN_HOME'] ?? null;
@@ -490,6 +518,7 @@ it('lets Trivy reach Maven Central directly when no mirror is configured', funct
 
     Process::fake(function ($process) use (&$environments) {
         $parts = $process->command;
+        createClonedTree($parts);
 
         if (($parts[0] ?? null) === 'trivy') {
             $environments[] = $process->environment;
@@ -539,4 +568,205 @@ it('never stores the Trivy token from Trivy\'s own error output', function () {
     expect(ErrorLog::query()->where('message', 'like', '%fake-token%')->exists())->toBeFalse()
         ->and(ToolInvocation::query()->where('output_tail', 'like', '%fake-token%')->exists())->toBeFalse()
         ->and(ErrorLog::query()->where('message', 'like', '%***REDACTED***%')->count())->toBe(3);
+});
+
+// ---------------------------------------------------------------------------
+// Committed JAR/WAR/EAR archives — `trivy fs` reads only manifests and lock
+// files, so archives get two extra `trivy rootfs` scans with report kinds of
+// their own.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fakes a clone holding $files and a Trivy that answers each scan, keyed "<target>:<sbom|vuln|
+ * secret>", with the given payload (an empty report by default, a failure for false), recording
+ * every Trivy command into $commands.
+ *
+ * @param  list<string>  $files
+ * @param  array<string, string|false>  $reports
+ */
+function fakeClonedTreeScans(array $files, array $reports = [], ?array &$commands = null): void
+{
+    $commands = [];
+
+    Process::fake(function ($process) use ($files, $reports, &$commands) {
+        $parts = $process->command;
+        createClonedTree($parts, $files);
+
+        if (($parts[0] ?? null) !== 'trivy') {
+            return Process::result(exitCode: 0);
+        }
+
+        $commands[] = $parts;
+        $option = fn (string $name): ?string => ($index = array_search($name, $parts, true)) === false ? null : $parts[$index + 1];
+        $isSbom = $option('--format') === 'cyclonedx';
+        $payload = $reports[$parts[1] . ':' . ($isSbom ? 'sbom' : $option('--scanners'))] ?? ($isSbom ? '{"bomFormat":"CycloneDX","components":[]}' : '{"runs":[]}');
+
+        if ($payload === false) {
+            return Process::result(exitCode: 1, errorOutput: "FATAL\tjava DB download failed");
+        }
+
+        File::put((string) $option('--output'), $payload);
+
+        return Process::result(exitCode: 0);
+    });
+}
+
+/** @param  list<string>  $purls */
+function archiveScanCycloneDx(array $purls): string
+{
+    return json_encode([
+        'bomFormat' => 'CycloneDX',
+        'specVersion' => '1.6',
+        'components' => array_map(fn (string $purl, int $index): array => [
+            'bom-ref' => "component-{$index}",
+            'type' => 'library',
+            'name' => "component-{$index}",
+            'version' => '1.0.0',
+            'purl' => $purl,
+        ], $purls, array_keys($purls)),
+    ], JSON_THROW_ON_ERROR);
+}
+
+/** @param  array<string, string>  $findings  rule id => file path */
+function archiveScanSarif(array $findings): string
+{
+    return json_encode(['version' => '2.1.0', 'runs' => [[
+        'tool' => ['driver' => ['name' => 'Trivy', 'rules' => array_map(fn (string $id): array => ['id' => $id, 'shortDescription' => ['text' => "{$id} description"]], array_keys($findings))]],
+        'results' => array_map(fn (string $id, string $path): array => [
+            'ruleId' => $id,
+            'level' => 'error',
+            'message' => ['text' => "Package: org.example:{$id}\nInstalled Version: 1.0.0\nSeverity: CRITICAL"],
+            'locations' => [['physicalLocation' => ['artifactLocation' => ['uri' => $path], 'region' => ['startLine' => 1]]]],
+        ], array_keys($findings), $findings),
+    ]]], JSON_THROW_ON_ERROR);
+}
+
+function collectRepositoryOnce(): void
+{
+    (new CollectRepositoryJob(repositoryCollectionTarget(), repositoryCollectionRunForJobTest()->id))
+        ->handle(...collectRepositoryJobDependencies());
+}
+
+it('scans a repository without archives exactly as before: three trivy fs scans and no Java DB options', function () {
+    config(['repository_collection.trivy_cache_dir' => '/var/cache/trivy', 'repository_collection.trivy_java_db_repository' => 'registry.example.test/trivy-java-db:1']);
+    fakeClonedTreeScans(['pom.xml', 'src/main/java/App.java', '.git/objects/pack/old.jar'], commands: $commands);
+
+    collectRepositoryOnce();
+
+    expect(array_map(fn (array $command): string => $command[1], $commands))->toBe(['fs', 'fs', 'fs'])
+        ->and(json_encode($commands))->not->toContain('--cache-dir')
+        ->and(json_encode($commands))->not->toContain('--java-db-repository')
+        ->and(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe(['sbom', 'secrets', 'vulnerabilities']);
+});
+
+it('also scans committed archives with trivy rootfs, storing an SBOM and vulnerabilities of their own kinds', function () {
+    config(['repository_collection.trivy_cache_dir' => '/var/cache/trivy', 'repository_collection.trivy_java_db_repository' => 'registry.example.test/trivy-java-db:1']);
+    fakeClonedTreeScans(['server/default/lib/struts2-core-2.3.16.3.jar'], commands: $commands);
+
+    collectRepositoryOnce();
+
+    [$sbom, $vulnerabilities] = array_slice($commands, 3);
+
+    expect(array_map(fn (array $command): string => $command[1], $commands))->toBe(['fs', 'fs', 'fs', 'rootfs', 'rootfs'])
+        ->and($sbom)->toContain('cyclonedx')
+        ->and($sbom)->not->toContain('--scanners')
+        ->and(array_slice($vulnerabilities, array_search('--scanners', $vulnerabilities, true), 6))
+        ->toBe(['--scanners', 'vuln', '--cache-dir', '/var/cache/trivy', '--java-db-repository', 'registry.example.test/trivy-java-db:1'])
+        ->and($vulnerabilities)->toContain('sarif')
+        ->and(Attachment::query()->pluck('kind')->sort()->values()->all())
+        ->toBe(['sbom', 'sbom-archives', 'secrets', 'vulnerabilities', 'vulnerabilities-archives'])
+        ->and(ToolInvocation::query()->pluck('tool')->all())
+        ->toContain('trivy-sbom-archives', 'trivy-vuln-archives');
+});
+
+it('detects archives in any letter case', function (string $file) {
+    fakeClonedTreeScans([$file], commands: $commands);
+
+    collectRepositoryOnce();
+
+    expect($commands)->toHaveCount(5);
+})->with(['deploy/phoenix.EAR', 'webapps/app.War', 'lib/commons-collections-3.2.jar']);
+
+it('leaves Trivy its own cache directory and Java DB repository when none is configured', function () {
+    config(['repository_collection.trivy_cache_dir' => '', 'repository_collection.trivy_java_db_repository' => '']);
+    fakeClonedTreeScans(['lib/app.jar'], commands: $commands);
+
+    collectRepositoryOnce();
+
+    expect(json_encode($commands))->not->toContain('--cache-dir')
+        ->and(json_encode($commands))->not->toContain('--java-db-repository');
+});
+
+it('keeps the archive and lock-file results apart, so neither scan resolves the other\'s', function () {
+    $container = SecurityContainer::factory()->create([
+        'software_system_id' => SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001'])->id,
+        'source_container_id' => 'repo-001',
+    ]);
+
+    fakeClonedTreeScans(['lib/struts2-core.jar'], [
+        'fs:sbom' => archiveScanCycloneDx(['pkg:maven/org.example/app@1.0.0']),
+        'fs:vuln' => archiveScanSarif(['CVE-2024-0001' => 'pom.xml']),
+        'rootfs:sbom' => archiveScanCycloneDx(['pkg:maven/org.apache.struts/struts2-core@2.3.16.3']),
+        'rootfs:vuln' => archiveScanSarif(['CVE-2017-5638' => 'lib/struts2-core.jar']),
+    ]);
+
+    collectRepositoryOnce();
+
+    $finding = fn (string $rule): LocalFinding => LocalFinding::query()->where('owner_id', $container->id)->where('rule_id', $rule)->sole();
+    $component = fn (string $purl): SoftwareComponent => SoftwareComponent::query()->where('owner_id', $container->id)->where('purl', $purl)->sole();
+
+    expect($finding('CVE-2024-0001')->report_kind)->toBe('vulnerabilities')
+        ->and($finding('CVE-2017-5638')->report_kind)->toBe('vulnerabilities-archives')
+        ->and($finding('CVE-2017-5638')->kind)->toBe(LocalFinding::KIND_VULNERABILITY)
+        ->and($finding('CVE-2024-0001')->status)->toBe(EventState::Open)
+        ->and($finding('CVE-2017-5638')->status)->toBe(EventState::Open)
+        ->and($component('pkg:maven/org.example/app@1.0.0')->report_kind)->toBe('sbom')
+        ->and($component('pkg:maven/org.apache.struts/struts2-core@2.3.16.3')->report_kind)->toBe('sbom-archives')
+        ->and(SoftwareComponent::query()->where('owner_id', $container->id)->whereNotNull('removed_at')->exists())->toBeFalse();
+});
+
+it('rescans a repository whose archives were deleted, resolving only the archive results', function () {
+    $container = SecurityContainer::factory()->create([
+        'software_system_id' => SoftwareSystem::factory()->create(['source_id' => 'azdo', 'source_system_id' => 'project-001'])->id,
+        'source_container_id' => 'repo-001',
+    ]);
+    $lockFileReports = [
+        'fs:sbom' => archiveScanCycloneDx(['pkg:maven/org.example/app@1.0.0']),
+        'fs:vuln' => archiveScanSarif(['CVE-2024-0001' => 'pom.xml']),
+    ];
+
+    fakeClonedTreeScans(['lib/struts2-core.jar'], [
+        ...$lockFileReports,
+        'rootfs:sbom' => archiveScanCycloneDx(['pkg:maven/org.apache.struts/struts2-core@2.3.16.3']),
+        'rootfs:vuln' => archiveScanSarif(['CVE-2017-5638' => 'lib/struts2-core.jar']),
+    ]);
+    collectRepositoryOnce();
+
+    fakeClonedTreeScans(['pom.xml'], $lockFileReports, $commands);
+    collectRepositoryOnce();
+
+    $status = fn (string $rule): EventState => LocalFinding::query()->where('owner_id', $container->id)->where('rule_id', $rule)->sole()->status;
+    $removed = fn (string $purl): bool => SoftwareComponent::query()->where('owner_id', $container->id)->where('purl', $purl)->sole()->removed_at !== null;
+
+    expect(array_map(fn (array $command): string => $command[1], $commands))->toBe(['fs', 'fs', 'fs', 'rootfs', 'rootfs'])
+        ->and($status('CVE-2024-0001'))->toBe(EventState::Open)
+        ->and($status('CVE-2017-5638'))->toBe(EventState::Resolved)
+        ->and($removed('pkg:maven/org.example/app@1.0.0'))->toBeFalse()
+        ->and($removed('pkg:maven/org.apache.struts/struts2-core@2.3.16.3'))->toBeTrue();
+});
+
+it('logs a failed archive scan and counts the repository failed, keeping every other report', function () {
+    fakeClonedTreeScans(['lib/app.jar'], ['rootfs:vuln' => false]);
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->sole();
+
+    expect($errorLog->context_json['operation'])->toBe('vulnerabilities-archives')
+        ->and($errorLog->message)->toContain('java DB download failed')
+        ->and(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe(['sbom', 'sbom-archives', 'secrets', 'vulnerabilities'])
+        ->and(ToolInvocation::query()->where('tool', 'trivy-vuln-archives')->sole()->outcome)->toBe('failed')
+        ->and($run->refresh()->status)->toBe('failure');
 });

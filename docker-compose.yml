@@ -300,6 +300,9 @@ services:
             - collector_vendor:/var/www/html/vendor
             - collector_bootstrap_cache:/var/www/html/bootstrap/cache
             - collector_workspace:/workspace-scratch
+            # Trivy's Java DB (~1.5 GB, refreshed every 3 days) for the committed-archive scans,
+            # kept across container recreates (see config/repository_collection.php).
+            - collector_trivy_cache:/var/cache/trivy
             - trivy_token:/var/lib/trivy-token:ro
             # Runtime CA trust — see the app service's /host-certs mount.
             - ./.docker/certs:/host-certs:ro
@@ -314,6 +317,10 @@ services:
             # Maven Central mirror Trivy resolves POMs through (see config/repository_collection.php).
             # No value: passed through only when set in the root .env, so the config default applies otherwise.
             REPOSITORY_COLLECTION_MAVEN_MIRROR_URL:
+            REPOSITORY_COLLECTION_TRIVY_CACHE_DIR: /var/cache/trivy
+            # OCI repository of Trivy's Java DB (see config/repository_collection.php). No value:
+            # passed through only when set in the root .env, so Trivy's default registries apply otherwise.
+            REPOSITORY_COLLECTION_TRIVY_JAVA_DB_REPOSITORY:
             # Overrides the shared .env's LOG_STACK/LOG_LEVEL for this container only (env vars set
             # here take precedence over the .env file phpdotenv loads from the app_storage volume) —
             # adds Laravel's built-in `stderr` channel so collector activity is visible via
@@ -437,6 +444,7 @@ volumes:
     collector_vendor:
     collector_bootstrap_cache:
     collector_workspace:
+    collector_trivy_cache:
     static_analysis_collector_vendor:
     static_analysis_collector_bootstrap_cache:
     static_analysis_collector_workspace:

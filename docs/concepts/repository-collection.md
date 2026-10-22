@@ -67,7 +67,9 @@ v1 does not perform the `.NET` solution restore/build step `collect-sboms.sh` pe
 scanning `.NET` repositories for higher-precision CycloneDX results (see
 [SbomScan](sbom-and-static-analysis.md#sbomscan)). Every scan here runs a plain `trivy fs` pass
 against the freshly cloned working tree — the same output collect-sboms.sh itself already produces
-whenever its own restore/build step fails.
+whenever its own restore/build step fails — plus, for repositories with committed JAR/WAR/EAR
+archives, a `trivy rootfs` pass (see
+[Committed JAR/WAR/EAR archives](#committed-jarwarear-archives)).
 
 ## From Repository to Attachment
 
@@ -92,6 +94,65 @@ When a scan produces no report, the Error log message includes Trivy's exit code
 error, or the end of stderr when there is no `FATAL` line. The scan's `ToolInvocation`
 `output_tail` keeps the stderr tail. The Trivy token is redacted from both.
 
+### Committed JAR/WAR/EAR archives
+
+`trivy fs` reads only manifests and lock files, so the JAR/WAR/EAR files committed to a repository
+are ignored: `Phoenix/Phoenix-JBoss`, a vendored JBoss AS 5.1 server with 379 JARs and a deployed
+`phoenix.ear`, yielded 2 components and no vulnerabilities. When the cloned tree contains any
+`.jar`, `.war` or `.ear` file (any case, `.git` excluded), `CollectRepositoryJob` runs two more
+scans against the same `trivy-server`, after the three `fs` scans:
+
+| Report kind | Command | Tool (`ToolInvocation.tool`) |
+|-------------|---------|------------------------------|
+| `sbom-archives` | `trivy rootfs --format cyclonedx` | `trivy-sbom-archives` |
+| `vulnerabilities-archives` | `trivy rootfs --scanners vuln --format sarif` | `trivy-vuln-archives` |
+
+`trivy rootfs` reads installed artifacts (JARs, but also e.g. a committed `node_modules` or Python
+`site-packages`) and no lock files, so it complements the `fs` scans rather than replacing them.
+A manual `trivy rootfs` run on Phoenix-JBoss found 263 packages and 81 vulnerabilities (15
+critical) in 158 s.
+
+**Storage: report kinds of their own.** The two reports are stored as `sbom-archives` and
+`vulnerabilities-archives` attachments, parsed exactly like `sbom` and `vulnerabilities` into
+`SoftwareComponent` rows and `vulnerability` Local Findings. Every component and finding records
+the report kind that produced it (`report_kind`), and a re-scan only marks removed or resolves
+rows of its own report kind (see
+[Re-scanning](asset-system-container-alert.md)). This keeps the two scans independent: the
+archive scans run only on some repositories, and an `fs` report, which never sees the archives,
+would otherwise mark every archive component removed and resolve every archive finding on each
+collection (and the archive report would do the same to the `fs` results). Merging both scans into
+one report per kind was rejected for the same reason in reverse: a failed archive scan would then
+fail, or silently shrink, the `fs` report too. A component or finding both reports contain stays
+a single row, owned by whichever report upserted it last.
+
+**Archives removed later.** The archive scans also run when the tree no longer contains an
+archive but an earlier collection stored an archive report for the repository, so the now empty
+report resolves the findings and marks removed the components the deleted archives had. A
+repository that never contained an archive is scanned exactly as before: three `fs` scans, the
+same commands.
+
+**Trivy's Java DB.** Trivy identifies a JAR by its SHA-1 through the Java DB, an OCI artifact of
+about 1.5 GB that it downloads on first use and refreshes once it is older than 3 days. The archive
+scans pass `--cache-dir` from `repository_collection.trivy_cache_dir`
+(`REPOSITORY_COLLECTION_TRIVY_CACHE_DIR`), which `docker-compose.yml` sets to `/var/cache/trivy`
+on the `collector_trivy_cache` volume, so the download survives container recreates and image
+updates. By default Trivy pulls the Java DB from `mirror.gcr.io`, then `ghcr.io`. Where a
+corporate proxy blocks those registries, set `REPOSITORY_COLLECTION_TRIVY_JAVA_DB_REPOSITORY` in
+the root `.env` to a registry it allows (comma-separated values are tried in order). The archive
+scans then pass it as `--java-db-repository`; an empty value keeps Trivy's default. The `fs` scans
+need no Java DB and get neither option.
+
+The Maven mirror `settings.xml` above is passed to the archive scans too. A failed archive scan is
+logged and counts the repository as failed for the run, like a failed `fs` scan, without affecting
+the other reports.
+
+The job timeout (`$timeout`, 7200 s) covers the clone plus five scans at their 1200 s limit each.
+
+Two consumers still read the `sbom` report only: the per-container Dependency-Track push
+(`PushSbomAttachmentToDependencyTrack`, which would otherwise replace the project's `fs` SBOM with
+the archive SBOM) and the SBOM zip download. The findings zip download includes the
+`vulnerabilities-archives` SARIF.
+
 Results are written **directly**, in-process — reusing `App\Assets\AttachmentTargetResolver` and
 `App\Assets\AzDoScanResultDtoFactory` exactly as `PendingSbomScanImporter` does for
 `run.jsonl` lines, then `App\Assets\AttachmentService::attachTo()`. There is no `run.jsonl`, no
@@ -115,7 +176,9 @@ Every `Attachment` this feature stores flows through the exact same, unmodified 
 in [SbomScan's own section on this](sbom-and-static-analysis.md#from-attachment-to-local-finding--dependency)
 — `AttachmentStored` → `ParseAttachmentIntoFindings` → `CycloneDxSbomParser`/`SarifFindingParser`
 → `SoftwareComponent`/`LocalFinding`, plus `PushSbomAttachmentToDependencyTrack` for SBOM
-attachments specifically. Nothing in that pipeline changed to support this feature.
+attachments specifically. The archive reports' two kinds are routed to the same parsers as
+`sbom` and `vulnerabilities`; see
+[Committed JAR/WAR/EAR archives](#committed-jarwarear-archives).
 
 ## Run Tracking
 

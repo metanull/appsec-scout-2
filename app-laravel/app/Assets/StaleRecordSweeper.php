@@ -52,15 +52,23 @@ final class StaleRecordSweeper
         }
     }
 
-    /** @param  list<int>  $touchedIds */
-    public function sweepComponents(SoftwareAsset|SoftwareSystem|SecurityContainer $owner, array $touchedIds): void
+    /**
+     * Scoped to one SBOM report kind: an owner can hold the components of several SBOM reports
+     * (a repository's `trivy fs` SBOM and its archives' `trivy rootfs` SBOM), and one report
+     * says nothing about the components only another one lists.
+     *
+     * @param  list<int>  $touchedIds
+     */
+    public function sweepComponents(SoftwareAsset|SoftwareSystem|SecurityContainer $owner, string $reportKind, array $touchedIds): void
     {
         $owner->softwareComponents()
+            ->where('report_kind', $reportKind)
             ->whereNotIn('id', $touchedIds)->whereNull('removed_at')
             ->update(['removed_at' => now()]);
 
         if ($touchedIds !== []) {
             $owner->softwareComponents()
+                ->where('report_kind', $reportKind)
                 ->whereIn('id', $touchedIds)->whereNotNull('removed_at')
                 ->update(['removed_at' => null]);
         }

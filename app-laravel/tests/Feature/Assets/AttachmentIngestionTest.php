@@ -481,6 +481,42 @@ it('marks a software component removed when it disappears from a re-scan, and un
     expect($componentB->fresh()->removed_at)->toBeNull();
 });
 
+it('only marks removed the components of the SBOM report kind being imported', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+
+    $service->attachTo($container, 'sbom', 'application/json', 'fs.cdx.json', minimalCycloneDx(['pkg:maven/org.example/app@1.0.0']));
+    $service->attachTo($container, 'sbom-archives', 'application/json', 'archives.cdx.json', minimalCycloneDx(['pkg:maven/org.apache.struts/struts2-core@2.3.16.3']));
+    $service->attachTo($container, 'sbom', 'application/json', 'fs.cdx.json', minimalCycloneDx(['pkg:maven/org.example/app@1.0.0']));
+
+    $component = fn (string $purl): SoftwareComponent => SoftwareComponent::query()->where('owner_id', $container->id)->where('purl', $purl)->sole();
+
+    expect($component('pkg:maven/org.example/app@1.0.0')->report_kind)->toBe('sbom')
+        ->and($component('pkg:maven/org.apache.struts/struts2-core@2.3.16.3')->report_kind)->toBe('sbom-archives')
+        ->and($component('pkg:maven/org.apache.struts/struts2-core@2.3.16.3')->removed_at)->toBeNull();
+
+    $service->attachTo($container, 'sbom-archives', 'application/json', 'archives.cdx.json', minimalCycloneDx([]));
+
+    expect($component('pkg:maven/org.apache.struts/struts2-core@2.3.16.3')->removed_at)->not->toBeNull()
+        ->and($component('pkg:maven/org.example/app@1.0.0')->removed_at)->toBeNull();
+});
+
+it('parses a vulnerabilities-archives attachment into vulnerability findings resolved only by its own report kind', function () {
+    $container = SecurityContainer::factory()->create();
+    $service = app(AttachmentService::class);
+
+    $service->attachTo($container, 'vulnerabilities-archives', 'application/json', 'archives.sarif.json', minimalVulnerabilitySarif([
+        ['ruleId' => 'CVE-2017-5638', 'filePath' => 'lib/struts2-core.jar', 'startLine' => 1],
+    ]));
+    $service->attachTo($container, 'vulnerabilities', 'application/json', 'fs.sarif.json', minimalVulnerabilitySarif([]));
+
+    $finding = LocalFinding::query()->where('owner_id', $container->id)->sole();
+
+    expect($finding->kind)->toBe(LocalFinding::KIND_VULNERABILITY)
+        ->and($finding->report_kind)->toBe('vulnerabilities-archives')
+        ->and($finding->status)->toBe(EventState::Open);
+});
+
 it('upserts a large SBOM spanning multiple chunks, and sweeps correctly across the chunk boundary', function () {
     $container = SecurityContainer::factory()->create();
     $service = app(AttachmentService::class);

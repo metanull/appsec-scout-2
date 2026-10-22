@@ -55,4 +55,26 @@ return [
 
     'maven_mirror_url' => env('REPOSITORY_COLLECTION_MAVEN_MIRROR_URL', 'https://maven-central.storage-download.googleapis.com/maven2/'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Committed JAR/WAR/EAR archives
+    |--------------------------------------------------------------------------
+    |
+    | `trivy fs` reads only manifests and lock files, so a repository's
+    | committed archives (a vendored application server, a deployed .ear) are
+    | scanned by a second pair of `trivy rootfs` runs. Trivy identifies a JAR
+    | by its SHA-1 through the Java DB, a ~1.5 GB OCI artifact it downloads on
+    | first use and refreshes after 3 days, into the cache directory below
+    | (docker-compose.yml points it at the collector_trivy_cache volume, so it
+    | survives container recreates). An empty cache directory leaves Trivy's
+    | own default (~/.cache/trivy). The Java DB repository overrides Trivy's
+    | default registries (mirror.gcr.io, then ghcr.io), for a deployment whose
+    | proxy blocks them; an empty value keeps Trivy's default.
+    |
+    */
+
+    'trivy_cache_dir' => env('REPOSITORY_COLLECTION_TRIVY_CACHE_DIR', ''),
+
+    'trivy_java_db_repository' => env('REPOSITORY_COLLECTION_TRIVY_JAVA_DB_REPOSITORY', ''),
+
 ];

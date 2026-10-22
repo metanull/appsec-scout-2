@@ -28,6 +28,15 @@ final class AttachmentIngestionService
 
     public const KIND_SECRETS = 'secrets';
 
+    /**
+     * `trivy rootfs` reports of the JAR/WAR/EAR archives committed to a repository, which
+     * `trivy fs` (KIND_SBOM / KIND_VULNERABILITIES) does not read. Kinds of their own, so each
+     * report only resolves and removes what its own scan no longer finds.
+     */
+    public const KIND_SBOM_ARCHIVES = 'sbom-archives';
+
+    public const KIND_VULNERABILITIES_ARCHIVES = 'vulnerabilities-archives';
+
     public const KIND_CODE_QUALITY_DOTNET = 'code-quality-dotnet';
 
     public const KIND_CODE_QUALITY_JAVA = 'code-quality-java';
@@ -51,8 +60,8 @@ final class AttachmentIngestionService
         }
 
         match ($attachment->kind) {
-            self::KIND_SBOM => $this->ingestSbom($attachment, $owner),
-            self::KIND_VULNERABILITIES => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_VULNERABILITY),
+            self::KIND_SBOM, self::KIND_SBOM_ARCHIVES => $this->ingestSbom($attachment, $owner),
+            self::KIND_VULNERABILITIES, self::KIND_VULNERABILITIES_ARCHIVES => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_VULNERABILITY),
             self::KIND_SECRETS => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_SECRET),
             self::KIND_CODE_QUALITY_DOTNET, self::KIND_CODE_QUALITY_JAVA, self::KIND_CODE_QUALITY_OPENGREP => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_CODE_QUALITY),
             default => null,
@@ -75,8 +84,10 @@ final class AttachmentIngestionService
                 : $this->saveSoftwareComponentsSequentially($attachment, $owner, $components);
 
             // The whole SBOM parsed and every component upserted without throwing, so this is a
-            // complete pass — safe to mark anything not touched this time as no longer present.
-            $this->sweeper->sweepComponents($owner, $touchedIds);
+            // complete pass — safe to mark anything of this report kind not touched this time as
+            // no longer present. Components of the other SBOM report kind are not this pass's
+            // to judge.
+            $this->sweeper->sweepComponents($owner, (string) $attachment->kind, $touchedIds);
         });
     }
 
@@ -95,6 +106,7 @@ final class AttachmentIngestionService
 
         $rows = array_map(fn (ParsedComponent $component): array => [
             'attachment_id' => $attachment->id,
+            'report_kind' => $attachment->kind,
             'name' => $component->name,
             'version' => $component->version,
             'ecosystem' => $component->ecosystem,
@@ -121,7 +133,7 @@ final class AttachmentIngestionService
             SoftwareComponent::query()->upsert(
                 $chunk,
                 ['owner_type', 'owner_id', 'purl'],
-                ['attachment_id', 'name', 'version', 'ecosystem', 'license', 'metadata', 'software_system_id', 'software_asset_id', 'last_seen_at', 'updated_at'],
+                ['attachment_id', 'report_kind', 'name', 'version', 'ecosystem', 'license', 'metadata', 'software_system_id', 'software_asset_id', 'last_seen_at', 'updated_at'],
             );
         }
 
@@ -148,6 +160,7 @@ final class AttachmentIngestionService
 
             $record->fill([
                 'attachment_id' => $attachment->id,
+                'report_kind' => $attachment->kind,
                 'name' => $component->name,
                 'version' => $component->version,
                 'ecosystem' => $component->ecosystem,
