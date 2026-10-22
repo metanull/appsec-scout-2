@@ -44,7 +44,7 @@
 #     never runs and never reaches a package registry — see docker/entrypoint.sh;
 #   - data and state volumes are unchanged: app_storage (persisted .env/APP_KEY),
 #     the app_public_* asset volumes (resynced from the image on every start by
-#     the entrypoint), workspace scratch volumes, and trivy_token — so switching
+#     the entrypoint), workspace scratch volumes, collector_trivy_cache, and trivy_token — so switching
 #     between built and pulled images preserves all application state.
 #
 # The ops and claude profile images are workstation-side dev tools, never published;
@@ -92,6 +92,7 @@ services:
         volumes: !override
             - app_storage:/var/www/html/storage
             - collector_workspace:/workspace-scratch
+            - collector_trivy_cache:/var/cache/trivy
             - trivy_token:/var/lib/trivy-token:ro
             - ./.docker/certs:/host-certs:ro
 

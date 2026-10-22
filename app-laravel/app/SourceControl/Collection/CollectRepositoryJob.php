@@ -25,13 +25,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Symfony\Component\Finder\Finder;
 use Throwable;
 use XMLWriter;
 
 /**
  * Clones one Azure DevOps repository, runs Trivy against it (SBOM as
  * CycloneDX, vulnerabilities and secrets as SARIF, against the shared
- * trivy-server), and stores every report Trivy produced as an Attachment on
+ * trivy-server; plus an SBOM and vulnerabilities of the committed
+ * JAR/WAR/EAR archives when there are any), and stores every report Trivy
+ * produced as an Attachment on
  * the matching SoftwareSystem/SecurityContainer — reusing the exact same
  * AttachmentTargetResolver/AzDoScanResultDtoFactory/AttachmentService path
  * App\Assets\Sbom\PendingSbomScanImporter already uses for
@@ -49,12 +52,13 @@ final class CollectRepositoryJob implements ShouldQueue
     public int $tries = 3;
 
     /**
-     * Overall job budget: git config (60s) + clone (600s) + up to three
-     * sequential Trivy scans (1200s each, see PER_SCAN_TIMEOUT) can approach
-     * an hour for a large repository, so this must exceed their sum with room
-     * to spare rather than matching any single step's own timeout.
+     * Overall job budget: git config (60s) + clone (600s) + up to five
+     * sequential Trivy scans (three `fs`, two `rootfs` for committed
+     * archives; 1200s each, see PER_SCAN_TIMEOUT) can approach two hours for
+     * a large repository, so this must exceed their sum rather than matching
+     * any single step's own timeout.
      */
-    public int $timeout = 5400;
+    public int $timeout = 7200;
 
     private const PER_SCAN_TIMEOUT = 1200;
 
@@ -101,6 +105,12 @@ final class CollectRepositoryJob implements ShouldQueue
 
                 foreach ($this->reportKinds() as $report) {
                     $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $trivyEnvironment, $report);
+                }
+
+                if ($this->shouldScanArchives($securityContainer, $workDir)) {
+                    foreach ($this->archiveReportKinds() as $report) {
+                        $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $trivyEnvironment, $report);
+                    }
                 }
             }
         } finally {
@@ -268,14 +278,82 @@ final class CollectRepositoryJob implements ShouldQueue
         );
     }
 
-    /** @return list<array{kind: string, extraArgs: list<string>, extension: string}> */
+    /** @return list<array{kind: string, target: string, format: string, extraArgs: list<string>, extension: string}> */
     private function reportKinds(): array
     {
         return [
-            ['kind' => AttachmentIngestionService::KIND_SBOM, 'extraArgs' => [], 'extension' => 'cdx.json'],
-            ['kind' => AttachmentIngestionService::KIND_VULNERABILITIES, 'extraArgs' => ['--scanners', 'vuln'], 'extension' => 'vuln.sarif.json'],
-            ['kind' => AttachmentIngestionService::KIND_SECRETS, 'extraArgs' => ['--scanners', 'secret'], 'extension' => 'secrets.sarif.json'],
+            ['kind' => AttachmentIngestionService::KIND_SBOM, 'target' => 'fs', 'format' => 'cyclonedx', 'extraArgs' => [], 'extension' => 'cdx.json'],
+            ['kind' => AttachmentIngestionService::KIND_VULNERABILITIES, 'target' => 'fs', 'format' => 'sarif', 'extraArgs' => ['--scanners', 'vuln'], 'extension' => 'vuln.sarif.json'],
+            ['kind' => AttachmentIngestionService::KIND_SECRETS, 'target' => 'fs', 'format' => 'sarif', 'extraArgs' => ['--scanners', 'secret'], 'extension' => 'secrets.sarif.json'],
         ];
+    }
+
+    /**
+     * `trivy fs` reads manifests and lock files only, so committed JAR/WAR/EAR archives (a
+     * vendored application server, a deployed .ear) go unscanned. `trivy rootfs` reads those
+     * installed artifacts but no lock files, so it complements the `fs` scans rather than
+     * replacing them. Its reports get kinds of their own, so each reconciles only its own
+     * components and findings.
+     *
+     * @return list<array{kind: string, target: string, format: string, extraArgs: list<string>, extension: string}>
+     */
+    private function archiveReportKinds(): array
+    {
+        $javaDbArgs = $this->javaDbArgs();
+
+        return [
+            ['kind' => AttachmentIngestionService::KIND_SBOM_ARCHIVES, 'target' => 'rootfs', 'format' => 'cyclonedx', 'extraArgs' => $javaDbArgs, 'extension' => 'archives.cdx.json'],
+            ['kind' => AttachmentIngestionService::KIND_VULNERABILITIES_ARCHIVES, 'target' => 'rootfs', 'format' => 'sarif', 'extraArgs' => ['--scanners', 'vuln', ...$javaDbArgs], 'extension' => 'archives.vuln.sarif.json'],
+        ];
+    }
+
+    /**
+     * Only the archive scans need Trivy's Java DB (to identify a JAR by its SHA-1), so only they
+     * get its persistent cache directory and the configured Java DB repository.
+     *
+     * @return list<string>
+     */
+    private function javaDbArgs(): array
+    {
+        $args = [];
+        $cacheDir = (string) config('repository_collection.trivy_cache_dir');
+        $javaDbRepository = (string) config('repository_collection.trivy_java_db_repository');
+
+        if ($cacheDir !== '') {
+            array_push($args, '--cache-dir', $cacheDir);
+        }
+
+        if ($javaDbRepository !== '') {
+            array_push($args, '--java-db-repository', $javaDbRepository);
+        }
+
+        return $args;
+    }
+
+    /**
+     * Scans archives when the tree contains any, and also when an earlier collection stored an
+     * archive report for this repository: the archives may since have been deleted, and only a
+     * new (now empty) report resolves the findings they had. A repository that never held an
+     * archive is scanned exactly as before.
+     */
+    private function shouldScanArchives(SecurityContainer $securityContainer, string $workDir): bool
+    {
+        return $this->containsArchives($workDir)
+            || $securityContainer->attachments()->whereIn('kind', [
+                AttachmentIngestionService::KIND_SBOM_ARCHIVES,
+                AttachmentIngestionService::KIND_VULNERABILITIES_ARCHIVES,
+            ])->exists();
+    }
+
+    private function containsArchives(string $workDir): bool
+    {
+        return Finder::create()
+            ->files()
+            ->in($workDir)
+            ->ignoreDotFiles(false)
+            ->ignoreVCS(true)
+            ->name('/\.(jar|war|ear)$/i')
+            ->hasResults();
     }
 
     /**
@@ -321,7 +399,7 @@ final class CollectRepositoryJob implements ShouldQueue
 
     /**
      * @param  array<string, string>  $trivyEnvironment
-     * @param  array{kind: string, extraArgs: list<string>, extension: string}  $report
+     * @param  array{kind: string, target: string, format: string, extraArgs: list<string>, extension: string}  $report
      */
     private function scanAndAttach(
         AttachmentService $attachments,
@@ -347,12 +425,11 @@ final class CollectRepositoryJob implements ShouldQueue
 
         $token = trim(File::get($tokenFile));
         $outputPath = $scratchRoot . '/' . $report['kind'] . '.' . $report['extension'];
-        $format = $report['kind'] === AttachmentIngestionService::KIND_SBOM ? 'cyclonedx' : 'sarif';
 
         $command = array_merge(
-            ['trivy', 'fs', '--server', $trivyServerUrl, '--token', $token, '--timeout', $timeout],
+            ['trivy', $report['target'], '--server', $trivyServerUrl, '--token', $token, '--timeout', $timeout],
             $report['extraArgs'],
-            ['--format', $format, '--output', $outputPath, $workDir],
+            ['--format', $report['format'], '--output', $outputPath, $workDir],
         );
 
         try {
@@ -379,7 +456,7 @@ final class CollectRepositoryJob implements ShouldQueue
             $securityContainer,
             $tool,
             $command,
-            $this->trivyOutcome($report['kind'], $outputPath),
+            $this->trivyOutcome($report['format'], $outputPath),
             $result->exitCode(),
             $startedAt,
             $finishedAt,
@@ -421,6 +498,8 @@ final class CollectRepositoryJob implements ShouldQueue
             AttachmentIngestionService::KIND_SBOM => 'trivy-sbom',
             AttachmentIngestionService::KIND_VULNERABILITIES => 'trivy-vuln',
             AttachmentIngestionService::KIND_SECRETS => 'trivy-secret',
+            AttachmentIngestionService::KIND_SBOM_ARCHIVES => 'trivy-sbom-archives',
+            AttachmentIngestionService::KIND_VULNERABILITIES_ARCHIVES => 'trivy-vuln-archives',
             default => 'trivy',
         };
     }
@@ -433,9 +512,9 @@ final class CollectRepositoryJob implements ShouldQueue
      * SARIF: an unparseable-but-successful output is treated as the safer,
      * more visible 'ran_with_findings' default rather than a new failure path.
      */
-    private function trivyOutcome(string $kind, string $outputPath): string
+    private function trivyOutcome(string $format, string $outputPath): string
     {
-        if ($kind === AttachmentIngestionService::KIND_SBOM) {
+        if ($format === 'cyclonedx') {
             return 'ran_with_findings';
         }
 

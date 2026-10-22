@@ -193,7 +193,9 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
   - **Local Findings** — `App\Assets\LocalFindingScanReconciler`, scoped to
     `(owner, kind, report_kind)`, `report_kind` being the scan report (attachment kind) that
     reported the finding, since Roslynator, SpotBugs and Opengrep all report `code_quality` on one
-    repository. A finding no longer reported that is Open, Acknowledged or In progress becomes
+    repository, and Repository Collection's `vulnerabilities` (`trivy fs`) and
+    `vulnerabilities-archives` (`trivy rootfs` of committed JAR/WAR/EAR archives) reports both
+    report `vulnerability`. A finding no longer reported that is Open, Acknowledged or In progress becomes
     Resolved, with `resolved_by_scan_at` and `status_before_scan_resolution` recorded, an
     authorless comment ("No longer reported by the vulnerabilities scan of 2026-10-21 (report
     #123); resolved automatically.") and a `state_change` audit entry. A finding the scan resolved
@@ -201,7 +203,12 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
     and an audit entry. Dismissed findings, and findings an operator resolved (any status change
     through `LocalFindingStatusChanger` clears the scan marker), are never touched.
   - **Dependencies** — `App\Assets\StaleRecordSweeper` sets `removed_at` on a component no longer
-    reported, cleared again if it reappears.
+    reported, cleared again if it reappears. Scoped to `(owner, report_kind)` the same way, since
+    a repository's `sbom` and `sbom-archives` reports both store components on it.
+
+  A component or finding that two reports of one owner both contain is a single row (the natural
+  key has no `report_kind`); it belongs to the report that upserted it last, and only that
+  report's next pass can mark it removed or resolved.
 
   Both only run once the whole report parsed and upserted without throwing. The parsers refuse a
   report that is not valid JSON, a SARIF report without `runs`, and an SBOM without
