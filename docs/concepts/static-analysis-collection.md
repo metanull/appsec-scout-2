@@ -45,7 +45,7 @@ own `repository-collection` queue, and from the app container's own default queu
 
 A second, dedicated Docker image/Compose service, `static-analysis-collector`
 (the `static-analysis-collector` target of `docker/Dockerfile`), runs `php artisan queue:work
---queue=static-analysis` as its only process. Unlike `collector` (git + Trivy only), this image
+redis-static-analysis --queue=static-analysis` as its only process. Unlike `collector` (git + Trivy only), this image
 carries the full .NET/Java build+analysis toolchain: .NET 10 SDK, the .NET Framework
 4.6.2/4.7.2/4.8 reference assemblies (the compile-time targeting packs only — .NET Framework
 has no Linux runtime at all, but this is enough for `dotnet build` to resolve those projects'
@@ -75,9 +75,22 @@ predictable Trivy scans, in either direction.
 `App\Queue\QueueRuntimeInspector` explicitly accounts for the `static-analysis` queue in the
 Operations page's "Queued jobs" stat (a `STATIC_ANALYSIS_QUEUE` constant unioned into its queue
 list, mirroring the equivalent `REPOSITORY_COLLECTION_QUEUE` handling) — without this, a pending
-static analysis sweep would be invisible on that page, since `static-analysis` never appears in
-`queue.connections.*.queue` (only the app container's own worker's configured queues do). See
+static analysis sweep would be invisible on that page, since `static-analysis` is not the default
+connection's queue (only the app container's own worker's configured queues are). See
 [docs/operations.md](../operations.md) for what the Operations page shows.
+
+The batch goes through its own queue connection, `redis-static-analysis` (`config/queue.php`),
+which the static-analysis-collector's worker names on its command line. It is the same Redis queue
+as the shared `redis` connection, with a `retry_after` above `AnalyzeRepositoryJob`'s three-hour
+`$timeout` (10800 s): 10860 s by default, set by `REDIS_STATIC_ANALYSIS_QUEUE_RETRY_AFTER` in the
+app's `.env`. Redis hands a reserved job to another worker once it has been reserved longer than
+`retry_after`, so on the shared connection (1860 s, sized for the app worker's 30-minute timeout)
+a second static-analysis-collector worker would analyse the same repository again while the first
+is still running. Raise it whenever that timeout is raised; the shared connection keeps its own
+value, so a crashed default-queue job is still retried after half an hour. The dispatcher reads
+the connection name from `static_analysis_collection.queue_connection`; tests set it to `sync`.
+See [Repository Collection](repository-collection.md#isolation-the-collector-container) for the
+same arrangement on `redis-collection`.
 
 This is the same isolation mechanism Repository Collection uses, not `docker/ops`/
 `invoke-ops.ps1`'s: no Docker socket, no container-per-job — isolation comes entirely from a

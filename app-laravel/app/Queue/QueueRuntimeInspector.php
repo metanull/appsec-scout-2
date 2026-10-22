@@ -15,8 +15,9 @@ final class QueueRuntimeInspector
     /**
      * Consumed only by the isolated `collector` container
      * (docker/collector/Dockerfile), never by the app container's own
-     * worker - so it never appears in queue.connections.*.queue and must be
-     * counted explicitly.
+     * worker - so it never appears in the default connection's queue and must
+     * be counted explicitly. Its jobs are pushed through the `redis-collection`
+     * connection, which shares the default connection's Redis keys.
      */
     private const REPOSITORY_COLLECTION_QUEUE = 'repository-collection';
 

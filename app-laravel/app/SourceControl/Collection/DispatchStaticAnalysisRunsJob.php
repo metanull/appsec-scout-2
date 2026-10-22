@@ -24,7 +24,10 @@ use Throwable;
  * Enumerates every project and non-disabled repository the `azdo-repos`
  * Source Control provider's credential can see, and dispatches one
  * AnalyzeRepositoryJob per repository as a single job batch on the
- * dedicated `static-analysis` queue, tracked via a StaticAnalysisRun.
+ * dedicated `static-analysis` queue, tracked via a StaticAnalysisRun. The
+ * batch goes through its own queue connection (`redis-static-analysis`),
+ * whose retry_after outlasts the job's timeout so a running job is never
+ * handed to a second worker.
  *
  * Runs on the app's own default queue — it only makes Azure DevOps REST
  * API calls (the same cost profile as DispatchRepositoryCollectionRunsJob),
@@ -130,6 +133,7 @@ final class DispatchStaticAnalysisRunsJob implements ShouldBeUnique, ShouldQueue
                     $targets,
                 ))
                     ->name($batchName)
+                    ->onConnection((string) config('static_analysis_collection.queue_connection'))
                     ->onQueue('static-analysis')
                     ->allowFailures()
                     ->dispatch();

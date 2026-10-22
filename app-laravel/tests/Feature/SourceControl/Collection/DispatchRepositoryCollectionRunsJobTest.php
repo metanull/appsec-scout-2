@@ -6,13 +6,16 @@ use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\Models\SoftwareSystem;
 use App\SourceControl\AzDo\AzDoRepos;
+use App\SourceControl\Collection\CollectRepositoryJob;
 use App\SourceControl\Collection\DispatchRepositoryCollectionRunsJob;
 use App\Sources\AzDo\AzDoClient;
 use App\Sync\SystemIntegrationRuntime;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Bus\PendingBatch;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
@@ -238,3 +241,30 @@ it('fails a scoped run for a system it cannot collect', function (Closure $makeS
     'removed system' => [fn () => SoftwareSystem::factory()->azdo()->create(['removed_at' => now()]), 'is no longer reported by its source'],
     'missing system' => [fn () => null, 'Software system #999999 no longer exists.'],
 ]);
+
+it('dispatches the batch on the configured collection connection and the repository-collection queue', function () {
+    Bus::fake();
+    config(['repository_collection.queue_connection' => 'redis-collection']);
+
+    bindRealAzDoReposWithFakeClient([
+        new Response(200, [], dispatcherFixture('projects.json')),
+        new Response(200, [], dispatcherFixture('repositories.json')),
+        new Response(200, [], '{"value":[]}'),
+    ]);
+
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
+
+    Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->jobs->isNotEmpty()
+        && $batch->connection() === 'redis-collection'
+        && $batch->queue() === 'repository-collection');
+});
+
+it('collects on a Redis connection that never hands a running CollectRepositoryJob to a second worker', function () {
+    $connection = config('queue.connections.redis-collection');
+    $jobTimeout = (new ReflectionProperty(CollectRepositoryJob::class, 'timeout'))->getDefaultValue();
+
+    expect($connection['driver'])->toBe('redis')
+        ->and($connection['queue'])->toBe('repository-collection')
+        ->and($connection['retry_after'])->toBeGreaterThan($jobTimeout)
+        ->and($connection['retry_after'])->toBeGreaterThan(config('queue.connections.redis.retry_after'));
+});

@@ -84,4 +84,20 @@ return [
 
     'tool_invocation_retain_days' => (int) env('TOOL_INVOCATION_RETAIN_DAYS', 90),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Queue connection
+    |--------------------------------------------------------------------------
+    |
+    | The connection AnalyzeRepositoryJob batches are dispatched on, and the one
+    | the static-analysis-collector container's worker consumes (docker/Dockerfile
+    | names it on its `queue:work` command line). `redis-static-analysis` exists
+    | because its retry_after must exceed the job's three-hour timeout; see
+    | config/queue.php. Tests set this to `sync`; anywhere else, changing it means
+    | changing the static-analysis-collector's command too.
+    |
+    */
+
+    'queue_connection' => env('STATIC_ANALYSIS_COLLECTION_QUEUE_CONNECTION', 'redis-static-analysis'),
+
 ];

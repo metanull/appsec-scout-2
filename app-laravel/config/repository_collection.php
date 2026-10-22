@@ -77,4 +77,20 @@ return [
 
     'trivy_java_db_repository' => env('REPOSITORY_COLLECTION_TRIVY_JAVA_DB_REPOSITORY', ''),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Queue connection
+    |--------------------------------------------------------------------------
+    |
+    | The connection CollectRepositoryJob batches are dispatched on, and the one
+    | the collector container's worker consumes (docker/Dockerfile names it on
+    | its `queue:work` command line). `redis-collection` exists because its
+    | retry_after must exceed the job's two-hour timeout; see config/queue.php.
+    | Tests set this to `sync`; anywhere else, changing it means changing the
+    | collector's command too.
+    |
+    */
+
+    'queue_connection' => env('REPOSITORY_COLLECTION_QUEUE_CONNECTION', 'redis-collection'),
+
 ];

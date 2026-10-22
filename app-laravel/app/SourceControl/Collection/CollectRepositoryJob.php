@@ -56,7 +56,8 @@ final class CollectRepositoryJob implements ShouldQueue
      * sequential Trivy scans (three `fs`, two `rootfs` for committed
      * archives; 1200s each, see PER_SCAN_TIMEOUT) can approach two hours for
      * a large repository, so this must exceed their sum rather than matching
-     * any single step's own timeout.
+     * any single step's own timeout. The `redis-collection` connection's
+     * retry_after (config/queue.php) must stay above this value.
      */
     public int $timeout = 7200;
 

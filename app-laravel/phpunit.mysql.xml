@@ -28,6 +28,8 @@
         <env name="DB_URL" value="" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="REPOSITORY_COLLECTION_QUEUE_CONNECTION" value="sync"/>
+        <env name="STATIC_ANALYSIS_COLLECTION_QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

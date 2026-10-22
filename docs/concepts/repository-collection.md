@@ -49,7 +49,7 @@ queue).
 
 A second, lean Docker image/Compose service, `collector` (the `collector` target of
 `docker/Dockerfile`), runs
-`php artisan queue:work --queue=repository-collection` as its only process. It has git and Trivy
+`php artisan queue:work redis-collection --queue=repository-collection` as its only process. It has git and Trivy
 but no nginx/php-fpm/build toolchain, and its own scratch volume (`collector_workspace`, mounted
 at `/workspace-scratch`) for repository checkouts — a `CollectRepositoryJob` clones into a
 per-job-scoped subdirectory of that volume and deletes it once it finishes, whether it succeeded
@@ -57,6 +57,19 @@ or failed. `collector` shares `app`'s persisted `.env`/`APP_KEY` (via the `app_s
 read only for that purpose) so `Credential`-encrypted values like `azdo-repos.pat` decrypt
 identically on both sides, and shares the `mysql`/`redis`/`trivy-server` services `app` already
 depends on — but never `app_storage`'s application data.
+
+The batch also goes through its own queue connection, `redis-collection` (`config/queue.php`), and
+the collector's worker names it: `php artisan queue:work redis-collection
+--queue=repository-collection`. It is the same Redis queue as the shared `redis` connection, with
+a different `retry_after`. Redis hands a reserved job to another worker once it has been reserved
+longer than `retry_after`. `CollectRepositoryJob` can run for up to two hours (`$timeout = 7200`),
+so on the shared connection (`retry_after` 1860 s, sized for the app worker's 30-minute timeout) a
+second collector worker would collect the same repository again while the first is still running.
+`redis-collection` defaults to 7260 s (`REDIS_COLLECTION_QUEUE_RETRY_AFTER` in the app's `.env`),
+just above the job's timeout; raise it whenever that timeout is raised. The shared connection
+keeps its own value, so a crashed default-queue job is still retried after half an hour. The
+dispatcher reads the connection name from `repository_collection.queue_connection`; tests set it
+to `sync`.
 
 This is a different isolation mechanism from `docker/ops`/`invoke-ops.ps1`: there is no Docker
 socket and no container-per-job. Isolation comes entirely from a dedicated queue name consumed by

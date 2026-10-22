@@ -26,7 +26,9 @@ use Throwable;
  * Source Control provider's credential can see, and dispatches one
  * CollectRepositoryJob per repository as a single job batch on the
  * dedicated `repository-collection` queue, tracked via a
- * RepositoryCollectionRun row.
+ * RepositoryCollectionRun row. The batch goes through its own queue
+ * connection (`redis-collection`), whose retry_after outlasts the job's
+ * timeout so a running job is never handed to a second worker.
  *
  * Runs on the app's own default queue — it only makes Azure DevOps REST
  * API calls (the same cost profile as SyncInventoryJob), never the
@@ -147,6 +149,7 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                     $targets,
                 ))
                     ->name($batchName)
+                    ->onConnection((string) config('repository_collection.queue_connection'))
                     ->onQueue('repository-collection')
                     ->allowFailures()
                     ->dispatch();
