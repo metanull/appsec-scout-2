@@ -148,10 +148,22 @@ the other reports.
 
 The job timeout (`$timeout`, 7200 s) covers the clone plus five scans at their 1200 s limit each.
 
-Two consumers still read the `sbom` report only: the per-container Dependency-Track push
-(`PushSbomAttachmentToDependencyTrack`, which would otherwise replace the project's `fs` SBOM with
-the archive SBOM) and the SBOM zip download. The findings zip download includes the
-`vulnerabilities-archives` SARIF.
+Consumers that take one SBOM document per container get both reports merged by
+`App\Assets\Sbom\ContainerSbomMerger`. These are the Dependency-Track upload, which replaces a
+project's whole BOM on every upload, so pushing the two reports separately would leave only the
+last one, and the SBOM downloads (a container's **Download SBOM**, and the system and asset zip
+files). The merged document:
+
+- keeps the latest `sbom` report's top-level fields and metadata;
+- adds the latest `sbom-archives` report's components, except one whose purl (or, without a purl,
+  bom-ref) the `sbom` report already lists;
+- folds the archive report's dependency graph in, re-pointed at the `sbom` report's root and
+  duplicate components, and drops references to components neither report keeps;
+- gets the higher `specVersion` and a serial number of its own.
+
+A container with only one of the two reports gets that report unchanged. Either SBOM report
+triggers the Dependency-Track push, and each push uploads the merged document. The findings zip
+download includes the `vulnerabilities-archives` SARIF next to the other reports.
 
 Results are written **directly**, in-process — reusing `App\Assets\AttachmentTargetResolver` and
 `App\Assets\AzDoScanResultDtoFactory` exactly as `PendingSbomScanImporter` does for

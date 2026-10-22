@@ -9,6 +9,7 @@ use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
 use App\Assets\LocalFindingFilePathRepairer;
+use App\Assets\Sbom\ContainerSbomMerger;
 use App\Assets\Sbom\PendingSbomScanImporter;
 use App\Assets\Sbom\SbomScanStatusReporter;
 use App\Assets\SoftwareAssetService;
@@ -372,7 +373,7 @@ Artisan::command(
 
 Artisan::command(
     'sbom:export-dependency-track {--api-key=} {--base-url=} {--container=} {--project-version=latest}',
-    function (DependencyTrackClientFactory $clientFactory, Vault $vault): int {
+    function (DependencyTrackClientFactory $clientFactory, Vault $vault, ContainerSbomMerger $sboms): int {
         $apiKeyOption = $this->option('api-key');
         $apiKey = is_string($apiKeyOption) && $apiKeyOption !== ''
             ? $apiKeyOption
@@ -391,7 +392,7 @@ Artisan::command(
         $containerId = $this->option('container');
         $projectVersion = (string) $this->option('project-version');
 
-        $query = SecurityContainer::query()->whereHas('attachments', fn ($q) => $q->where('kind', 'sbom'));
+        $query = SecurityContainer::query()->whereHas('attachments', fn ($q) => $q->whereIn('kind', [AttachmentIngestionService::KIND_SBOM, AttachmentIngestionService::KIND_SBOM_ARCHIVES]));
 
         if (is_numeric($containerId)) {
             $query->whereKey((int) $containerId);
@@ -405,7 +406,7 @@ Artisan::command(
             return self::FAILURE;
         }
 
-        $exporter = new DependencyTrackExporter($clientFactory->make($apiKey, $baseUrl));
+        $exporter = new DependencyTrackExporter($clientFactory->make($apiKey, $baseUrl), $sboms);
         $rows = [];
         $failures = 0;
 
@@ -431,7 +432,7 @@ Artisan::command(
 
         return self::SUCCESS;
     },
-)->purpose("Push each security container's latest stored SBOM attachment to OWASP Dependency-Track as a project BOM upload");
+)->purpose("Push each security container's latest stored SBOM (lock files and committed archives merged) to OWASP Dependency-Track as a project BOM upload");
 
 Artisan::command(
     'sbom:import-pending-scans',

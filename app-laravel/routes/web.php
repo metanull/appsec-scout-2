@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\EntraLoginController;
 use App\Http\Controllers\EventAttachmentDownloadController;
 use App\Http\Controllers\SecurityContainerAttachmentDownloadController;
 use App\Http\Controllers\SecurityContainerFindingsZipDownloadController;
+use App\Http\Controllers\SecurityContainerSbomDownloadController;
 use App\Http\Controllers\SoftwareAssetAttachmentDownloadController;
 use App\Http\Controllers\SoftwareAssetFindingsZipDownloadController;
 use App\Http\Controllers\SoftwareAssetSbomZipDownloadController;
@@ -28,6 +29,8 @@ Route::middleware('auth')->group(function () {
         ->name('software-systems.attachments.download');
     Route::get('/security-containers/{container}/attachments/{attachment}/download', SecurityContainerAttachmentDownloadController::class)
         ->name('security-containers.attachments.download');
+    Route::get('/security-containers/{container}/sbom.cdx.json', SecurityContainerSbomDownloadController::class)
+        ->name('security-containers.sbom.download');
     Route::get('/assets/{asset}/sbom.zip', SoftwareAssetSbomZipDownloadController::class)
         ->name('assets.sbom.download');
     Route::get('/software-systems/{system}/sbom.zip', SoftwareSystemSbomZipDownloadController::class)
