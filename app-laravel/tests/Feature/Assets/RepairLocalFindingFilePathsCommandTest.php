@@ -187,3 +187,48 @@ it('records an audit entry for a repaired row and for a merged row', function ()
 
     expect($mergeEntry->payload_json['merged_from_id'] ?? null)->toBe($stale->id);
 });
+
+it('decodes a percent-encoded relative file_path in place', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $finding = makeLocalFinding($container, [
+        'kind' => LocalFinding::KIND_SECRET,
+        'rule_id' => 'private-key',
+        'file_path' => 'Class%20Libraries/CoR_Sync/Pictures.cs',
+    ]);
+
+    $this->artisan('local-findings:repair-file-paths')
+        ->expectsOutputToContain('repaired=1 merged=0 skipped=0')
+        ->assertSuccessful();
+
+    $finding->refresh();
+
+    expect($finding->file_path)->toBe('Class Libraries/CoR_Sync/Pictures.cs')
+        ->and($finding->dedup_hash)->toBe(LocalFinding::computeDedupHash('private-key', 'Class Libraries/CoR_Sync/Pictures.cs', 42));
+});
+
+it('merges a percent-encoded row into its already-decoded twin', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $stale = makeLocalFinding($container, ['file_path' => 'My%20Dir/A.cs']);
+    $twin = makeLocalFinding($container, ['file_path' => 'My Dir/A.cs']);
+
+    $this->artisan('local-findings:repair-file-paths')
+        ->expectsOutputToContain('repaired=0 merged=1 skipped=0')
+        ->assertSuccessful();
+
+    expect(LocalFinding::query()->find($stale->id))->toBeNull()
+        ->and(LocalFinding::query()->find($twin->id))->not->toBeNull();
+});
+
+it('skips a relative file_path whose percent sign is not an encoding', function () {
+    $container = SecurityContainer::factory()->create();
+
+    $finding = makeLocalFinding($container, ['file_path' => 'docs/100%done.md']);
+
+    $this->artisan('local-findings:repair-file-paths')
+        ->expectsOutputToContain('skipped=1')
+        ->assertSuccessful();
+
+    expect($finding->refresh()->file_path)->toBe('docs/100%done.md');
+});

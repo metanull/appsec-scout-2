@@ -392,7 +392,7 @@ Run each one as `docker compose exec app php artisan <command>` (or
 | `queue:failed` / `queue:retry all` | Laravel's failed-job list / retry (same as the *Failed Jobs* page) |
 | `schedule:list` | Show scheduled tasks: daily pruning, per-minute scan imports |
 | `events:recompute-pending-sync` | One-off repair for alerts stuck as "pending sync" |
-| `local-findings:repair-file-paths --dry-run` | One-off repair of old absolute file paths on local findings (drop `--dry-run` to apply) |
+| `local-findings:repair-file-paths --dry-run` | One-off repair of old absolute or percent-encoded file paths on local findings (drop `--dry-run` to apply) |
 
 ---
 
