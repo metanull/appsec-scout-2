@@ -1053,7 +1053,7 @@ Artisan::command('local-findings:repair-file-paths {--dry-run}', function (Local
     $result = $repairer->repair($dryRun);
 
     foreach ($result['skipped'] as $skipped) {
-        $this->line(sprintf('Skipped local_finding #%d: unrecognized absolute file_path "%s".', $skipped['id'], $skipped['file_path']));
+        $this->line(sprintf('Skipped local_finding #%d: file_path "%s" has no repairable shape.', $skipped['id'], $skipped['file_path']));
     }
 
     $this->info(sprintf(
@@ -1064,7 +1064,7 @@ Artisan::command('local-findings:repair-file-paths {--dry-run}', function (Local
     ));
 
     return self::SUCCESS;
-})->purpose('One-off repair: rewrite local_findings.file_path from an absolute container path (file:///workspace-scratch/<uuid>/work/... or file:///tmp/tmp.XXXXXXXXXX/...) to a repository-relative one and recompute dedup_hash, merging onto an already-relative twin (moving comments and work-item links, keeping the earliest first_seen_at) when one already exists. Use --dry-run first. Safe to re-run.');
+})->purpose('One-off repair: rewrite local_findings.file_path from an absolute container path (file:///workspace-scratch/<uuid>/work/... or file:///tmp/tmp.XXXXXXXXXX/...) or a percent-encoded relative uri (Class%20Libraries/x.cs) to the real repository-relative path and recompute dedup_hash, merging onto an already-relative twin (moving comments and work-item links, keeping the earliest first_seen_at) when one already exists. Use --dry-run first. Safe to re-run.');
 
 Artisan::command('assets:restamp-hierarchy', function (SoftwareAssetService $service, Recorder $recorder): int {
     $totals = ['local_findings' => 0, 'software_components' => 0];

@@ -81,3 +81,16 @@ it('never resolves uriBaseId-relative Trivy paths, since it is never given one t
     // another root that doesn't match and leaves the path untouched.
     expect($normalizer->normalize('vendor/x/y.txt', '/scan'))->toBe('vendor/x/y.txt');
 });
+
+it('percent-decodes a relative uri, so a folder with a space is stored as its real path', function () {
+    $normalizer = new SarifArtifactUriNormalizer;
+
+    expect($normalizer->normalize('Class%20Libraries/CoR_Sync/Pictures.cs', null))
+        ->toBe('Class Libraries/CoR_Sync/Pictures.cs');
+});
+
+it('decodes an encoded percent sign once, keeping a literal percent in the file name', function () {
+    $normalizer = new SarifArtifactUriNormalizer;
+
+    expect($normalizer->normalize('docs/100%25%20done.md', null))->toBe('docs/100% done.md');
+});

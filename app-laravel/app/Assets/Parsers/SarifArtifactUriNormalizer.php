@@ -8,6 +8,10 @@ namespace App\Assets\Parsers;
  * directory the scanned tree was cloned into) — it deliberately never resolves
  * SARIF's `uriBaseId`/`originalUriBaseIds` indirection, which Trivy uses for its
  * own (already-relative) paths and must be left alone.
+ *
+ * The uri is a URI reference, so a relative one is percent-decoded too: Trivy
+ * reports "Class Libraries/x.cs" as `Class%20Libraries/x.cs`, and the stored
+ * path must be the real file path, which links and code reads encode themselves.
  */
 final class SarifArtifactUriNormalizer
 {
@@ -15,9 +19,9 @@ final class SarifArtifactUriNormalizer
     {
         $path = str_replace('\\', '/', trim($uri));
 
-        if (strtolower(substr($path, 0, 7)) === 'file://') {
-            $path = $this->stripFileScheme($path);
-        }
+        $path = strtolower(substr($path, 0, 7)) === 'file://'
+            ? $this->stripFileScheme($path)
+            : rawurldecode($path);
 
         if ($sourceRoot !== null) {
             $root = rtrim(str_replace('\\', '/', $sourceRoot), '/');

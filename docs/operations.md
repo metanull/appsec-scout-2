@@ -323,13 +323,15 @@ Full detail on the host-triggered path, including the Dependency-Track visualiza
 .\scripts\invoke-ops.ps1 -StaticAnalysis -Credential (Get-Credential)
 ```
 
-### Repairing Local Findings Stored With Absolute Container Paths
+### Repairing Local Findings Stored With Absolute or Encoded Paths
 
 `local-findings:repair-file-paths {--dry-run}` is a one-off maintenance command for
 `local_findings` rows whose `file_path` predates the repository-relative-path fix (an absolute
 `file:///workspace-scratch/<uuid>/work/...` or `file:///tmp/tmp.XXXXXXXXXX/...` path instead of a
 path relative to the repository root — see
-[docs/concepts/asset-system-container-alert.md](concepts/asset-system-container-alert.md)). It
+[docs/concepts/asset-system-container-alert.md](concepts/asset-system-container-alert.md)), or
+whose `file_path` is still the percent-encoded SARIF uri (`Class%20Libraries/x.cs` instead of
+`Class Libraries/x.cs`, stored before relative uris were decoded at import). It
 rewrites `file_path` and recomputes `dedup_hash` in place, or — when a clean, already-relative twin
 row already exists for the same finding — merges the stale row's comments and work-item links onto
 the twin, keeps the earlier `first_seen_at`, and deletes the stale row. Every change is audited.

@@ -4,16 +4,19 @@ namespace App\Assets;
 
 use App\Assets\Parsers\SarifArtifactUriNormalizer;
 use App\Audit\Recorder;
+use App\Database\TextSearch;
 use App\Models\LocalFinding;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * One-off repair for `local_findings` rows stored before
- * `App\Assets\Parsers\SarifArtifactUriNormalizer` existed, whose `file_path` is an
- * absolute container path (`file:///workspace-scratch/<uuid>/work/...` from the
- * in-app collector, `file:///tmp/tmp.XXXXXXXXXX/...` from the shell collector)
- * instead of a repository-relative one. Rewrites `file_path`/`dedup_hash` in place,
+ * One-off repair for `local_findings` rows whose `file_path` is not the real
+ * repository-relative path `App\Assets\Parsers\SarifArtifactUriNormalizer` now
+ * stores: an absolute container path (`file:///workspace-scratch/<uuid>/work/...`
+ * from the in-app collector, `file:///tmp/tmp.XXXXXXXXXX/...` from the shell
+ * collector), or a still percent-encoded relative uri (`Class%20Libraries/x.cs`)
+ * stored before relative uris were decoded. Rewrites `file_path`/`dedup_hash` in place,
  * or — when a clean, already-relative twin already exists for the same identity —
  * merges the stale row's comments and work-item links onto the twin and deletes the
  * stale row, so re-running the fixed collectors never leaves an operator with two
@@ -37,7 +40,9 @@ final class LocalFindingFilePathRepairer
         $skipped = [];
 
         LocalFinding::query()
-            ->where('file_path', 'like', 'file://%')
+            ->where(fn (Builder $query): Builder => $query
+                ->where('file_path', 'like', 'file://%')
+                ->orWhere(fn (Builder $encoded): Builder => TextSearch::apply($encoded, ['file_path'], '%')))
             ->orderBy('id')
             ->chunkById(200, function (Collection $findings) use (&$repaired, &$merged, &$skipped, $dryRun): void {
                 foreach ($findings as $finding) {
@@ -60,13 +65,12 @@ final class LocalFindingFilePathRepairer
      */
     private function repairOne(LocalFinding $finding, bool $dryRun): string
     {
-        $root = $this->deriveRoot($finding->file_path);
+        $relative = $this->relativePath($finding->file_path);
 
-        if ($root === null) {
+        if ($relative === null) {
             return 'skipped';
         }
 
-        $relative = $this->normalizer->normalize($finding->file_path, $root);
         $metadata = $finding->getAttribute('metadata');
         $newHash = LocalFinding::identityHash(
             (string) $finding->kind,
@@ -99,6 +103,24 @@ final class LocalFindingFilePathRepairer
         });
 
         return $twin === null ? 'repaired' : 'merged';
+    }
+
+    /**
+     * The repository-relative path for a stored `file_path`, or null when it cannot
+     * be repaired: an absolute path of no known collector shape, or an encoded-looking
+     * path that decodes to itself.
+     */
+    private function relativePath(string $filePath): ?string
+    {
+        if (! str_starts_with($filePath, 'file://')) {
+            $decoded = $this->normalizer->normalize($filePath, null);
+
+            return $decoded !== $filePath ? $decoded : null;
+        }
+
+        $root = $this->deriveRoot($filePath);
+
+        return $root !== null ? $this->normalizer->normalize($filePath, $root) : null;
     }
 
     private function repairInPlace(LocalFinding $finding, string $relativePath, string $newHash): void
