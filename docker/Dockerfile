@@ -7,9 +7,10 @@ ARG BUILD_APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 # BFG is not part of the shared static-analysis toolchain script — it's a Git-history
 # tool, ops-only, so its pin lives here rather than in a script.
 ARG BFG_VERSION=1.14.0
-# The current Node 22 LTS ("Jod") patch at implementation time — bump alongside a
-# routine review, not on any particular schedule.
-ARG NODE_VERSION=22.23.2
+# Node 22 LTS ("Jod") patch. At least 22.23.4: earlier releases bundle a Brotli decoder
+# with an out-of-bounds write (CVE-2026-111497, remote code execution through untrusted
+# Brotli input such as fetch() responses). Otherwise bump alongside a routine review.
+ARG NODE_VERSION=22.23.4
 
 FROM composer:2 AS composer-deps
 
