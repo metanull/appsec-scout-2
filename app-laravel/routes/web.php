@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AlertSourceRedirectController;
 use App\Http\Controllers\Auth\EntraLoginController;
 use App\Http\Controllers\EventAttachmentDownloadController;
 use App\Http\Controllers\SecurityContainerAttachmentDownloadController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\SoftwareAssetSbomZipDownloadController;
 use App\Http\Controllers\SoftwareSystemAttachmentDownloadController;
 use App\Http\Controllers\SoftwareSystemFindingsZipDownloadController;
 use App\Http\Controllers\SoftwareSystemSbomZipDownloadController;
+use App\SourceCode\AlertSourceLocator;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:entra')->group(function () {
@@ -23,6 +25,9 @@ Route::middleware('throttle:entra')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/alerts/{event}/attachments/{attachment}/download', EventAttachmentDownloadController::class)
         ->name('alerts.attachments.download');
+    Route::get('/alerts/{event}/source/{version}', AlertSourceRedirectController::class)
+        ->whereIn('version', AlertSourceLocator::VERSIONS)
+        ->name('alerts.source');
     Route::get('/assets/{asset}/attachments/{attachment}/download', SoftwareAssetAttachmentDownloadController::class)
         ->name('assets.attachments.download');
     Route::get('/software-systems/{system}/attachments/{attachment}/download', SoftwareSystemAttachmentDownloadController::class)

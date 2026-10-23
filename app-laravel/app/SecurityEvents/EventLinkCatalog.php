@@ -7,6 +7,7 @@ use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\SoftwareSystem;
 use App\Models\WorkItemLink;
+use App\SourceCode\AlertSourceLocator;
 use App\SourceCode\CodeLocation;
 use App\SourceCode\RepositoryCodeIdentity;
 use App\SourceCode\RepositoryCodeIdentityResolver;
@@ -24,6 +25,7 @@ final class EventLinkCatalog
     public function __construct(
         private readonly RepositoryCodeIdentityResolver $repositoryCodeIdentityResolver,
         private readonly RepositoryCodeUrlGenerator $repositoryCodeUrlGenerator,
+        private readonly AlertSourceLocator $sourceLocator,
     ) {}
 
     /**
@@ -34,7 +36,33 @@ final class EventLinkCatalog
      */
     public function build(SecurityEvent $event): array
     {
+        return $this->collect($event, []);
+    }
+
+    /**
+     * The catalog the alert view shows: the source file opens through the app, at the current
+     * code and at the alert's commit, which drops a build checkout folder from the reported
+     * path. Those links replace the static source-file links, which keep that folder (the
+     * source's own item URL included). Tracker descriptions keep build().
+     *
+     * @return list<array{label: string, url: string, kind: string, external: bool}>
+     */
+    public function buildForView(SecurityEvent $event): array
+    {
+        return $this->collect($event, array_filter([
+            'Source file' => $this->sourceLocator->appUrl($event, AlertSourceLocator::CURRENT),
+            'Source file (commit)' => $this->sourceLocator->appUrl($event, AlertSourceLocator::COMMIT),
+        ]));
+    }
+
+    /**
+     * @param  array<string, string>  $sourceLinks  app source-file links by label; when given they replace the static ones
+     * @return list<array{label: string, url: string, kind: string, external: bool}>
+     */
+    private function collect(SecurityEvent $event, array $sourceLinks): array
+    {
         $collector = new LinkCollector;
+        $staticSourceFile = $sourceLinks === [];
 
         $add = static function (string $label, ?string $url, string $kind, int $priority = 0) use ($collector): void {
             $collector->add($label, $url, $kind, $priority);
@@ -60,16 +88,22 @@ final class EventLinkCatalog
         }
 
         // Version control / source file URL
-        $add('Source file', $event->version_control_url, LinkCollector::KIND_CODE, 3);
+        if ($staticSourceFile) {
+            $add('Source file', $event->version_control_url, LinkCollector::KIND_CODE, 3);
+        }
 
-        $this->addRepositoryLinks($event, $add);
+        $this->addRepositoryLinks($event, $add, $staticSourceFile);
+
+        foreach ($sourceLinks as $label => $url) {
+            $add($label, $url, LinkCollector::KIND_CODE, 3);
+        }
 
         // Normalised metadata links array: [['label'=>..., 'url'=>...], ...]
         /** @var array<string, mixed>|null $metadata */
         $metadata = $event->getAttribute('metadata');
 
         if (is_array($metadata)) {
-            $this->addMetadataLinks($metadata, $add);
+            $this->addMetadataLinks($metadata, $add, $staticSourceFile);
         }
 
         // Work item links
@@ -107,8 +141,9 @@ final class EventLinkCatalog
     /**
      * @param  array<string, mixed>  $metadata
      * @param  callable(string, ?string, string): void  $add
+     * @param  bool  $withSourceFile  false when app source-file links replace the source's own
      */
-    private function addMetadataLinks(array $metadata, callable $add): void
+    private function addMetadataLinks(array $metadata, callable $add, bool $withSourceFile): void
     {
         // Standard metadata.links array produced by normalizers
         if (isset($metadata['links']) && is_array($metadata['links'])) {
@@ -118,6 +153,10 @@ final class EventLinkCatalog
                 }
 
                 $label = is_string($entry['label'] ?? null) ? (string) $entry['label'] : 'Link';
+
+                if (! $withSourceFile && $label === 'Source file') {
+                    continue;
+                }
                 $url = is_string($entry['url'] ?? null) ? (string) $entry['url'] : null;
                 $kind = $this->inferKindFromLabel($label);
 
@@ -155,8 +194,9 @@ final class EventLinkCatalog
 
     /**
      * @param  callable(string, ?string, string, int): void  $add
+     * @param  bool  $withSourceFile  false when app source-file links replace the static one
      */
-    private function addRepositoryLinks(SecurityEvent $event, callable $add): void
+    private function addRepositoryLinks(SecurityEvent $event, callable $add, bool $withSourceFile): void
     {
         $event->loadMissing([
             'container.repositoryMappings.repositoryProvider',
@@ -173,7 +213,7 @@ final class EventLinkCatalog
 
         $filePath = $event->file_path;
 
-        if (! is_string($filePath) || $filePath === '') {
+        if (! $withSourceFile || ! is_string($filePath) || $filePath === '') {
             return;
         }
 
