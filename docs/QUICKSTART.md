@@ -19,11 +19,11 @@ yourself, or to use the `scripts/appsec-scout.ps1` convenience launcher — use
 | `scripts/lib/Certificates.psm1` | Module `export-host-certificates.ps1` wraps — not run directly |
 | `scripts/export-host-certificates.sh` | Exports the host's trusted CAs into `.docker/certs/` (Linux) |
 
-The easiest way to get exactly this set: every push to `main` publishes a matching
-"Deployment bundle" GitHub Release (tag `sha-<short-sha>`, the same short SHA as the
-`sha-<short-sha>` image tag it pairs with) with these files attached as a zip — see the
-repository's Releases page. You can also copy them by hand from the repository if you
-prefer a different ref.
+The easiest way to get exactly this set: every release publishes a GitHub Release named
+"AppSec Scout X.Y.Z" (tag `vX.Y.Z`) with these files attached as a zip — see the
+repository's Releases page, where the newest one carries the **Latest** badge. The zipped
+`.env.example` already pins `APPSEC_IMAGE_TAG` to that release's `X.Y.Z` image tag. You
+can also copy the files by hand from the repository if you prefer a different ref.
 
 Nothing else is required: no `app-laravel/`, no Dockerfiles, and no other `scripts/`
 content beyond the CA export files above.
@@ -45,11 +45,12 @@ content beyond the CA export files above.
    ```
 
    (The `;` separator is Docker Compose's default on Windows; on Linux/macOS use `:`,
-   or set `COMPOSE_PATH_SEPARATOR` to match.) Optionally pin an immutable build instead
-   of tracking `latest`:
+   or set `COMPOSE_PATH_SEPARATOR` to match.) The bundle's `.env.example` already pins
+   the release it shipped with; keep that pin (or move it to a newer release) rather
+   than tracking `latest`:
 
    ```
-   APPSEC_IMAGE_TAG=sha-<short-commit>
+   APPSEC_IMAGE_TAG=X.Y.Z
    ```
 
 4. Pull and start:
@@ -108,7 +109,7 @@ network path into a Corporate Azure tenant, so it is never run automatically.
 
 ```bash
 az login
-TAG=sha-<short-sha>          # pick the tag from the Release/image you want to promote
+TAG=X.Y.Z                    # the release version you want to promote (e.g. 1.0.0)
 ACR_NAME=<your-acr-short-name>
 SOURCE=ghcr.io/metanull/appsec-scout-2
 
@@ -147,7 +148,7 @@ In `.env`:
 ```
 COMPOSE_FILE=docker-compose.yml;docker-compose.ghcr.yml
 APPSEC_IMAGE_REGISTRY=<your-acr-short-name>.azurecr.io/appsec-scout-2
-APPSEC_IMAGE_TAG=sha-<short-sha>
+APPSEC_IMAGE_TAG=X.Y.Z
 UPSTREAM_IMAGE_REGISTRY=<your-acr-short-name>.azurecr.io
 ```
 

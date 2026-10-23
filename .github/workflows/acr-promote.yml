@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "GHCR tag to promote (e.g. sha-abc1234) — promoted verbatim and re-tagged latest in ACR"
+        description: "GHCR release tag to promote (e.g. 1.0.0) — promoted verbatim and re-tagged latest in ACR"
         required: true
         type: string
 

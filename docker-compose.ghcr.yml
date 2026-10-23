@@ -1,7 +1,8 @@
 # Prebuilt-image override — opt-in alternative to building the images locally.
 #
 # Runs the stack from the images CI publishes to the GitHub Container Registry
-# (.github/workflows/image-publish.yml: Trivy-gated, pushed on every merge to main)
+# (.github/workflows/image-publish.yml: Trivy-gated, pushed on every merge to main and
+# for every vX.Y.Z release)
 # instead of building from the Dockerfiles. Activate it by adding this line to the
 # root .env (or setting the same variable in the shell environment) so that every
 # `docker compose` invocation — the PowerShell scripts included — picks it up
@@ -17,8 +18,9 @@
 # listing pgsql last reverts `postgres` to the locally-built `appsec-scout-postgres:latest`
 # and `docker compose pull` fails with "pull access denied".
 #
-# APPSEC_IMAGE_TAG selects the tag (default: latest). Deployments should pin the
-# immutable sha-<short-commit> tag of a vetted build instead of tracking latest.
+# APPSEC_IMAGE_TAG selects the tag (default: latest, the newest release). Deployments
+# should pin a release version (X.Y.Z) instead of tracking latest; sha-<short-commit>
+# tags of unreleased main builds exist for testing.
 # Only tags built from commits that include the runtime-CA entrypoint (see
 # docker/entrypoint.sh, /host-certs) support corporate-proxy CA trust; older tags
 # still run, but ignore .docker/certs.
