@@ -1,0 +1,25 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+/*
+ * Auth pages (login, password reset, MFA setup) use Filament's simple layout.
+ * They carry the brand's pixel-grid pattern on the dark slate ground in both
+ * colour modes, so the sign-in screen matches the logo and README banner. The
+ * form card keeps Filament's own surface, so it stays readable on the pattern.
+ */
+.fi-simple-layout {
+    background-color: var(--color-gray-950);
+    background-image: url('/images/brand/grid-pattern.svg');
+    background-repeat: repeat;
+}
+
+/*
+ * Larger logo above the auth form. Filament sets the logo height inline from
+ * brandLogoHeight() (2rem, sized for the topbar), so only !important can
+ * override it here; a route-based height would flip back on Livewire updates.
+ */
+.fi-simple-layout .fi-logo {
+    height: 3rem !important;
+}

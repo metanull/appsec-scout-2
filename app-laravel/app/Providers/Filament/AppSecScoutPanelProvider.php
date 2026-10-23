@@ -46,6 +46,7 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->brandLogo(fn (): string => asset('images/brand/logo-light.svg'))
             ->darkModeBrandLogo(fn (): string => asset('images/brand/logo-dark.svg'))
             ->brandLogoHeight('2rem')
+            ->viteTheme('resources/css/filament/appsec-scout/theme.css')
             ->favicon(fn (): string => asset('favicon.ico'))
             ->maxContentWidth(Width::Full)
             ->sidebarCollapsibleOnDesktop()

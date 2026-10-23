@@ -171,6 +171,7 @@ Panel id: `appsec-scout`, path: `/` (root). Auto-discovers resources, pages, and
 These rules apply to all Filament resources, pages, and widgets in `app/Filament/`.
 
 - Use Filament primitives exclusively. Never add raw Blade, inline CSS, custom JavaScript, or bespoke Livewire components unless a primitive provably cannot satisfy the requirement — explain why before proceeding.
+- Panel CSS lives only in the compiled Filament theme `resources/css/filament/appsec-scout/theme.css` (registered with `->viteTheme()`, built by Vite in the Dockerfile `assets` stage) and targets Filament's documented `fi-*` classes. Today it styles only the auth (simple-layout) pages. Inline CSS stays forbidden.
 - `form()` receives and returns `Filament\Schemas\Schema`; `infolist()` receives and returns `Filament\Infolists\Infolist`. Import every Filament class explicitly.
 - Use `Section::make()` to group logically related fields with a human-readable heading.
 - Use `Grid::make(columns)` for two- or four-column responsive layouts on dense forms.

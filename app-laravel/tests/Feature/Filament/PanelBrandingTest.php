@@ -30,6 +30,15 @@ it('points the brand logos and favicon at committed assets', function () {
     }
 });
 
+it('registers the compiled panel theme and its grid pattern asset', function () {
+    $theme = 'resources/css/filament/appsec-scout/theme.css';
+
+    expect(Filament::getPanel('appsec-scout')->getViteTheme())->toBe($theme)
+        ->and(base_path($theme))->toBeFile()
+        ->and(file_get_contents(base_path('vite.config.js')))->toContain($theme)
+        ->and(public_path('images/brand/grid-pattern.svg'))->toBeFile();
+});
+
 it('shows the brand logo and favicon on the login page', function () {
     $this->get(Filament::getPanel('appsec-scout')->getLoginUrl())
         ->assertOk()
