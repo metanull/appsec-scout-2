@@ -162,7 +162,7 @@ Panel id: `appsec-scout`, path: `/` (root). Auto-discovers resources, pages, and
 
 **Resources** (10): SecurityEvent, SecurityContainer, SoftwareSystem, SoftwareAsset, SoftwareComponent, LocalFinding, User, AuditLog, ErrorLog, RepositoryProvider, and shared RelationManagers for CuratedLinks, RepositoryMappings, TrackerProjectLinks.
 
-**Custom Pages**: OperationsPage, PendingSyncPage, ProfileIntegrationsPage, SystemCredentialsPage.
+**Custom Pages**: OperationsPage, PackagesPage, PendingSyncPage, ProfileIntegrationsPage, SystemCredentialsPage.
 
 **Widgets**: SecurityOverviewStats, SeverityDistributionChart, OpenAlertsBySource, RecentSyncRuns, RecentErrors, OperationsHealthStats.
 
