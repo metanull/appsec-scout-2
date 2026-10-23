@@ -31,10 +31,10 @@ it('renders the alert detail infolist for a user with alerts.view', function () 
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
         ->assertSee('Test infolist alert')
-        ->assertSee('Alert Summary');
+        ->assertSee('Summary');
 });
 
-it('shows type-specific Secret Details section for secret events', function () {
+it('shows the type-specific Secret details tab for secret events', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -50,11 +50,11 @@ it('shows type-specific Secret Details section for secret events', function () {
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('Secret Details')
+        ->assertSee('Secret details')
         ->assertSee('GitLeaks');
 });
 
-it('shows type-specific Dependency Details section for dependency events', function () {
+it('shows the type-specific Dependency details tab for dependency events', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -70,11 +70,11 @@ it('shows type-specific Dependency Details section for dependency events', funct
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('Dependency Details')
+        ->assertSee('Dependency details')
         ->assertSee('lodash 4.17.20');
 });
 
-it('shows Code Location section for vulnerability events', function () {
+it('shows the Code location tab for vulnerability events', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -91,11 +91,11 @@ it('shows Code Location section for vulnerability events', function () {
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('Code Location')
+        ->assertSee('Code location')
         ->assertSee('src/auth/login.php');
 });
 
-it('shows Posture section for misconfiguration events', function () {
+it('shows the Posture tab for misconfiguration events', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -115,7 +115,7 @@ it('shows Posture section for misconfiguration events', function () {
         ->assertSee('S3Bucket');
 });
 
-it('shows System and Container as hyperlinks in the Alert Summary section', function () {
+it('shows System and Container as hyperlinks in the Summary tab', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),

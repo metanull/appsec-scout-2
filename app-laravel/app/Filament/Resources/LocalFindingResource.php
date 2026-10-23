@@ -36,7 +36,8 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
-use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -85,135 +86,153 @@ class LocalFindingResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Finding')
-                ->schema([
-                    Grid::make(3)->schema([
-                        // Field order mirrors SecurityEventResource's Alert Summary: title
-                        // first, then the type/severity/state trio, then scope, timestamps,
-                        // identity, and long text last — so the two detail pages read alike.
-                        TextEntry::make('title')->label('Title')->wrap()->columnSpan(2),
-                        TextEntry::make('kind')->label('Kind')->badge()->color(fn (string $state): string => match ($state) {
-                            LocalFinding::KIND_SECRET => 'danger',
-                            LocalFinding::KIND_CODE_QUALITY => 'info',
-                            default => 'warning',
-                        }),
-                        TextEntry::make('_effective_severity')
-                            ->label('Severity')
-                            ->state(fn (LocalFinding $record): string => $record->overridden_severity !== null
-                                ? "{$record->effectiveSeverityLabel()} (reported: {$record->severity})"
-                                : $record->effectiveSeverityLabel())
-                            ->badge()
-                            ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
-                        TextEntry::make('status')
-                            ->label('Status')
-                            ->badge()
-                            ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
-                            ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
-                        TextEntry::make('rule_id')->label('Rule ID')->placeholder('-'),
-                        TextEntry::make('softwareAsset.name')
-                            ->label('Asset')
-                            ->url(fn (LocalFinding $record): ?string => $record->softwareAsset
-                                ? SoftwareAssetResource::getUrl('view', ['record' => $record->softwareAsset])
-                                : null)
-                            ->placeholder('-'),
-                        TextEntry::make('softwareSystem.name')
-                            ->label('System')
-                            ->url(fn (LocalFinding $record): ?string => $record->softwareSystem
-                                ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
-                                : null)
-                            ->placeholder('-'),
-                        TextEntry::make('_container')
-                            ->label('Container')
-                            ->state(fn (LocalFinding $record): ?string => $record->owner instanceof SecurityContainer ? $record->owner->name : null)
-                            ->url(fn (LocalFinding $record): ?string => $record->owner instanceof SecurityContainer
-                                ? SecurityContainerResource::getUrl('view', ['record' => $record->owner])
-                                : null)
-                            ->placeholder('-'),
-                        TextEntry::make('correlated_security_event_id')
-                            ->label('Correlated alert')
-                            ->state(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? '#' . $record->correlated_security_event_id : '-')
-                            ->url(fn (LocalFinding $record): ?string => $record->correlated_security_event_id !== null
-                                ? SecurityEventResource::getUrl('view', ['record' => $record->correlated_security_event_id])
-                                : null)
-                            ->color(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? 'primary' : 'gray'),
-                        TextEntry::make('first_seen_at')->label('First seen')->dateTime('d M Y H:i')->placeholder('-'),
-                        TextEntry::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
-                        TextEntry::make('_location')
-                            ->label('Location')
-                            ->state(fn (LocalFinding $record): string => $record->start_line !== null
-                                ? "{$record->file_path}:{$record->start_line}"
-                                : $record->file_path)
-                            ->url(fn (LocalFinding $record): ?string => app(LocalFindingLinkCatalog::class)->sourceFileUrl($record))
-                            ->openUrlInNewTab()
-                            ->copyable()
-                            ->fontFamily('mono')
-                            ->placeholder('-'),
-                        TextEntry::make('_package')
-                            ->label('Package')
-                            ->state(fn (LocalFinding $record): ?string => $record->package_name !== null
-                                ? trim("{$record->package_name} {$record->package_version}")
-                                : null)
-                            ->placeholder('-'),
-                    ]),
-                ]),
-
-            Section::make('Problem')
-                ->schema([
-                    TextEntry::make('_message')
-                        ->label('Message')
-                        ->state(fn (LocalFinding $record): ?string => $record->messageText())
-                        ->wrap()
-                        ->placeholder('-')
-                        ->columnSpanFull(),
-                    TextEntry::make('description')
-                        ->label('Description')
-                        ->wrap()
-                        ->placeholder('-')
-                        ->columnSpanFull(),
-                    TextEntry::make('_help')
-                        ->label('Rule help')
-                        ->state(fn (LocalFinding $record): ?string => $record->helpMarkdown())
-                        ->markdown()
-                        ->placeholder('-')
-                        ->columnSpanFull(),
-                    TextEntry::make('_tags')
-                        ->label('Tags')
-                        ->state(fn (LocalFinding $record): array => $record->tags())
-                        ->badge()
-                        ->placeholder('-'),
-                ]),
-
-            self::linksSection(),
-
-            Section::make('Raw result')
-                ->collapsible()
-                ->collapsed()
-                ->schema([
-                    CodeEntry::make('_raw_result')
-                        ->label('SARIF result')
-                        ->state(function (LocalFinding $record): array {
-                            $metadata = $record->getAttribute('metadata');
-                            $result = is_array($metadata) ? ($metadata['result'] ?? null) : null;
-
-                            return is_array($result) ? $result : [];
-                        })
-                        ->grammar(Grammar::Json)
-                        ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-                        ->copyable()
-                        ->columnSpanFull(),
+            Tabs::make('Finding details')
+                ->columnSpanFull()
+                ->persistTabInQueryString()
+                ->tabs([
+                    self::findingTab(),
+                    self::problemTab(),
+                    self::linksTab(),
+                    self::rawResultTab(),
                 ]),
         ]);
     }
 
+    private static function findingTab(): Tab
+    {
+        return Tab::make('Finding')
+            ->key('finding')
+            ->schema([
+                Grid::make(3)->schema([
+                    // Field order mirrors SecurityEventResource's Summary tab: title
+                    // first, then the type/severity/state trio, then scope, timestamps,
+                    // identity, and long text last — so the two detail pages read alike.
+                    TextEntry::make('title')->label('Title')->wrap()->columnSpan(2),
+                    TextEntry::make('kind')->label('Kind')->badge()->color(fn (string $state): string => match ($state) {
+                        LocalFinding::KIND_SECRET => 'danger',
+                        LocalFinding::KIND_CODE_QUALITY => 'info',
+                        default => 'warning',
+                    }),
+                    TextEntry::make('_effective_severity')
+                        ->label('Severity')
+                        ->state(fn (LocalFinding $record): string => $record->overridden_severity !== null
+                            ? "{$record->effectiveSeverityLabel()} (reported: {$record->severity})"
+                            : $record->effectiveSeverityLabel())
+                        ->badge()
+                        ->color(fn (LocalFinding $record): string => LocalFinding::severityColor($record->effectiveSeverityLabel())),
+                    TextEntry::make('status')
+                        ->label('Status')
+                        ->badge()
+                        ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString())
+                        ->color(fn (EventState|string $state) => EventStateBadgeColor::for($state)),
+                    TextEntry::make('rule_id')->label('Rule ID')->placeholder('-'),
+                    TextEntry::make('softwareAsset.name')
+                        ->label('Asset')
+                        ->url(fn (LocalFinding $record): ?string => $record->softwareAsset
+                            ? SoftwareAssetResource::getUrl('view', ['record' => $record->softwareAsset])
+                            : null)
+                        ->placeholder('-'),
+                    TextEntry::make('softwareSystem.name')
+                        ->label('System')
+                        ->url(fn (LocalFinding $record): ?string => $record->softwareSystem
+                            ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
+                            : null)
+                        ->placeholder('-'),
+                    TextEntry::make('_container')
+                        ->label('Container')
+                        ->state(fn (LocalFinding $record): ?string => $record->owner instanceof SecurityContainer ? $record->owner->name : null)
+                        ->url(fn (LocalFinding $record): ?string => $record->owner instanceof SecurityContainer
+                            ? SecurityContainerResource::getUrl('view', ['record' => $record->owner])
+                            : null)
+                        ->placeholder('-'),
+                    TextEntry::make('correlated_security_event_id')
+                        ->label('Correlated alert')
+                        ->state(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? '#' . $record->correlated_security_event_id : '-')
+                        ->url(fn (LocalFinding $record): ?string => $record->correlated_security_event_id !== null
+                            ? SecurityEventResource::getUrl('view', ['record' => $record->correlated_security_event_id])
+                            : null)
+                        ->color(fn (LocalFinding $record): string => $record->correlated_security_event_id !== null ? 'primary' : 'gray'),
+                    TextEntry::make('first_seen_at')->label('First seen')->dateTime('d M Y H:i')->placeholder('-'),
+                    TextEntry::make('last_seen_at')->label('Last seen')->since()->placeholder('-'),
+                    TextEntry::make('_location')
+                        ->label('Location')
+                        ->state(fn (LocalFinding $record): string => $record->start_line !== null
+                            ? "{$record->file_path}:{$record->start_line}"
+                            : $record->file_path)
+                        ->url(fn (LocalFinding $record): ?string => app(LocalFindingLinkCatalog::class)->sourceFileUrl($record))
+                        ->openUrlInNewTab()
+                        ->copyable()
+                        ->fontFamily('mono')
+                        ->placeholder('-'),
+                    TextEntry::make('_package')
+                        ->label('Package')
+                        ->state(fn (LocalFinding $record): ?string => $record->package_name !== null
+                            ? trim("{$record->package_name} {$record->package_version}")
+                            : null)
+                        ->placeholder('-'),
+                ]),
+            ]);
+    }
+
+    private static function problemTab(): Tab
+    {
+        return Tab::make('Problem')
+            ->key('problem')
+            ->schema([
+                TextEntry::make('_message')
+                    ->label('Message')
+                    ->state(fn (LocalFinding $record): ?string => $record->messageText())
+                    ->wrap()
+                    ->placeholder('-')
+                    ->columnSpanFull(),
+                TextEntry::make('description')
+                    ->label('Description')
+                    ->wrap()
+                    ->placeholder('-')
+                    ->columnSpanFull(),
+                TextEntry::make('_help')
+                    ->label('Rule help')
+                    ->state(fn (LocalFinding $record): ?string => $record->helpMarkdown())
+                    ->markdown()
+                    ->placeholder('-')
+                    ->columnSpanFull(),
+                TextEntry::make('_tags')
+                    ->label('Tags')
+                    ->state(fn (LocalFinding $record): array => $record->tags())
+                    ->badge()
+                    ->placeholder('-'),
+            ]);
+    }
+
+    private static function rawResultTab(): Tab
+    {
+        return Tab::make('Raw result')
+            ->key('raw-result')
+            ->schema([
+                CodeEntry::make('_raw_result')
+                    ->label('SARIF result')
+                    ->state(function (LocalFinding $record): array {
+                        $metadata = $record->getAttribute('metadata');
+                        $result = is_array($metadata) ? ($metadata['result'] ?? null) : null;
+
+                        return is_array($result) ? $result : [];
+                    })
+                    ->grammar(Grammar::Json)
+                    ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                    ->copyable()
+                    ->columnSpanFull(),
+            ]);
+    }
+
     /**
      * A compact catalog of every reference link for the finding — the same
-     * "Links & References" section the alert view renders (see
-     * SecurityEventResource::linksSection), built by LocalFindingLinkCatalog.
+     * "Links & References" tab the alert view renders (see
+     * SecurityEventResource::linksTab), built by LocalFindingLinkCatalog.
      */
-    private static function linksSection(): Section
+    private static function linksTab(): Tab
     {
-        return Section::make('Links & References')
-            ->collapsible()
+        return Tab::make('Links & References')
+            ->key('links')
             ->visible(fn (LocalFinding $record): bool => self::allLinkCatalogRows($record) !== [])
             ->schema([
                 RepeatableEntry::make('_links')
