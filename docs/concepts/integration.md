@@ -128,7 +128,8 @@ Roles are cumulative (`Reader < Triage < Plan < Sync < Admin`). Practically, thi
 Control exists purely to hold a **dedicated credential**
 (`azdo-repos.pat`/`azdo-repos.organization`, `github-repos.token`) — kept separate from the
 Source's alert-ingestion PAT and the Tracker's issue-tracking token because the required scope
-differs (e.g. AzDO's "Code (Read)" vs. its Advanced Security alert scope). That credential is
+differs (e.g. AzDO's "Code (Read)" — plus "Packaging (Read)" for the organization's own package
+feeds — vs. its Advanced Security alert scope). That credential is
 consumed synchronously, on demand, by whatever needs repository access at the moment —
 `triage:codesearch`, AzDO repository auto-linking during inventory sync, and
 `invoke-ops.ps1 -SbomScan` / `-StaticAnalysis` / `-Shell` / `-Claude` for cloning or pushing. It

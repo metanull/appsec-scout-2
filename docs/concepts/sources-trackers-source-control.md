@@ -24,7 +24,10 @@ models it as two independent integrations with two independent credentials — b
 required access scope genuinely differs. Azure DevOps is the clearest example: its Advanced
 Security alert API (Source) and its Code Search / git clone API (Source Control) need different
 PAT scopes, so `azdo.pat` (Source) and `azdo-repos.pat` (Source Control) are deliberately
-separate vault entries, resolved and rotated independently. The same is true of GitHub: issue
+separate vault entries, resolved and rotated independently. Building the cloned code is part of
+reading it, so `azdo-repos.pat` also carries Packaging (Read) for the organization's own Azure
+Artifacts feeds (see [Private Package Feeds](static-analysis-collection.md#private-package-feeds))
+rather than a third AzDO credential. The same is true of GitHub: issue
 creation (Tracker, `github.token`) and repository clone/push (Source Control,
 `github-repos.token`) are separate credentials.
 

@@ -63,7 +63,10 @@ entire Azure DevOps organization:
 2. Per repository: shallow-clone it to a temp directory.
 3. For every `*.sln` found, `dotnet restore`/`dotnet build` (non-fatal if it fails) — this lets
    Trivy read resolved package versions from `project.assets.json` instead of falling back to
-   version ranges declared in `*.csproj`.
+   version ranges declared in `*.csproj`. The organization's own Azure Artifacts NuGet feeds are
+   authenticated with the same AzDO PAT, through a per-repository NuGet config written by
+   `write-package-feed-credentials.php` (see
+   [Private Package Feeds](static-analysis-collection.md#private-package-feeds)).
 4. Run three independent Trivy scans against the shared `trivy-server` container (no local
    vulnerability DB download): CycloneDX SBOM, vulnerability SARIF, secret SARIF — each
    individually toggleable.
@@ -96,6 +99,10 @@ All three ecosystems always run (gated only by which report types are enabled vi
 gets all three reports. A failed restore/build/scan for any ecosystem is non-fatal: analysis is
 simply skipped for that ecosystem on that repo, and the failure is captured in a log file
 alongside the run's other output rather than aborting the scan.
+
+The organization's own Azure Artifacts feeds (NuGet and Maven) are authenticated with the same
+AzDO PAT, exactly as the in-app job does it — see
+[Private Package Feeds](static-analysis-collection.md#private-package-feeds).
 
 ## Output, Resume, and Upload
 

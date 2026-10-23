@@ -93,6 +93,25 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      */
     private bool $anyAnalyzerCompleted = false;
 
+    /**
+     * Set once the clone is read: the settings file holding the feed
+     * credentials for this repository's Maven repositories, passed to every
+     * Maven build. Maven reads its settings from the JVM's user.home, not
+     * $HOME, so it has to be named explicitly.
+     */
+    private ?string $mavenSettingsPath = null;
+
+    /**
+     * Keeps MSBuild worker nodes, the MSBuild server and the Roslyn compiler
+     * server from outliving each dotnet command. Left running, they keep
+     * writing into the job's scratch HOME after the job has deleted it.
+     */
+    private const DOTNET_ENVIRONMENT = [
+        'MSBUILDDISABLENODEREUSE' => '1',
+        'DOTNET_CLI_USE_MSBUILD_SERVER' => '0',
+        'UseSharedCompilation' => 'false',
+    ];
+
     public function __construct(
         public readonly RepositoryCollectionTarget $target,
         public readonly int $staticAnalysisRunId,
@@ -109,9 +128,12 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         AttachmentTargetResolver $resolver,
         AttachmentService $attachments,
         Vault $vault,
+        PackageFeedCredentialWriter $feedCredentials,
     ): void {
         $pat = $vault->getSystem('azdo-repos.pat')
             ?? throw new RuntimeException('AzDO Repos PAT not configured.');
+        $organization = $vault->getSystem('azdo-repos.organization')
+            ?? throw new RuntimeException('AzDO Repos organization not configured.');
 
         $scratchRoot = rtrim((string) config('static_analysis_collection.workspace_path'), '/')
             . '/' . (string) Str::uuid();
@@ -145,6 +167,8 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
             if ($cloned) {
                 $securityContainer = $this->resolveOwner($resolver);
+
+                $this->prepareFeedCredentials($feedCredentials, $workDir, $homeDir, $organization, $pat);
 
                 $this->analyzeOpengrep($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
                 $this->analyzeDotnet($attachments, $securityContainer, $workDir, $scratchRoot, $homeDir);
@@ -245,6 +269,32 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             ->timeout(60)
             ->run(['git', 'config', '--global', 'credential.helper', 'store'])
             ->throw();
+    }
+
+    /**
+     * Written into the same scratch HOME as the git credentials, so the
+     * job's `finally` deletes them too.
+     */
+    private function prepareFeedCredentials(
+        PackageFeedCredentialWriter $writer,
+        string $workDir,
+        string $homeDir,
+        string $organization,
+        string $pat,
+    ): void {
+        $credentials = $writer->write($workDir, $homeDir, $organization, $pat);
+        $this->mavenSettingsPath = $credentials->mavenSettingsPath;
+
+        if ($credentials->isEmpty()) {
+            return;
+        }
+
+        Log::channel('single')->info('Package feed credentials prepared.', [
+            'run' => $this->staticAnalysisRunId,
+            'repository_name' => $this->target->repositoryName,
+            'nuget_sources' => $credentials->nugetSources,
+            'maven_repositories' => $credentials->mavenRepositories,
+        ]);
     }
 
     private function cloneRepository(string $homeDir, string $workDir): bool
@@ -505,7 +555,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         string $scratchRoot,
         string $homeDir,
     ): void {
-        $env = ['HOME' => $homeDir];
+        $env = ['HOME' => $homeDir] + self::DOTNET_ENVIRONMENT;
         $runs = [];
         $schema = null;
         $version = null;
@@ -714,10 +764,15 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         $timeout = (int) config('static_analysis_collection.java_build_timeout');
         $mvnw = $dir . '/mvnw';
         $gradlew = $dir . '/gradlew';
+        $mavenArgs = array_merge(
+            ['--batch-mode', '--quiet'],
+            $this->mavenSettingsPath !== null ? ['--settings', $this->mavenSettingsPath] : [],
+            ['-DskipTests', 'compile'],
+        );
 
         $command = match (true) {
-            is_file($mvnw) && is_executable($mvnw) => [$mvnw, '--batch-mode', '--quiet', '-DskipTests', 'compile'],
-            File::exists($dir . '/pom.xml') => ['mvn', '--batch-mode', '--quiet', '-DskipTests', 'compile'],
+            is_file($mvnw) && is_executable($mvnw) => [$mvnw, ...$mavenArgs],
+            File::exists($dir . '/pom.xml') => ['mvn', ...$mavenArgs],
             is_file($gradlew) && is_executable($gradlew) => [$gradlew, '--quiet', 'compileJava'],
             File::exists($dir . '/build.gradle') || File::exists($dir . '/build.gradle.kts') => ['gradle', '--quiet', 'compileJava'],
             default => null,

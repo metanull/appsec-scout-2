@@ -6,7 +6,9 @@
 # For .NET repos, each *.sln found is restored and built first so Trivy can
 # read resolved package versions from project.assets.json instead of falling
 # back to the version ranges declared in *.csproj. Restore/build failures are
-# non-fatal — Trivy still runs and produces range-based results.
+# non-fatal — Trivy still runs and produces range-based results. The organization's own
+# private Azure Artifacts NuGet feeds are authenticated with AZDO_PAT too — see
+# prepare_feed_credentials.
 #
 # Required environment: AZDO_ORG, AZDO_PAT, TRIVY_SERVER_URL
 # Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
@@ -60,6 +62,26 @@ chmod 600 "$NETRC_FILE"
 git config --global credential.helper store
 printf 'https://:%s@dev.azure.com\n' "$AZDO_PAT" > "$HOME/.git-credentials"
 chmod 600 "$HOME/.git-credentials"
+
+# Keeps MSBuild worker nodes, the MSBuild server and the Roslyn compiler server from outliving
+# each dotnet command: left running, the next repository's build reuses them, still pointed at
+# the previous repository's feed-credential HOME.
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0 UseSharedCompilation=false
+# dotnet runs with a per-repository HOME (see prepare_feed_credentials); the package cache stays shared.
+NUGET_PACKAGES_DIR="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
+
+# NuGet ignores the .netrc/.git-credentials above and looks credentials up by the name a
+# repository gives each feed, so the clone's own nuget.config files are read to write
+# credentials for the organization's own Azure Artifacts feeds into a per-repository HOME
+# (deleted with the clone). Same helper as collect-static-analysis.sh; the Maven settings it
+# may also write go unused here, since this script builds no Java. Non-fatal like every other
+# per-repository step: the restore then fails as it did before.
+prepare_feed_credentials() {
+    local workdir="$1" feed_home="$2"
+    if ! php /usr/local/bin/write-package-feed-credentials.php "$workdir" "$feed_home" >/dev/null; then
+        echo "WARN: could not prepare package feed credentials for $workdir" >&2
+    fi
+}
 
 RUN_TS=$(date -u +%Y%m%dT%H%M%SZ)
 RUN_DIR="$OUTPUT_DIR/$RUN_TS"
@@ -149,9 +171,10 @@ azdo_get_all() {
 process_repo() {
     local project_name="$1" repo_name="$2" remote_url="$3" project_id="$4" repo_id="$5"
     local repo_web_url="$6" default_branch="$7" project_description="$8" project_url="$9"
-    local workdir
+    local workdir feed_home
     workdir=$(mktemp -d)
-    trap 'rm -rf "$workdir"' RETURN
+    feed_home=$(mktemp -d)
+    trap 'rm -rf "$workdir" "$feed_home"' RETURN
 
     local safe_project safe_repo out_dir sbom_path vuln_path secret_path
     safe_project=$(sanitize "$project_name")
@@ -165,6 +188,7 @@ process_repo() {
     local clone_ok=false
     if git clone --quiet --depth 1 --no-tags --shallow-submodules "$remote_url" "$workdir" >/dev/null 2>&1; then
         clone_ok=true
+        prepare_feed_credentials "$workdir" "$feed_home"
     fi
 
     local solutions_json="[]"
@@ -172,9 +196,9 @@ process_repo() {
         local sln_results=()
         while IFS= read -r -d '' sln; do
             local restore_ok=false build_ok=false
-            if timeout "$RESTORE_TIMEOUT" dotnet restore "$sln" >/dev/null 2>&1; then
+            if env HOME="$feed_home" NUGET_PACKAGES="$NUGET_PACKAGES_DIR" timeout "$RESTORE_TIMEOUT" dotnet restore "$sln" >/dev/null 2>&1; then
                 restore_ok=true
-                if timeout "$BUILD_TIMEOUT" dotnet build --no-restore "$sln" >/dev/null 2>&1; then
+                if env HOME="$feed_home" NUGET_PACKAGES="$NUGET_PACKAGES_DIR" timeout "$BUILD_TIMEOUT" dotnet build --no-restore "$sln" >/dev/null 2>&1; then
                     build_ok=true
                 fi
             fi

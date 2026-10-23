@@ -370,6 +370,11 @@ Use `Admin -> System Credentials` for credentials shared by background jobs, or
 | GitHub Repos (Source Control) | `github-repos.token` |
 | Jira Cloud (Work Tracker) | `jira.host`, `jira.email`, `jira.api_token` |
 
+Give `azdo-repos.pat` the **Code (Read)** and **Packaging (Read)** scopes. Packaging (Read) lets
+static analysis and the SBOM scan restore packages from the organization's own Azure Artifacts
+feeds (`https://pkgs.dev.azure.com/<organization>/...`); without it, `dotnet restore` and Maven
+builds of repositories that use those feeds fail with 401.
+
 For ASoC, `asoc.baseUrl` must match the region where the API key was created:
 
 - US: `https://cloud.appscan.com/`

@@ -78,7 +78,7 @@ Before running a full scan, validate the PAT with [scripts/test-AzureDevOpsToken
 `collect-sboms.sh` (invoked via `entrypoint.sh --sbom-scan`, i.e. `-SbomScan`) enumerates every project and non-disabled repository in the target Azure DevOps organization and, for each repo:
 
 1. Shallow-clones it.
-2. If it contains any `*.sln`, attempts `dotnet restore` + `dotnet build` (non-fatal — Trivy still runs against unresolved package ranges if this fails).
+2. If it contains any `*.sln`, attempts `dotnet restore` + `dotnet build` (non-fatal — Trivy still runs against unresolved package ranges if this fails). NuGet sources on the organization's own Azure Artifacts feeds get `AZDO_PAT` through a per-repository HOME written by `write-package-feed-credentials.php`, so the PAT needs Packaging (Read) as well as Code (Read).
 3. Runs up to three Trivy scans against the shared `trivy-server` container (`--server`/`--token`, read from the `trivy_token` volume — see docker-compose.yml), controlled by `AZDO_SCAN_TYPES` (default `sbom,vuln,secret`):
    - `sbom` — `trivy fs --format cyclonedx` → CycloneDX SBOM
    - `vuln` — `trivy fs --scanners vuln --format sarif` → vulnerability report
@@ -110,6 +110,8 @@ Results land under `$OUTPUT_DIR/<UTC timestamp>/<project>/<repo>.{cdx,vuln.sarif
 3. .NET: for every `*.sln` found, attempts `dotnet restore` + `dotnet build`, then (if restore succeeded) `roslynator analyze` on that solution. Results from every solution in the repo are merged into one SARIF file.
 4. Java: builds the topmost `pom.xml`/`build.gradle[.kts]` in the tree — the repo's own `mvnw`/`gradlew` wrapper if present, else the image's Maven/Gradle install — then runs SpotBugs (with the Find Security Bugs plugin) against every directory that ends up containing compiled `.class` files.
 5. Deletes the clone immediately after analysis.
+
+NuGet sources and Maven repositories on the organization's own Azure Artifacts feeds get `AZDO_PAT` the same way as in the SBOM scan (Maven through `--settings`), so the PAT needs Packaging (Read) as well as Code (Read).
 
 Controlled by `STATIC_ANALYSIS_TYPES` (default `dotnet,java,opengrep`). Build failures are non-fatal for either language — the corresponding report is simply not generated for that repo, mirroring how `collect-sboms.sh` already treats `dotnet restore`/`build` failures.
 
