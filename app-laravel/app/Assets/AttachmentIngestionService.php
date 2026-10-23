@@ -43,6 +43,9 @@ final class AttachmentIngestionService
 
     public const KIND_CODE_QUALITY_OPENGREP = 'code-quality-opengrep';
 
+    /** Build output and binaries committed to a repository (RepositoryHygieneCheck's SARIF). */
+    public const KIND_REPO_HYGIENE = 'repo-hygiene';
+
     public function __construct(
         private readonly CycloneDxSbomParser $sbomParser,
         private readonly SarifFindingParser $sarifParser,
@@ -63,7 +66,7 @@ final class AttachmentIngestionService
             self::KIND_SBOM, self::KIND_SBOM_ARCHIVES => $this->ingestSbom($attachment, $owner),
             self::KIND_VULNERABILITIES, self::KIND_VULNERABILITIES_ARCHIVES => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_VULNERABILITY),
             self::KIND_SECRETS => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_SECRET),
-            self::KIND_CODE_QUALITY_DOTNET, self::KIND_CODE_QUALITY_JAVA, self::KIND_CODE_QUALITY_OPENGREP => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_CODE_QUALITY),
+            self::KIND_CODE_QUALITY_DOTNET, self::KIND_CODE_QUALITY_JAVA, self::KIND_CODE_QUALITY_OPENGREP, self::KIND_REPO_HYGIENE => $this->ingestFindings($attachment, $owner, LocalFinding::KIND_CODE_QUALITY),
             default => null,
         };
     }

@@ -14,6 +14,7 @@ use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
 use App\Models\ToolInvocation;
 use App\SourceControl\Collection\CollectRepositoryJob;
+use App\SourceControl\Collection\Hygiene\RepositoryHygieneCheck;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -54,7 +55,7 @@ function seedAzdoReposCredential(): void
 
 function collectRepositoryJobDependencies(): array
 {
-    return [app(AttachmentTargetResolver::class), app(AttachmentService::class), app(Vault::class)];
+    return [app(AttachmentTargetResolver::class), app(AttachmentService::class), app(Vault::class), app(RepositoryHygieneCheck::class)];
 }
 
 /**
@@ -768,5 +769,131 @@ it('logs a failed archive scan and counts the repository failed, keeping every o
         ->and($errorLog->message)->toContain('java DB download failed')
         ->and(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe(['sbom', 'sbom-archives', 'secrets', 'vulnerabilities'])
         ->and(ToolInvocation::query()->where('tool', 'trivy-vuln-archives')->sole()->outcome)->toBe('failed')
+        ->and($run->refresh()->status)->toBe('failure');
+});
+
+// ---------------------------------------------------------------------------
+// Repository hygiene — build output and binaries committed to Git, read from
+// `git ls-files`, stored as a `repo-hygiene` report of its own.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fakes a clone whose `git ls-files` lists the given blobs (path => size; false makes it fail),
+ * and a Trivy whose secret scan reports the given paths.
+ *
+ * @param  array<string, int>|false  $tracked
+ * @param  list<string>  $secretPaths
+ */
+function fakeHygieneCollection(array|false $tracked, array $secretPaths = []): void
+{
+    Process::fake(function ($process) use ($tracked, $secretPaths) {
+        $parts = $process->command;
+        createClonedTree($parts);
+
+        if (in_array('ls-files', $parts, true)) {
+            return $tracked === false
+                ? Process::result(exitCode: 128, errorOutput: 'fatal: not a git repository')
+                : Process::result(output: lsFilesOutput($tracked));
+        }
+
+        if (($parts[0] ?? null) === 'trivy') {
+            $option = fn (string $name): ?string => ($index = array_search($name, $parts, true)) === false ? null : $parts[$index + 1];
+            File::put((string) $option('--output'), match (true) {
+                $option('--format') === 'cyclonedx' => '{"bomFormat":"CycloneDX","components":[]}',
+                $option('--scanners') === 'secret' => trivySecretsSarif($secretPaths),
+                default => '{"runs":[]}',
+            });
+        }
+
+        return Process::result(exitCode: 0);
+    });
+}
+
+function hygieneFinding(string $folder): LocalFinding
+{
+    return LocalFinding::query()->where('report_kind', AttachmentIngestionService::KIND_REPO_HYGIENE)->where('file_path', $folder)->sole();
+}
+
+it('stores committed build output as one repo-hygiene finding per folder, HIGH where it holds a secret', function () {
+    fakeHygieneCollection([
+        'Office365/bin/Release/appsettings.json' => 400,
+        'Office365/bin/Release/Office365.dll' => 60000,
+        'Office365/obj/Release/appsettings.json' => 400,
+        'Office365/appsettings.json' => 400,
+        'lib/legacy.jar' => 1000,
+    ], ['Office365/bin/Release/appsettings.json', 'Office365/appsettings.json']);
+
+    collectRepositoryOnce();
+
+    $container = SecurityContainer::query()->where('source_container_id', 'repo-001')->sole();
+    $bin = hygieneFinding('Office365/bin');
+
+    expect(Attachment::query()->where('kind', AttachmentIngestionService::KIND_REPO_HYGIENE)->sole()->owner_id)->toBe($container->id)
+        ->and(LocalFinding::query()->where('report_kind', AttachmentIngestionService::KIND_REPO_HYGIENE)->pluck('file_path')->sort()->values()->all())
+        ->toBe(['Office365/bin', 'Office365/obj', 'lib'])
+        ->and($bin->kind)->toBe(LocalFinding::KIND_CODE_QUALITY)
+        ->and($bin->rule_id)->toBe('repo-hygiene/committed-build-output')
+        ->and($bin->severity)->toBe('HIGH')
+        ->and($bin->metadata['result']['properties'])->toMatchArray(['fileCount' => 2, 'sizeBytes' => 60400, 'secretCount' => 1])
+        ->and($bin->helpMarkdown())->toContain('CICD-SEC-9')
+        ->and(hygieneFinding('Office365/obj')->severity)->toBe('MEDIUM')
+        ->and(hygieneFinding('lib')->rule_id)->toBe('repo-hygiene/committed-binary')
+        ->and(ToolInvocation::query()->where('tool', 'repo-hygiene')->sole()->outcome)->toBe('ran_with_findings');
+});
+
+it('stores no hygiene report for a repository that never committed build output', function () {
+    fakeHygieneCollection(['src/App.cs' => 10, 'README.md' => 10]);
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    expect(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe(['sbom', 'secrets', 'vulnerabilities'])
+        ->and(ToolInvocation::query()->where('tool', 'repo-hygiene')->sole()->outcome)->toBe('ran_clean')
+        ->and($run->refresh()->status)->toBe('success');
+});
+
+it('resolves the finding of a folder removed from Git on the next collection', function () {
+    fakeHygieneCollection(['web/dist/app.js' => 10, 'web/node_modules/a/index.js' => 10]);
+    collectRepositoryOnce();
+
+    fakeHygieneCollection(['web/node_modules/a/index.js' => 10]);
+    collectRepositoryOnce();
+
+    expect(hygieneFinding('web/dist')->status)->toBe(EventState::Resolved)
+        ->and(hygieneFinding('web/node_modules')->status)->toBe(EventState::Open);
+
+    fakeHygieneCollection(['src/index.ts' => 10]);
+    collectRepositoryOnce();
+
+    expect(hygieneFinding('web/node_modules')->status)->toBe(EventState::Resolved)
+        ->and(Attachment::query()->where('kind', AttachmentIngestionService::KIND_REPO_HYGIENE)->count())->toBe(3);
+});
+
+it('raises a finding to HIGH once its folder holds a secret, and keeps it as one row', function () {
+    fakeHygieneCollection(['Api/publish/appsettings.json' => 10]);
+    collectRepositoryOnce();
+
+    expect(hygieneFinding('Api/publish')->severity)->toBe('MEDIUM');
+
+    fakeHygieneCollection(['Api/publish/appsettings.json' => 10], ['Api/publish/appsettings.json']);
+    collectRepositoryOnce();
+
+    expect(hygieneFinding('Api/publish')->severity)->toBe('HIGH');
+});
+
+it('logs a failed hygiene check and counts the repository failed, keeping every Trivy report', function () {
+    fakeHygieneCollection(false);
+    $run = repositoryCollectionRunForJobTest();
+
+    (new CollectRepositoryJob(repositoryCollectionTarget(), $run->id))
+        ->handle(...collectRepositoryJobDependencies());
+
+    $errorLog = ErrorLog::query()->where('channel', 'repository-collection')->sole();
+
+    expect($errorLog->context_json['operation'])->toBe('repo-hygiene')
+        ->and($errorLog->message)->toContain('git ls-files failed', 'not a git repository')
+        ->and(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe(['sbom', 'secrets', 'vulnerabilities'])
+        ->and(ToolInvocation::query()->where('tool', 'repo-hygiene')->sole()->outcome)->toBe('failed')
         ->and($run->refresh()->status)->toBe('failure');
 });

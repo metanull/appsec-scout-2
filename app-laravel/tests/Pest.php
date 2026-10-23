@@ -110,3 +110,28 @@ function makeEvent(array $overrides = []): SecurityEvent
 
     return $event;
 }
+
+/**
+ * `git ls-files -z --format=%(objecttype)%x09%(objectsize)%x09%(path)` output for the given
+ * tracked blobs (path => size).
+ *
+ * @param  array<string, int>  $files
+ */
+function lsFilesOutput(array $files): string
+{
+    return implode('', array_map(fn (string $path, int $size): string => "blob\t{$size}\t{$path}\0", array_keys($files), $files));
+}
+
+/** @param  list<string>  $paths */
+function trivySecretsSarif(array $paths): string
+{
+    return json_encode(['version' => '2.1.0', 'runs' => [[
+        'tool' => ['driver' => ['name' => 'Trivy', 'rules' => [['id' => 'azure-client-secret', 'shortDescription' => ['text' => 'Azure client secret']]]]],
+        'results' => array_map(fn (string $path): array => [
+            'ruleId' => 'azure-client-secret',
+            'level' => 'error',
+            'message' => ['text' => "Artifact: {$path}\nType: \nSecret Azure client secret\nSeverity: HIGH"],
+            'locations' => [['physicalLocation' => ['artifactLocation' => ['uri' => $path], 'region' => ['startLine' => 3]]]],
+        ], $paths),
+    ]]], JSON_THROW_ON_ERROR);
+}

@@ -13,6 +13,7 @@ use App\Models\ErrorLog;
 use App\Models\RepositoryCollectionRun;
 use App\Models\SecurityContainer;
 use App\Models\ToolInvocation;
+use App\SourceControl\Collection\Hygiene\RepositoryHygieneCheck;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
@@ -33,7 +34,8 @@ use XMLWriter;
  * Clones one Azure DevOps repository, runs Trivy against it (SBOM as
  * CycloneDX, vulnerabilities and secrets as SARIF, against the shared
  * trivy-server; plus an SBOM and vulnerabilities of the committed
- * JAR/WAR/EAR archives when there are any), and stores every report Trivy
+ * JAR/WAR/EAR archives when there are any), plus RepositoryHygieneCheck's
+ * report of committed build output and binaries, and stores every report
  * produced as an Attachment on
  * the matching SoftwareSystem/SecurityContainer — reusing the exact same
  * AttachmentTargetResolver/AzDoScanResultDtoFactory/AttachmentService path
@@ -54,7 +56,8 @@ final class CollectRepositoryJob implements ShouldQueue
     /**
      * Overall job budget: git config (60s) + clone (600s) + up to five
      * sequential Trivy scans (three `fs`, two `rootfs` for committed
-     * archives; 1200s each, see PER_SCAN_TIMEOUT) can approach two hours for
+     * archives; 1200s each, see PER_SCAN_TIMEOUT) and the hygiene check's
+     * `git ls-files` (300s, HYGIENE_TIMEOUT) can approach two hours for
      * a large repository, so this must exceed their sum rather than matching
      * any single step's own timeout. The `redis-collection` connection's
      * retry_after (config/queue.php) must stay above this value.
@@ -62,6 +65,8 @@ final class CollectRepositoryJob implements ShouldQueue
     public int $timeout = 7200;
 
     private const PER_SCAN_TIMEOUT = 1200;
+
+    private const HYGIENE_TIMEOUT = 300;
 
     /**
      * Set by logFailure(): once any Trivy scan against this repository has
@@ -85,6 +90,7 @@ final class CollectRepositoryJob implements ShouldQueue
         AttachmentTargetResolver $resolver,
         AttachmentService $attachments,
         Vault $vault,
+        RepositoryHygieneCheck $hygiene,
     ): void {
         Log::info('Repository collection started.', $this->logContext('start'));
 
@@ -104,8 +110,10 @@ final class CollectRepositoryJob implements ShouldQueue
                 $securityContainer = $this->resolveOwner($resolver);
                 $trivyEnvironment = $this->trivyEnvironment($scratchRoot);
 
+                $reportPaths = [];
+
                 foreach ($this->reportKinds() as $report) {
-                    $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $trivyEnvironment, $report);
+                    $reportPaths[$report['kind']] = $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $trivyEnvironment, $report);
                 }
 
                 if ($this->shouldScanArchives($securityContainer, $workDir)) {
@@ -113,6 +121,8 @@ final class CollectRepositoryJob implements ShouldQueue
                         $this->scanAndAttach($attachments, $securityContainer, $workDir, $scratchRoot, $trivyEnvironment, $report);
                     }
                 }
+
+                $this->checkHygiene($hygiene, $attachments, $securityContainer, $workDir, $reportPaths[AttachmentIngestionService::KIND_SECRETS] ?? null);
             }
         } finally {
             File::deleteDirectory($scratchRoot);
@@ -399,6 +409,62 @@ final class CollectRepositoryJob implements ShouldQueue
     }
 
     /**
+     * Reports the build output and binaries committed to the repository (see
+     * RepositoryHygieneCheck). The report is stored when it has findings, and also when an earlier
+     * collection stored one, so the now empty report resolves the findings of folders since
+     * removed; a repository that never committed build output gets no attachment. A failure is
+     * logged and counts the repository as failed, like a failed Trivy scan.
+     *
+     * @param  string|null  $secretsReportPath  this collection's Trivy secret report, when that scan succeeded
+     */
+    private function checkHygiene(
+        RepositoryHygieneCheck $hygiene,
+        AttachmentService $attachments,
+        SecurityContainer $securityContainer,
+        string $workDir,
+        ?string $secretsReportPath,
+    ): void {
+        $command = $hygiene->command($workDir);
+        $startedAt = now();
+
+        try {
+            $result = Process::timeout(self::HYGIENE_TIMEOUT)->run($command);
+
+            if ($result->failed()) {
+                $message = "git ls-files failed for repository '{$this->target->repositoryName}' (exit code {$result->exitCode()}): " . trim($result->errorOutput());
+                $this->logFailure(RepositoryHygieneCheck::TOOL, $message, extra: ['exit_code' => $result->exitCode()]);
+                $this->recordToolInvocation($securityContainer, RepositoryHygieneCheck::TOOL, $command, 'failed', $result->exitCode(), $startedAt, now(), $message);
+
+                return;
+            }
+
+            $findings = $hygiene->findings($result->output(), $secretsReportPath === null ? null : File::get($secretsReportPath));
+        } catch (Throwable $e) {
+            $this->logFailure(RepositoryHygieneCheck::TOOL, $e->getMessage(), $e);
+            $this->recordToolInvocation($securityContainer, RepositoryHygieneCheck::TOOL, $command, 'failed', null, $startedAt, now(), $e->getMessage());
+
+            return;
+        }
+
+        $this->recordToolInvocation($securityContainer, RepositoryHygieneCheck::TOOL, $command, $findings === [] ? 'ran_clean' : 'ran_with_findings', $result->exitCode(), $startedAt, now(), null);
+
+        if ($findings === [] && ! $securityContainer->attachments()->where('kind', AttachmentIngestionService::KIND_REPO_HYGIENE)->exists()) {
+            return;
+        }
+
+        $attachments->attachTo(
+            owner: $securityContainer,
+            kind: AttachmentIngestionService::KIND_REPO_HYGIENE,
+            mime: 'application/octet-stream',
+            name: $this->target->repositoryName . '.repo-hygiene.sarif.json',
+            payload: $hygiene->report($findings),
+            createdByCommand: 'repository-collection',
+        );
+    }
+
+    /**
+     * Returns the report's path once it is attached, null when the scan failed.
+     *
      * @param  array<string, string>  $trivyEnvironment
      * @param  array{kind: string, target: string, format: string, extraArgs: list<string>, extension: string}  $report
      */
@@ -409,7 +475,7 @@ final class CollectRepositoryJob implements ShouldQueue
         string $scratchRoot,
         array $trivyEnvironment,
         array $report,
-    ): void {
+    ): ?string {
         $trivyServerUrl = (string) config('repository_collection.trivy_server_url');
         $tokenFile = (string) config('repository_collection.trivy_token_file');
         $timeout = (string) config('repository_collection.trivy_timeout');
@@ -421,7 +487,7 @@ final class CollectRepositoryJob implements ShouldQueue
             $this->logFailure($report['kind'], $message);
             $this->recordToolInvocation($securityContainer, $tool, null, 'failed', null, $startedAt, now(), $message);
 
-            return;
+            return null;
         }
 
         $token = trim(File::get($tokenFile));
@@ -439,7 +505,7 @@ final class CollectRepositoryJob implements ShouldQueue
             $this->logFailure($report['kind'], $e->getMessage(), $e);
             $this->recordToolInvocation($securityContainer, $tool, $command, 'failed', null, $startedAt, now(), $e->getMessage());
 
-            return;
+            return null;
         }
 
         if ($result->failed() || ! File::exists($outputPath) || File::size($outputPath) === 0) {
@@ -448,7 +514,7 @@ final class CollectRepositoryJob implements ShouldQueue
             $this->logFailure($report['kind'], $message, extra: ['exit_code' => $result->exitCode()]);
             $this->recordToolInvocation($securityContainer, $tool, $command, 'failed', $result->exitCode(), $startedAt, now(), trim($errorOutput) !== '' ? $errorOutput : $message);
 
-            return;
+            return null;
         }
 
         $finishedAt = now();
@@ -477,6 +543,8 @@ final class CollectRepositoryJob implements ShouldQueue
             'attachment_id' => $attachment->id,
             'size_bytes' => $attachment->size_bytes,
         ]));
+
+        return $outputPath;
     }
 
     /**
