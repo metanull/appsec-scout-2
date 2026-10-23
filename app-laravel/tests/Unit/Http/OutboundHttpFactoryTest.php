@@ -2,6 +2,9 @@
 
 use App\Http\OutboundHttpFactory;
 use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
 
 it('creates a Guzzle client with no proxy when env is empty', function () {
     config(['proxy.http_proxy' => null, 'proxy.https_proxy' => null, 'proxy.no_proxy' => null, 'proxy.verify' => true]);
@@ -72,6 +75,29 @@ it('includes no_proxy list in proxy options when set', function () {
 
     expect($options['proxy'])->toHaveKey('no')
         ->and($options['proxy']['no'])->toContain('localhost', '127.0.0.1');
+});
+
+it('keeps a NO_PROXY-only config as a bare no list', function () {
+    config(['proxy.http_proxy' => null, 'proxy.https_proxy' => null, 'proxy.no_proxy' => 'localhost,127.0.0.1', 'proxy.verify' => true]);
+
+    $reflection = new ReflectionClass(OutboundHttpFactory::class);
+    $method = $reflection->getMethod('proxyOptions');
+    $options = $method->invoke(null);
+
+    expect($options['proxy'])->toBe(['no' => ['localhost', '127.0.0.1']]);
+});
+
+it('sends a request through a client built with the full proxy config', function () {
+    config([
+        'proxy.http_proxy' => 'http://proxy.example.com:3128',
+        'proxy.https_proxy' => 'http://proxy.example.com:3128',
+        'proxy.no_proxy' => 'localhost, .internal.corp, 127.0.0.1',
+        'proxy.verify' => true,
+    ]);
+
+    $client = OutboundHttpFactory::create(['handler' => HandlerStack::create(new MockHandler([new Response(200)]))]);
+
+    expect($client->request('GET', 'https://api.example.test/')->getStatusCode())->toBe(200);
 });
 
 it('omits proxy key entirely when no proxy env vars are set', function () {

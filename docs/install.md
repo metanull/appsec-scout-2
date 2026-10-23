@@ -120,7 +120,7 @@ Root `.env` (Docker Compose only — see `.env.example` for the full, commented 
 | `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` | `appsec_scout` / `appsec_scout` / `password` | Must match the same keys in `app-laravel/.env` |
 | `DB_ROOT_PASSWORD` | `rootpassword` | MySQL root password (container-only, not used by the app; unused by the PostgreSQL engine) |
 | `COMPOSE_FILE` | unset | Uncomment `COMPOSE_FILE=docker-compose.yml;docker-compose.pgsql.yml` to run the stack on PostgreSQL 16 instead of MySQL 8 — see "Choosing the database engine" below |
-| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `SSL_CERT_FILE` | — | Corporate proxy/TLS settings, shared by every container in the stack |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `SSL_CERT_FILE` | — | Corporate proxy/TLS settings, shared by every container in the stack. Proxy URLs must include an explicit port (the app's HTTP client defaults a port-less proxy to 1080). `NO_PROXY` is comma-separated, a leading-dot entry (`.corp.example.com`) also matches the bare domain, and a listed host is always reached directly |
 | `BOOTSTRAP_ADMIN_NAME` / `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` | `Admin` / `admin@example.com` / `changeme-now` | First-admin identity, passed to the `app` container and used by its entrypoint only on a start where no user exists yet |
 | `DTRACK_*` (`DTRACK_DB_*`, `DTRACK_API_PORT`, `DTRACK_FRONTEND_PORT`, `DTRACK_ADMIN_*`, `DTRACK_JAVA_MAX_HEAP`, ...) | see `.env.example` | Dependency-Track database, ports, admin bootstrap, and JVM sizing |
 | `TRIVY_SERVER_URL` | `http://trivy-server:4954` | Shared self-hosted Trivy vulnerability DB server, used by Dependency-Track's Trivy analyzer and by SbomScan/StaticAnalysis |
