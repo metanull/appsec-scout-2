@@ -9,9 +9,8 @@ use App\Models\LocalFinding;
 use App\Models\SecurityContainer;
 use App\Models\SecurityEvent;
 use App\Models\User;
-use App\Sources\AzDo\AzDoClient;
+use App\SourceCode\AzDoCheckoutPathResolver;
 use App\Sources\AzDo\AzDoClientFactory;
-use App\Sources\AzDo\AzDoItemNotFoundException;
 use App\Sources\Context\SourceContextFacts;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +34,7 @@ final class GetCodeTool extends AppSecTool
     public function __construct(
         private readonly AzDoReposAccess $access,
         private readonly AzDoClientFactory $clients,
+        private readonly AzDoCheckoutPathResolver $paths,
     ) {}
 
     public function schema(JsonSchema $schema): array
@@ -79,7 +79,9 @@ final class GetCodeTool extends AppSecTool
         $reportedPath = '/' . ltrim($path, '/');
         $client = $this->clients->make($credentials['organization'], $credentials['pat']);
 
-        ['content' => $content, 'path' => $repositoryPath] = $this->read($client, (string) $project->source_system_id, (string) $container->source_container_id, $reportedPath, $branch, $reported);
+        ['content' => $content, 'path' => $repositoryPath] = $reported
+            ? $this->paths->read($client, (string) $project->source_system_id, (string) $container->source_container_id, $reportedPath, $branch)
+            : ['content' => $client->getFileContent((string) $project->source_system_id, (string) $container->source_container_id, $reportedPath, $branch), 'path' => $reportedPath];
 
         if (strlen($content) > self::MAX_BYTES) {
             throw new InvalidArgumentException("{$repositoryPath} is larger than 1 MB; read it in the repository instead.");
@@ -92,39 +94,6 @@ final class GetCodeTool extends AppSecTool
             'branch' => $branch,
             ...self::window(explode("\n", str_replace(["\r\n", "\r"], "\n", $content)), $line, (int) ($validated['context_lines'] ?? 20)),
         ]);
-    }
-
-    /**
-     * A scanner reports paths relative to where the build checked the repository out, which can
-     * be a folder below the repository root (e.g. "project/src/App.java" for "src/App.java").
-     * For such a reported path that does not exist, drop leading folders one at a time and read
-     * the longest trailing path that does; a path the caller gave is read as given.
-     *
-     * @return array{content: string, path: string}
-     */
-    private function read(AzDoClient $client, string $projectId, string $repositoryId, string $reportedPath, ?string $branch, bool $resolve): array
-    {
-        try {
-            return ['content' => $client->getFileContent($projectId, $repositoryId, $reportedPath, $branch), 'path' => $reportedPath];
-        } catch (AzDoItemNotFoundException $notFound) {
-            $segments = explode('/', trim($reportedPath, '/'));
-
-            if (! $resolve || count($segments) < 2) {
-                throw $notFound;
-            }
-        }
-
-        for ($skip = 1; $skip < count($segments); $skip++) {
-            $path = '/' . implode('/', array_slice($segments, $skip));
-
-            try {
-                return ['content' => $client->getFileContent($projectId, $repositoryId, $path, $branch), 'path' => $path];
-            } catch (AzDoItemNotFoundException) {
-                continue;
-            }
-        }
-
-        throw new AzDoItemNotFoundException("{$notFound->getMessage()} No shorter trailing part of that path exists there either.", 0, $notFound);
     }
 
     /**

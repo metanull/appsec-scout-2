@@ -182,6 +182,14 @@ Header actions:
 | **Find existing work items** | (confirm) Searches the tracker projects mapped to this alert's System/Container for issues mentioning the alert's URL, and links them. If no project is mapped it searches every project and warns you. Runs immediately. |
 | **Add attachment** | Upload a file (screenshot, evidence) to the alert. |
 
+At the bottom of the *Summary* tab, **View alert** opens the alert at its Source. **View source**
+opens the alert's file at the current code (the alert's branch). **View source (commit)** opens it
+at the commit the alert was raised on. The same two links appear in *Links & References*. Scanners
+often report a path that includes the build's checkout folder (e.g. `project/src/App.java`), so
+for an Azure DevOps repository these links first look up where the file really is, using **your
+Azure DevOps Repos credential** (*Profile → Integrations*). Without that credential, or when the
+file is not in the repository, you return to the alert with a notification saying why.
+
 Tabs at the bottom:
 
 - **Comments**: comments synced from the Source (*From source*) and your own (*Local*). **Add

@@ -27,6 +27,7 @@ use App\Models\User;
 use App\Models\WorkItemLink;
 use App\SecurityEvents\EventLinkCatalog;
 use App\SecurityEvents\SourceLinkHelper;
+use App\SourceCode\AlertSourceLocator;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Trackers\WorkItemFormOptions;
 use App\Trackers\WorkItemService;
@@ -43,6 +44,7 @@ use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
@@ -226,7 +228,32 @@ class SecurityEventResource extends Resource
                         ->placeholder('-')
                         ->columnSpanFull(),
                 ]),
+                Actions::make([
+                    Action::make('viewSourceAlert')
+                        ->label('View alert')
+                        ->icon('heroicon-m-arrow-top-right-on-square')
+                        ->url(fn (SecurityEvent $record): ?string => SourceLinkHelper::isSafeUrl($record->url) ? $record->url : null)
+                        ->openUrlInNewTab()
+                        ->visible(fn (SecurityEvent $record): bool => SourceLinkHelper::isSafeUrl($record->url)),
+                    self::viewSourceAction('viewSource', 'View source', AlertSourceLocator::CURRENT),
+                    self::viewSourceAction('viewSourceCommit', 'View source (commit)', AlertSourceLocator::COMMIT),
+                ]),
             ]);
+    }
+
+    /**
+     * Opens the alert's source file through the app (route alerts.source), which drops a build
+     * checkout folder from the reported path before redirecting to the provider.
+     */
+    private static function viewSourceAction(string $name, string $label, string $version): Action
+    {
+        return Action::make($name)
+            ->label($label)
+            ->icon('heroicon-m-code-bracket')
+            ->color('gray')
+            ->url(fn (SecurityEvent $record): ?string => app(AlertSourceLocator::class)->appUrl($record, $version))
+            ->openUrlInNewTab()
+            ->visible(fn (SecurityEvent $record): bool => app(AlertSourceLocator::class)->appUrl($record, $version) !== null);
     }
 
     private static function remediationTab(): Tab
@@ -1038,7 +1065,7 @@ class SecurityEventResource extends Resource
                 'url' => $link['url'],
                 'external' => $link['external'],
             ],
-            app(EventLinkCatalog::class)->build($record),
+            app(EventLinkCatalog::class)->buildForView($record),
         );
     }
 
