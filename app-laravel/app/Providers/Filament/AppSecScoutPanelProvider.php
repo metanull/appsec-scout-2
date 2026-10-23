@@ -39,7 +39,14 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->path('')
             ->login(Login::class)
             ->passwordReset(RequestPasswordReset::class)
-            ->colors(['primary' => Color::Amber])
+            ->colors([
+                'primary' => Color::hex('#16adc7'),
+                'gray' => Color::Slate,
+            ])
+            ->brandLogo(fn (): string => asset('images/brand/logo-light.svg'))
+            ->darkModeBrandLogo(fn (): string => asset('images/brand/logo-dark.svg'))
+            ->brandLogoHeight('2rem')
+            ->favicon(fn (): string => asset('favicon.ico'))
             ->maxContentWidth(Width::Full)
             ->sidebarCollapsibleOnDesktop()
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
