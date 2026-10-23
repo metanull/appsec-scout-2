@@ -70,7 +70,7 @@ class SoftwareSystemResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Section::make('Summary')
                 ->schema([
                     TextEntry::make('name')
