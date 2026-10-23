@@ -246,8 +246,13 @@ scanning tab.
 | `ghcr.io/metanull/appsec-scout-2/postgres` | PostgreSQL 16 with the test-DB init script baked in |
 | `ghcr.io/metanull/appsec-scout-2/trivy-server` | Self-hosted Trivy vulnerability server with the CA-trust installer baked in |
 
-Tags: `latest` (current `main`), `main`, and an immutable `sha-<short-commit>` per build —
-deployments should pin the `sha-` tag.
+Tags: every merge to `main` publishes `main` and an immutable `sha-<short-commit>` (for
+testing unreleased builds). A release — cut with the manual **Cut Release** workflow
+(`.github/workflows/release.yml`, choose `patch`, `minor` or `major`; the first release is
+`v1.0.0`) — publishes `X.Y.Z`, `X.Y`, `X` and `latest`, and creates the `vX.Y.Z` GitHub
+Release with the deployment bundle. `latest` is always the newest release. Deployments
+should pin a release version (`X.Y.Z`). Release-tagged versions are never pruned from GHCR
+(`.github/workflows/prune-ghcr-images.yml`); other versions beyond the 3 newest are.
 
 ### Running the stack from the prebuilt images
 
@@ -261,8 +266,8 @@ COMPOSE_FILE=docker-compose.yml;docker-compose.ghcr.yml
 
 then start the stack as usual — `.\scripts\appsec-scout.ps1` (which detects the override,
 skips the build, and pulls instead) or plain `docker compose up -d`. Optionally pin the
-image tag with `APPSEC_IMAGE_TAG=sha-<short-commit>` in the same `.env` (default:
-`latest`).
+image tag with `APPSEC_IMAGE_TAG=X.Y.Z` (a release version) in the same `.env` (default:
+`latest`, the newest release).
 
 What changes relative to the source track (full details in the header comment of
 `docker-compose.ghcr.yml`):
@@ -279,7 +284,7 @@ What changes relative to the source track (full details in the header comment of
 ### Immutable cloud deployments
 
 For the future Azure deployment, `.github/workflows/acr-promote.yml` (manual trigger)
-imports a chosen `sha-` tag from GHCR into Azure Container Registry server-side, so ACR
+imports a chosen release tag (`X.Y.Z`) from GHCR into Azure Container Registry server-side, so ACR
 receives the exact digests that passed the Trivy gate — images are never rebuilt for ACR.
 It is prepared but untested until Azure access exists; its header comment lists the Azure
 prerequisites (ACR, OIDC federated credential, repository variables).
@@ -290,7 +295,7 @@ or trust is required to live inside the scanned, pinned artifact — extend the 
 image with a derived Dockerfile instead:
 
 ```dockerfile
-FROM ghcr.io/metanull/appsec-scout-2/app:sha-<short-commit>
+FROM ghcr.io/metanull/appsec-scout-2/app:X.Y.Z
 COPY certs/ /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 ```

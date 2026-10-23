@@ -1,0 +1,91 @@
+# Cuts a semver release of the current main commit: pushes the next vX.Y.Z tag, then
+# dispatches .github/workflows/image-publish.yml on that tag, which builds, Trivy-gates,
+# and publishes the images as X.Y.Z, X.Y, X, latest and sha-<short>, and creates the
+# vX.Y.Z GitHub Release with the deployment bundle.
+#
+# The `bump` input picks which component of the highest existing vX.Y.Z tag to increment.
+# The first release (no vX.Y.Z tag yet) is always v1.0.0, whatever `bump` says.
+#
+# The tag is pushed with GITHUB_TOKEN, and events caused by GITHUB_TOKEN don't trigger
+# `push` workflows, so image-publish.yml is dispatched explicitly (workflow_dispatch is
+# the documented exception). That is exactly one build per release. A maintainer pushing
+# a vX.Y.Z tag by hand triggers image-publish.yml through its own `push: tags` trigger
+# instead.
+
+name: Cut Release
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version component to increment (ignored for the first release, which is v1.0.0)"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+concurrency:
+  group: cut-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Every tag, to find the highest existing version.
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          latest="$(git tag --list 'v*.*.*' --sort=-v:refname | sed -n 1p)"
+          if [ -z "$latest" ]; then
+            next="v1.0.0"
+          else
+            IFS=. read -r major minor patch <<< "${latest#v}"
+            case "$BUMP" in
+              major) next="v$((major + 1)).0.0" ;;
+              minor) next="v${major}.$((minor + 1)).0" ;;
+              patch) next="v${major}.${minor}.$((patch + 1))" ;;
+              *) echo "::error::Unknown bump '${BUMP}'"; exit 1 ;;
+            esac
+          fi
+          echo "Releasing ${next} (previous: ${latest:-none}) at ${GITHUB_SHA}"
+          echo "tag=${next}" >> "$GITHUB_OUTPUT"
+
+      - name: Push tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            tag -a "$TAG" -m "AppSec Scout ${TAG#v}" "$GITHUB_SHA"
+          git push origin "refs/tags/${TAG}"
+
+      - name: Build and publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run image-publish.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+          echo "Dispatched image-publish.yml on ${TAG}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/image-publish.yml"

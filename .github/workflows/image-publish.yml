@@ -10,7 +10,11 @@
 # ignored rules.
 #
 # - Pull requests touching the image definitions get a build + scan only (no publish).
-# - Pushes to main build, scan, and publish (tags: main, sha-<short>, latest).
+# - Pushes to main build, scan, and publish (tags: main, sha-<short>) — no release.
+# - A vX.Y.Z tag ref (dispatched by .github/workflows/release.yml, or a tag pushed by hand)
+#   builds, scans, and publishes X.Y.Z, X.Y, X, latest, and sha-<short>, then creates the
+#   vX.Y.Z GitHub Release with the deployment bundle (release-bundle below). `latest`
+#   therefore always means the newest release, never an unreleased main build.
 # - The ops target is a workstation-only image (never runs in a hosted environment) and is
 #   never published or scanned — build-ops below only proves the shared php-runtime/
 #   toolchain stages it depends on still produce a working image, on every PR that touches
@@ -27,6 +31,7 @@ permissions:
 on:
   push:
     branches: ["main"]
+    tags: ["v*.*.*"]
 
   pull_request:
     branches: ["main"]
@@ -124,7 +129,10 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -278,15 +286,15 @@ jobs:
   # Packages the small file set docs/QUICKSTART.md documents (compose files + .env.example
   # + the doc itself + the Windows and Linux host-CA export scripts, plus the module the
   # Windows one wraps) so a Home/Corporate operator can run the stack from prebuilt images
-  # without cloning the repository. Runs only after a real publish to GHCR (push to main —
-  # same population as the "Publish to GHCR" step's `github.event_name != 'pull_request'`
-  # gate, narrowed to `push` since workflow_dispatch can run from any ref and a release tied
-  # to `main` would be misleading otherwise). Tagged sha-<short-sha> to match the immutable
-  # image tag docker-compose.ghcr.yml's header comment already tells operators to pin to.
+  # without cloning the repository. Runs only for a release: a vX.Y.Z tag ref, reached by
+  # .github/workflows/release.yml dispatching this workflow on the tag it just pushed, or
+  # by a maintainer pushing the tag by hand. Pushes to main publish images but no release.
+  # The release is named after the version, and the bundled .env.example pins
+  # APPSEC_IMAGE_TAG to the X.Y.Z image tag published by the same run.
   release-bundle:
     name: Publish deployment bundle
     needs: build
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -294,10 +302,34 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Every tag, so the release notes can start from the previous release.
+          fetch-depth: 0
 
-      - name: Compute short SHA
-        id: sha
-        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Resolve release version
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          # The next lower vX.Y.Z tag in version order (empty for the first release).
+          previous="$(git tag --list 'v*.*.*' --sort=-v:refname \
+            | awk -v t="$tag" 'found && !done { print; done = 1 } $0 == t { found = 1 }')"
+          {
+            echo "tag=${tag}"
+            echo "version=${tag#v}"
+            echo "previous=${previous}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Pin the bundled image tag to this release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! grep -qx '#APPSEC_IMAGE_TAG=latest' .env.example; then
+            echo "::error file=.env.example::Expected a '#APPSEC_IMAGE_TAG=latest' line to pin to ${VERSION}."
+            exit 1
+          fi
+          sed -i "s/^#APPSEC_IMAGE_TAG=latest\$/APPSEC_IMAGE_TAG=${VERSION}/" .env.example
 
       - name: Assemble deployment bundle
         run: |
@@ -316,16 +348,18 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
         run: |
           set -euo pipefail
-          tag="sha-${{ steps.sha.outputs.short }}"
-          title="Deployment bundle ${{ steps.sha.outputs.short }}"
-          notes="Deployment bundle for image tag ${tag} — see docs/QUICKSTART.md inside the zip."
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/appsec-scout-deployment-bundle.zip --clobber
+          notes="Images: ghcr.io/metanull/appsec-scout-2/<name>:${VERSION}. The attached deployment bundle's .env.example pins APPSEC_IMAGE_TAG=${VERSION} — see docs/QUICKSTART.md inside the zip."
+          args=(--verify-tag --latest --title "AppSec Scout ${VERSION}" --notes "$notes")
+          if [ -n "$PREVIOUS" ]; then
+            args+=(--generate-notes --notes-start-tag "$PREVIOUS")
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/appsec-scout-deployment-bundle.zip --clobber
           else
-            gh release create "$tag" dist/appsec-scout-deployment-bundle.zip \
-              --title "$title" \
-              --notes "$notes" \
-              --target "${{ github.sha }}"
+            gh release create "$TAG" dist/appsec-scout-deployment-bundle.zip "${args[@]}"
           fi
