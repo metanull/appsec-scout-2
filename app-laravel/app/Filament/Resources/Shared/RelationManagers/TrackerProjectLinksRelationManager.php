@@ -125,6 +125,6 @@ class TrackerProjectLinksRelationManager extends RelationManager
             return false;
         }
 
-        return $user->hasRole('Admin') || $user->can('work-items.link');
+        return $user->can('work-items.link');
     }
 }

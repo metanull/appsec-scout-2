@@ -38,6 +38,65 @@ it('lets readers view repository mappings without mutation controls', function (
     expect(RepositoryProviderResource::canViewAny())->toBeFalse();
 });
 
+it('shows repository mapping mutation controls to a user with context.curate directly', function () {
+    $user = enrolledMappingUser();
+    $user->syncRoles([]);
+    $user->givePermissionTo(['alerts.view', 'context.curate']);
+
+    $system = SoftwareSystem::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test(RepositoryMappingsRelationManager::class, [
+            'ownerRecord' => $system,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Add mapping');
+});
+
+it('shows repository mapping mutation controls to the Sync role', function () {
+    $user = enrolledMappingUser();
+    $user->syncRoles(['Sync']);
+
+    $system = SoftwareSystem::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test(RepositoryMappingsRelationManager::class, [
+            'ownerRecord' => $system,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Add mapping');
+});
+
+it('hides repository mapping mutation controls from a user without context.curate', function () {
+    $user = enrolledMappingUser();
+    $user->syncRoles([]);
+    $user->givePermissionTo('alerts.view');
+
+    $system = SoftwareSystem::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test(RepositoryMappingsRelationManager::class, [
+            'ownerRecord' => $system,
+            'pageClass' => ViewSoftwareSystem::class,
+        ])
+        ->call('loadTable')
+        ->assertSee('Repository mappings')
+        ->assertDontSee('Add mapping');
+});
+
+it('hides the repository mappings relation manager from a user without alerts.view', function () {
+    $user = enrolledMappingUser();
+    $user->syncRoles([]);
+
+    $system = SoftwareSystem::factory()->create();
+
+    $this->actingAs($user);
+
+    expect(RepositoryMappingsRelationManager::canViewForRecord($system, ViewSoftwareSystem::class))->toBeFalse();
+});
+
 it('lets plan users create azure and github mappings through the relation manager', function () {
     $user = enrolledMappingUser();
     $user->syncRoles(['Plan']);
