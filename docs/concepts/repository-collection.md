@@ -178,6 +178,45 @@ A container with only one of the two reports gets that report unchanged. Either 
 triggers the Dependency-Track push, and each push uploads the merged document. The findings zip
 download includes the `vulnerabilities-archives` SARIF next to the other reports.
 
+### Committed build output and binaries
+
+Several repositories commit their build output: one Entra client secret sat in 24 committed copies
+of `appsettings.json` under `bin/`, `obj/` and `publish/`, Java repositories reported the same
+vulnerable package once per committed copy, and a frontend committed `dist/` with a vendored
+TinyMCE. No scanner in the stack reports this: Trivy's checks read parsed configuration files,
+Opengrep matches source code, and AzDO Advanced Security and AppScan report neither. It is
+OpenSSF Scorecard's Binary-Artifacts check, and falls under OWASP CICD-SEC-9 (Improper Artifact
+Integrity Validation) and NIST SSDF PS.2.
+
+After the Trivy scans, `CollectRepositoryJob` runs
+`App\SourceControl\Collection\Hygiene\RepositoryHygieneCheck`. It lists the tracked files with
+`git ls-files -z --format=%(objecttype)%x09%(objectsize)%x09%(path)` on the clone — Git's index,
+not the working tree, so nothing ignored or generated counts — and groups them into one finding
+per folder:
+
+| Rule | Files | Folder |
+|------|-------|--------|
+| `repo-hygiene/committed-build-output` | any file under a `bin`, `obj`, `publish`, `dist`, `out`, `target` or `node_modules` directory (any case, any depth) | the outermost such directory, e.g. `src/Api/bin` for `src/Api/bin/Release/publish/x.dll` |
+| `repo-hygiene/committed-binary` | any other `.dll`, `.exe`, `.jar`, `.war`, `.ear`, `.so`, `.pdb` or `.class` file | its own directory (`.` for the repository root) |
+
+Submodules are not files of the repository and are skipped. Each finding is MEDIUM, and HIGH when
+the same collection's Trivy secret scan reported a secret in that folder (anywhere below a
+build-output folder, in the same directory for binaries): every committed copy leaks it. Its
+message and its SARIF result `properties` carry the folder, the file count, the total size, the
+number of secrets and up to ten example files; its help text gives the remediation (`git rm -r
+--cached`, `.gitignore`, build in CI, rotate leaked secrets before rewriting history) and the
+three references above.
+
+The check writes a SARIF report, stored as a `repo-hygiene` attachment and parsed by
+`SarifFindingParser` like every other report into `code_quality` Local Findings with
+`report_kind = repo-hygiene` (`ToolInvocation.tool` `repo-hygiene`). A folder keeps its finding
+across collections (its identity is rule and folder), and a folder removed from Git is resolved by
+`LocalFindingScanReconciler` like any finding a report no longer contains; the other
+`code_quality` reports never resolve these findings, nor these theirs. As with the archive scans,
+the report is stored only when it has findings or an earlier collection stored one, so a
+repository that never committed build output gets no extra attachment. A failed `git ls-files` is
+logged and counts the repository as failed for the run, without affecting the Trivy reports.
+
 Results are written **directly**, in-process — reusing `App\Assets\AttachmentTargetResolver` and
 `App\Assets\AzDoScanResultDtoFactory` exactly as `PendingSbomScanImporter` does for
 `run.jsonl` lines, then `App\Assets\AttachmentService::attachTo()`. There is no `run.jsonl`, no

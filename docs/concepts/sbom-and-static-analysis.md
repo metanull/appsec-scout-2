@@ -138,7 +138,7 @@ Every `Attachment`, regardless of where it came from, fires an event that a queu
 | Attachment kind | Parser | Resulting model | Matches the user-facing term |
 | --- | --- | --- | --- |
 | `sbom` | `CycloneDxSbomParser` | `SoftwareComponent` (upserted by package URL) | **Dependencies** |
-| `vulnerabilities` / `secrets` / `code-quality-dotnet` / `code-quality-java` / `code-quality-opengrep` | `SarifFindingParser` | `LocalFinding` (upserted by kind + rule + file + line) | **Local Findings** |
+| `vulnerabilities` / `vulnerabilities-archives` / `secrets` / `code-quality-dotnet` / `code-quality-java` / `code-quality-opengrep` / `repo-hygiene` | `SarifFindingParser` | `LocalFinding` (upserted by kind + rule + file + line) | **Local Findings** |
 
 The SARIF parser has to work around Trivy encoding package/severity metadata as free-text
 `"Key: Value"` lines inside `message.text` (SARIF has no first-class package concept), while

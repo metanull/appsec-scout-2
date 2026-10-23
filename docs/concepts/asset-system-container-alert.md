@@ -192,8 +192,9 @@ workflow](sbom-and-static-analysis.md)) uploaded. That has real consequences:
   present in the same scope:
   - **Local Findings** — `App\Assets\LocalFindingScanReconciler`, scoped to
     `(owner, kind, report_kind)`, `report_kind` being the scan report (attachment kind) that
-    reported the finding, since Roslynator, SpotBugs and Opengrep all report `code_quality` on one
-    repository, and Repository Collection's `vulnerabilities` (`trivy fs`) and
+    reported the finding, since Roslynator, SpotBugs, Opengrep and Repository Collection's
+    `repo-hygiene` check (committed build output) all report `code_quality` on one repository, and
+    Repository Collection's `vulnerabilities` (`trivy fs`) and
     `vulnerabilities-archives` (`trivy rootfs` of committed JAR/WAR/EAR archives) reports both
     report `vulnerability`. A finding no longer reported that is Open, Acknowledged or In progress becomes
     Resolved, with `resolved_by_scan_at` and `status_before_scan_resolution` recorded, an
