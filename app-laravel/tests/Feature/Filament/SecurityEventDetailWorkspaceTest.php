@@ -135,7 +135,7 @@ it('renders secret occurrences table when metadata has occurrences', function ()
         ->assertSee('Occurrences');
 });
 
-it('renders the raw evidence section expanded with the formatted payload', function () {
+it('renders the raw evidence tab with the formatted payload', function () {
     $user = User::factory()->create([
         'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
         'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
@@ -145,12 +145,12 @@ it('renders the raw evidence section expanded with the formatted payload', funct
 
     $event = SecurityEvent::factory()->create();
 
-    // The section renders its highlighted JSON payload server-side; assertSeeText
+    // The tab renders its highlighted JSON payload server-side; assertSeeText
     // ignores the syntax-highlighting markup Phiki wraps around each token.
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))
         ->assertOk()
-        ->assertSee('Raw Evidence')
+        ->assertSee('Raw evidence')
         ->assertSeeText('source_event_id');
 });
 
@@ -169,7 +169,7 @@ it('shows the raw evidence payload in full without masking', function () {
         ],
     ]);
 
-    // The Raw Evidence section is the finding content an operator triages, so it
+    // The Raw evidence tab is the finding content an operator triages, so it
     // renders verbatim — masking here would hide the very data the tool exists to surface.
     $this->actingAs($user)
         ->get(SecurityEventResource::getUrl('view', ['record' => $event]))

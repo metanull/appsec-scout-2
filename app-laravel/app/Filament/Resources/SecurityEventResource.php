@@ -45,6 +45,8 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -99,275 +101,325 @@ class SecurityEventResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
+        // Pending changes stay visible above the tabs: they are the one thing on
+        // this page that still needs an action (a push from Pending Sync).
         return $schema->components([
-            Section::make('Alert Summary')
-                ->schema([
-                    Grid::make(3)->schema([
-                        TextEntry::make('title')
-                            ->columnSpan(2)
-                            ->wrap(),
-                        TextEntry::make('type')
-                            ->badge()
-                            ->color('gray')
-                            ->formatStateUsing(fn (EventType|string $state): string => str($state instanceof EventType ? $state->value : $state)->replace('_', ' ')->title()->toString()),
-                        TextEntry::make('severity')
-                            ->badge()
-                            ->color(fn (EventSeverity|string $state): string => EventSeverityBadgeColor::for($state)),
-                        TextEntry::make('state')
-                            ->badge()
-                            ->color(fn (EventState|string $state): string => EventStateBadgeColor::for($state))
-                            ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()),
-                        TextEntry::make('source_id')
-                            ->label('Source')
-                            ->badge(),
-                        TextEntry::make('softwareSystem.name')
-                            ->label('System')
-                            ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem
-                                ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
-                                : null)
-                            ->placeholder('-'),
-                        TextEntry::make('container.name')
-                            ->label('Container')
-                            ->url(fn (SecurityEvent $record): ?string => $record->container
-                                ? SecurityContainerResource::getUrl('view', ['record' => $record->container])
-                                : null)
-                            ->placeholder('-'),
-                        TextEntry::make('first_seen_at')
-                            ->label('First seen')
-                            ->dateTime('d M Y')
-                            ->placeholder('-'),
-                        TextEntry::make('last_seen_at')
-                            ->label('Last seen')
-                            ->dateTime('d M Y H:i')
-                            ->placeholder('-'),
-                        TextEntry::make('fingerprint')
-                            ->placeholder('-'),
-                        TextEntry::make('rule_id')
-                            ->label('Rule ID')
-                            ->placeholder('-'),
-                        TextEntry::make('_readiness')
-                            ->label('Readiness')
-                            ->state(fn (SecurityEvent $record): array => self::readinessBadges($record))
-                            ->badge()
-                            ->color(fn (string $state): string => str_ends_with($state, '✗') ? 'warning' : 'success')
-                            ->placeholder('-')
-                            ->columnSpanFull(),
-                        TextEntry::make('_tags')
-                            ->label('Tags')
-                            ->state(function (SecurityEvent $record): array {
-                                $tags = self::metadataArrayValue($record, 'tags');
-
-                                return array_values(array_filter($tags, fn (mixed $tag): bool => is_string($tag) && $tag !== ''));
-                            })
-                            ->badge()
-                            ->color('gray')
-                            ->placeholder('-')
-                            ->columnSpanFull(),
-                    ]),
+            self::pendingSyncBanner(),
+            Tabs::make('Alert details')
+                ->columnSpanFull()
+                ->persistTabInQueryString()
+                ->tabs([
+                    self::summaryTab(),
+                    self::remediationTab(),
+                    self::secretDetailsTab(),
+                    self::dependencyDetailsTab(),
+                    self::codeLocationTab(),
+                    self::postureTab(),
+                    self::linksTab(),
+                    self::rawEvidenceTab(),
                 ]),
+        ]);
+    }
 
-            Section::make('Pending Sync')
-                ->visible(fn (SecurityEvent $record): bool => $record->is_dirty || $record->pending_severity !== null)
-                ->schema([
-                    Grid::make(3)->schema([
-                        TextEntry::make('pending_state')
-                            ->label('Pending state')
-                            ->badge()
-                            ->color('warning')
-                            ->formatStateUsing(fn (EventState|string|null $state): string => $state
-                                ? str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()
-                                : '-')
-                            ->placeholder('-'),
-                        TextEntry::make('pending_severity')
-                            ->label('Pending severity')
-                            ->badge()
-                            ->color(fn (EventSeverity|string|null $state): string => match ($state instanceof EventSeverity ? $state->value : (is_string($state) ? $state : '')) {
-                                EventSeverity::Critical->value => 'danger',
-                                EventSeverity::High->value => 'warning',
-                                EventSeverity::Medium->value => 'info',
-                                EventSeverity::Low->value => 'gray',
-                                default => 'warning',
-                            })
-                            ->placeholder('-'),
-                        TextEntry::make('pending_comment')
-                            ->label('Pending comment')
-                            ->wrap()
-                            ->placeholder('-'),
-                    ]),
+    private static function pendingSyncBanner(): Section
+    {
+        return Section::make('Pending Sync')
+            ->key('pending-sync')
+            ->description('Local changes not yet pushed to the source. Push them from Pending Sync.')
+            ->icon('heroicon-o-clock')
+            ->iconColor('warning')
+            ->columnSpanFull()
+            ->visible(fn (SecurityEvent $record): bool => $record->is_dirty || $record->pending_severity !== null)
+            ->schema([
+                Grid::make(3)->schema([
+                    TextEntry::make('pending_state')
+                        ->label('Pending state')
+                        ->badge()
+                        ->color('warning')
+                        ->formatStateUsing(fn (EventState|string|null $state): string => $state
+                            ? str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()
+                            : '-')
+                        ->placeholder('-'),
+                    TextEntry::make('pending_severity')
+                        ->label('Pending severity')
+                        ->badge()
+                        ->color(fn (EventSeverity|string|null $state): string => match ($state instanceof EventSeverity ? $state->value : (is_string($state) ? $state : '')) {
+                            EventSeverity::Critical->value => 'danger',
+                            EventSeverity::High->value => 'warning',
+                            EventSeverity::Medium->value => 'info',
+                            EventSeverity::Low->value => 'gray',
+                            default => 'warning',
+                        })
+                        ->placeholder('-'),
+                    TextEntry::make('pending_comment')
+                        ->label('Pending comment')
+                        ->wrap()
+                        ->placeholder('-'),
                 ]),
+            ]);
+    }
 
-            Section::make('Remediation')
-                ->schema([
-                    TextEntry::make('remediation')
-                        ->label('')
-                        ->html()
-                        ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
+    private static function summaryTab(): Tab
+    {
+        return Tab::make('Summary')
+            ->key('summary')
+            ->schema([
+                Grid::make(3)->schema([
+                    TextEntry::make('title')
+                        ->columnSpan(2)
+                        ->wrap(),
+                    TextEntry::make('type')
+                        ->badge()
+                        ->color('gray')
+                        ->formatStateUsing(fn (EventType|string $state): string => str($state instanceof EventType ? $state->value : $state)->replace('_', ' ')->title()->toString()),
+                    TextEntry::make('severity')
+                        ->badge()
+                        ->color(fn (EventSeverity|string $state): string => EventSeverityBadgeColor::for($state)),
+                    TextEntry::make('state')
+                        ->badge()
+                        ->color(fn (EventState|string $state): string => EventStateBadgeColor::for($state))
+                        ->formatStateUsing(fn (EventState|string $state): string => str($state instanceof EventState ? $state->value : $state)->replace('_', ' ')->title()->toString()),
+                    TextEntry::make('source_id')
+                        ->label('Source')
+                        ->badge(),
+                    TextEntry::make('softwareSystem.name')
+                        ->label('System')
+                        ->url(fn (SecurityEvent $record): ?string => $record->softwareSystem
+                            ? SoftwareSystemResource::getUrl('view', ['record' => $record->softwareSystem])
+                            : null)
+                        ->placeholder('-'),
+                    TextEntry::make('container.name')
+                        ->label('Container')
+                        ->url(fn (SecurityEvent $record): ?string => $record->container
+                            ? SecurityContainerResource::getUrl('view', ['record' => $record->container])
+                            : null)
+                        ->placeholder('-'),
+                    TextEntry::make('first_seen_at')
+                        ->label('First seen')
+                        ->dateTime('d M Y')
+                        ->placeholder('-'),
+                    TextEntry::make('last_seen_at')
+                        ->label('Last seen')
+                        ->dateTime('d M Y H:i')
+                        ->placeholder('-'),
+                    TextEntry::make('fingerprint')
+                        ->placeholder('-'),
+                    TextEntry::make('rule_id')
+                        ->label('Rule ID')
+                        ->placeholder('-'),
+                    TextEntry::make('_readiness')
+                        ->label('Readiness')
+                        ->state(fn (SecurityEvent $record): array => self::readinessBadges($record))
+                        ->badge()
+                        ->color(fn (string $state): string => str_ends_with($state, '✗') ? 'warning' : 'success')
+                        ->placeholder('-')
+                        ->columnSpanFull(),
+                    TextEntry::make('_tags')
+                        ->label('Tags')
+                        ->state(function (SecurityEvent $record): array {
+                            $tags = self::metadataArrayValue($record, 'tags');
+
+                            return array_values(array_filter($tags, fn (mixed $tag): bool => is_string($tag) && $tag !== ''));
+                        })
+                        ->badge()
+                        ->color('gray')
+                        ->placeholder('-')
                         ->columnSpanFull(),
                 ]),
+            ]);
+    }
 
-            Section::make('Secret Details')
-                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Secret))
-                ->schema([
-                    Grid::make(3)->schema([
-                        TextEntry::make('_detector')
-                            ->label('Detector')
-                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'detector'))
-                            ->placeholder('-'),
-                        TextEntry::make('_truncated_secret')
-                            ->label('Truncated value')
-                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'truncatedSecret'))
-                            ->placeholder('-'),
-                        TextEntry::make('_validation_fps')
-                            ->label('Validation fingerprints')
-                            ->state(fn (SecurityEvent $record): string => (string) count(self::metadataArrayValue($record, 'validationFingerprints'))),
-                    ]),
-                    RepeatableEntry::make('_occurrences')
-                        ->label('Occurrences')
-                        ->state(fn (SecurityEvent $record): array => self::buildOccurrenceRows($record))
-                        ->schema([
-                            TextEntry::make('file_path')
-                                ->label('File')
-                                ->placeholder('n/a'),
-                            TextEntry::make('lines')
-                                ->label('Lines')
-                                ->placeholder('n/a'),
-                            TextEntry::make('branch')
-                                ->label('Branch')
-                                ->placeholder('n/a'),
-                            TextEntry::make('commit')
-                                ->label('Commit')
-                                ->placeholder('n/a'),
-                        ])
-                        ->columns(4),
+    private static function remediationTab(): Tab
+    {
+        return Tab::make('Remediation')
+            ->key('remediation')
+            ->schema([
+                TextEntry::make('remediation')
+                    ->label('')
+                    ->html()
+                    ->state(fn (SecurityEvent $record): string => self::renderRemediation($record))
+                    ->columnSpanFull(),
+            ]);
+    }
+
+    private static function secretDetailsTab(): Tab
+    {
+        return Tab::make('Secret details')
+            ->key('secret-details')
+            ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Secret))
+            ->schema([
+                Grid::make(3)->schema([
+                    TextEntry::make('_detector')
+                        ->label('Detector')
+                        ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'detector'))
+                        ->placeholder('-'),
+                    TextEntry::make('_truncated_secret')
+                        ->label('Truncated value')
+                        ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'truncatedSecret'))
+                        ->placeholder('-'),
+                    TextEntry::make('_validation_fps')
+                        ->label('Validation fingerprints')
+                        ->state(fn (SecurityEvent $record): string => (string) count(self::metadataArrayValue($record, 'validationFingerprints'))),
                 ]),
-
-            Section::make('Dependency Details')
-                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Dependency))
-                ->schema([
-                    Grid::make(3)->schema([
-                        TextEntry::make('_package')
-                            ->label('Package')
-                            ->state(function (SecurityEvent $record): ?string {
-                                $package = self::metadataArrayValue($record, 'package');
-
-                                if ($package === []) {
-                                    return null;
-                                }
-
-                                return trim((string) ($package['name'] ?? '') . ' ' . (string) ($package['version'] ?? ''));
-                            })
-                            ->placeholder('-'),
-                        TextEntry::make('_ecosystem')
-                            ->label('Ecosystem')
-                            ->state(function (SecurityEvent $record): ?string {
-                                $package = self::metadataArrayValue($record, 'package');
-
-                                return is_string($package['ecosystem'] ?? null) ? $package['ecosystem'] : null;
-                            })
-                            ->placeholder('-'),
-                        TextEntry::make('_cve')
-                            ->label('CVE')
-                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'cve'))
-                            ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cveLinkUrl($state) : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
-                        TextEntry::make('_cvss')
-                            ->label('CVSS')
-                            ->state(function (SecurityEvent $record): ?string {
-                                $cvss = self::metadataValue($record, 'cvss');
-
-                                return $cvss !== null ? (string) $cvss : null;
-                            })
-                            ->placeholder('-'),
-                        TextEntry::make('_fixed_in')
-                            ->label('Fixed in')
-                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'fixedInVersion'))
-                            ->placeholder('-'),
-                    ]),
-                ]),
-
-            Section::make('Code Location')
-                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Vulnerability) || self::isEventType($record, EventType::CodeQuality))
-                ->schema([
-                    Grid::make(2)->schema([
+                RepeatableEntry::make('_occurrences')
+                    ->label('Occurrences')
+                    ->state(fn (SecurityEvent $record): array => self::buildOccurrenceRows($record))
+                    ->schema([
                         TextEntry::make('file_path')
                             ->label('File')
-                            ->url(fn (?string $state, SecurityEvent $record): ?string => filled($record->version_control_url) ? $record->version_control_url : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
-                        TextEntry::make('_lines')
+                            ->placeholder('n/a'),
+                        TextEntry::make('lines')
                             ->label('Lines')
-                            ->state(fn (SecurityEvent $record): ?string => $record->start_line !== null
-                                ? ($record->start_line === $record->end_line || $record->end_line === null
-                                    ? (string) $record->start_line
-                                    : $record->start_line . '–' . $record->end_line)
-                                : null)
-                            ->placeholder('-'),
-                        TextEntry::make('rule_id')
-                            ->label('Rule')
-                            ->placeholder('-'),
-                        TextEntry::make('_cwe')
-                            ->label('CWE')
-                            ->state(function (SecurityEvent $record): ?string {
-                                $cwe = self::metadataValue($record, 'cwe');
-
-                                return $cwe !== null ? (string) $cwe : null;
-                            })
-                            ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cweLinkUrl($state) : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
+                            ->placeholder('n/a'),
                         TextEntry::make('branch')
                             ->label('Branch')
-                            ->placeholder('-'),
-                        TextEntry::make('commit_sha')
+                            ->placeholder('n/a'),
+                        TextEntry::make('commit')
                             ->label('Commit')
-                            ->formatStateUsing(fn (?string $state): string => $state ? substr($state, 0, 12) : '-')
-                            ->placeholder('-'),
-                        TextEntry::make('snippet')
-                            ->label('Snippet')
-                            ->fontFamily('mono')
-                            ->wrap()
-                            ->columnSpanFull()
-                            ->placeholder('-'),
-                    ]),
-                ]),
+                            ->placeholder('n/a'),
+                    ])
+                    ->columns(4),
+            ]);
+    }
 
-            Section::make('Posture')
-                ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Misconfiguration) || self::isEventType($record, EventType::Iac) || self::isEventType($record, EventType::Posture))
-                ->schema([
-                    Grid::make(2)->schema([
-                        TextEntry::make('_resource_type')
-                            ->label('Resource type')
-                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'resourceType'))
-                            ->placeholder('-'),
-                        TextEntry::make('_recommendation')
-                            ->label('Recommendation')
-                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'recommendation'))
-                            ->wrap()
-                            ->placeholder('-'),
-                        TextEntry::make('_documentation_url')
-                            ->label('Documentation')
-                            ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'documentationUrl'))
-                            ->url(fn (?string $state): ?string => filled($state) ? $state : null)
-                            ->openUrlInNewTab()
-                            ->placeholder('-'),
-                    ]),
-                ]),
+    private static function dependencyDetailsTab(): Tab
+    {
+        return Tab::make('Dependency details')
+            ->key('dependency-details')
+            ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Dependency))
+            ->schema([
+                Grid::make(3)->schema([
+                    TextEntry::make('_package')
+                        ->label('Package')
+                        ->state(function (SecurityEvent $record): ?string {
+                            $package = self::metadataArrayValue($record, 'package');
 
-            Section::make('Raw Evidence')
-                ->collapsible()
-                ->schema([
-                    CodeEntry::make('_raw_evidence')
-                        ->label('')
-                        ->state(fn (SecurityEvent $record): array => self::buildRawEvidence($record))
-                        ->grammar(Grammar::Json)
-                        ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-                        ->copyable()
-                        ->columnSpanFull(),
-                ]),
+                            if ($package === []) {
+                                return null;
+                            }
 
-            self::linksSection(),
-        ]);
+                            return trim((string) ($package['name'] ?? '') . ' ' . (string) ($package['version'] ?? ''));
+                        })
+                        ->placeholder('-'),
+                    TextEntry::make('_ecosystem')
+                        ->label('Ecosystem')
+                        ->state(function (SecurityEvent $record): ?string {
+                            $package = self::metadataArrayValue($record, 'package');
+
+                            return is_string($package['ecosystem'] ?? null) ? $package['ecosystem'] : null;
+                        })
+                        ->placeholder('-'),
+                    TextEntry::make('_cve')
+                        ->label('CVE')
+                        ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'cve'))
+                        ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cveLinkUrl($state) : null)
+                        ->openUrlInNewTab()
+                        ->placeholder('-'),
+                    TextEntry::make('_cvss')
+                        ->label('CVSS')
+                        ->state(function (SecurityEvent $record): ?string {
+                            $cvss = self::metadataValue($record, 'cvss');
+
+                            return $cvss !== null ? (string) $cvss : null;
+                        })
+                        ->placeholder('-'),
+                    TextEntry::make('_fixed_in')
+                        ->label('Fixed in')
+                        ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'fixedInVersion'))
+                        ->placeholder('-'),
+                ]),
+            ]);
+    }
+
+    private static function codeLocationTab(): Tab
+    {
+        return Tab::make('Code location')
+            ->key('code-location')
+            ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Vulnerability) || self::isEventType($record, EventType::CodeQuality))
+            ->schema([
+                Grid::make(2)->schema([
+                    TextEntry::make('file_path')
+                        ->label('File')
+                        ->url(fn (?string $state, SecurityEvent $record): ?string => filled($record->version_control_url) ? $record->version_control_url : null)
+                        ->openUrlInNewTab()
+                        ->placeholder('-'),
+                    TextEntry::make('_lines')
+                        ->label('Lines')
+                        ->state(fn (SecurityEvent $record): ?string => $record->start_line !== null
+                            ? ($record->start_line === $record->end_line || $record->end_line === null
+                                ? (string) $record->start_line
+                                : $record->start_line . '–' . $record->end_line)
+                            : null)
+                        ->placeholder('-'),
+                    TextEntry::make('rule_id')
+                        ->label('Rule')
+                        ->placeholder('-'),
+                    TextEntry::make('_cwe')
+                        ->label('CWE')
+                        ->state(function (SecurityEvent $record): ?string {
+                            $cwe = self::metadataValue($record, 'cwe');
+
+                            return $cwe !== null ? (string) $cwe : null;
+                        })
+                        ->url(fn (?string $state): ?string => filled($state) ? SourceLinkHelper::cweLinkUrl($state) : null)
+                        ->openUrlInNewTab()
+                        ->placeholder('-'),
+                    TextEntry::make('branch')
+                        ->label('Branch')
+                        ->placeholder('-'),
+                    TextEntry::make('commit_sha')
+                        ->label('Commit')
+                        ->formatStateUsing(fn (?string $state): string => $state ? substr($state, 0, 12) : '-')
+                        ->placeholder('-'),
+                    TextEntry::make('snippet')
+                        ->label('Snippet')
+                        ->fontFamily('mono')
+                        ->wrap()
+                        ->columnSpanFull()
+                        ->placeholder('-'),
+                ]),
+            ]);
+    }
+
+    private static function postureTab(): Tab
+    {
+        return Tab::make('Posture')
+            ->key('posture')
+            ->visible(fn (SecurityEvent $record): bool => self::isEventType($record, EventType::Misconfiguration) || self::isEventType($record, EventType::Iac) || self::isEventType($record, EventType::Posture))
+            ->schema([
+                Grid::make(2)->schema([
+                    TextEntry::make('_resource_type')
+                        ->label('Resource type')
+                        ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'resourceType'))
+                        ->placeholder('-'),
+                    TextEntry::make('_recommendation')
+                        ->label('Recommendation')
+                        ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'recommendation'))
+                        ->wrap()
+                        ->placeholder('-'),
+                    TextEntry::make('_documentation_url')
+                        ->label('Documentation')
+                        ->state(fn (SecurityEvent $record): ?string => self::metadataStringValue($record, 'documentationUrl'))
+                        ->url(fn (?string $state): ?string => filled($state) ? $state : null)
+                        ->openUrlInNewTab()
+                        ->placeholder('-'),
+                ]),
+            ]);
+    }
+
+    private static function rawEvidenceTab(): Tab
+    {
+        return Tab::make('Raw evidence')
+            ->key('raw-evidence')
+            ->schema([
+                CodeEntry::make('_raw_evidence')
+                    ->label('')
+                    ->state(fn (SecurityEvent $record): array => self::buildRawEvidence($record))
+                    ->grammar(Grammar::Json)
+                    ->jsonFlags(JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                    ->copyable()
+                    ->columnSpanFull(),
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -938,14 +990,14 @@ class SecurityEventResource extends Resource
      * A single, compact catalog of every reference link for the alert.
      *
      * Replaces five per-kind sections (each of which rendered every link as a
-     * full Label / Kind / URL card) with one collapsible section that lists
-     * every link as a single compact row: a kind badge, the label, and the
-     * long upstream URL collapsed down to a single "Open" affordance.
+     * full Label / Kind / URL card) with one tab that lists every link as a
+     * single compact row: a kind badge, the label, and the long upstream URL
+     * collapsed down to a single "Open" affordance.
      */
-    private static function linksSection(): Section
+    private static function linksTab(): Tab
     {
-        return Section::make('Links & References')
-            ->collapsible()
+        return Tab::make('Links & References')
+            ->key('links')
             ->visible(fn (SecurityEvent $record): bool => self::allLinkCatalogRows($record) !== [])
             ->schema([
                 RepeatableEntry::make('_links')
@@ -992,7 +1044,7 @@ class SecurityEventResource extends Resource
 
     /**
      * Compact readiness signals (repository / tracker / source-URL mapping)
-     * rendered as inline badges on the Alert Summary. A trailing ✓/✗ encodes
+     * rendered as inline badges on the Summary tab. A trailing ✓/✗ encodes
      * the state so the badge colour can be derived without a sibling lookup.
      *
      * @return list<string>

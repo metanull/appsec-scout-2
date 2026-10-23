@@ -210,6 +210,8 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 - Long text always full-column-span (`->columnSpanFull()` or the section's full width), `->fontFamily('mono')` where it is machine output.
 - Raw JSON always a collapsible `CodeEntry` at the bottom, with its meaningful keys promoted into the sections above rather than left buried in the raw dump.
 
+Detail pages with more than five sections (`SecurityEventResource` Alerts, `LocalFindingResource` Local Findings) put them in one `Tabs` area instead (`->columnSpanFull()->persistTabInQueryString()`), followed by the unchanged relation-manager tabs. The same reading order applies to the tabs: identity/summary first, long text next, raw JSON as the last tab. Nothing inside a tab is collapsible, and type-specific tabs carry the section's `->visible()` condition. A block that calls for action (the alert's Pending Sync) stays a full-width warning `Section` above the tabs.
+
 ## Key Models and Enums
 
 - `SecurityEvent` — central entity; `EventState` (Open, Acknowledged, InProgress, Resolved, Dismissed), `EventSeverity` (Critical → Informational), `EventType` (Vulnerability, Secret, Dependency, License, Misconfiguration, CodeQuality, IaC, Posture)
