@@ -1,5 +1,7 @@
 # AppSec Scout
 
+![AppSec Scout](docs/images/banner.svg)
+
 AppSec Scout is a tool designed to simplify the management of application security alerts. It consolidates alerts from multiple sources into a single interface, making it easier to triage, track, and resolve security issues efficiently.
 
 ## What It Does
