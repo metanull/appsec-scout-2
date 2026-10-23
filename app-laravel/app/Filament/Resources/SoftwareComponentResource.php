@@ -10,12 +10,14 @@ use App\Models\SoftwareAsset;
 use App\Models\SoftwareComponent;
 use App\Models\SoftwareSystem;
 use App\Models\User;
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Grouping\Group;
@@ -117,9 +119,11 @@ class SoftwareComponentResource extends Resource
                         false: fn (Builder $query): Builder => $query->whereNull('removed_at'),
                         blank: fn (Builder $query): Builder => $query,
                     ),
+                self::packageFilter(),
             ])
+            // Grouping by component name is replaced by the Packages page, which
+            // pages by package; Filament groups page by row and split packages.
             ->groups([
-                Group::make('name')->label('Component'),
                 Group::make('_used_by')
                     ->label('Used by')
                     ->getTitleFromRecordUsing(fn (SoftwareComponent $record): string => self::ownerLabel($record))
@@ -145,6 +149,47 @@ class SoftwareComponentResource extends Resource
             'index' => ListSoftwareComponents::route('/'),
             'view' => ViewSoftwareComponent::route('/{record}'),
         ];
+    }
+
+    /**
+     * Exact name (and ecosystem) match, so the Packages page can link to every
+     * usage of one package without a LIKE search pulling in similarly named ones.
+     */
+    private static function packageFilter(): Filter
+    {
+        return Filter::make('package')
+            ->schema([
+                TextInput::make('name')->label('Package name'),
+                TextInput::make('ecosystem')->label('Ecosystem'),
+            ])
+            ->query(fn (Builder $query, array $data): Builder => self::applyPackageFilter($query, $data))
+            ->indicateUsing(function (array $data): ?string {
+                if (! filled($data['name'] ?? null)) {
+                    return null;
+                }
+
+                return filled($data['ecosystem'] ?? null)
+                    ? "Package: {$data['name']} ({$data['ecosystem']})"
+                    : "Package: {$data['name']}";
+            });
+    }
+
+    /**
+     * @param  Builder<SoftwareComponent>  $query
+     * @param  array<string, mixed>  $data
+     * @return Builder<SoftwareComponent>
+     */
+    private static function applyPackageFilter(Builder $query, array $data): Builder
+    {
+        if (filled($data['name'] ?? null)) {
+            $query->where('name', $data['name']);
+        }
+
+        if (filled($data['ecosystem'] ?? null)) {
+            $query->where('ecosystem', $data['ecosystem']);
+        }
+
+        return $query;
     }
 
     private static function ownerLabel(SoftwareComponent $record): string

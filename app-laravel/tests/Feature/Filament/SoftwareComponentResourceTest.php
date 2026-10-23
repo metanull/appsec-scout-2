@@ -67,29 +67,49 @@ it('shows the asset, system, and container columns on the list', function () {
         ->assertSee('payments-api');
 });
 
-it('groups the list by component name', function () {
+it('no longer offers grouping by component name', function () {
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);
 
-    $containerA = SecurityContainer::factory()->create(['name' => 'service-a']);
-    $containerB = SecurityContainer::factory()->create(['name' => 'service-b']);
+    $groups = Livewire::actingAs($user)
+        ->test(ListSoftwareComponents::class)
+        ->instance()
+        ->getTable()
+        ->getGroups();
 
-    $componentA = $containerA->softwareComponents()->create([
-        'name' => 'Jinja2',
-        'version' => '3.1.4',
-        'purl' => 'pkg:pypi/jinja2@3.1.4',
+    expect(array_keys($groups))->toBe(['_used_by']);
+});
+
+it('filters the list to exactly one package', function () {
+    $user = User::factory()->create();
+    $user->syncRoles(['Reader']);
+
+    $container = SecurityContainer::factory()->create(['name' => 'service-a']);
+
+    $exact = $container->softwareComponents()->create([
+        'name' => 'Apollo.Client.Core',
+        'version' => '2.0.1',
+        'ecosystem' => 'nuget',
+        'purl' => 'pkg:nuget/Apollo.Client.Core@2.0.1',
     ]);
-    $componentB = $containerB->softwareComponents()->create([
-        'name' => 'Jinja2',
-        'version' => '3.1.3',
-        'purl' => 'pkg:pypi/jinja2@3.1.3',
+    $similar = $container->softwareComponents()->create([
+        'name' => 'Apollo.Client.Core.Extensions',
+        'version' => '2.0.1',
+        'ecosystem' => 'nuget',
+        'purl' => 'pkg:nuget/Apollo.Client.Core.Extensions@2.0.1',
+    ]);
+    $otherEcosystem = $container->softwareComponents()->create([
+        'name' => 'Apollo.Client.Core',
+        'version' => '2.0.1',
+        'ecosystem' => 'npm',
+        'purl' => 'pkg:npm/Apollo.Client.Core@2.0.1',
     ]);
 
     Livewire::actingAs($user)
         ->test(ListSoftwareComponents::class)
-        ->set('tableGrouping', 'name')
-        ->assertCanSeeTableRecords([$componentA, $componentB])
-        ->assertSee('Jinja2');
+        ->filterTable('package', ['name' => 'Apollo.Client.Core', 'ecosystem' => 'nuget'])
+        ->assertCanSeeTableRecords([$exact])
+        ->assertCanNotSeeTableRecords([$similar, $otherEcosystem]);
 });
 
 it('groups the list by used by', function () {
