@@ -18,6 +18,9 @@
 # log file under <project>/<repo>.logs/ in the run directory (paths recorded in run.jsonl) so a
 # failure can be diagnosed after the fact without re-running anything.
 #
+# The organization's own private Azure Artifacts feeds (NuGet and Maven) are authenticated with
+# AZDO_PAT too — see prepare_feed_credentials.
+#
 # Required environment: AZDO_ORG, AZDO_PAT
 # Optional environment: AZDO_PROJECT_FILTER, AZDO_REPO_FILTER (regex), OUTPUT_DIR,
 #   STATIC_ANALYSIS_TYPES (comma-separated subset of dotnet,java,opengrep; default: all three),
@@ -63,6 +66,14 @@ chmod 600 "$NETRC_FILE"
 git config --global credential.helper store
 printf 'https://:%s@dev.azure.com\n' "$AZDO_PAT" > "$HOME/.git-credentials"
 chmod 600 "$HOME/.git-credentials"
+
+# Keeps MSBuild worker nodes, the MSBuild server and the Roslyn compiler server from outliving
+# each dotnet command: left running, the next repository's build reuses them, still pointed at
+# the previous repository's feed-credential HOME.
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0 UseSharedCompilation=false
+# dotnet runs with a per-repository HOME (see prepare_feed_credentials); the package cache stays shared.
+NUGET_PACKAGES_DIR="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
+MAVEN_SETTINGS=""
 
 RUN_TS=$(date -u +%Y%m%dT%H%M%SZ)
 RUN_DIR="$OUTPUT_DIR/$RUN_TS"
@@ -158,12 +169,30 @@ find_java_project_dirs() {
         | sort -u
 }
 
+# NuGet and Maven ignore the .netrc/.git-credentials above and look credentials up by the name a
+# repository gives each feed, so the clone's own nuget.config/pom.xml files are read to write
+# credentials for the organization's own Azure Artifacts feeds into a per-repository HOME
+# (deleted with the clone). Sets MAVEN_SETTINGS to the Maven settings file written, if any.
+# Non-fatal like every other per-repository step: the builds then fail as they did before.
+prepare_feed_credentials() {
+    local workdir="$1" feed_home="$2" result
+    MAVEN_SETTINGS=""
+    if result=$(php /usr/local/bin/write-package-feed-credentials.php "$workdir" "$feed_home"); then
+        MAVEN_SETTINGS=$(jq -r '.mavenSettingsPath // empty' <<<"$result")
+    else
+        echo "WARN: could not prepare package feed credentials for $workdir" >&2
+    fi
+}
+
 build_java_project() {
     local dir="$1" log_file="$2"
+    # Maven reads its settings from the JVM's user.home, not $HOME, so the file is named explicitly.
+    local settings_args=()
+    [ -n "$MAVEN_SETTINGS" ] && settings_args=(--settings "$MAVEN_SETTINGS")
     if [ -x "$dir/mvnw" ]; then
-        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" ./mvnw --batch-mode --quiet -DskipTests compile) >"$log_file" 2>&1
+        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" ./mvnw --batch-mode --quiet "${settings_args[@]}" -DskipTests compile) >"$log_file" 2>&1
     elif [ -f "$dir/pom.xml" ]; then
-        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" mvn --batch-mode --quiet -DskipTests compile) >"$log_file" 2>&1
+        (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" mvn --batch-mode --quiet "${settings_args[@]}" -DskipTests compile) >"$log_file" 2>&1
     elif [ -x "$dir/gradlew" ]; then
         (cd "$dir" && timeout "$JAVA_BUILD_TIMEOUT" ./gradlew --quiet compileJava) >"$log_file" 2>&1
     elif [ -f "$dir/build.gradle" ] || [ -f "$dir/build.gradle.kts" ]; then
@@ -176,9 +205,11 @@ build_java_project() {
 process_repo() {
     local project_name="$1" repo_name="$2" remote_url="$3" project_id="$4" repo_id="$5"
     local repo_web_url="$6" default_branch="$7" project_description="$8" project_url="$9"
-    local workdir
+    local workdir feed_home
     workdir=$(mktemp -d)
-    trap 'rm -rf "$workdir"' RETURN
+    feed_home=$(mktemp -d)
+    trap 'rm -rf "$workdir" "$feed_home"' RETURN
+    MAVEN_SETTINGS=""
 
     local safe_project safe_repo out_dir dotnet_path java_path opengrep_path
     safe_project=$(sanitize "$project_name")
@@ -192,6 +223,7 @@ process_repo() {
     local clone_ok=false
     if git clone --quiet --depth 1 --no-tags --shallow-submodules "$remote_url" "$workdir" >/dev/null 2>&1; then
         clone_ok=true
+        prepare_feed_credentials "$workdir" "$feed_home"
     fi
 
     local solutions_json="[]"
@@ -209,9 +241,9 @@ process_repo() {
             restore_log="$logs_dir/${sln_id}.restore.log"
             build_log="$logs_dir/${sln_id}.build.log"
             analyze_log="$logs_dir/${sln_id}.analyze.log"
-            if timeout "$DOTNET_RESTORE_TIMEOUT" dotnet restore "$sln" >"$restore_log" 2>&1; then
+            if env HOME="$feed_home" NUGET_PACKAGES="$NUGET_PACKAGES_DIR" timeout "$DOTNET_RESTORE_TIMEOUT" dotnet restore "$sln" >"$restore_log" 2>&1; then
                 restore_ok=true
-                if timeout "$DOTNET_BUILD_TIMEOUT" dotnet build --no-restore "$sln" >"$build_log" 2>&1; then
+                if env HOME="$feed_home" NUGET_PACKAGES="$NUGET_PACKAGES_DIR" timeout "$DOTNET_BUILD_TIMEOUT" dotnet build --no-restore "$sln" >"$build_log" 2>&1; then
                     build_ok=true
                 fi
 
@@ -225,7 +257,7 @@ process_repo() {
                 # solution writes no output file at all (exit 0 either way), so the file's
                 # presence — not the exit status — is what actually distinguishes "found
                 # something to report" from "clean" or "failed".
-                timeout "$ANALYSIS_TIMEOUT" roslynator analyze "$sln" --output "$sln_report" --output-format sarif --severity-level info --return-success-on-diagnostics >"$analyze_log" 2>&1
+                env HOME="$feed_home" NUGET_PACKAGES="$NUGET_PACKAGES_DIR" timeout "$ANALYSIS_TIMEOUT" roslynator analyze "$sln" --output "$sln_report" --output-format sarif --severity-level info --return-success-on-diagnostics >"$analyze_log" 2>&1
                 if [ -s "$sln_report" ]; then
                     analyzed_ok=true
                     sln_reports+=("$sln_report")

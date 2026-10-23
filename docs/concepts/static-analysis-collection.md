@@ -133,7 +133,8 @@ sweeper's inventory half (`sweepContainers()`) is driven by inventory sync, not 
 so a skipped repository is not marked removed either.
 
 The scratch directory — which by this point already holds the PAT — is deleted on **every** exit
-path, the skip path included; the credential files never survive the job.
+path, the skip path included; the credential files (git's, and the package-feed ones described
+under [Private package feeds](#private-package-feeds)) never survive the job.
 
 ### Force full re-analysis
 
@@ -167,7 +168,8 @@ offline path is likewise unaffected and keeps rescanning everything.
 
 `AnalyzeRepositoryJob` clones the repository (identical mechanics to `CollectRepositoryJob`'s own
 clone step: `Illuminate\Support\Facades\Process`, PAT supplied through a per-job-scoped
-`.netrc`/`.git-credentials`, never as a process argument or in a shell string), then runs the same
+`.netrc`/`.git-credentials`, never as a process argument or in a shell string), writes the
+[package-feed credentials](#private-package-feeds) the clone needs, then runs the same
 three-ecosystem analysis `docker/ops/collect-static-analysis.sh` runs today:
 
 - **Opengrep**: runs first, against the cloned source tree — no build or language-detection step,
@@ -211,6 +213,35 @@ other AzDO-origin writer in this codebase uses — so a repository's static anal
 converge onto the same row a live AzDO alert sync, `-SbomScan`, `-StaticAnalysis`, or
 `CollectRepositoryJob` already created or will later create, rather than creating a second,
 parallel, unlinked row.
+
+## Private Package Feeds
+
+Repositories that restore packages from the organization's own Azure Artifacts feeds need the
+AzDO Repos PAT for `dotnet restore` and Maven too, which is why `azdo-repos.pat` needs the
+**Packaging (Read)** scope alongside Code (Read). Neither tool reads git's
+`.netrc`/`.git-credentials`, and both look credentials up by the *name* a repository gives a feed
+(a `nuget.config` source key, a `pom.xml` repository id). So after the clone,
+`App\SourceControl\Collection\PackageFeedCredentialWriter` reads the clone's `nuget.config` and
+`pom.xml` files (XML-parsed) and writes, into the job's own scratch HOME:
+
+- `.nuget/NuGet/NuGet.Config` with `packageSourceCredentials` for each NuGet source key, which
+  NuGet merges with the repository's own config — the repository's files are never modified;
+- `.m2/settings.xml` with one `<server>` per Maven repository id, passed to every Maven build as
+  `--settings`, since Maven reads its settings from the JVM's `user.home`, not `$HOME`.
+
+A name is credentialed only when every definition of it in the clone points at the organization's
+feed host (`https://pkgs.dev.azure.com/<azdo-repos.organization>/...` or
+`https://<organization>.pkgs.visualstudio.com/...`), so the PAT is never sent to another host.
+The names prepared (never the PAT) are logged at info level. Gradle builds are not credentialed.
+
+Every `dotnet`/`roslynator` command also runs with `MSBUILDDISABLENODEREUSE=1`,
+`DOTNET_CLI_USE_MSBUILD_SERVER=0` and `UseSharedCompilation=false`. Without them, MSBuild worker
+nodes and the Roslyn compiler server outlive the command with the job's HOME in their
+environment, a later job's build reuses them, and they keep writing NuGet's config and package
+cache into the earlier job's already-deleted scratch directory.
+
+`docker/ops/write-package-feed-credentials.php` mirrors the writer for the `-SbomScan` and
+`-StaticAnalysis` Ops scripts, whose image carries no app code; keep the two in step.
 
 ## From Attachment to Local Finding / Dependency
 

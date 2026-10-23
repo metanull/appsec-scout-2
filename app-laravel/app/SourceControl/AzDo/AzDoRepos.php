@@ -34,7 +34,7 @@ final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
     public function credentialFields(): array
     {
         return [
-            new CredentialField(key: 'azdo-repos.pat', label: 'Personal Access Token', isSecret: true, required: true, description: 'Azure DevOps personal access token scoped for repository/code access (e.g. Code (Read)), separate from the Advanced Security source token.'),
+            new CredentialField(key: 'azdo-repos.pat', label: 'Personal Access Token', isSecret: true, required: true, description: 'Azure DevOps personal access token with Code (Read) and Packaging (Read): repository/code access, plus the organization\'s own Azure Artifacts feeds that static analysis restores packages from. Separate from the Advanced Security source token.'),
             new CredentialField(key: 'azdo-repos.organization', label: 'Organization', isSecret: false, required: true, description: 'The Azure DevOps organization name.'),
         ];
     }

@@ -481,8 +481,10 @@ WORKDIR /workspace
 COPY docker/ops/entrypoint.sh /entrypoint.sh
 COPY docker/ops/collect-sboms.sh /usr/local/bin/collect-sboms.sh
 COPY docker/ops/collect-static-analysis.sh /usr/local/bin/collect-static-analysis.sh
+# Run with `php` by both collect scripts, so it needs no execute bit.
+COPY docker/ops/write-package-feed-credentials.php /usr/local/bin/write-package-feed-credentials.php
 
-RUN dos2unix /entrypoint.sh /usr/local/bin/collect-sboms.sh /usr/local/bin/collect-static-analysis.sh && \
+RUN dos2unix /entrypoint.sh /usr/local/bin/collect-sboms.sh /usr/local/bin/collect-static-analysis.sh /usr/local/bin/write-package-feed-credentials.php && \
     chmod +x /entrypoint.sh /usr/local/bin/collect-sboms.sh /usr/local/bin/collect-static-analysis.sh
 
 USER ops

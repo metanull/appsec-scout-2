@@ -13,6 +13,7 @@ use App\Models\StaticAnalysisRepositoryState;
 use App\Models\StaticAnalysisRun;
 use App\Models\ToolInvocation;
 use App\SourceControl\Collection\AnalyzeRepositoryJob;
+use App\SourceControl\Collection\PackageFeedCredentialWriter;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -65,7 +66,7 @@ function staticAnalysisTarget(array $overrides = []): RepositoryCollectionTarget
 
 function analyzeRepositoryJobDependencies(): array
 {
-    return [app(AttachmentTargetResolver::class), app(AttachmentService::class), app(Vault::class)];
+    return [app(AttachmentTargetResolver::class), app(AttachmentService::class), app(Vault::class), app(PackageFeedCredentialWriter::class)];
 }
 
 /** @return list<string> */
@@ -93,6 +94,7 @@ function plantClonedFiles(string $workDir, array $files): void
 
 beforeEach(function () {
     app(Vault::class)->set('azdo-repos.pat', null, 'fake-pat');
+    app(Vault::class)->set('azdo-repos.organization', null, 'testorg');
 });
 
 it('clones a repository and attaches both a dotnet and a java report', function () {
@@ -1496,4 +1498,166 @@ it('produces a repository-relative file_path when opengrep reports an absolute f
     $finding = LocalFinding::query()->where('rule_id', 'javascript.lang.security.detect-eval.detect-eval')->firstOrFail();
 
     expect($finding->file_path)->toBe('src/index.js');
+});
+
+it('gives dotnet restore NuGet credentials for the organization feed in the job HOME', function () {
+    $restoreConfigs = [];
+
+    Process::fake(function ($process) use (&$restoreConfigs) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), [
+                'App.sln' => '',
+                'nuget.config' => '<configuration><packageSources><add key="private-feed" value="https://pkgs.dev.azure.com/testorg/_packaging/private-feed/nuget/v3/index.json" /></packageSources></configuration>',
+            ]);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'dotnet' && ($parts[1] ?? null) === 'restore') {
+            $config = ($process->environment['HOME'] ?? '') . '/.nuget/NuGet/NuGet.Config';
+            $restoreConfigs[] = File::exists($config) ? File::get($config) : null;
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect($restoreConfigs)->toHaveCount(1)
+        ->and($restoreConfigs[0])->toContain('<private-feed>')
+        ->and($restoreConfigs[0])->toContain('value="fake-pat"');
+});
+
+it('passes the Maven settings with the feed credentials to every Maven build', function () {
+    $mavenCommands = [];
+
+    Process::fake(function ($process) use (&$mavenCommands) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), [
+                'pom.xml' => '<project xmlns="http://maven.apache.org/POM/4.0.0"><repositories><repository><id>java-feed</id><url>https://pkgs.dev.azure.com/testorg/_packaging/java-feed/maven/v1</url></repository></repositories></project>',
+            ]);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'mvn') {
+            $settings = argAfter($parts, '--settings');
+            $mavenCommands[] = ['parts' => $parts, 'settings' => $settings !== null && File::exists($settings) ? File::get($settings) : null];
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect($mavenCommands)->toHaveCount(1)
+        ->and($mavenCommands[0]['parts'])->toContain('compile')
+        ->and($mavenCommands[0]['settings'])->toContain('<id>java-feed</id>')
+        ->and($mavenCommands[0]['settings'])->toContain('<password>fake-pat</password>');
+});
+
+it('builds Maven without a settings file when no repository is on the organization feed', function () {
+    $mavenCommands = [];
+
+    Process::fake(function ($process) use (&$mavenCommands) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['pom.xml' => '<project><repositories><repository><id>central</id><url>https://repo.maven.apache.org/maven2</url></repository></repositories></project>']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'mvn') {
+            $mavenCommands[] = $parts;
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect($mavenCommands)->toHaveCount(1)
+        ->and($mavenCommands[0])->not->toContain('--settings');
+});
+
+it('stops dotnet build servers from outliving each dotnet command', function () {
+    $dotnetEnvironments = [];
+
+    Process::fake(function ($process) use (&$dotnetEnvironments) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['App.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (in_array($parts[0] ?? null, ['dotnet', 'roslynator'], true)) {
+            $dotnetEnvironments[] = $process->environment;
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    // restore, build and roslynator analyze.
+    expect($dotnetEnvironments)->toHaveCount(3);
+
+    foreach ($dotnetEnvironments as $environment) {
+        expect($environment)->toMatchArray([
+            'MSBUILDDISABLENODEREUSE' => '1',
+            'DOTNET_CLI_USE_MSBUILD_SERVER' => '0',
+            'UseSharedCompilation' => 'false',
+        ]);
+    }
+});
+
+it('fails the job when the AzDO Repos organization is not configured', function () {
+    app(Vault::class)->forget('azdo-repos.organization', null);
+    Process::fake();
+
+    $run = staticAnalysisRunForJobTest();
+
+    expect(fn () => (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))->handle(...analyzeRepositoryJobDependencies()))
+        ->toThrow(RuntimeException::class, 'AzDO Repos organization not configured.');
+
+    Process::assertNothingRan();
 });
