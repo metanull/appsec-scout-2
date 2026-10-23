@@ -221,7 +221,7 @@ Detail pages with more than five sections (`SecurityEventResource` Alerts, `Loca
 
 ## Testing
 
-- **Framework**: Pest 4.7+ with Laravel plugin
+- **Framework**: Pest 5.3+ (PHPUnit 13) with Laravel plugin
 - **Default config** (`phpunit.xml`): SQLite in-memory — fast, used for most development
 - **MySQL config** (`phpunit.mysql.xml`): requires the `mysql` container; use `-Check test-mysql` or pass `--configuration phpunit.mysql.xml` directly
 - **PostgreSQL config** (`phpunit.pgsql.xml`): requires the `postgres` container (started automatically by `-Check test-pgsql`, which layers `docker-compose.pgsql.yml`)
