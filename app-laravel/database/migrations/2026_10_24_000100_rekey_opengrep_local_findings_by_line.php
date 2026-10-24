@@ -11,6 +11,14 @@ use Illuminate\Database\Migrations\Migration;
  */
 return new class extends Migration
 {
+    /**
+     * Each merge commits on its own. Inside the one transaction PostgreSQL migrations run in
+     * by default, every merge's savepoint holds a lock until the end, and ~14k merges run out
+     * of shared memory (max_locks_per_transaction). The rekeyer is idempotent, so a run that
+     * stops partway finishes on the next migrate.
+     */
+    public $withinTransaction = false;
+
     public function up(): void
     {
         app(LocalFindingIdentityRekeyer::class)->rekey();
