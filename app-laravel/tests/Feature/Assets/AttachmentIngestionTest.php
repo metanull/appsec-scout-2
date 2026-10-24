@@ -166,31 +166,35 @@ it('keeps a vulnerability finding and its triage when the package moves to anoth
         ->and($after->comments()->count())->toBe(1);
 });
 
-it('keeps a fingerprinted code finding open as the same row when its line moves', function () {
+it('maps the same Opengrep result scanned from two different clone roots to one finding and keeps its triage', function () {
     $container = SecurityContainer::factory()->create();
     $service = app(AttachmentService::class);
-    $report = fn (int $line): string => json_encode(['version' => '2.1.0', 'runs' => [[
+    // As stored before the scan ran from inside the clone: an absolute uri under the per-job
+    // scratch root, and a matchBasedId Opengrep hashed from that absolute path.
+    $report = fn (string $root, string $matchBasedId): string => json_encode(['version' => '2.1.0', 'runs' => [[
         'tool' => ['driver' => ['name' => 'Opengrep', 'rules' => [['id' => 'js.eval-detected', 'shortDescription' => ['text' => 'eval() with a non-literal argument']]]]],
         'results' => [[
             'ruleId' => 'js.eval-detected',
             'level' => 'warning',
             'message' => ['text' => 'Detected eval with a dynamic argument.'],
-            'fingerprints' => ['matchBasedId/v1' => 'c67005e16d68_0'],
-            'locations' => [['physicalLocation' => ['artifactLocation' => ['uri' => 'src/app.js'], 'region' => ['startLine' => $line]]]],
+            'fingerprints' => ['matchBasedId/v1' => $matchBasedId],
+            'locations' => [['physicalLocation' => ['artifactLocation' => ['uri' => $root . '/src/app.js', 'uriBaseId' => '%SRCROOT%'], 'region' => ['startLine' => 3]]]],
         ]],
     ]]], JSON_THROW_ON_ERROR);
+    $firstRoot = '/workspace-scratch/36bc738c-ad70-4c3b-b31e-9da8423344bc/work';
+    $secondRoot = '/workspace-scratch/9f1e2d7a-0c4b-4e8f-a1d2-5b6c7d8e9f01/work';
 
-    $service->attachTo($container, 'code-quality-opengrep', 'application/json', 'first.sarif', $report(3));
+    $service->attachTo($container, 'code-quality-opengrep', 'application/json', 'first.sarif', $report($firstRoot, '27d65b71fe30_0'), createdByCommand: 'static-analysis', sourceRoot: $firstRoot);
     $first = LocalFinding::query()->where('owner_id', $container->id)->sole();
+    app(LocalFindingStatusChanger::class)->change($first, User::factory()->create(), EventState::Dismissed, 'False positive: constant argument.');
 
-    $service->attachTo($container, 'code-quality-opengrep', 'application/json', 'second.sarif', $report(5));
+    $service->attachTo($container, 'code-quality-opengrep', 'application/json', 'second.sarif', $report($secondRoot, '7b6befb5ded5_0'), createdByCommand: 'static-analysis', sourceRoot: $secondRoot);
 
     $after = LocalFinding::query()->where('owner_id', $container->id)->sole();
     expect($after->id)->toBe($first->id)
-        ->and($after->start_line)->toBe(5)
-        ->and($after->status)->toBe(EventState::Open);
+        ->and($after->file_path)->toBe('src/app.js')
+        ->and($after->status)->toBe(EventState::Dismissed);
 });
-
 it('parses a secrets attachment into local findings', function () {
     $container = SecurityContainer::factory()->create();
 

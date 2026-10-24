@@ -208,12 +208,15 @@ class LocalFinding extends Model
     }
 
     /**
-     * The identity a re-scan matches this finding on, so a finding whose line merely moved keeps
-     * its status, comments and links. A vulnerability is the same finding for as long as the
-     * same advisory affects the same package version in the same manifest, wherever the package
-     * sits in the lockfile. Otherwise a stable scanner fingerprint (e.g. Opengrep's
-     * matchBasedId) identifies the match regardless of its line; only without one does the line
-     * stay part of the identity (computeDedupHash()).
+     * The identity a re-scan matches this finding on. A vulnerability is the same finding for as
+     * long as the same advisory affects the same package version in the same manifest, wherever
+     * the package sits in the lockfile, so its triage survives dependency changes. Everything
+     * else is identified by rule, file and line (computeDedupHash()).
+     *
+     * Scanner fingerprints are deliberately not part of it. Opengrep's matchBasedId is the only
+     * one any scanner here emits, and every row stored before scans ran from inside the clone
+     * carries one hashed from that run's absolute scratch path: those cannot be recomputed from
+     * what is stored, so an identity built on them could never be matched or re-keyed.
      */
     public static function identityHash(
         string $kind,
@@ -222,53 +225,17 @@ class LocalFinding extends Model
         ?int $startLine,
         ?string $packageName,
         ?string $packageVersion,
-        ?string $fingerprint,
     ): string {
         if ($kind === self::KIND_VULNERABILITY && $packageName !== null && $packageName !== '' && $packageVersion !== null && $packageVersion !== '') {
             return sha1(implode("\0", ['package', $ruleId, $filePath, $packageName, $packageVersion]));
         }
 
-        if ($fingerprint !== null) {
-            return sha1(implode("\0", ['fingerprint', $ruleId, $filePath, $fingerprint]));
-        }
-
         return self::computeDedupHash($ruleId, $filePath, $startLine);
-    }
-
-    /**
-     * A SARIF result's stable fingerprint: its `fingerprints`, else its `partialFingerprints`,
-     * as a canonical string. Null when the scanner provides neither (Trivy, for one).
-     */
-    public static function sarifFingerprint(mixed $result): ?string
-    {
-        if (! is_array($result)) {
-            return null;
-        }
-
-        foreach (['fingerprints', 'partialFingerprints'] as $key) {
-            $fingerprints = $result[$key] ?? null;
-
-            if (! is_array($fingerprints)) {
-                continue;
-            }
-
-            $fingerprints = array_filter($fingerprints, fn (mixed $value): bool => is_string($value) && $value !== '');
-
-            if ($fingerprints !== []) {
-                ksort($fingerprints);
-
-                return json_encode($fingerprints, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-            }
-        }
-
-        return null;
     }
 
     /** identityHash() of this row as it is stored now. */
     public function currentIdentityHash(): string
     {
-        $metadata = $this->getAttribute('metadata');
-
         return self::identityHash(
             (string) $this->kind,
             (string) $this->rule_id,
@@ -276,7 +243,6 @@ class LocalFinding extends Model
             $this->start_line,
             $this->package_name,
             $this->package_version,
-            self::sarifFingerprint(is_array($metadata) ? ($metadata['result'] ?? null) : null),
         );
     }
 }

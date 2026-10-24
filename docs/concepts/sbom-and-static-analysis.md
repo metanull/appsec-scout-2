@@ -81,7 +81,8 @@ Same enumerate/clone/delete skeleton as SbomScan, but runs source-code analyzers
 Trivy:
 
 - **Opengrep**: runs directly against the cloned source tree, no build required — unlike the
-  other two ecosystems below. `opengrep scan --sarif` is run once per repo against the vendored,
+  other two ecosystems below. `opengrep scan --sarif .` is run once per repo, from inside the
+  clone so the reported paths are repository-relative, against the vendored,
   version-pinned csharp/java/javascript/typescript ruleset (`/opt/opengrep-rules`), and its
   report is written even when it carries zero results, so a later report file's presence alone
   (not its size) is what gates upload — the same "clean scan still produces a file" behavior

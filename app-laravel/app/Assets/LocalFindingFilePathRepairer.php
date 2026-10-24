@@ -71,7 +71,6 @@ final class LocalFindingFilePathRepairer
             return 'skipped';
         }
 
-        $metadata = $finding->getAttribute('metadata');
         $newHash = LocalFinding::identityHash(
             (string) $finding->kind,
             (string) $finding->rule_id,
@@ -79,7 +78,6 @@ final class LocalFindingFilePathRepairer
             $finding->start_line,
             $finding->package_name,
             $finding->package_version,
-            LocalFinding::sarifFingerprint(is_array($metadata) ? ($metadata['result'] ?? null) : null),
         );
 
         $twin = LocalFinding::query()

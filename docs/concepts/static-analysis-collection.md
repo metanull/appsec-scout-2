@@ -174,8 +174,10 @@ three-ecosystem analysis `docker/ops/collect-static-analysis.sh` runs today:
 
 - **Opengrep**: runs first, against the cloned source tree — no build or language-detection step,
   unlike the other two ecosystems below. `opengrep scan --quiet --sarif --output <path> -f
-  /opt/opengrep-rules <clone>` is run once per repository against the vendored, version-pinned
-  csharp/java/javascript/typescript ruleset. The resulting SARIF is attached as
+  /opt/opengrep-rules .` is run once per repository, from inside the clone, against the vendored,
+  version-pinned csharp/java/javascript/typescript ruleset. Scanning `.` keeps the reported paths
+  repository-relative: given the absolute scratch path, Opengrep reports it and hashes it into
+  every result's `matchBasedId`, which then differs on every run. The resulting SARIF is attached as
   `code-quality-opengrep` **even when it carries zero results**, so a later `StaleRecordSweeper`
   pass can still resolve previously reported Opengrep findings that no longer occur.
 - **`.NET`**: every `*.sln` found anywhere in the clone is restored, then — regardless of the

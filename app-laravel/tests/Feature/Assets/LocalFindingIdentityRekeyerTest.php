@@ -7,6 +7,7 @@ use App\Models\LocalFinding;
 use App\Models\LocalFindingComment;
 use App\Models\LocalFindingWorkItemLink;
 use App\Models\SecurityContainer;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -85,4 +86,73 @@ it('leaves line-based identities alone and changes nothing on a second run', fun
     expect($first)->toBe(['rekeyed' => 1, 'merged' => 1])
         ->and($secret->fresh()->dedup_hash)->toBe(LocalFinding::computeDedupHash('github-pat', 'config.php', 12))
         ->and($rekeyer->rekey())->toBe(['rekeyed' => 0, 'merged' => 0]);
+});
+
+/**
+ * An Opengrep row as one static analysis run stored it: keyed by a matchBasedId Opengrep hashed
+ * from that run's absolute scratch path, so every run's copy of the same match differs.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function legacyOpengrepFinding(SecurityContainer $container, string $matchBasedId, array $overrides = []): LocalFinding
+{
+    $finding = $container->localFindings()->create(array_merge([
+        'kind' => LocalFinding::KIND_CODE_QUALITY,
+        'report_kind' => 'code-quality-opengrep',
+        'rule_id' => 'js.eval-detected',
+        'title' => 'eval() with a non-literal argument',
+        'file_path' => 'src/app.js',
+        'start_line' => 3,
+        'metadata' => ['result' => ['fingerprints' => ['matchBasedId/v1' => $matchBasedId]]],
+        'first_seen_at' => now(),
+        'last_seen_at' => now(),
+    ], $overrides));
+
+    DB::table('local_findings')->where('id', $finding->id)->update(['dedup_hash' => sha1(implode("\0", [
+        'fingerprint', $finding->rule_id, $finding->file_path, json_encode(['matchBasedId/v1' => $matchBasedId], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+    ]))]);
+
+    return $finding->fresh();
+}
+
+it('folds the copy each static analysis run re-created into the Opengrep finding the operator dismissed', function () {
+    $container = SecurityContainer::factory()->create();
+    $operator = User::factory()->create();
+    $dismissed = legacyOpengrepFinding($container, '27d65b71fe30_0', ['status' => EventState::Dismissed, 'last_seen_at' => now()->subDay()]);
+    LocalFindingComment::query()->create(['local_finding_id' => $dismissed->id, 'author_user_id' => $operator->id, 'body' => '[Status change: dismissed] Constant argument.', 'created_at' => now()->subDay()]);
+    $recreated = legacyOpengrepFinding($container, '7b6befb5ded5_0');
+
+    $result = app(LocalFindingIdentityRekeyer::class)->rekey();
+
+    $survivor = LocalFinding::query()->where('owner_id', $container->id)->sole();
+    expect($result)->toBe(['rekeyed' => 1, 'merged' => 1])
+        ->and($survivor->id)->toBe($dismissed->id)
+        ->and($survivor->status)->toBe(EventState::Dismissed)
+        ->and($survivor->dedup_hash)->toBe(LocalFinding::computeDedupHash('js.eval-detected', 'src/app.js', 3))
+        ->and($survivor->last_seen_at->toDateString())->toBe($recreated->last_seen_at->toDateString())
+        ->and($survivor->comments()->pluck('body')->all())->toBe(['[Status change: dismissed] Constant argument.']);
+});
+
+it('keeps an operator decision over a resolution the scan set itself', function () {
+    $container = SecurityContainer::factory()->create();
+    $scanResolved = ['status' => EventState::Resolved, 'last_seen_at' => now()];
+    $scanNote = fn (LocalFinding $finding) => LocalFindingComment::query()->create(['local_finding_id' => $finding->id, 'author_user_id' => null, 'body' => 'No longer reported by the code-quality-opengrep scan; resolved automatically.', 'created_at' => now()]);
+
+    // A kept finding the next run re-created under a new fingerprint and then resolved: the
+    // copy still reported is the one that stays open.
+    $autoResolved = legacyOpengrepFinding($container, '27d65b71fe30_0', $scanResolved);
+    DB::table('local_findings')->where('id', $autoResolved->id)->update(['resolved_by_scan_at' => now()]);
+    $scanNote($autoResolved);
+    $stillReported = legacyOpengrepFinding($container, '7b6befb5ded5_0', ['last_seen_at' => now()->addMinute()]);
+
+    // An operator's dismissal outranks a newer, scan-resolved copy.
+    $dismissed = legacyOpengrepFinding($container, 'aa11bb22cc33_0', ['file_path' => 'src/other.js', 'status' => EventState::Dismissed, 'last_seen_at' => now()->subDay()]);
+    $newer = legacyOpengrepFinding($container, 'dd44ee55ff66_0', ['file_path' => 'src/other.js', ...$scanResolved]);
+    DB::table('local_findings')->where('id', $newer->id)->update(['resolved_by_scan_at' => now()]);
+    $scanNote($newer);
+
+    app(LocalFindingIdentityRekeyer::class)->rekey();
+
+    expect(LocalFinding::query()->where('owner_id', $container->id)->orderBy('id')->pluck('status', 'id')->all())
+        ->toBe([$stillReported->id => EventState::Open, $dismissed->id => EventState::Dismissed]);
 });
