@@ -487,6 +487,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      * attached even when it carries zero results (unlike the other two
      * ecosystems' own zero-diagnostics case), so StaleRecordSweeper still
      * resolves any previously reported opengrep findings that no longer occur.
+     *
+     * It scans `.` from inside the clone so the reported paths are repository-relative:
+     * given the absolute per-job scratch path instead, Opengrep reports that path and hashes
+     * it into every result's matchBasedId fingerprint, which then differs on every run.
      */
     private function analyzeOpengrep(
         AttachmentService $attachments,
@@ -500,11 +504,12 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             'opengrep', 'scan', '--quiet', '--sarif',
             '--output', $sarifPath,
             '-f', (string) config('static_analysis_collection.opengrep_rules_dir'),
-            $workDir,
+            '.',
         ];
         $startedAt = now();
 
-        $result = Process::env(['HOME' => $homeDir])
+        $result = Process::path($workDir)
+            ->env(['HOME' => $homeDir])
             ->timeout((int) config('static_analysis_collection.opengrep_timeout'))
             ->run($command);
 

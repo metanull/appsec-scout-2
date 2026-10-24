@@ -237,21 +237,27 @@ never resolved. Because `file_path` is stable across scratch/clone directories, 
 `dedup_hash`, which is what lets a re-scan from a fresh clone upsert onto the same row instead of
 creating a duplicate.
 
-**Local Finding identity.** `dedup_hash` is `LocalFinding::identityHash()`, chosen so a finding
-whose line merely moved is still the same row, with its triage intact:
+**Local Finding identity.** `dedup_hash` is `LocalFinding::identityHash()`:
 
 - a vulnerability with a package: `rule_id` + `file_path` (the manifest) + `package_name` +
-  `package_version` — the line of a package in a lockfile moves with almost any dependency change;
-- otherwise, when the SARIF result carries `fingerprints` (else `partialFingerprints`) —
-  Opengrep's `matchBasedId/v1` survives line moves; Trivy emits none: `rule_id` + `file_path` +
-  that fingerprint;
-- otherwise `rule_id` + `file_path` + `start_line`.
+  `package_version`, so a package whose lockfile line moves (as it does with almost any
+  dependency change) is still the same row, with its triage intact;
+- otherwise `rule_id` + `file_path` + `start_line` — Roslynator, SpotBugs and Opengrep findings
+  alike.
 
-`start_line`/`end_line` are therefore updated on re-scan. Rows stored under the older,
-always-line-based identity were re-keyed by a migration (`App\Assets\LocalFindingIdentityRekeyer`),
-which merged rows that now share an identity into the one carrying the operator's work (a status
-decision, then links, comments and a severity override, then the most recently seen) through
-`App\Assets\LocalFindingMerger`, moving comments and work-item links onto it.
+`start_line`/`end_line` are therefore updated on re-scan. Scanner fingerprints are not part of the
+identity. Opengrep's `matchBasedId/v1`, the only one any scanner here emits, hashes the scanned
+path, and until both collectors scanned `.` from inside the clone it hashed each run's absolute
+scratch directory, so every run re-created every Opengrep finding. Those stored fingerprints
+cannot be recomputed from what is stored, so an identity built on them could never be re-keyed.
+
+Rows stored under an older identity are re-keyed by a migration
+(`App\Assets\LocalFindingIdentityRekeyer`): first the always-line-based one, then Opengrep's
+fingerprint. It merges rows that now share an identity into the one carrying the operator's work
+(a status decision — a Resolved the scan set itself is not one — then links, operator comments and
+a severity override, then the most recently seen) through `App\Assets\LocalFindingMerger`, moving
+comments and work-item links onto it. The survivor keeps its own status, so an operator's
+Dismissed stands.
 
 Severity is derived per-finding, not per-kind: the parser first looks for a Trivy-style
 `Severity: ...` line inside the SARIF `message.text` free text (SARIF has no first-class severity

@@ -4,15 +4,17 @@ namespace App\Assets;
 
 use App\Models\Enums\EventState;
 use App\Models\LocalFinding;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Re-keys every stored LocalFinding to LocalFinding::identityHash() — rows stored when the
- * start line was always part of the identity — and merges the rows that now share an
- * identity (e.g. one package version reported at two lockfile lines) into one, keeping all
- * their comments and work-item links (LocalFindingMerger). Idempotent: a second run finds
- * nothing to change.
+ * Re-keys every stored LocalFinding to LocalFinding::identityHash() whenever that identity
+ * changes — rows stored when the start line was always part of it, then Opengrep rows stored
+ * under their run-specific matchBasedId — and merges the rows that now share an identity
+ * (e.g. one package version reported at two lockfile lines, or one Opengrep match imported
+ * once per run) into one, keeping all their comments and work-item links
+ * (LocalFindingMerger). Idempotent: a second run finds nothing to change.
  */
 final class LocalFindingIdentityRekeyer
 {
@@ -25,7 +27,7 @@ final class LocalFindingIdentityRekeyer
         $groups = [];
 
         LocalFinding::query()
-            ->select(['id', 'owner_type', 'owner_id', 'kind', 'rule_id', 'file_path', 'start_line', 'package_name', 'package_version', 'metadata', 'dedup_hash'])
+            ->select(['id', 'owner_type', 'owner_id', 'kind', 'rule_id', 'file_path', 'start_line', 'package_name', 'package_version', 'dedup_hash'])
             ->chunkById(500, function (Collection $findings) use (&$groups): void {
                 foreach ($findings as $finding) {
                     /** @var LocalFinding $finding */
@@ -48,7 +50,7 @@ final class LocalFindingIdentityRekeyer
             }
 
             $rows = LocalFinding::query()
-                ->withCount(['workItemLinks', 'comments'])
+                ->withCount(['workItemLinks', 'comments as operator_comments_count' => fn (Builder $comments): Builder => $comments->whereNotNull('author_user_id')])
                 ->whereKey(array_column($group, 'id'))
                 ->get();
             $survivor = $this->survivor($rows);
@@ -81,8 +83,9 @@ final class LocalFindingIdentityRekeyer
     }
 
     /**
-     * The row carrying the operator's work survives: a status decision first, then work-item
-     * links, comments and a severity override, then the most recently seen row.
+     * The row carrying the operator's work survives: a status decision first (a Resolved the
+     * scan set itself is not one), then work-item links, operator comments (not the scan's own
+     * resolve/reopen notes) and a severity override, then the most recently seen row.
      *
      * @param  Collection<int, LocalFinding>  $rows
      */
@@ -102,9 +105,9 @@ final class LocalFindingIdentityRekeyer
         $lastSeenAt = $finding->getAttribute('last_seen_at');
 
         return [
-            $finding->getAttribute('status') === EventState::Open ? 0 : 1,
+            $finding->getAttribute('status') === EventState::Open || $finding->getAttribute('resolved_by_scan_at') !== null ? 0 : 1,
             (int) $finding->getAttribute('work_item_links_count') > 0 ? 1 : 0,
-            (int) $finding->getAttribute('comments_count') > 0 ? 1 : 0,
+            (int) $finding->getAttribute('operator_comments_count') > 0 ? 1 : 0,
             $finding->getAttribute('overridden_severity') === null ? 0 : 1,
             $lastSeenAt instanceof \DateTimeInterface ? $lastSeenAt->getTimestamp() : 0,
         ];

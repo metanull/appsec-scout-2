@@ -263,7 +263,7 @@ final class AttachmentIngestionService
             // first_seen_at/created_at and rule_id/file_path (part of every identity, so
             // already identical whenever dedup_hash matches) are deliberately excluded from the
             // update-columns list — first_seen_at must survive re-scans. start_line is updated:
-            // a vulnerability or fingerprinted finding keeps its identity when its line moves.
+            // a vulnerability keeps its identity when its line moves.
             LocalFinding::query()->upsert(
                 $chunk,
                 ['owner_type', 'owner_id', 'kind', 'dedup_hash'],
@@ -333,7 +333,6 @@ final class AttachmentIngestionService
             $finding->startLine,
             $finding->packageName,
             $finding->packageVersion,
-            LocalFinding::sarifFingerprint($finding->metadata['result'] ?? null),
         );
     }
 

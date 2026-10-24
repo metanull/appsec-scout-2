@@ -714,6 +714,40 @@ it('attaches an opengrep report with findings', function () {
     });
 });
 
+it('runs opengrep from inside the clone against . so its paths and fingerprints do not carry the scratch root', function () {
+    $workDir = null;
+
+    Process::fake(function ($process) use (&$workDir) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            $workDir = end($parts);
+            plantClonedFiles($workDir, ['src/index.js' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), staticAnalysisRunForJobTest()->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect($workDir)->toBeString();
+    Process::assertRan(function ($process) use (&$workDir) {
+        $parts = commandParts($process->command);
+
+        return ($parts[0] ?? null) === 'opengrep'
+            && end($parts) === '.'
+            && ! in_array($workDir, $parts, true)
+            && $process->path === $workDir;
+    });
+});
+
 it('attaches an opengrep report even when the scan finds zero results', function () {
     Process::fake(function ($process) {
         $parts = commandParts($process->command);

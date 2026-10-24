@@ -331,8 +331,10 @@ process_repo() {
         # Unlike Roslynator/SpotBugs above, a clean, zero-finding scan still writes a report
         # file (Opengrep's own behavior) — gated on the file's presence, not its size, so a
         # later reimport can still resolve previously reported opengrep findings that no
-        # longer occur.
-        if timeout "$OPENGREP_TIMEOUT" opengrep scan --quiet --sarif --output "$opengrep_path" -f /opt/opengrep-rules "$workdir" >"$logs_dir/opengrep.analyze.log" 2>&1 \
+        # longer occur. It scans "." from inside the clone (out_dir is absolute): given the
+        # mktemp path instead, Opengrep reports it and hashes it into every result's
+        # matchBasedId fingerprint, which then differs on every run.
+        if (cd "$workdir" && timeout "$OPENGREP_TIMEOUT" opengrep scan --quiet --sarif --output "$opengrep_path" -f /opt/opengrep-rules .) >"$logs_dir/opengrep.analyze.log" 2>&1 \
             && [ -f "$opengrep_path" ]; then
             opengrep_ok=true
         fi
