@@ -318,7 +318,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # Every version pin (Roslynator, SpotBugs, Find Security Bugs, Maven, Gradle, Opengrep,
-# the .NET channel) lives in the script, not here — see
+# the .NET SDK) lives in the script, not here — see
 # docker/lib/install-static-analysis-toolchain.sh for the full rationale on each one,
 # including why .NET is installed from Microsoft's script rather than its apt repo.
 RUN --mount=type=bind,source=docker/lib,target=/tmp/lib,ro \

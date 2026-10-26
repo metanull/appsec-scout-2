@@ -9,13 +9,17 @@
 # after this script runs (see docker/Dockerfile).
 set -eu
 
+# The exact .NET SDK, not just the channel: image builds reuse cached layers, and a
+# channel-only pin leaves this script unchanged when Microsoft ships a runtime patch, so
+# the cached layer kept the old runtime. SDK 10.0.403 carries runtime 10.0.14, the fix
+# for CVE-2026-111497 (Brotli decoder). Bump it with each .NET security release.
+: "${DOTNET_SDK_VERSION:=10.0.403}"
 # Roslynator.DotNet.Cli (the NuGet package providing the `roslynator` CLI) has its own
 # independent version scheme, separate from the main dotnet/roslynator repo's 4.x tags
 # — do not confuse the two. 0.13.1 is the latest published version (confirmed against
 # NuGet's own API) and is required, not optional: 0.12.0 cannot analyze a solution
 # under .NET 10 SDK at all (System.MissingMethodException from its bundled MSBuild
 # assemblies — see issue #368), so this is a compatibility fix, not just a currency bump.
-: "${DOTNET_CHANNEL:=10.0}"
 : "${ROSLYNATOR_VERSION:=0.13.1}"
 : "${SPOTBUGS_VERSION:=4.10.3}"
 : "${SPOTBUGS_SHA256:=53c03a77da9746ed0c17aae6c0a9419a12ddeb8bf61dd7209a2e417550afd01d}"
@@ -54,7 +58,7 @@ set -eu
 # for container/CI use and avoids the apt/gpg trust chain entirely.
 curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
 chmod +x /tmp/dotnet-install.sh
-/tmp/dotnet-install.sh --channel "${DOTNET_CHANNEL}" --install-dir /usr/share/dotnet
+/tmp/dotnet-install.sh --version "${DOTNET_SDK_VERSION}" --install-dir /usr/share/dotnet
 rm /tmp/dotnet-install.sh
 ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet
 
