@@ -12,7 +12,7 @@ beforeEach(function () {
 });
 
 it('downloads an attachment for its owning software asset', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $asset = SoftwareAsset::factory()->create();
@@ -26,7 +26,7 @@ it('downloads an attachment for its owning software asset', function () {
 });
 
 it('returns 404 when the attachment does not belong to the requested software system', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $systemA = SoftwareSystem::factory()->create();
@@ -39,7 +39,7 @@ it('returns 404 when the attachment does not belong to the requested software sy
 });
 
 it('returns 404 when the attachment does not belong to the requested security container', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $system = SoftwareSystem::factory()->create();
@@ -56,7 +56,7 @@ it('requires the alerts.view permission', function () {
     $asset = SoftwareAsset::factory()->create();
     $attachment = app(AttachmentService::class)->attachTo($asset, 'sbom', 'application/json', 'sbom.json', '{"bomFormat":"CycloneDX"}');
 
-    $userWithoutPermission = User::factory()->create();
+    $userWithoutPermission = User::factory()->withTotp()->create();
     $userWithoutPermission->syncRoles([]);
 
     $this->actingAs($userWithoutPermission)

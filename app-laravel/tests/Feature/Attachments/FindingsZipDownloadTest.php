@@ -105,7 +105,7 @@ it('returns null when there is nothing to zip', function () {
 });
 
 it('downloads a findings zip for a container', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $container = SecurityContainer::factory()->create(['name' => 'payments-api']);
@@ -118,7 +118,7 @@ it('downloads a findings zip for a container', function () {
 });
 
 it('downloads a findings zip for a software system', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $system = SoftwareSystem::factory()->create(['name' => 'payments-service']);
@@ -132,7 +132,7 @@ it('downloads a findings zip for a software system', function () {
 });
 
 it('downloads a findings zip for a software asset', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
@@ -147,7 +147,7 @@ it('downloads a findings zip for a software asset', function () {
 });
 
 it('returns 404 for the findings zip download when there is nothing to zip', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $container = SecurityContainer::factory()->create();
@@ -160,7 +160,7 @@ it('returns 404 for the findings zip download when there is nothing to zip', fun
 it('requires the alerts.view permission for the findings zip download', function () {
     $container = SecurityContainer::factory()->create();
 
-    $userWithoutPermission = User::factory()->create();
+    $userWithoutPermission = User::factory()->withTotp()->create();
     $userWithoutPermission->syncRoles([]);
 
     $this->actingAs($userWithoutPermission)
