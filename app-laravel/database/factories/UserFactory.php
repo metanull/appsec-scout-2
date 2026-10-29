@@ -34,6 +34,18 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user has a confirmed authenticator-app (TOTP) enrollment.
+     */
+    public function withTotp(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'),
+            'two_factor_recovery_codes' => encrypt(json_encode(['code-1'])),
+            'two_factor_confirmed_at' => now(),
+        ]);
+    }
+
+    /**
      * Indicate that the model's email address should be unverified.
      */
     public function unverified(): static

@@ -12,6 +12,7 @@ use App\Http\Controllers\SoftwareAssetSbomZipDownloadController;
 use App\Http\Controllers\SoftwareSystemAttachmentDownloadController;
 use App\Http\Controllers\SoftwareSystemFindingsZipDownloadController;
 use App\Http\Controllers\SoftwareSystemSbomZipDownloadController;
+use App\Http\Middleware\EnsureMultiFactorAuthenticationIsEnabledForLocalSessions;
 use App\SourceCode\AlertSourceLocator;
 use Illuminate\Support\Facades\Route;
 
@@ -22,7 +23,9 @@ Route::middleware('throttle:entra')->group(function () {
         ->name('entra.callback');
 });
 
-Route::middleware('auth')->group(function () {
+// Same required-MFA wall as the panel, so a password-only session cannot reach
+// these downloads by URL before completing TOTP enrollment.
+Route::middleware(['auth', EnsureMultiFactorAuthenticationIsEnabledForLocalSessions::class])->group(function () {
     Route::get('/alerts/{event}/attachments/{attachment}/download', EventAttachmentDownloadController::class)
         ->name('alerts.attachments.download');
     Route::get('/alerts/{event}/source/{version}', AlertSourceRedirectController::class)

@@ -35,7 +35,9 @@ isRequired: true)` (`App\Providers\Filament\AppSecScoutPanelProvider`). A user c
 protected page until they've enrolled an authenticator-app TOTP code; Filament redirects to its own
 setup page automatically until enrollment is confirmed. `User` implements `HasAppAuthentication`/
 `HasAppAuthenticationRecovery`, storing the TOTP secret, confirmation timestamp, and recovery codes
-encrypted on the model.
+encrypted on the model. The authenticated non-panel routes in `routes/web.php` (attachment, SBOM
+and findings downloads, alert source redirects) carry the same required-MFA middleware, so a
+password-only session cannot reach them by URL either.
 
 Other controls:
 

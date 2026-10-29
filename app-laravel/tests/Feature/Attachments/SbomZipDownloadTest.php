@@ -65,7 +65,7 @@ it('returns null when nothing to zip', function () {
 });
 
 it('downloads a zip of sboms for a software system', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $system = SoftwareSystem::factory()->create(['name' => 'payments-service']);
@@ -79,7 +79,7 @@ it('downloads a zip of sboms for a software system', function () {
 });
 
 it('downloads a zip of sboms for a software asset', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $asset = SoftwareAsset::factory()->create(['name' => 'Payments Platform']);
@@ -94,7 +94,7 @@ it('downloads a zip of sboms for a software asset', function () {
 });
 
 it('returns 404 for the zip download when there is nothing to zip', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $system = SoftwareSystem::factory()->create();
@@ -107,7 +107,7 @@ it('returns 404 for the zip download when there is nothing to zip', function () 
 it('requires the alerts.view permission for the zip download', function () {
     $system = SoftwareSystem::factory()->create();
 
-    $userWithoutPermission = User::factory()->create();
+    $userWithoutPermission = User::factory()->withTotp()->create();
     $userWithoutPermission->syncRoles([]);
 
     $this->actingAs($userWithoutPermission)
@@ -141,7 +141,7 @@ it('zips each container\'s lock-file and committed-archive SBOMs merged, includi
 });
 
 it('downloads a container\'s merged SBOM', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTotp()->create();
     $user->syncRoles(['Reader']);
 
     $container = SecurityContainer::factory()->create(['name' => 'Phoenix JBoss']);
@@ -157,9 +157,9 @@ it('downloads a container\'s merged SBOM', function () {
 });
 
 it('returns 404 for a container SBOM download without an SBOM, and requires alerts.view', function () {
-    $reader = User::factory()->create();
+    $reader = User::factory()->withTotp()->create();
     $reader->syncRoles(['Reader']);
-    $nobody = User::factory()->create();
+    $nobody = User::factory()->withTotp()->create();
     $nobody->syncRoles([]);
     $container = SecurityContainer::factory()->create();
 

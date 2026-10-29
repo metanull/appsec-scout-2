@@ -7,7 +7,8 @@ use Filament\Auth\MultiFactor\Http\Middleware\EnsureMultiFactorAuthenticationIsE
 use Illuminate\Http\Request;
 
 /**
- * The panel's required-MFA middleware, with one exemption: a session that was
+ * The panel's required-MFA middleware, also applied to the authenticated
+ * download routes in routes/web.php, with one exemption: a session that was
  * authenticated through the Entra callback already passed the IdP's own MFA
  * (Conditional Access), so the local TOTP wall applies only to
  * password-authenticated sessions. The waiver is keyed on the session marker —
