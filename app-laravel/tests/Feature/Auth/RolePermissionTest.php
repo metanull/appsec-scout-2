@@ -26,9 +26,9 @@ it('creates all permissions', function () {
     }
 });
 
-it('Reader role has only view permission', function () {
+it('Reader role has only view and export permissions', function () {
     $reader = Role::findByName('Reader');
-    expect($reader->permissions->pluck('name')->toArray())->toEqual(['alerts.view']);
+    expect($reader->permissions->pluck('name')->sort()->values()->toArray())->toEqual(['alerts.view', 'exports.create']);
 });
 
 it('Triage role inherits Reader permissions cumulatively', function () {
@@ -51,5 +51,5 @@ it('seeder is idempotent on re-run', function () {
     (new RolePermissionSeeder)->run();
 
     expect(Role::count())->toBe(5)
-        ->and(Permission::count())->toBe(15);
+        ->and(Permission::count())->toBe(16);
 });
