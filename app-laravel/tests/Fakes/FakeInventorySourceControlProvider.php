@@ -4,18 +4,23 @@ namespace Tests\Fakes;
 
 use App\Credentials\CredentialField;
 use App\SourceControl\Contracts\EnumeratesInventory;
+use App\SourceControl\Contracts\ReportsLastCommit;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\ValueObjects\TestResult;
+use App\Sources\Dto\CommitDto;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 
-class FakeInventorySourceControlProvider implements EnumeratesInventory, SourceControlProvider
+class FakeInventorySourceControlProvider implements EnumeratesInventory, ReportsLastCommit, SourceControlProvider
 {
     /** @var list<SystemDto> */
     private array $projects = [];
 
     /** @var array<string, list<ContainerDto>> */
     private array $repositories = [];
+
+    /** @var array<string, CommitDto> keyed by repository id */
+    private array $lastCommits = [];
 
     public function id(): string
     {
@@ -50,6 +55,18 @@ class FakeInventorySourceControlProvider implements EnumeratesInventory, SourceC
     public function fetchRepositories(SystemDto $project): iterable
     {
         return $this->repositories[$project->sourceSystemId] ?? [];
+    }
+
+    public function fetchLastCommit(SystemDto $project, ContainerDto $repository): ?CommitDto
+    {
+        return $this->lastCommits[$repository->sourceContainerId] ?? null;
+    }
+
+    public function withLastCommit(string $repositoryId, CommitDto $commit): self
+    {
+        $this->lastCommits[$repositoryId] = $commit;
+
+        return $this;
     }
 
     public function withProjects(SystemDto ...$projects): self

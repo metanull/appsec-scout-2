@@ -13,6 +13,7 @@ use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationMan
 use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Filament\Support\DateRangeFilters;
 use App\Filament\Support\ListPageExportAction;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
@@ -28,6 +29,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -93,6 +95,21 @@ class SecurityContainerResource extends Resource
                         ->label('Source system')
                         ->visible(fn (SecurityContainer $record): bool => $record->isSystemOverridden())
                         ->placeholder('-'),
+                    TextEntry::make('is_disabled')
+                        ->label('Disabled upstream')
+                        ->state(fn (SecurityContainer $record): string => $record->is_disabled ? 'Disabled' : 'Enabled')
+                        ->badge()
+                        ->color(fn (string $state): string => $state === 'Disabled' ? 'danger' : 'success')
+                        ->visible(fn (SecurityContainer $record): bool => $record->kind === 'repository'),
+                    TextEntry::make('last_commit_at')
+                        ->label('Last commit')
+                        ->dateTime()
+                        ->placeholder('-')
+                        ->visible(fn (SecurityContainer $record): bool => $record->kind === 'repository'),
+                    TextEntry::make('last_commit_author')
+                        ->label('Last commit author')
+                        ->placeholder('-')
+                        ->visible(fn (SecurityContainer $record): bool => $record->kind === 'repository'),
                     TextEntry::make('open_events_count')
                         ->label('Open alerts')
                         ->state(function (SecurityContainer $record): int {
@@ -244,11 +261,42 @@ class SecurityContainerResource extends Resource
                     ->getStateUsing(fn (SecurityContainer $record): bool => $record->removed_at !== null)
                     ->trueColor('danger')
                     ->falseColor('success'),
+                TextColumn::make('default_branch')
+                    ->label('Default branch')
+                    ->state(fn (SecurityContainer $record): ?string => $record->defaultBranch())
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('last_commit_at')
+                    ->label('Last commit')
+                    ->since()
+                    ->sortable()
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('last_commit_author')
+                    ->label('Last commit author')
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                IconColumn::make('is_disabled')
+                    ->label('Disabled')
+                    ->boolean()
+                    ->trueColor('danger')
+                    ->falseColor('success')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->headerActions([
                 ListPageExportAction::make(SecurityContainerExporter::class),
             ])
             ->filters([
+                SelectFilter::make('source')
+                    ->label('Source')
+                    ->multiple()
+                    ->options(fn (): array => SoftwareSystem::query()->distinct()->orderBy('source_id')->pluck('source_id', 'source_id')->all())
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        $data['values'] ?? [],
+                        fn (Builder $query, array $sources): Builder => $query->whereHas('sourceSoftwareSystem', fn (Builder $systems): Builder => $systems->whereIn('source_id', $sources)),
+                    )),
+                SelectFilter::make('kind')
+                    ->options(fn (): array => SecurityContainer::query()->whereNotNull('kind')->distinct()->orderBy('kind')->pluck('kind', 'kind')->all()),
                 TernaryFilter::make('removed_at')
                     ->label('Removed')
                     ->queries(
@@ -256,6 +304,8 @@ class SecurityContainerResource extends Resource
                         false: fn (Builder $query): Builder => $query->whereNull('removed_at'),
                         blank: fn (Builder $query): Builder => $query,
                     ),
+                TernaryFilter::make('is_disabled')->label('Disabled'),
+                ...DateRangeFilters::for('last_commit_at', 'Last commit from', 'Last commit until'),
             ])
             ->recordUrl(fn (SecurityContainer $record): string => static::getUrl('view', ['record' => $record]))
             ->defaultSort('name')

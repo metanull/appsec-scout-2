@@ -12,5 +12,7 @@ final class ContainerDto
         public readonly ?string $url = null,
         /** @var array<string, mixed>|null */
         public readonly ?array $metadata = null,
+        /** Disabled upstream (e.g. an Azure DevOps repository with isDisabled): kept in the inventory, never collected. */
+        public readonly bool $isDisabled = false,
     ) {}
 }

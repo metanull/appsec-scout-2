@@ -4,9 +4,12 @@ use App\Credentials\Vault;
 use App\SourceControl\AzDo\AzDoRepos;
 use App\SourceControl\Contracts\EnumeratesInventory;
 use App\Sources\AzDo\AzDoClient;
+use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 
 function injectAzDoReposClient(AzDoRepos $provider, AzDoClient $client): void
@@ -109,7 +112,7 @@ it('enumerates repositories for a project, filling in the project id as sourceSy
         ->and($repos[0]->kind)->toBe('repository');
 });
 
-it('skips disabled repositories when enumerating repositories for a project', function () {
+it('enumerates disabled repositories too, flagged as disabled', function () {
     $http = new Client(['handler' => new MockHandler([
         new Response(200, [], azdoReposFixture('repositories-with-disabled.json')),
     ])]);
@@ -121,7 +124,65 @@ it('skips disabled repositories when enumerating repositories for a project', fu
     $project = new SystemDto(sourceSystemId: 'project-001', name: 'SecurityProject');
     $repos = iterator_to_array($provider->fetchRepositories($project));
 
-    expect($repos)->toHaveCount(2)
-        ->and(array_map(fn ($r) => $r->sourceContainerId, $repos))->toBe(['repo-001', 'repo-002'])
-        ->and(array_map(fn ($r) => $r->sourceContainerId, $repos))->not->toContain('repo-003');
+    expect(array_map(fn ($r) => [$r->sourceContainerId, $r->isDisabled], $repos))
+        ->toBe([['repo-001', false], ['repo-002', false], ['repo-003', true]]);
+});
+
+it('reports the newest commit on the default branch, with its committer date and author', function () {
+    $history = [];
+    $handler = HandlerStack::create(new MockHandler([
+        new Response(200, [], json_encode(['count' => 1, 'value' => [[
+            'commitId' => 'abc123def456',
+            'author' => ['name' => 'Ada Author', 'date' => '2026-08-10T09:00:00Z'],
+            'committer' => ['name' => 'Cory Committer', 'date' => '2026-08-13T06:06:13Z'],
+        ]]])),
+    ]));
+    $handler->push(Middleware::history($history));
+    $advSec = new Client(['handler' => new MockHandler([])]);
+
+    $provider = new AzDoRepos(app(Vault::class));
+    injectAzDoReposClient($provider, new AzDoClient('testorg', 'pat', 'https://dev.azure.com', new Client(['handler' => $handler]), $advSec));
+
+    $project = new SystemDto(sourceSystemId: 'project-001', name: 'SecurityProject');
+    $repository = new ContainerDto('repo-001', 'backend-api', 'project-001', 'repository', metadata: ['code' => ['default_branch' => 'master']]);
+
+    $commit = $provider->fetchLastCommit($project, $repository);
+    parse_str($history[0]['request']->getUri()->getQuery(), $query);
+
+    expect($commit)->not->toBeNull()
+        ->and($commit->sha)->toBe('abc123def456')
+        ->and($commit->committedAt->toIso8601ZuluString())->toBe('2026-08-13T06:06:13Z')
+        ->and($commit->author)->toBe('Ada Author')
+        ->and($history[0]['request']->getUri()->getPath())->toEndWith('project-001/_apis/git/repositories/repo-001/commits')
+        // parse_str() turns the query's dots into underscores.
+        ->and($query['searchCriteria_itemVersion_version'])->toBe('master');
+});
+
+it('reports no last commit for an empty repository whose default branch does not resolve', function () {
+    $http = new Client(['handler' => new MockHandler([
+        new Response(404, [], '{"message":"TF401175: The version descriptor could not be resolved"}'),
+    ])]);
+    $advSec = new Client(['handler' => new MockHandler([])]);
+
+    $provider = new AzDoRepos(app(Vault::class));
+    injectAzDoReposClient($provider, new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec));
+
+    $project = new SystemDto(sourceSystemId: 'project-001', name: 'SecurityProject');
+    $repository = new ContainerDto('repo-001', 'empty-repo', 'project-001', 'repository', metadata: ['code' => ['default_branch' => 'main']]);
+
+    expect($provider->fetchLastCommit($project, $repository))->toBeNull();
+});
+
+it('does not query commits for a disabled repository', function () {
+    // An empty mock queue: any HTTP call would throw.
+    $http = new Client(['handler' => new MockHandler([])]);
+    $advSec = new Client(['handler' => new MockHandler([])]);
+
+    $provider = new AzDoRepos(app(Vault::class));
+    injectAzDoReposClient($provider, new AzDoClient('testorg', 'pat', 'https://dev.azure.com', $http, $advSec));
+
+    $project = new SystemDto(sourceSystemId: 'project-001', name: 'SecurityProject');
+    $repository = new ContainerDto('repo-003', 'archived-service', 'project-001', 'repository', metadata: ['code' => ['default_branch' => 'main']], isDisabled: true);
+
+    expect($provider->fetchLastCommit($project, $repository))->toBeNull();
 });

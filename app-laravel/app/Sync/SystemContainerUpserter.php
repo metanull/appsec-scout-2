@@ -4,6 +4,7 @@ namespace App\Sync;
 
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
+use App\Sources\Dto\CommitDto;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 
@@ -61,6 +62,7 @@ final class SystemContainerUpserter
             'kind' => $dto->kind,
             'url' => $dto->url,
             'metadata' => $dto->metadata,
+            'is_disabled' => $dto->isDisabled,
             'first_seen_at' => $container->first_seen_at ?? now(),
             'last_seen_at' => now(),
             'synced_at' => now(),
@@ -68,5 +70,16 @@ final class SystemContainerUpserter
         $container->save();
 
         return ['container' => $container, 'wasCreated' => $wasCreated];
+    }
+
+    /** Records the newest default-branch commit a Source Control provider reported for the container (null: none). */
+    public function recordLastCommit(SecurityContainer $container, ?CommitDto $commit): void
+    {
+        $container->fill([
+            'last_commit_sha' => $commit?->sha,
+            'last_commit_at' => $commit?->committedAt,
+            'last_commit_author' => $commit?->author,
+        ]);
+        $container->save();
     }
 }

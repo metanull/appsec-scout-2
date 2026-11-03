@@ -6,9 +6,11 @@ use App\Models\ErrorLog;
 use App\Models\SecurityContainer;
 use App\Models\SoftwareSystem;
 use App\Models\SyncRun;
+use App\Sources\Dto\CommitDto;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 use App\Sync\InventorySyncService;
+use Carbon\CarbonImmutable;
 use Tests\Fakes\FakeInventorySourceControlProvider;
 use Tests\Fakes\FakeSource;
 
@@ -207,4 +209,31 @@ it('ignores a Source Control provider that does not implement EnumeratesInventor
 
     expect(SoftwareSystem::query()->where('source_id', 'github-repos')->exists())->toBeFalse()
         ->and($counts)->toBeArray();
+});
+
+it('records each repository\'s disabled flag and the newest commit its provider reports', function () {
+    $provider = (new FakeInventorySourceControlProvider)
+        ->withProjects(new SystemDto('proj-1', 'SecurityProject'))
+        ->withRepositories(
+            'proj-1',
+            new ContainerDto('repo-1', 'backend-api', 'proj-1', 'repository'),
+            new ContainerDto('repo-2', 'archived-service', 'proj-1', 'repository', isDisabled: true),
+        )
+        ->withLastCommit('repo-1', new CommitDto('abc123', CarbonImmutable::parse('2026-08-13T06:06:13Z'), 'Ada Author'));
+
+    $this->app->bind('appsec-scout.source-control.fake-inventory', fn () => $provider);
+    $this->app->tag(['appsec-scout.source-control.fake-inventory'], 'appsec-scout.source-control');
+
+    app(InventorySyncService::class)->sync();
+
+    $active = SecurityContainer::query()->where('source_container_id', 'repo-1')->sole();
+    $disabled = SecurityContainer::query()->where('source_container_id', 'repo-2')->sole();
+
+    expect($active->is_disabled)->toBeFalse()
+        ->and($active->last_commit_sha)->toBe('abc123')
+        ->and($active->last_commit_at?->toIso8601ZuluString())->toBe('2026-08-13T06:06:13Z')
+        ->and($active->last_commit_author)->toBe('Ada Author')
+        ->and($disabled->is_disabled)->toBeTrue()
+        ->and($disabled->last_commit_at)->toBeNull()
+        ->and($disabled->removed_at)->toBeNull();
 });

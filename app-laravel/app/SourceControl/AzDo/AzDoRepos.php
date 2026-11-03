@@ -5,14 +5,17 @@ namespace App\SourceControl\AzDo;
 use App\Credentials\CredentialField;
 use App\Credentials\Vault;
 use App\SourceControl\Contracts\EnumeratesInventory;
+use App\SourceControl\Contracts\ReportsLastCommit;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\ValueObjects\TestResult;
 use App\Sources\AzDo\AzDoClient;
 use App\Sources\AzDo\AzDoNormalizer;
+use App\Sources\Context\SourceContextFacts;
+use App\Sources\Dto\CommitDto;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 
-final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
+final class AzDoRepos implements EnumeratesInventory, ReportsLastCommit, SourceControlProvider
 {
     private ?AzDoClient $client = null;
 
@@ -72,11 +75,10 @@ final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
     /** @return iterable<ContainerDto> */
     public function fetchRepositories(SystemDto $project): iterable
     {
+        // Disabled repositories are enumerated too, flagged, so the inventory lists them; the
+        // collection and static-analysis dispatchers skip them (a disabled repository cannot be
+        // cloned).
         foreach ($this->getClient()->listRepositories($project->sourceSystemId) as $repo) {
-            if ($repo->isDisabled) {
-                continue;
-            }
-
             $dto = AzDoNormalizer::toContainer($repo);
 
             yield new ContainerDto(
@@ -86,8 +88,26 @@ final class AzDoRepos implements EnumeratesInventory, SourceControlProvider
                 kind: $dto->kind,
                 url: $dto->url,
                 metadata: $dto->metadata,
+                isDisabled: $repo->isDisabled,
             );
         }
+    }
+
+    public function fetchLastCommit(SystemDto $project, ContainerDto $repository): ?CommitDto
+    {
+        $branch = SourceContextFacts::getString($repository->metadata ?? [], SourceContextFacts::CODE_DEFAULT_BRANCH);
+
+        if ($repository->isDisabled || $branch === null) {
+            return null;
+        }
+
+        $commit = $this->getClient()->latestCommit($project->sourceSystemId, $repository->sourceContainerId, $branch);
+
+        return $commit === null ? null : new CommitDto(
+            sha: $commit->commitId,
+            committedAt: $commit->committerDate,
+            author: $commit->authorName,
+        );
     }
 
     private function getClient(): AzDoClient

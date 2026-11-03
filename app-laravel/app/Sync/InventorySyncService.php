@@ -9,9 +9,11 @@ use App\Events\SyncRunFinished;
 use App\Models\ErrorLog;
 use App\Models\SyncRun;
 use App\SourceControl\Contracts\EnumeratesInventory;
+use App\SourceControl\Contracts\ReportsLastCommit;
 use App\SourceControl\Contracts\SourceControlProvider;
 use App\SourceControl\Registry as SourceControlRegistry;
 use App\Sources\Contracts\Source;
+use App\Sources\Dto\CommitDto;
 use App\Sources\Dto\ContainerDto;
 use App\Sources\Dto\SystemDto;
 use App\Sources\Registry as SourceRegistry;
@@ -221,6 +223,9 @@ final class InventorySyncService
                     $repoFilter,
                     $counts,
                     $created,
+                    $resolvedProvider instanceof ReportsLastCommit
+                        ? fn (SystemDto $project, ContainerDto $repository): ?CommitDto => $resolvedProvider->fetchLastCommit($project, $repository)
+                        : null,
                 );
 
                 if ($shouldSweep) {
@@ -239,9 +244,10 @@ final class InventorySyncService
      *     repos_seen: int, containers_created: int, containers_updated: int, repository_mappings_created: int, repository_links_skipped: int,
      * }  $counts
      * @param  array{systems: list<string>, containers: list<string>}  $created
+     * @param  (callable(SystemDto, ContainerDto): ?CommitDto)|null  $fetchLastCommit  set for a provider that reports repository activity
      * @return array{systemIds: list<int>, containerIds: list<int>}
      */
-    private function syncOne(string $id, iterable $systemDtos, callable $fetchContainers, ?string $projectFilter, ?string $repoFilter, array &$counts, array &$created): array
+    private function syncOne(string $id, iterable $systemDtos, callable $fetchContainers, ?string $projectFilter, ?string $repoFilter, array &$counts, array &$created, ?callable $fetchLastCommit = null): array
     {
         $systemIds = [];
         $containerIds = [];
@@ -277,6 +283,10 @@ final class InventorySyncService
                 ['container' => $container, 'wasCreated' => $containerIsNew] = $this->upserter->upsertContainer($system, $containerDto);
                 $counts[$containerIsNew ? 'containers_created' : 'containers_updated']++;
                 $containerIds[] = $container->id;
+
+                if ($fetchLastCommit !== null) {
+                    $this->upserter->recordLastCommit($container, $fetchLastCommit($systemDto, $containerDto));
+                }
 
                 if ($containerIsNew) {
                     $created['containers'][] = "{$id}: {$containerDto->name}";

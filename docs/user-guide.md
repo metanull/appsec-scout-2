@@ -288,7 +288,7 @@ What each Source accepts: AzDO and ASoC take a state change together with its co
 | --- | --- |
 | **Software Assets** | The only inventory level you create by hand: group related Systems under a business asset. **New**, **Edit**, **Delete** need the Plan role. Delete removes the asset's own links, mappings and attachments; its Systems are kept, just unassigned. Under *Software systems*: **Link software system** / **Unlink**. |
 | **Software Systems** | Read-only list (created by *Sync inventory* / *Fetch source*), with open/critical/high counts. Tabs for its alerts, containers and the shared tabs below. |
-| **Containers** | Read-only list of repositories, sites and other scan targets, with open-alert counts and the shared tabs below. |
+| **Containers** | Read-only list of repositories, sites and other scan targets, with open-alert counts and the shared tabs below. Filters: **Source**, **Kind**, *Removed*, *Disabled*, last commit from/until. *Sync inventory* also records, for each Azure DevOps repository, whether it is disabled upstream and the newest commit on its default branch (date and author). These are optional columns (Default branch, Last commit, Last commit author, Disabled). Disabled repositories stay listed but are never collected or analysed. To export the repository inventory, filter **Source** = `azdo-repos` and **Kind** = `repository`, then **Export** with the Project, Name, Enabled, Default branch and Last commit columns ticked. |
 
 Shared tabs on Assets, Systems and Containers:
 
