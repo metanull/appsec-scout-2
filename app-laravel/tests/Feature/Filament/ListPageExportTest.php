@@ -71,7 +71,7 @@ function exportedCsvRows(Export $export): array
     return $rows;
 }
 
-function latestExport(): Export
+function latestListExport(): Export
 {
     return Export::query()->latest('id')->firstOrFail();
 }
@@ -84,10 +84,10 @@ function containerExportFor(User $user): Export
         ->test(ListSecurityContainers::class)
         ->callAction(TestAction::make('export')->table());
 
-    return latestExport();
+    return latestListExport();
 }
 
-function readerUser(): User
+function exportingReader(): User
 {
     $user = User::factory()->create();
     $user->syncRoles(['Reader']);
@@ -99,13 +99,13 @@ it('exports every alert matching the active filter, not just the current page', 
     SecurityEvent::factory()->count(30)->create(['severity' => 'critical']);
     SecurityEvent::factory()->count(3)->create(['severity' => 'low']);
 
-    Livewire::actingAs(readerUser())
+    Livewire::actingAs(exportingReader())
         ->test(ListSecurityEvents::class)
         ->filterTable('severity', ['critical'])
         ->callAction(TestAction::make('export')->table())
         ->assertHasNoErrors();
 
-    $export = latestExport();
+    $export = latestListExport();
     $rows = exportedCsvRows($export);
     $severityIndex = array_search('Severity', $rows[0], true);
 
@@ -120,12 +120,12 @@ it('exports only the containers matching the table search, with the list alert c
     SecurityContainer::factory()->count(2)->sequence(fn ($sequence) => ['name' => 'beta-' . $sequence->index])->create();
     SecurityEvent::factory()->secret()->forContainer($alpha->first())->create();
 
-    Livewire::actingAs(readerUser())
+    Livewire::actingAs(exportingReader())
         ->test(ListSecurityContainers::class)
         ->searchTable('alpha')
         ->callAction(TestAction::make('export')->table());
 
-    $rows = exportedCsvRows(latestExport());
+    $rows = exportedCsvRows(latestListExport());
     $header = $rows[0];
     $byName = collect(array_slice($rows, 1))->keyBy(array_search('Name', $header, true));
 
@@ -137,22 +137,22 @@ it('exports only the containers matching the table search, with the list alert c
 it('preselects the columns visible in the table', function () {
     SecurityContainer::factory()->create();
 
-    Livewire::actingAs(readerUser())
+    Livewire::actingAs(exportingReader())
         ->test(ListSecurityContainers::class)
         ->callAction(TestAction::make('export')->table());
 
-    expect(exportedCsvRows(latestExport())[0])
+    expect(exportedCsvRows(latestListExport())[0])
         ->toBe(['Name', 'Kind', 'System', 'Open', 'Critical', 'High', 'Medium', 'Last seen', 'Removed']);
 });
 
 it('neutralises spreadsheet formulas in exported values', function () {
     SecurityContainer::factory()->create(['name' => '=HYPERLINK("https://example.test")']);
 
-    Livewire::actingAs(readerUser())
+    Livewire::actingAs(exportingReader())
         ->test(ListSecurityContainers::class)
         ->callAction(TestAction::make('export')->table());
 
-    expect(exportedCsvRows(latestExport())[1][0])->toBe('\'=HYPERLINK("https://example.test")');
+    expect(exportedCsvRows(latestListExport())[1][0])->toBe('\'=HYPERLINK("https://example.test")');
 });
 
 it('exports every list page', function (string $page, Closure $seed) {
@@ -166,7 +166,7 @@ it('exports every list page', function (string $page, Closure $seed) {
         ->callAction(TestAction::make('export')->table())
         ->assertHasNoErrors();
 
-    $export = latestExport();
+    $export = latestListExport();
     $rows = exportedCsvRows($export);
 
     expect($export->total_rows)->toBeGreaterThanOrEqual(1)
@@ -214,14 +214,14 @@ it('exports every list page', function (string $page, Closure $seed) {
 it('hides the export action from a user without the exports.create permission', function () {
     Role::findByName('Reader', 'web')->revokePermissionTo('exports.create');
 
-    Livewire::actingAs(readerUser())
+    Livewire::actingAs(exportingReader())
         ->test(ListSecurityEvents::class)
         ->assertActionHidden(TestAction::make('export')->table());
 });
 
 it('audits the export request with its active filters and columns', function () {
     SecurityEvent::factory()->count(2)->create(['severity' => 'high']);
-    $user = readerUser();
+    $user = exportingReader();
 
     Livewire::actingAs($user)
         ->test(ListSecurityEvents::class)
@@ -254,7 +254,7 @@ describe('export download route', function () {
     });
 
     it('walls a password-authenticated session without TOTP behind MFA enrollment', function () {
-        $owner = readerUser();
+        $owner = exportingReader();
         $export = containerExportFor($owner);
 
         $this->actingAs($owner)
@@ -263,7 +263,7 @@ describe('export download route', function () {
     });
 
     it('forbids another user from downloading the export', function () {
-        $export = containerExportFor(readerUser());
+        $export = containerExportFor(exportingReader());
         $other = User::factory()->withTotp()->create();
         $other->syncRoles(['Admin']);
 
@@ -273,7 +273,7 @@ describe('export download route', function () {
     });
 
     it('redirects a guest to sign in', function () {
-        $export = containerExportFor(readerUser());
+        $export = containerExportFor(exportingReader());
         auth()->logout();
 
         $this->get(route('filament.exports.download', ['export' => $export, 'format' => 'csv']))
@@ -282,7 +282,7 @@ describe('export download route', function () {
 });
 
 it('prunes exports and their files past the retention window', function () {
-    $user = readerUser();
+    $user = exportingReader();
     $old = containerExportFor($user);
     $recent = containerExportFor($user);
     $old->forceFill(['created_at' => now()->subDays(8)])->save();
