@@ -52,6 +52,7 @@ final class UserAdminService
     /** @param array{name: string, email: string, roles?: array<int, string>, is_disabled?: bool} $data */
     public function update(User $user, array $data, User $actor): User
     {
+        /** @var array<'name'|'email', string> $changes */
         $changes = Arr::only($data, ['name', 'email']);
         $dirtyPayload = [];
 
