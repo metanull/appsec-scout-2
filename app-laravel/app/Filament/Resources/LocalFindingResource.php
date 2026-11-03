@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\LocalFindingExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
 use App\Assets\LocalFindingWorkItemService;
@@ -338,6 +340,9 @@ class LocalFindingResource extends Resource
                     ->placeholder('-'),
                 TextColumn::make('last_seen_at')->label('Last seen')->since()->placeholder('-')->sortable(),
                 TextColumn::make('first_seen_at')->label('First seen')->dateTime('d M Y')->placeholder('-')->sortable()->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(LocalFindingExporter::class),
             ])
             ->filters([
                 SelectFilter::make('kind')

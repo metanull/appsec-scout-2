@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\SoftwareComponentExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Filament\Resources\SoftwareComponentResource\Pages\ListSoftwareComponents;
 use App\Filament\Resources\SoftwareComponentResource\Pages\ViewSoftwareComponent;
 use App\Filament\Support\SoftwareComponentOwnerColumns;
@@ -103,6 +105,9 @@ class SoftwareComponentResource extends Resource
                     ->getStateUsing(fn (SoftwareComponent $record): bool => $record->removed_at !== null)
                     ->trueColor('danger')
                     ->falseColor('success'),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(SoftwareComponentExporter::class),
             ])
             ->filters([
                 SelectFilter::make('ecosystem')

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\StaticAnalysisRunExporter;
 use App\Filament\Resources\Shared\RelationManagers\ToolInvocationsRelationManager;
 use App\Filament\Resources\StaticAnalysisRunResource\Pages\ListStaticAnalysisRuns;
 use App\Filament\Resources\StaticAnalysisRunResource\Pages\ViewStaticAnalysisRun;
@@ -41,6 +42,11 @@ class StaticAnalysisRunResource extends CollectionRunResource
     protected static function errorLogChannelTab(): string
     {
         return 'static-analysis';
+    }
+
+    protected static function runExporterClass(): string
+    {
+        return StaticAnalysisRunExporter::class;
     }
 
     protected static function runModelClass(): string

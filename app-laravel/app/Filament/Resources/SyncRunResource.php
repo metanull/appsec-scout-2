@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\SyncRunExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Filament\Resources\SyncRunResource\Pages\ListSyncRuns;
 use App\Filament\Resources\SyncRunResource\Pages\ViewSyncRun;
 use App\Filament\Support\DateRangeFilters;
@@ -122,6 +124,9 @@ class SyncRunResource extends Resource
                     ->placeholder('-')
                     ->searchable()
                     ->toggleable(),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(SyncRunExporter::class),
             ])
             ->filters([
                 SelectFilter::make('source_id')

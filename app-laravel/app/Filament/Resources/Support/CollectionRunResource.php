@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Support;
 
+use App\Filament\Exports\CollectionRunExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Audit\Recorder;
 use App\Filament\Resources\ErrorLogResource;
 use App\Filament\Support\DateRangeFilters;
@@ -60,6 +62,13 @@ abstract class CollectionRunResource extends Resource
      * @return class-string<RepositoryCollectionRun>|class-string<StaticAnalysisRun>
      */
     abstract protected static function runModelClass(): string;
+
+    /**
+     * The list export's exporter for runModelClass().
+     *
+     * @return class-string<CollectionRunExporter>
+     */
+    abstract protected static function runExporterClass(): string;
 
     /** The Error Log channel tab failuresUrl() should deep-link to. */
     abstract protected static function errorLogChannelTab(): string;
@@ -168,6 +177,9 @@ abstract class CollectionRunResource extends Resource
                     ->placeholder('-')
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(static::runExporterClass()),
             ])
             ->filters([
                 SelectFilter::make('source_control_id')

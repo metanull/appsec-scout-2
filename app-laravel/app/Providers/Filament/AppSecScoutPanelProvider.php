@@ -50,6 +50,8 @@ class AppSecScoutPanelProvider extends PanelProvider
             ->favicon(fn (): string => asset('favicon.ico'))
             ->maxContentWidth(Width::Full)
             ->sidebarCollapsibleOnDesktop()
+            // Queued list-page exports deliver their download links here once they finish.
+            ->databaseNotifications()
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([Dashboard::class])

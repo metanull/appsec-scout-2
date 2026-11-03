@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\PendingSyncExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Filament\Resources\PendingSyncResource\Pages\ListPendingSync;
 use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
@@ -139,6 +141,9 @@ class PendingSyncResource extends Resource
                     ->label('Last edited')
                     ->since()
                     ->sortable(),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(PendingSyncExporter::class),
             ])
             ->filters([
                 SelectFilter::make('source_id')

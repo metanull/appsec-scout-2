@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\AuditLogExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Audit\AuditLog;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
@@ -149,6 +151,9 @@ class AuditLogResource extends Resource
                     ->wrap()
                     ->limit(120)
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(AuditLogExporter::class),
             ])
             ->filters([
                 SelectFilter::make('actor_kind')

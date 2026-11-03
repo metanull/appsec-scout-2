@@ -37,7 +37,19 @@ setup page automatically until enrollment is confirmed. `User` implements `HasAp
 `HasAppAuthenticationRecovery`, storing the TOTP secret, confirmation timestamp, and recovery codes
 encrypted on the model. The authenticated non-panel routes in `routes/web.php` (attachment, SBOM
 and findings downloads, alert source redirects) carry the same required-MFA middleware, so a
-password-only session cannot reach them by URL either.
+password-only session cannot reach them by URL either. Filament's list-export download route
+(`/filament/exports/{export}/download`, middleware group `filament.actions`, which Filament
+defines as plain `web`) is redefined in `AppServiceProvider` with the same `auth` +
+required-MFA middleware. Only the user who requested an export can download it.
+
+List-page exports (`App\Filament\Support\ListPageExportAction`) need the `exports.create`
+permission and export only rows of a list the user can already open. Each request writes an
+`export_requested` audit entry with the exporter, row count, chosen columns, and active
+filters/search. Every exported cell that starts with a spreadsheet formula trigger (`=`, `+`,
+`-`, `@`, tab, CR) is prefixed with `'` (CWE-1236), because exported values come from upstream
+sources. Alert code snippets and raw source payloads are never exported. Export files live on
+the private `local` disk (`storage/app/private`) and are pruned after `EXPORTS_RETAIN_DAYS`
+(default 7) days.
 
 Other controls:
 

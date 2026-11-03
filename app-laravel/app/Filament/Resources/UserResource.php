@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\UserExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Filament\Resources\UserResource\Pages\CreateUser;
 use App\Filament\Resources\UserResource\Pages\EditUser;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
@@ -100,6 +102,9 @@ class UserResource extends Resource
                     ->label('Last login')
                     ->since()
                     ->placeholder('Never'),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(UserExporter::class),
             ])
             ->filters([
                 TernaryFilter::make('is_disabled')

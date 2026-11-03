@@ -200,6 +200,7 @@ These rules apply to all Filament resources, pages, and widgets in `app/Filament
 - `->recordUrl()` pointing at a dedicated view page, unless the page is action-only by explicit, documented design.
 - `->actions([...])` wrapped in `ActionGroup::make([...])` once a row has more than three actions.
 - `->paginated([25, 50, 100])` for consistent page-size options.
+- `->headerActions([ListPageExportAction::make(XExporter::class)])` (`App\Filament\Support\ListPageExportAction`): the queued, filter-respecting Export of every matching row. Each list has its own `App\Filament\Exports\*Exporter` (extends `ListExporter`), whose `ExportColumn` names match the table's column names so the visible columns are preselected. Never export secrets, snippets, or raw source payloads.
 - At least one meaningful `->filters([...])` entry when the model has an obviously filterable dimension (status, kind, boolean flag, relation) — reuse `App\Filament\Support\DateRangeFilters::for($column)` for a from/until date-range filter instead of hand-rolling one.
 
 ### Detail page baseline

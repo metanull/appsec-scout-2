@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\FailedJobExporter;
+use App\Filament\Support\ListPageExportAction;
 use App\Audit\Recorder;
 use App\Filament\Resources\FailedJobResource\Pages\ListFailedJobs;
 use App\Filament\Resources\FailedJobResource\Pages\ViewFailedJob;
@@ -154,6 +156,9 @@ class FailedJobResource extends Resource
                     ->getStateUsing(fn (FailedJob $record): ?string => self::repositoryLabel($record->payload))
                     ->placeholder('-')
                     ->toggleable(),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(FailedJobExporter::class),
             ])
             ->filters([
                 SelectFilter::make('queue')

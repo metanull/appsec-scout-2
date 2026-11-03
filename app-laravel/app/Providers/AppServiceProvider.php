@@ -6,6 +6,7 @@ use App\Audit\AuditChannel;
 use App\Credentials\Vault;
 use App\Database\AzureManagedIdentityPostgresConnector;
 use App\Events\SyncRunFinished;
+use App\Http\Middleware\EnsureMultiFactorAuthenticationIsEnabledForLocalSessions;
 use App\Listeners\BustDashboardCache;
 use App\Mcp\McpActor;
 use App\Models\User;
@@ -17,8 +18,10 @@ use App\Sources\AzDo\AzDoSource;
 use App\Sources\Detectify\DetectifySource;
 use App\Trackers\GitHub\GitHubTracker;
 use App\Trackers\Jira\JiraTracker;
+use Filament\Actions\Exports\ExportColumn;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use SocialiteProviders\Azure\Provider as AzureProvider;
@@ -83,6 +86,15 @@ class AppServiceProvider extends ServiceProvider
         if (config('app.force_https')) {
             URL::forceHttps();
         }
+
+        // Filament's export download route (/filament/exports/{export}/download) is grouped
+        // under ilament.actions, which Filament defines as plain web. Redefine it with the
+        // same auth + required-MFA wall as the app's other download routes (routes/web.php);
+        // this provider boots after Filament's, so this definition is the one routes resolve.
+        Route::middlewareGroup('filament.actions', ['web', 'auth', EnsureMultiFactorAuthenticationIsEnabledForLocalSessions::class]);
+        // Exported values come from upstream sources (alert titles, repository names, ...), so
+        // a cell starting with a formula trigger is neutralised in every CSV/XLSX export.
+        ExportColumn::configureUsing(fn (ExportColumn $column): ExportColumn => $column->preventFormulaInjection());
 
         Event::listen(SyncRunFinished::class, BustDashboardCache::class);
         Event::listen(SocialiteWasCalled::class, function (SocialiteWasCalled $event): void {
