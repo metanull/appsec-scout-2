@@ -328,8 +328,9 @@ services:
             # here take precedence over the .env file phpdotenv loads from the app_storage volume) —
             # adds Laravel's built-in `stderr` channel so collector activity is visible via
             # `docker compose logs collector` / Docker Desktop, without changing the `app` container's
-            # own logging.
-            LOG_STACK: "${COLLECTOR_LOG_STACK:-single,stderr}"
+            # own logging. `daily` (not `single`) since storage/logs is shared with the app: files
+            # rotate per day and LOG_DAILY_DAYS (default 14) bounds how many are kept.
+            LOG_STACK: "${COLLECTOR_LOG_STACK:-daily,stderr}"
             LOG_LEVEL: "${COLLECTOR_LOG_LEVEL:-info}"
         cpus: ${COLLECTOR_CPUS:-2}
         mem_limit: ${COLLECTOR_MEM_LIMIT:-2g}
