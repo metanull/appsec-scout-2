@@ -17,7 +17,8 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->string('type');
             $table->morphs('notifiable');
-            $table->text('data');
+            // json, not Laravel's default text: Filament reads data->>'format' (PostgreSQL needs a json column).
+            $table->json('data');
             $table->timestamp('read_at')->nullable();
             $table->timestamps();
         });
