@@ -25,21 +25,25 @@ class RolePermissionSeeder extends Seeder
         'admin.integrations',
         'admin.repository-providers',
         'context.curate',
+        'exports.create',
     ];
 
     private const ROLE_PERMISSIONS = [
         'Reader' => [
             'alerts.view',
+            'exports.create',
         ],
         'Triage' => [
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
+            'exports.create',
         ],
         'Plan' => [
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
+            'exports.create',
             'work-items.create',
             'work-items.link',
             'admin.repository-providers',
@@ -49,6 +53,7 @@ class RolePermissionSeeder extends Seeder
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
+            'exports.create',
             'work-items.create',
             'work-items.link',
             'admin.repository-providers',
@@ -60,6 +65,7 @@ class RolePermissionSeeder extends Seeder
             'alerts.view',
             'alerts.edit',
             'alerts.bulk-edit',
+            'exports.create',
             'work-items.create',
             'work-items.link',
             'admin.repository-providers',

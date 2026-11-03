@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\SecurityEventExporter;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\SecurityEventResource\Pages\ListSecurityEvents;
 use App\Filament\Resources\SecurityEventResource\Pages\ViewSecurityEvent;
@@ -14,6 +15,7 @@ use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
 use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
+use App\Filament\Support\ListPageExportAction;
 use App\Filament\Support\WorkItemCreatedNotification;
 use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventSeverity;
@@ -536,6 +538,9 @@ class SecurityEventResource extends Resource
                     ->dateTime('d M Y')
                     ->sortable()
                     ->toggleable(),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(SecurityEventExporter::class),
             ])
             ->filters([
                 SelectFilter::make('severity')

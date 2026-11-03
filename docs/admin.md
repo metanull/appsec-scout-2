@@ -65,7 +65,8 @@ happens at each resource, page, and action boundary — see [docs/roles/](roles/
 per-role breakdown, including two capabilities held by Plan/Sync/Admin (not just Admin):
 `context.curate` (Software Asset creation/editing, Curated Links) and
 `admin.repository-providers` (Repository Provider management, filed under the Admin navigation
-group despite not being Admin-only).
+group despite not being Admin-only). Every role holds `exports.create` (the list pages' **Export**
+button). Revoke it from a role to stop that role exporting lists.
 
 ## System Credentials
 

@@ -149,6 +149,18 @@ class Recorder
         $this->write('user_roles_synced_from_idp', $subjectType, $subjectId, $payload);
     }
 
+    /**
+     * A list-page export was requested: a bulk read of every row matching the list's filters
+     * and search, written to a downloadable file — audited like a write since it extracts data.
+     *
+     * @param  class-string  $model  the exported list's model
+     * @param  array<string, mixed>  $payload
+     */
+    public function recordExportRequested(string $model, array $payload = []): void
+    {
+        $this->write('export_requested', $model, null, $payload);
+    }
+
     /** @param array<string, mixed> $payload */
     public function recordAdminAction(string $action, array $payload = []): void
     {

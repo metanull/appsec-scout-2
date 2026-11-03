@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\SoftwareSystemExporter;
 use App\Filament\Resources\Shared\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\LocalFindingsRelationManager;
@@ -13,6 +14,7 @@ use App\Filament\Resources\SoftwareSystemResource\Pages\ViewSoftwareSystem;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\ContainersRelationManager;
 use App\Filament\Resources\SoftwareSystemResource\RelationManagers\EventsRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Filament\Support\ListPageExportAction;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
@@ -219,6 +221,9 @@ class SoftwareSystemResource extends Resource
                     ->getStateUsing(fn (SoftwareSystem $record): bool => $record->removed_at !== null)
                     ->trueColor('danger')
                     ->falseColor('success'),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(SoftwareSystemExporter::class),
             ])
             ->filters([
                 SelectFilter::make('source_id')

@@ -100,6 +100,12 @@ scheduled: they run only when triggered on demand from `Operations -> Operations
 for the full trigger model. The scheduler's minutely entries are limited to the SBOM/static-analysis
 pending-scan importers; log pruning runs daily.
 
+List-page exports (the **Export** button above a list) also run on this queue. Filament's
+export jobs write chunked CSV files and an XLSX to the `local` disk under
+`storage/app/private/filament_exports/`, and deliver the download links as a database
+notification (the bell icon). The daily `PruneExports` job deletes exports and their files
+older than `EXPORTS_RETAIN_DAYS` (default 7).
+
 Manual checks:
 
 ```bash

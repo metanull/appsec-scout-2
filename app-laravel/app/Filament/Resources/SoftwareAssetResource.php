@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\SoftwareAssetExporter;
 use App\Filament\Resources\Shared\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\CuratedLinksRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\LocalFindingsRelationManager;
@@ -12,6 +13,7 @@ use App\Filament\Resources\SoftwareAssetResource\Pages\EditSoftwareAsset;
 use App\Filament\Resources\SoftwareAssetResource\Pages\ListSoftwareAssets;
 use App\Filament\Resources\SoftwareAssetResource\Pages\ViewSoftwareAsset;
 use App\Filament\Resources\SoftwareAssetResource\RelationManagers\SoftwareSystemsRelationManager;
+use App\Filament\Support\ListPageExportAction;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;
@@ -167,6 +169,9 @@ class SoftwareAssetResource extends Resource
                     ->placeholder('-'),
                 TextColumn::make('attachments_count')->label('Attachments')->sortable(),
                 TextColumn::make('updated_at')->label('Updated')->since()->placeholder('-'),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(SoftwareAssetExporter::class),
             ])
             ->filters([
                 TernaryFilter::make('has_open_events')

@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\SyncRunExporter;
 use App\Filament\Resources\SyncRunResource\Pages\ListSyncRuns;
 use App\Filament\Resources\SyncRunResource\Pages\ViewSyncRun;
 use App\Filament\Support\DateRangeFilters;
+use App\Filament\Support\ListPageExportAction;
 use App\Filament\Support\RunStatusBadgeColor;
 use App\Filament\Widgets\Support\DashboardData;
 use App\Models\SyncRun;
@@ -122,6 +124,9 @@ class SyncRunResource extends Resource
                     ->placeholder('-')
                     ->searchable()
                     ->toggleable(),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(SyncRunExporter::class),
             ])
             ->filters([
                 SelectFilter::make('source_id')

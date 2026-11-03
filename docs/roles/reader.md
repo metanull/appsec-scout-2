@@ -26,6 +26,8 @@ Reader users consume the local AppSec Scout dataset without mutating it.
   **Raw result** section with the full SARIF result as JSON; the Location field links directly to
   the source file in the repository when the finding's container/system carries a resolvable
   repository identity.
+- Export a list (`exports.create`): every row matching the list's filters and search, as CSV or
+  XLSX, through the **Export** button above the table.
 - Inspect linked tracker metadata.
 - Inspect audit-derived sync context shown in pages.
 

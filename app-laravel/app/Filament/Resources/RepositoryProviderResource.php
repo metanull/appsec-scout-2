@@ -2,10 +2,12 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\RepositoryProviderExporter;
 use App\Filament\Resources\RepositoryProviderResource\Pages\CreateRepositoryProvider;
 use App\Filament\Resources\RepositoryProviderResource\Pages\EditRepositoryProvider;
 use App\Filament\Resources\RepositoryProviderResource\Pages\ListRepositoryProviders;
 use App\Filament\Resources\RepositoryProviderResource\Pages\ViewRepositoryProvider;
+use App\Filament\Support\ListPageExportAction;
 use App\Models\Enums\RepositoryProviderType;
 use App\Models\RepositoryProvider;
 use App\Models\User;
@@ -141,6 +143,9 @@ class RepositoryProviderResource extends Resource
                 TextColumn::make('updated_at')
                     ->label('Updated')
                     ->since(),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(RepositoryProviderExporter::class),
             ])
             ->filters([
                 SelectFilter::make('provider_type')

@@ -16,6 +16,7 @@ This guide sticks to *what to click and what happens*. For the reasoning and the
 
 - [Before you start](#before-you-start)
 - [Navigation map](#navigation-map)
+- [Exporting a list](#exporting-a-list)
 - [Collect](#collect)
 - [Triage](#triage)
 - [Report](#report)
@@ -80,6 +81,29 @@ system credentials, queues, logs). See [roles/](roles/) for the details.
 Inventory hierarchy: **Software Asset** → **Software System** (e.g. an AzDO project) →
 **Container** (e.g. a repository). Alerts, local findings and dependencies hang off a Container
 or System. See [concepts/asset-system-container-alert.md](concepts/asset-system-container-alert.md).
+
+---
+
+## Exporting a list
+
+Every list page has an **Export** button above the table: Alerts, Local Findings, Dependencies,
+Software Assets/Systems, Containers, Pending Sync, Sync/Collection/Analysis Runs, Failed Jobs, and
+the Admin lists. The export contains **every row that matches the list's current filters and
+search**, in the current sort order, not just the page on screen. The two exceptions are
+**Packages**, which shows per-package totals (export **Dependencies** instead, which has one row
+per usage), and **Queues**, which shows the live queue contents.
+
+1. Set the filters and search you want, then click **Export**.
+2. Choose the columns. The columns visible in the table are ticked by default, and the other
+   available columns (IDs, URLs, file paths, …) can be ticked as well. You can rename each column
+   header.
+3. Confirm. The export runs in the background. When it is ready, a notification (the bell icon
+   at the top right) offers the file as **CSV** or **XLSX**.
+
+Only you can download your exports. They are deleted after 7 days. Every export request is
+recorded in the audit log, with its filters and columns. Exporting needs the `exports.create`
+permission, which every role has by default. An alert's code snippet and raw source data are
+never exported, because a secret alert's snippet can contain the secret itself.
 
 ---
 

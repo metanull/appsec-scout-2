@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\RepositoryCollectionRunExporter;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ListRepositoryCollectionRuns;
 use App\Filament\Resources\RepositoryCollectionRunResource\Pages\ViewRepositoryCollectionRun;
 use App\Filament\Resources\Shared\RelationManagers\ToolInvocationsRelationManager;
@@ -41,6 +42,11 @@ class RepositoryCollectionRunResource extends CollectionRunResource
     protected static function errorLogChannelTab(): string
     {
         return 'repository-collection';
+    }
+
+    protected static function runExporterClass(): string
+    {
+        return RepositoryCollectionRunExporter::class;
     }
 
     protected static function runModelClass(): string

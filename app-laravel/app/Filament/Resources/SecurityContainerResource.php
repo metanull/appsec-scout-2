@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Exports\SecurityContainerExporter;
 use App\Filament\Resources\SecurityContainerResource\Pages\ListSecurityContainers;
 use App\Filament\Resources\SecurityContainerResource\Pages\ViewSecurityContainer;
 use App\Filament\Resources\SecurityContainerResource\RelationManagers\EventsRelationManager;
@@ -12,6 +13,7 @@ use App\Filament\Resources\Shared\RelationManagers\RepositoryMappingsRelationMan
 use App\Filament\Resources\Shared\RelationManagers\SoftwareComponentsRelationManager;
 use App\Filament\Resources\Shared\RelationManagers\TrackerProjectLinksRelationManager;
 use App\Filament\Support\ContextQualityIndicatorSupport;
+use App\Filament\Support\ListPageExportAction;
 use App\Models\Enums\EventSeverity;
 use App\Models\Enums\EventState;
 use App\Models\SecurityContainer;
@@ -242,6 +244,9 @@ class SecurityContainerResource extends Resource
                     ->getStateUsing(fn (SecurityContainer $record): bool => $record->removed_at !== null)
                     ->trueColor('danger')
                     ->falseColor('success'),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(SecurityContainerExporter::class),
             ])
             ->filters([
                 TernaryFilter::make('removed_at')

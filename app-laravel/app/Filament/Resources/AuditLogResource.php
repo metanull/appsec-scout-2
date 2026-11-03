@@ -3,11 +3,13 @@
 namespace App\Filament\Resources;
 
 use App\Audit\AuditLog;
+use App\Filament\Exports\AuditLogExporter;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\AuditLogResource\Pages\ViewAuditLog;
 use App\Filament\Resources\AuditLogResource\Support\AuditSubjectResolver;
 use App\Filament\Support\ActorKindBadgeColor;
 use App\Filament\Support\DateRangeFilters;
+use App\Filament\Support\ListPageExportAction;
 use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -149,6 +151,9 @@ class AuditLogResource extends Resource
                     ->wrap()
                     ->limit(120)
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->headerActions([
+                ListPageExportAction::make(AuditLogExporter::class),
             ])
             ->filters([
                 SelectFilter::make('actor_kind')
