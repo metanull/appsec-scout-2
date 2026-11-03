@@ -31,7 +31,7 @@ it('changes alert state locally and records the pending review data', function (
         ->and($updated->pending_state)->toBe(EventState::Dismissed)
         ->and($updated->pending_comment)->toBe('False positive after validating the detector output.')
         ->and($updated->is_dirty)->toBeTrue()
-        ->and($updated->comments()->latest('id')->first()?->body)->toBe('[State change: dismissed] False positive after validating the detector output.')
+        ->and($updated->comments()->reorder('id', 'desc')->first()?->body)->toBe('[State change: dismissed] False positive after validating the detector output.')
         ->and(AuditLog::query()->where('action', 'state_change')->where('subject_id', (string) $event->id)->exists())->toBeTrue();
 });
 

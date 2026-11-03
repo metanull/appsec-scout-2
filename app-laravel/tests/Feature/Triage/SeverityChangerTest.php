@@ -30,7 +30,7 @@ it('queues a local severity change without changing the synced severity', functi
         ->and($updated->pending_severity)->toBe(EventSeverity::Low)
         ->and($updated->pending_comment)->toBe('Reducing severity after validating the actual exploitability.')
         ->and($updated->is_dirty)->toBeTrue()
-        ->and($updated->comments()->latest('id')->first()?->body)->toBe('[Severity change: low] Reducing severity after validating the actual exploitability.')
+        ->and($updated->comments()->reorder('id', 'desc')->first()?->body)->toBe('[Severity change: low] Reducing severity after validating the actual exploitability.')
         ->and(AuditLog::query()->where('action', 'severity_change')->where('subject_id', (string) $event->id)->exists())->toBeTrue();
 });
 

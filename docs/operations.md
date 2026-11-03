@@ -90,8 +90,12 @@ The `app` container runs every application process through Supervisor (`docker/s
 
 - `nginx`
 - `php-fpm`
-- `php artisan schedule:work`
-- `php artisan queue:work --tries=3 --timeout=1800 --max-time=3600`
+- `php artisan schedule:work` (as `www-data`)
+- `php artisan queue:work --tries=3 --timeout=1800 --max-time=3600` (as `www-data`)
+
+The scheduler and queue worker run as `www-data`, the same user php-fpm serves requests as, so
+files a job writes are readable by the request that serves them. List exports, for example, are
+written with private permissions, and an export written by a root worker would 404 on download.
 
 Queue and cache backends are Redis; sessions are stored in the primary database (`sessions`
 table) so that disabling a user revokes its live sessions immediately. Source fetch and Tracker refresh are not

@@ -143,7 +143,7 @@ it('preserves pending severity as a local-only annotation after a successful sta
         ->and($event->pending_state)->toBeNull()
         ->and($event->pending_severity)->toBe(EventSeverity::Low)
         ->and($event->is_dirty)->toBeFalse()
-        ->and($event->comments()->latest('id')->first()?->body)->toContain('Severity change to "low" could not be pushed')
+        ->and($event->comments()->reorder('id', 'desc')->first()?->body)->toContain('Severity change to "low" could not be pushed')
         ->and(ErrorLog::query()->where('channel', 'sync')->where('level', 'warning')->exists())->toBeTrue();
 });
 
@@ -170,7 +170,7 @@ it('resolves a severity-only change as local-only without ever attempting a push
     expect($source->pushCalls)->toBe(0)
         ->and($event->pending_severity)->toBe(EventSeverity::Critical)
         ->and($event->is_dirty)->toBeFalse()
-        ->and($event->comments()->latest('id')->first()?->body)->toContain('Severity change to "critical" could not be pushed')
+        ->and($event->comments()->reorder('id', 'desc')->first()?->body)->toContain('Severity change to "critical" could not be pushed')
         ->and(SyncRun::query()->latest('id')->first()?->counts_json['events_resolved_local_only'])->toBe(1);
 });
 
@@ -196,7 +196,7 @@ it('resolves a standalone-comment-only dirty event as local-only', function () {
 
     expect($source->pushCalls)->toBe(0)
         ->and($event->is_dirty)->toBeFalse()
-        ->and($event->comments()->latest('id')->first()?->body)->toContain('This comment could not be pushed');
+        ->and($event->comments()->reorder('id', 'desc')->first()?->body)->toContain('This comment could not be pushed');
 });
 
 it('leaves a misconfigured canPushStandaloneComment source dirty and logs an error instead of silently resolving', function () {
@@ -289,7 +289,7 @@ it('marks a refused push as synced when the source already holds the pending sta
         ->and($event->pending_state)->toBeNull()
         ->and($event->is_dirty)->toBeFalse()
         ->and($event->metadata)->not->toHaveKey('pushRetryCount')
-        ->and($event->comments()->latest('id')->first()?->body)->toContain('Fake Source already had this alert as "dismissed"')
+        ->and($event->comments()->reorder('id', 'desc')->first()?->body)->toContain('Fake Source already had this alert as "dismissed"')
         ->and(ErrorLog::query()->where('channel', 'sync')->exists())->toBeFalse()
         ->and(AuditLog::query()->where('action', 'sync_push')->first()?->payload_json['status'])->toBe('already_upstream')
         ->and(SyncRun::query()->latest('id')->first()?->status)->toBe('success');
