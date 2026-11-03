@@ -6,7 +6,7 @@ use App\Audit\Recorder;
 use App\Models\User;
 use Filament\Actions\ExportAction;
 use Filament\Actions\Exports\Exporter;
-use Filament\Actions\Exports\Models\Export;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Indicator;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
@@ -32,7 +32,10 @@ final class ListPageExportAction
             ->enableVisibleTableColumnsByDefault()
             ->columnMappingColumns(2)
             ->chunkSize(500)
-            ->after(fn (array $data, Table $table): null => self::audit($exporter, $data, $table));
+            // Audited before the export is dispatched: Filament's export job forgets the auth
+            // guards when it finishes, which on a synchronous queue would erase the requester
+            // before an after() hook could record them.
+            ->before(fn (array $data, Table $table, HasTable $livewire): null => self::audit($exporter, $data, $table, $livewire));
     }
 
     private static function currentUserCan(): bool
@@ -46,21 +49,13 @@ final class ListPageExportAction
      * @param  class-string<Exporter>  $exporter
      * @param  array<string, mixed>  $data
      */
-    private static function audit(string $exporter, array $data, Table $table): null
+    private static function audit(string $exporter, array $data, Table $table, HasTable $livewire): null
     {
-        // The action has just created this export for the acting user, within this request.
-        $export = Export::query()
-            ->where('user_id', Auth::id())
-            ->where('exporter', $exporter)
-            ->latest('id')
-            ->firstOrFail();
-
         $columnMap = is_array($data['columnMap'] ?? null) ? $data['columnMap'] : [];
 
-        app(Recorder::class)->recordExportRequested((string) $export->getKey(), [
+        app(Recorder::class)->recordExportRequested($exporter::getModel(), [
             'exporter' => $exporter,
-            'model' => $exporter::getModel(),
-            'total_rows' => $export->total_rows,
+            'total_rows' => $exporter::modifyQuery($livewire->getTableQueryForExport())->toBase()->getCountForPagination(),
             'columns' => array_keys(array_filter($columnMap, fn (mixed $column): bool => is_array($column) && (bool) ($column['isEnabled'] ?? false))),
             'filters' => array_map(self::indicatorLabel(...), $table->getFilterIndicators()),
         ]);

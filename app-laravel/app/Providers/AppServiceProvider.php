@@ -88,7 +88,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         // Filament's export download route (/filament/exports/{export}/download) is grouped
-        // under ilament.actions, which Filament defines as plain web. Redefine it with the
+        // under `filament.actions`, which Filament defines as plain `web`. Redefine it with the
         // same auth + required-MFA wall as the app's other download routes (routes/web.php);
         // this provider boots after Filament's, so this definition is the one routes resolve.
         Route::middlewareGroup('filament.actions', ['web', 'auth', EnsureMultiFactorAuthenticationIsEnabledForLocalSessions::class]);

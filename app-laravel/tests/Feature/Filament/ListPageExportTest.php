@@ -1,7 +1,6 @@
 <?php
 
 use App\Audit\AuditLog;
-use App\Filament\Exports\SecurityContainerExporter;
 use App\Filament\Exports\SecurityEventExporter;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
@@ -229,14 +228,11 @@ it('audits the export request with its active filters and columns', function () 
         ->filterTable('severity', ['high'])
         ->callAction(TestAction::make('export')->table());
 
-    $export = latestExport();
     $log = AuditLog::query()->where('action', 'export_requested')->sole();
 
     expect($log->user_id)->toBe($user->id)
-        ->and($log->subject_type)->toBe('export')
-        ->and($log->subject_id)->toBe((string) $export->id)
+        ->and($log->subject_type)->toBe(SecurityEvent::class)
         ->and($log->payload_json['exporter'])->toBe(SecurityEventExporter::class)
-        ->and($log->payload_json['model'])->toBe(SecurityEvent::class)
         ->and($log->payload_json['total_rows'])->toBe(2)
         ->and($log->payload_json['columns'])->toContain('severity', 'title')
         ->and($log->payload_json['filters'])->toContain('Severity: High');
@@ -281,7 +277,7 @@ describe('export download route', function () {
         auth()->logout();
 
         $this->get(route('filament.exports.download', ['export' => $export, 'format' => 'csv']))
-            ->assertRedirect();
+            ->assertRedirect(route('filament.appsec-scout.auth.login'));
     });
 });
 

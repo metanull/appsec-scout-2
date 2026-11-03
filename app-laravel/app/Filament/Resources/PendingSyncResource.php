@@ -3,10 +3,10 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Exports\PendingSyncExporter;
-use App\Filament\Support\ListPageExportAction;
 use App\Filament\Resources\PendingSyncResource\Pages\ListPendingSync;
 use App\Filament\Support\EventSeverityBadgeColor;
 use App\Filament\Support\EventStateBadgeColor;
+use App\Filament\Support\ListPageExportAction;
 use App\Models\Enums\AzDoDismissalReason;
 use App\Models\Enums\EventState;
 use App\Models\SecurityEvent;

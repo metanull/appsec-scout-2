@@ -15,6 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             EnsureUserIsEnabled::class,
         ]);
+        // The `auth`-guarded download routes (routes/web.php, Filament's export download) send a
+        // guest to the panel's sign-in page — the app defines no plain `login` route.
+        $middleware->redirectGuestsTo(fn (): string => route('filament.appsec-scout.auth.login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -2,11 +2,10 @@
 
 namespace App\Filament\Resources;
 
-use App\Filament\Exports\LocalFindingExporter;
-use App\Filament\Support\ListPageExportAction;
 use App\Assets\LocalFindingSeverityChanger;
 use App\Assets\LocalFindingStatusChanger;
 use App\Assets\LocalFindingWorkItemService;
+use App\Filament\Exports\LocalFindingExporter;
 use App\Filament\Pages\ProfileIntegrationsPage;
 use App\Filament\Resources\LocalFindingResource\Pages\ListLocalFindings;
 use App\Filament\Resources\LocalFindingResource\Pages\ViewLocalFinding;
@@ -14,6 +13,7 @@ use App\Filament\Resources\LocalFindingResource\RelationManagers\CommentsRelatio
 use App\Filament\Resources\LocalFindingResource\RelationManagers\WorkItemLinksRelationManager;
 use App\Filament\Resources\LocalFindingResource\Support\LocalFindingTableQuery;
 use App\Filament\Support\EventStateBadgeColor;
+use App\Filament\Support\ListPageExportAction;
 use App\Filament\Support\LocalFindingOwnerColumns;
 use App\Filament\Support\WorkItemCreatedNotification;
 use App\Models\Enums\EventSeverity;
