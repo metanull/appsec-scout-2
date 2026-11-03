@@ -36,7 +36,7 @@ it('stores the chosen reason with a pending AzDO dismissal and audits it', funct
 
     expect($updated->pending_state)->toBe(EventState::Dismissed)
         ->and($updated->pending_dismissal_reason)->toBe(AzDoDismissalReason::AcceptedRisk)
-        ->and($updated->comments()->latest('id')->first()?->body)->toBe('[State change: dismissed (Accepted risk)] Build-only tooling, never shipped.')
+        ->and($updated->comments()->reorder('id', 'desc')->first()?->body)->toBe('[State change: dismissed (Accepted risk)] Build-only tooling, never shipped.')
         ->and($audit->payload_json['dismissal_reason'])->toBe('acceptedRisk');
 });
 

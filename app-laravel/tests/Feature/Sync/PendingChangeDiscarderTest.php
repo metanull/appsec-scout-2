@@ -30,9 +30,9 @@ it('drops the pending change and retry bookkeeping, keeping the state last read 
         ->and($event->pending_comment)->toBeNull()
         ->and($event->is_dirty)->toBeFalse()
         ->and($event->metadata)->toBe(['sourceRepoId' => 'repo-1'])
-        ->and($event->comments()->latest('id')->first()?->body)
+        ->and($event->comments()->reorder('id', 'desc')->first()?->body)
         ->toBe('[Pending change discarded] The unpushed change (state → dismissed, severity → low) was not pushed to the source; the alert stays "open" as last read from the source.')
-        ->and($event->comments()->latest('id')->first()?->author_user_id)->toBe($actor->id)
+        ->and($event->comments()->reorder('id', 'desc')->first()?->author_user_id)->toBe($actor->id)
         ->and($audit->subject_id)->toBe((string) $event->id)
         ->and($audit->payload_json['discarded'])->toMatchArray([
             'pending_state' => 'dismissed',

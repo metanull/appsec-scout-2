@@ -799,7 +799,7 @@ it('reopens a finding the scan resolved, with its earlier status, when a later s
     expect($row->status)->toBe(EventState::InProgress)
         ->and($row->resolved_by_scan_at)->toBeNull()
         ->and($row->status_before_scan_resolution)->toBeNull()
-        ->and($row->comments()->orderByDesc('id')->first()->body)->toBe(sprintf('Reported again by the vulnerabilities scan of %s (report #%d); status restored to in_progress.', now()->toDateString(), $third->id));
+        ->and($row->comments()->reorder('id', 'desc')->first()->body)->toBe(sprintf('Reported again by the vulnerabilities scan of %s (report #%d); status restored to in_progress.', now()->toDateString(), $third->id));
 });
 
 it('does not reopen a finding an operator resolved when a later scan reports it again', function () {

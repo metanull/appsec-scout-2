@@ -28,7 +28,7 @@ it('changes a local finding status and records the justification comment', funct
     );
 
     expect($updated->status)->toBe(EventState::Dismissed)
-        ->and($updated->comments()->latest('id')->first()?->body)->toBe('[Status change: dismissed] Confirmed as a false positive after review.')
+        ->and($updated->comments()->reorder('id', 'desc')->first()?->body)->toBe('[Status change: dismissed] Confirmed as a false positive after review.')
         ->and(AuditLog::query()->where('action', 'state_change')->where('subject_id', (string) $finding->id)->exists())->toBeTrue();
 });
 
