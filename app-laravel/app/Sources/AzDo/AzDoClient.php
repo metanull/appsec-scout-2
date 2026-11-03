@@ -271,6 +271,35 @@ final class AzDoClient
     }
 
     /**
+     * The newest commit on a branch (Git "Commits - Get Commits", $top=1). Null when the
+     * branch has no commit or cannot be resolved (404, e.g. an empty repository).
+     */
+    public function latestCommit(string $projectId, string $repositoryId, string $branch): ?AzDoCommit
+    {
+        $query = [
+            'searchCriteria.itemVersion.version' => $branch,
+            'searchCriteria.itemVersion.versionType' => 'branch',
+            'searchCriteria.$top' => 1,
+            'api-version' => '7.0',
+        ];
+
+        try {
+            $response = $this->http->get("{$projectId}/_apis/git/repositories/{$repositoryId}/commits", ['query' => $query]);
+        } catch (ClientException $e) {
+            if ($e->getResponse()->getStatusCode() === 404) {
+                return null;
+            }
+
+            throw $e;
+        }
+
+        /** @var array{value: list<array<string, mixed>>} $data */
+        $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+        return isset($data['value'][0]) ? AzDoCommit::fromArray($data['value'][0]) : null;
+    }
+
+    /**
      * @param  array<string, mixed>  $update
      */
     public function updateAlert(string $projectName, string $repoId, int $alertId, array $update): void

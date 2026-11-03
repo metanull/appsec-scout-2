@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Sources\Context\SourceContextFacts;
 use Database\Factories\SecurityContainerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
     'software_system_id', 'source_software_system_id', 'system_overridden_at', 'source_container_id', 'name', 'kind',
-    'url', 'metadata', 'first_seen_at', 'last_seen_at', 'synced_at', 'removed_at',
+    'url', 'is_disabled', 'last_commit_sha', 'last_commit_at', 'last_commit_author',
+    'metadata', 'first_seen_at', 'last_seen_at', 'synced_at', 'removed_at',
 ])]
 class SecurityContainer extends Model
 {
@@ -44,6 +46,8 @@ class SecurityContainer extends Model
     {
         return [
             'metadata' => 'array',
+            'is_disabled' => 'boolean',
+            'last_commit_at' => 'datetime',
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'synced_at' => 'datetime',
@@ -62,6 +66,14 @@ class SecurityContainer extends Model
     public function sourceSoftwareSystem(): BelongsTo
     {
         return $this->belongsTo(SoftwareSystem::class, 'source_software_system_id');
+    }
+
+    /** The repository's default branch, as its source or Source Control provider reported it. */
+    public function defaultBranch(): ?string
+    {
+        $metadata = $this->getAttribute('metadata');
+
+        return SourceContextFacts::getString(is_array($metadata) ? $metadata : [], SourceContextFacts::CODE_DEFAULT_BRANCH);
     }
 
     /** True when an operator re-linked the container to a system other than its source's. */

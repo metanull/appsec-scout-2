@@ -250,6 +250,13 @@ final class DispatchRepositoryCollectionRunsJob implements ShouldBeUnique, Shoul
                 continue;
             }
 
+            // A repository disabled upstream stays in the inventory but cannot be cloned.
+            if ($container->isDisabled) {
+                $excluded['disabled'] = ($excluded['disabled'] ?? 0) + 1;
+
+                continue;
+            }
+
             $metadata = $container->metadata ?? [];
             $cloneUrl = SourceContextFacts::getString($metadata, SourceContextFacts::AZDO_REPOSITORY_REMOTE_URL);
 

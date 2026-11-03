@@ -1,6 +1,7 @@
 <?php
 
 use App\Audit\AuditLog;
+use App\Filament\Exports\SecurityContainerExporter;
 use App\Filament\Exports\SecurityEventExporter;
 use App\Filament\Resources\AuditLogResource\Pages\ListAuditLogs;
 use App\Filament\Resources\ErrorLogResource\Pages\ListErrorLogs;
@@ -296,4 +297,48 @@ it('prunes exports and their files past the retention window', function () {
         ->and(Export::query()->pluck('id')->all())->toBe([$recent->id])
         ->and(Storage::disk('local')->files($oldDirectory))->toBeEmpty()
         ->and(Storage::disk('local')->files($recent->getFileDirectory()))->not->toBeEmpty();
+});
+
+it('exports the repository inventory of one source: project, repository, enabled, default branch, last commit', function () {
+    $azdoRepos = SoftwareSystem::factory()->create(['source_id' => 'azdo-repos', 'name' => 'AbacSOA']);
+    $advancedSecurity = SoftwareSystem::factory()->create(['source_id' => 'azdo', 'name' => 'AbacSOA']);
+    SecurityContainer::factory()->forSystem($azdoRepos)->create([
+        'name' => 'AbacSOA',
+        'kind' => 'repository',
+        'metadata' => ['code' => ['default_branch' => 'master']],
+        'last_commit_sha' => 'abc123',
+        'last_commit_at' => '2026-08-13 06:06:13',
+        'last_commit_author' => 'ISIS\\shuts',
+    ]);
+    SecurityContainer::factory()->forSystem($azdoRepos)->create(['name' => 'legacy-repo', 'kind' => 'repository', 'is_disabled' => true]);
+    SecurityContainer::factory()->forSystem($advancedSecurity)->create(['name' => 'AbacSOA', 'kind' => 'repository']);
+    SecurityContainer::factory()->forSystem($azdoRepos)->create(['name' => 'nightly-scan', 'kind' => 'scan']);
+
+    $wanted = [
+        'sourceSoftwareSystem.name' => 'Project',
+        'name' => 'Repository',
+        'is_disabled' => 'Enabled',
+        'default_branch' => 'Default branch',
+        'last_commit_at' => 'Last commit date (UTC)',
+        'last_commit_author' => 'Last commit author',
+    ];
+    $columnMap = collect(SecurityContainerExporter::getColumns())
+        ->mapWithKeys(fn ($column): array => [$column->getName() => [
+            'isEnabled' => array_key_exists($column->getName(), $wanted),
+            'label' => $wanted[$column->getName()] ?? $column->getLabel(),
+        ]])
+        ->all();
+
+    Livewire::actingAs(exportingReader())
+        ->test(ListSecurityContainers::class)
+        ->filterTable('source', ['azdo-repos'])
+        ->filterTable('kind', 'repository')
+        ->callAction(TestAction::make('export')->table(), data: ['columnMap' => $columnMap])
+        ->assertHasNoErrors();
+
+    expect(exportedCsvRows(latestListExport()))->toBe([
+        ['Repository', 'Default branch', 'Last commit date (UTC)', 'Last commit author', 'Enabled', 'Project'],
+        ['AbacSOA', 'master', '2026-08-13 06:06:13', 'ISIS\\shuts', 'Yes', 'AbacSOA'],
+        ['legacy-repo', '', '', '', 'No', 'AbacSOA'],
+    ]);
 });

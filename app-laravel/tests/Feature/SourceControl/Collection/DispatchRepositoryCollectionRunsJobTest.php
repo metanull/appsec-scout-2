@@ -268,3 +268,18 @@ it('collects on a Redis connection that never hands a running CollectRepositoryJ
         ->and($connection['retry_after'])->toBeGreaterThan($jobTimeout)
         ->and($connection['retry_after'])->toBeGreaterThan(config('queue.connections.redis.retry_after'));
 });
+
+it('excludes a repository disabled upstream from collection, counted by reason', function () {
+    bindRealAzDoReposWithFakeClient([
+        new Response(200, [], dispatcherFixture('projects.json')),
+        new Response(200, [], dispatcherFixture('repositories-with-disabled.json')),
+        new Response(200, [], '{"value":[]}'),
+    ]);
+
+    (new DispatchRepositoryCollectionRunsJob)->handle(app(SystemIntegrationRuntime::class), app(Recorder::class));
+
+    $run = RepositoryCollectionRun::query()->latest('id')->firstOrFail();
+
+    expect($run->counts_json['repositories_considered'])->toBe(2)
+        ->and($run->counts_json['repositories_excluded_by_reason'])->toBe(['disabled' => 1]);
+});
