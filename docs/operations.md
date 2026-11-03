@@ -169,6 +169,13 @@ docker compose logs -f trivy-server
 Application errors are also copied into the `error_logs` table and exposed in the Admin `Errors`
 resource. Audit records are written to `audit_logs` and exposed in the Admin `Audit Log` resource.
 
+The app, collector and static-analysis collector write Laravel's file log to the shared
+`app_storage` volume (`storage/logs/laravel-YYYY-MM-DD.log`), rotated daily and kept for
+`LOG_DAILY_DAYS` days (default 14). A fresh install gets `LOG_STACK=daily` from `.env.example`.
+An install created before that default keeps its persisted `storage/app/private/.env`, and
+`LOG_STACK=single` there grows one `laravel.log` forever. Set `LOG_STACK=daily` in that file,
+restart `app` and `static-analysis-collector`, then delete the old `storage/logs/laravel.log`.
+
 ## Disk Usage
 
 Docker Desktop's disk footprint on a workstation grows over time and does not shrink on its
@@ -196,6 +203,8 @@ actual disk usage.
 | Superseded images | `docker compose pull` on a moved `latest` tag | The previous image is left untagged (dangling) rather than deleted |
 | Data volumes | Normal operation | `dependencytrack_data` (NVD mirror), `dependencytrack_postgres_data`, and `trivy_data` typically total 3–5 GB together and are required for vulnerability matching; `mysql_data`/`postgres_data` grow with stored scan attachments |
 | Container writable layers | Runtime writes inside `app`/`collector`/`static-analysis-collector` | Small once #515 is deployed; recreated on `docker compose up` after a pull |
+| Laravel file log | Every log line in `app_storage` (`storage/logs`) | Bounded by daily rotation (`LOG_STACK=daily`, `LOG_DAILY_DAYS`); see Logs And Error Records for installs still on `single` |
+| Collector scratch | Clones in `collector_workspace`/`static_analysis_collector_workspace` (`/workspace-scratch/<uuid>`) | Each job deletes its own clone when it finishes; a job killed mid-run (container stopped or restarted) leaves its directory behind, safe to delete while no collection run is in progress |
 
 ### Reclaim safely
 
