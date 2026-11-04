@@ -23,7 +23,7 @@ final class LocalFindingBreakdownData
 
     public const STATE_CACHE_KEY = 'dashboard:breakdown:local-findings:state';
 
-    public const WORK_ITEM_STATUS_CACHE_KEY = 'dashboard:breakdown:local-findings:work-item-status';
+    public const WORK_ITEM_STATUS_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-work-item-status';
 
     public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:local-findings:open-by-system';
 
@@ -65,7 +65,8 @@ final class LocalFindingBreakdownData
 
     /**
      * Mirror of AlertBreakdownData::workItemStatusBreakdown() over the
-     * LocalFindingWorkItemLink table. Rows are not additive.
+     * LocalFindingWorkItemLink table. Rows are not additive. Counts strictly
+     * status = open.
      *
      * @return list<BreakdownRow>
      */
@@ -76,11 +77,15 @@ final class LocalFindingBreakdownData
             $statusRows = LocalFindingWorkItemLink::query()
                 ->toBase()
                 ->selectRaw('work_item_state, COUNT(DISTINCT local_finding_id) as total')
+                ->whereIn('local_finding_id', LocalFinding::query()->select('id')->where('status', EventState::Open->value))
                 ->groupBy('work_item_state')
                 ->orderByRaw('COUNT(DISTINCT local_finding_id) DESC')
                 ->get();
 
-            $noWorkItem = LocalFinding::query()->whereDoesntHave('workItemLinks')->count();
+            $noWorkItem = LocalFinding::query()
+                ->where('status', EventState::Open->value)
+                ->whereDoesntHave('workItemLinks')
+                ->count();
 
             return WorkItemStatusBreakdown::rows($statusRows, $noWorkItem);
         });

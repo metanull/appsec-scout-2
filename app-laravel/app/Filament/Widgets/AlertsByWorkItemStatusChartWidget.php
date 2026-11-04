@@ -9,7 +9,7 @@ class AlertsByWorkItemStatusChartWidget extends BreakdownPieChartWidget
 {
     public function getHeading(): ?string
     {
-        return 'Alerts by Work Item status';
+        return 'Open Alerts by Work Item status';
     }
 
     protected function rows(): array
