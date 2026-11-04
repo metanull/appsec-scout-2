@@ -15,9 +15,12 @@ use App\Models\ToolInvocation;
 use App\SourceControl\Collection\AnalyzeRepositoryJob;
 use App\SourceControl\Collection\PackageFeedCredentialWriter;
 use App\SourceControl\Collection\RepositoryCollectionTarget;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Process\Exception\ProcessTimedOutException as SymfonyProcessTimedOutException;
+use Symfony\Component\Process\Process as SymfonyProcess;
 
 // Leading UTF-8 BOM matches Roslynator's real --output-format sarif output exactly
 // (confirmed against the actual 0.13.1 binary) — every test using this fixture also
@@ -821,6 +824,139 @@ it('logs an opengrep-analyze failure and still runs the dotnet and java analyzer
 
     $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'opengrep-analyze')->first();
     expect($errorLog)->not->toBeNull();
+
+    $run->refresh();
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// Steps that exceed their timeout
+// ---------------------------------------------------------------------------
+
+/** What PendingProcess::run() throws when a real process exceeds its timeout. */
+function timedOutStep(array $command, int $seconds, string $partialOutput = ''): never
+{
+    $process = new SymfonyProcess($command);
+    $process->setTimeout($seconds);
+
+    throw new ProcessTimedOutException(
+        new SymfonyProcessTimedOutException($process, SymfonyProcessTimedOutException::TYPE_GENERAL),
+        Process::result(output: $partialOutput, exitCode: 137),
+    );
+}
+
+it('records an opengrep timeout as a failed opengrep step and still runs the dotnet and java analyzers', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['App.sln' => '', 'build/Main.class' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            timedOutStep($parts, 900, 'scanning 4,812 files');
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'spotbugs') {
+            File::put(argAfter($parts, '-output'), SPOTBUGS_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    expect(Attachment::query()->pluck('kind')->sort()->values()->all())->toBe([
+        AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET,
+        AttachmentIngestionService::KIND_CODE_QUALITY_JAVA,
+    ]);
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'opengrep-analyze')->sole();
+    expect($errorLog->message)->toContain('scanning 4,812 files')
+        ->and($errorLog->message)->toEndWith('exceeded the timeout of 900 seconds.');
+
+    $invocation = ToolInvocation::query()->where('tool', 'opengrep')->sole();
+    expect($invocation->outcome)->toBe('failed')
+        ->and($invocation->exit_code)->toBe(137)
+        ->and($invocation->output_tail)->toContain('exceeded the timeout of 900 seconds.');
+
+    $run->refresh();
+    expect($run->status)->toBe('failure')
+        ->and($run->counts_json['repositories_completed'])->toBe(1)
+        ->and($run->counts_json['repositories_failed'])->toBe(1);
+});
+
+it('does not let a dotnet restore timeout on one .sln prevent another from being analyzed', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            plantClonedFiles(end($parts), ['Slow.sln' => '', 'Working.sln' => '']);
+
+            return Process::result(exitCode: 0);
+        }
+
+        if (($parts[0] ?? null) === 'dotnet' && ($parts[1] ?? null) === 'restore' && str_contains($parts[2] ?? '', 'Slow.sln')) {
+            timedOutStep($parts, 600);
+        }
+
+        if (($parts[0] ?? null) === 'roslynator') {
+            File::put(argAfter($parts, '--output'), ROSLYNATOR_SARIF_FIXTURE);
+        }
+
+        if (($parts[0] ?? null) === 'opengrep') {
+            File::put(argAfter($parts, '--output'), OPENGREP_SARIF_FIXTURE);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $sarif = json_decode(Attachment::query()->where('kind', AttachmentIngestionService::KIND_CODE_QUALITY_DOTNET)->sole()->payload, true);
+    expect($sarif['runs'])->toHaveCount(1);
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'dotnet-restore')->sole();
+    expect($errorLog->context_json['subject'])->toEndWith('Slow.sln')
+        ->and($errorLog->message)->toEndWith('exceeded the timeout of 600 seconds.');
+
+    expect(ToolInvocation::query()->where('tool', 'dotnet-roslynator')->pluck('outcome')->sort()->values()->all())
+        ->toBe(['failed', 'ran_clean']);
+});
+
+it('counts a clone timeout as a failed repository instead of failing the job', function () {
+    Process::fake(function ($process) {
+        $parts = commandParts($process->command);
+
+        if (($parts[0] ?? null) === 'git' && ($parts[1] ?? null) === 'clone') {
+            timedOutStep($parts, 600);
+        }
+
+        return Process::result(exitCode: 0);
+    });
+
+    $run = staticAnalysisRunForJobTest();
+
+    (new AnalyzeRepositoryJob(staticAnalysisTarget(), $run->id))
+        ->handle(...analyzeRepositoryJobDependencies());
+
+    $errorLog = ErrorLog::query()->where('channel', 'static-analysis')->where('context_json->stage', 'clone')->sole();
+    expect($errorLog->message)->toEndWith('exceeded the timeout of 600 seconds.');
+
+    Process::assertNotRan(fn ($process) => (commandParts($process->command)[0] ?? null) === 'opengrep');
 
     $run->refresh();
     expect($run->status)->toBe('failure')
