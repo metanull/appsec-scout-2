@@ -18,9 +18,12 @@ use App\Models\ToolInvocation;
 use App\Sources\AzDo\AzDoNormalizer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -299,12 +302,13 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
     private function cloneRepository(string $homeDir, string $workDir): bool
     {
-        $result = Process::env(['HOME' => $homeDir])
-            ->timeout(600)
-            ->run(['git', 'clone', '--quiet', '--depth', '1', '--no-tags', '--shallow-submodules', $this->target->repositoryCloneUrl, $workDir]);
+        $result = $this->runStep(
+            Process::env(['HOME' => $homeDir])->timeout(600),
+            ['git', 'clone', '--quiet', '--depth', '1', '--no-tags', '--shallow-submodules', $this->target->repositoryCloneUrl, $workDir],
+        );
 
         if ($result->failed()) {
-            $this->logFailure('clone', $this->tail($result->errorOutput()));
+            $this->logFailure('clone', $this->tail($result->errorOutput() . $result->output()));
 
             return false;
         }
@@ -321,12 +325,13 @@ final class AnalyzeRepositoryJob implements ShouldQueue
      */
     private function remoteHeadSha(string $homeDir): RemoteHead
     {
-        $result = Process::env(['HOME' => $homeDir])
-            ->timeout(120)
-            ->run(['git', 'ls-remote', '--quiet', $this->target->repositoryCloneUrl, 'HEAD']);
+        $result = $this->runStep(
+            Process::env(['HOME' => $homeDir])->timeout(120),
+            ['git', 'ls-remote', '--quiet', $this->target->repositoryCloneUrl, 'HEAD'],
+        );
 
         if ($result->failed()) {
-            $this->logFailure('ls-remote', $this->tail($result->errorOutput()));
+            $this->logFailure('ls-remote', $this->tail($result->errorOutput() . $result->output()));
 
             return RemoteHead::unreachable();
         }
@@ -418,10 +423,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             return;
         }
 
-        $result = Process::path($workDir)
-            ->env(['HOME' => $homeDir])
-            ->timeout(60)
-            ->run(['git', 'rev-parse', 'HEAD']);
+        $result = $this->runStep(
+            Process::path($workDir)->env(['HOME' => $homeDir])->timeout(60),
+            ['git', 'rev-parse', 'HEAD'],
+        );
 
         if ($result->failed()) {
             return;
@@ -508,10 +513,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         ];
         $startedAt = now();
 
-        $result = Process::path($workDir)
-            ->env(['HOME' => $homeDir])
-            ->timeout((int) config('static_analysis_collection.opengrep_timeout'))
-            ->run($command);
+        $result = $this->runStep(
+            Process::path($workDir)->env(['HOME' => $homeDir])->timeout((int) config('static_analysis_collection.opengrep_timeout')),
+            $command,
+        );
 
         if ($result->failed() || ! File::exists($sarifPath)) {
             $outputTail = $this->tail($result->errorOutput() . $result->output());
@@ -579,9 +584,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
             $restoreCommand = ['dotnet', 'restore', $slnPath];
 
-            $restoreResult = Process::env($env)
-                ->timeout((int) config('static_analysis_collection.dotnet_restore_timeout'))
-                ->run($restoreCommand);
+            $restoreResult = $this->runStep(
+                Process::env($env)->timeout((int) config('static_analysis_collection.dotnet_restore_timeout')),
+                $restoreCommand,
+            );
 
             if ($restoreResult->failed()) {
                 $outputTail = $this->tail($restoreResult->errorOutput() . $restoreResult->output());
@@ -591,9 +597,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
                 continue;
             }
 
-            $buildResult = Process::env($env)
-                ->timeout((int) config('static_analysis_collection.dotnet_build_timeout'))
-                ->run(['dotnet', 'build', '--no-restore', $slnPath]);
+            $buildResult = $this->runStep(
+                Process::env($env)->timeout((int) config('static_analysis_collection.dotnet_build_timeout')),
+                ['dotnet', 'build', '--no-restore', $slnPath],
+            );
 
             if ($buildResult->failed()) {
                 $this->logFailure('dotnet-build', $this->tail($buildResult->errorOutput() . $buildResult->output()), $slnPath);
@@ -609,9 +616,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
                 '--return-success-on-diagnostics',
             ];
 
-            $analyzeResult = Process::env($env)
-                ->timeout((int) config('static_analysis_collection.analysis_timeout'))
-                ->run($analyzeCommand);
+            $analyzeResult = $this->runStep(
+                Process::env($env)->timeout((int) config('static_analysis_collection.analysis_timeout')),
+                $analyzeCommand,
+            );
 
             if ($analyzeResult->failed()) {
                 $outputTail = $this->tail($analyzeResult->errorOutput() . $analyzeResult->output());
@@ -712,9 +720,10 @@ final class AnalyzeRepositoryJob implements ShouldQueue
 
         $startedAt = now();
 
-        $result = Process::env($env)
-            ->timeout((int) config('static_analysis_collection.analysis_timeout'))
-            ->run($command);
+        $result = $this->runStep(
+            Process::env($env)->timeout((int) config('static_analysis_collection.analysis_timeout')),
+            $command,
+        );
 
         if ($result->failed() || ! File::exists($sarifPath) || File::size($sarifPath) === 0) {
             $outputTail = $this->tail($result->errorOutput() . $result->output());
@@ -787,7 +796,7 @@ final class AnalyzeRepositoryJob implements ShouldQueue
             return;
         }
 
-        $result = Process::path($dir)->env($env)->timeout($timeout)->run($command);
+        $result = $this->runStep(Process::path($dir)->env($env)->timeout($timeout), $command);
 
         if ($result->failed()) {
             $this->logFailure('java-build', $this->tail($result->errorOutput() . $result->output()), $dir);
@@ -824,6 +833,23 @@ final class AnalyzeRepositoryJob implements ShouldQueue
         }
 
         return null;
+    }
+
+    /**
+     * Runs one external step. A step that exceeds its timeout comes back as a
+     * failed result instead of throwing: thrown, it would fail the whole job,
+     * which the queue then retries from the clone up (tries=3), and lose the
+     * results of the analysers that had already finished.
+     *
+     * @param  list<string>  $command
+     */
+    private function runStep(PendingProcess $process, array $command): ProcessResult
+    {
+        try {
+            return $process->run($command);
+        } catch (ProcessTimedOutException $exception) {
+            return new TimedOutProcessResult($exception);
+        }
     }
 
     private function tail(string $output, int $length = 2000): string
