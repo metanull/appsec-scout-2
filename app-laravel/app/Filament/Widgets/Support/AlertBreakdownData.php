@@ -25,7 +25,7 @@ final class AlertBreakdownData
 
     public const STATE_CACHE_KEY = 'dashboard:breakdown:alerts:state';
 
-    public const WORK_ITEM_STATUS_CACHE_KEY = 'dashboard:breakdown:alerts:work-item-status';
+    public const WORK_ITEM_STATUS_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-work-item-status';
 
     public const SYSTEM_CACHE_KEY = 'dashboard:breakdown:alerts:open-by-system';
 
@@ -65,10 +65,11 @@ final class AlertBreakdownData
     }
 
     /**
-     * A record is counted once per distinct linked work-item status (links in
-     * two statuses land in both buckets, duplicate statuses count once), plus an
-     * Unknown bucket for links with a null state and a No work item bucket for
-     * records with no link at all. Rows are therefore not additive.
+     * Open alerts by linked work-item status. An alert is counted once per
+     * distinct linked status (links in two statuses land in both buckets,
+     * duplicate statuses count once), plus an Unknown bucket for links with a
+     * null state and a No work item bucket for alerts with no link at all. Rows
+     * are therefore not additive. Counts strictly state = open.
      *
      * @return list<BreakdownRow>
      */
@@ -79,11 +80,15 @@ final class AlertBreakdownData
             $statusRows = WorkItemLink::query()
                 ->toBase()
                 ->selectRaw('work_item_state, COUNT(DISTINCT event_id) as total')
+                ->whereIn('event_id', SecurityEvent::query()->select('id')->where('state', EventState::Open->value))
                 ->groupBy('work_item_state')
                 ->orderByRaw('COUNT(DISTINCT event_id) DESC')
                 ->get();
 
-            $noWorkItem = SecurityEvent::query()->whereDoesntHave('workItemLinks')->count();
+            $noWorkItem = SecurityEvent::query()
+                ->where('state', EventState::Open->value)
+                ->whereDoesntHave('workItemLinks')
+                ->count();
 
             return WorkItemStatusBreakdown::rows($statusRows, $noWorkItem);
         });

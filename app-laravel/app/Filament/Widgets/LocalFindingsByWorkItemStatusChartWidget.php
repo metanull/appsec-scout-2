@@ -9,7 +9,7 @@ class LocalFindingsByWorkItemStatusChartWidget extends BreakdownPieChartWidget
 {
     public function getHeading(): ?string
     {
-        return 'Local Findings by Work Item status';
+        return 'Open Local Findings by Work Item status';
     }
 
     protected function rows(): array

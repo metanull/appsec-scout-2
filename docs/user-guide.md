@@ -164,8 +164,9 @@ push anything.
 
 ### Dashboard
 
-Pairs of tables and pie charts: Alerts and Local Findings by state, by work-item status, by
-software system, by type/kind and by severity, plus Open Alerts by Source. **Click any row** to
+Pairs of tables and pie charts: Alerts and Local Findings by state, then open Alerts and Local
+Findings by work-item status, by software system, by type/kind and by severity, plus Open Alerts
+by Source. Only the by-state pair counts closed items. **Click any row** to
 open the Alerts or Local Findings list already filtered to that slice. Admins also see recent
 sync runs, failed jobs and errors. The figures refresh after every sync run.
 

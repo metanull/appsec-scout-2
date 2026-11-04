@@ -6,10 +6,11 @@ use App\Filament\Resources\LocalFindingResource;
 use App\Filament\Widgets\Support\BreakdownTableWidget;
 use App\Filament\Widgets\Support\LocalFindingBreakdownData;
 use App\Filament\Widgets\Support\WorkItemStatusBreakdown;
+use App\Models\Enums\EventState;
 
 class LocalFindingsByWorkItemStatusTableWidget extends BreakdownTableWidget
 {
-    protected static ?string $heading = 'Local Findings by Work Item status';
+    protected static ?string $heading = 'Open Local Findings by Work Item status';
 
     protected function labelColumnHeading(): string
     {
@@ -18,7 +19,7 @@ class LocalFindingsByWorkItemStatusTableWidget extends BreakdownTableWidget
 
     protected function emptyStateNote(): string
     {
-        return 'No local findings recorded.';
+        return 'No open local findings.';
     }
 
     protected function tableDescription(): ?string
@@ -33,10 +34,12 @@ class LocalFindingsByWorkItemStatusTableWidget extends BreakdownTableWidget
 
     protected function rowUrl(array $row): ?string
     {
+        $open = ['status' => [EventState::Open->value]];
+
         return match ($row['key']) {
-            WorkItemStatusBreakdown::UNKNOWN_KEY => LocalFindingResource::filteredIndexUrl(['work_item_state' => [WorkItemStatusBreakdown::UNKNOWN_KEY]]),
-            WorkItemStatusBreakdown::NO_WORK_ITEM_KEY => LocalFindingResource::filteredIndexUrl(['has_work_item' => ['0']]),
-            default => LocalFindingResource::filteredIndexUrl(['work_item_state' => [$row['key']]]),
+            WorkItemStatusBreakdown::UNKNOWN_KEY => LocalFindingResource::filteredIndexUrl(['work_item_state' => [WorkItemStatusBreakdown::UNKNOWN_KEY]] + $open),
+            WorkItemStatusBreakdown::NO_WORK_ITEM_KEY => LocalFindingResource::filteredIndexUrl(['has_work_item' => ['0']] + $open),
+            default => LocalFindingResource::filteredIndexUrl(['work_item_state' => [$row['key']]] + $open),
         };
     }
 }
