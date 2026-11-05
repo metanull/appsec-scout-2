@@ -237,3 +237,53 @@ it('records each repository\'s disabled flag and the newest commit its provider 
         ->and($disabled->last_commit_at)->toBeNull()
         ->and($disabled->removed_at)->toBeNull();
 });
+
+it('stores a provider\'s projects on the rows of the Source it shares them with, not on a second copy', function () {
+    $source = (new FakeSource)
+        ->withSystems(new SystemDto('proj-1', 'SecurityProject'))
+        ->withContainers('proj-1', new ContainerDto('repo-1', 'backend-api', 'proj-1', 'repository'));
+    $provider = (new FakeInventorySourceControlProvider)
+        ->asInventoryOf('fake')
+        ->withProjects(new SystemDto('proj-1', 'SecurityProject'))
+        ->withRepositories('proj-1', new ContainerDto('repo-1', 'backend-api', 'proj-1', 'repository', isDisabled: true))
+        ->withLastCommit('repo-1', new CommitDto('abc123', CarbonImmutable::parse('2026-08-13T06:06:13Z'), 'Ada Author'));
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    $this->app->bind('appsec-scout.source-control.fake-inventory', fn () => $provider);
+    $this->app->tag(['appsec-scout.source-control.fake-inventory'], 'appsec-scout.source-control');
+
+    app(InventorySyncService::class)->sync();
+    app(InventorySyncService::class)->sync();
+
+    $container = SecurityContainer::query()->sole();
+
+    expect(SoftwareSystem::query()->pluck('source_id')->all())->toBe(['fake'])
+        ->and($container->softwareSystem?->source_id)->toBe('fake')
+        ->and($container->last_commit_sha)->toBe('abc123')
+        ->and($container->is_disabled)->toBeTrue()
+        ->and($container->removed_at)->toBeNull();
+});
+
+it('sweeps a shared source id once, over what the Source and the provider touched together', function () {
+    $source = (new FakeSource)->withSystems(new SystemDto('proj-1', 'SecurityProject'));
+    $provider = (new FakeInventorySourceControlProvider)
+        ->asInventoryOf('fake')
+        ->withProjects(new SystemDto('proj-1', 'SecurityProject'), new SystemDto('proj-2', 'Only the provider sees this'));
+
+    $this->app->bind('appsec-scout.source.fake', fn () => $source);
+    $this->app->tag(['appsec-scout.source.fake'], 'appsec-scout.source');
+    $this->app->bind('appsec-scout.source-control.fake-inventory', fn () => $provider);
+    $this->app->tag(['appsec-scout.source-control.fake-inventory'], 'appsec-scout.source-control');
+
+    app(InventorySyncService::class)->sync();
+
+    $provider->withProjects(new SystemDto('proj-1', 'SecurityProject'));
+    app(InventorySyncService::class)->sync();
+
+    $systems = SoftwareSystem::query()->where('source_id', 'fake')->get()->keyBy('source_system_id');
+
+    expect($systems)->toHaveCount(2)
+        ->and($systems['proj-1']->removed_at)->toBeNull()
+        ->and($systems['proj-2']->removed_at)->not->toBeNull();
+});

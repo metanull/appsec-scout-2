@@ -168,6 +168,13 @@ final class InventorySyncService
         // filtered-out project/repo as removed, so only sweep on a genuinely full pass.
         $shouldSweep = $projectFilter === null && $repoFilter === null;
 
+        // Touched ids per source id. A Source Control provider can store its projects under a
+        // Source's id (EnumeratesInventory::inventorySourceId()), so one source id can be fed by
+        // two passes: each sweep must see what both touched, or one pass would mark the rows only
+        // the other one saw as removed.
+        /** @var array<string, array{systemIds: list<int>, containerIds: list<int>}> $touchedBySource */
+        $touchedBySource = [];
+
         foreach ($this->sources->all() as $source) {
             if ($onlyId !== null && $source->id() !== $onlyId) {
                 continue;
@@ -179,7 +186,7 @@ final class InventorySyncService
                 continue;
             }
 
-            $this->runtime->runSource($source->id(), function (Source $resolvedSource) use ($projectFilter, $repoFilter, $shouldSweep, &$counts, &$created): void {
+            $this->runtime->runSource($source->id(), function (Source $resolvedSource) use ($projectFilter, $repoFilter, &$counts, &$created, &$touchedBySource): void {
                 $touched = $this->syncOne(
                     $resolvedSource->id(),
                     $resolvedSource->fetchSystems(),
@@ -190,10 +197,7 @@ final class InventorySyncService
                     $created,
                 );
 
-                if ($shouldSweep) {
-                    $this->sweeper->sweepSystems($resolvedSource->id(), $touched['systemIds']);
-                    $this->sweeper->sweepContainers($resolvedSource->id(), $touched['containerIds']);
-                }
+                self::addTouched($touchedBySource, $resolvedSource->id(), $touched);
             });
         }
 
@@ -210,13 +214,13 @@ final class InventorySyncService
                 continue;
             }
 
-            $this->runtime->runSourceControl($provider->id(), function (SourceControlProvider $resolvedProvider) use ($projectFilter, $repoFilter, $shouldSweep, &$counts, &$created): void {
+            $this->runtime->runSourceControl($provider->id(), function (SourceControlProvider $resolvedProvider) use ($projectFilter, $repoFilter, &$counts, &$created, &$touchedBySource): void {
                 if (! $resolvedProvider instanceof EnumeratesInventory) {
                     return;
                 }
 
                 $touched = $this->syncOne(
-                    $resolvedProvider->id(),
+                    $resolvedProvider->inventorySourceId(),
                     $resolvedProvider->fetchProjects(),
                     fn (SystemDto $project): iterable => $resolvedProvider->fetchRepositories($project),
                     $projectFilter,
@@ -228,12 +232,32 @@ final class InventorySyncService
                         : null,
                 );
 
-                if ($shouldSweep) {
-                    $this->sweeper->sweepSystems($resolvedProvider->id(), $touched['systemIds']);
-                    $this->sweeper->sweepContainers($resolvedProvider->id(), $touched['containerIds']);
-                }
+                self::addTouched($touchedBySource, $resolvedProvider->inventorySourceId(), $touched);
             });
         }
+
+        if (! $shouldSweep) {
+            return;
+        }
+
+        foreach ($touchedBySource as $sourceId => $touched) {
+            $this->sweeper->sweepSystems($sourceId, $touched['systemIds']);
+            $this->sweeper->sweepContainers($sourceId, $touched['containerIds']);
+        }
+    }
+
+    /**
+     * @param  array<string, array{systemIds: list<int>, containerIds: list<int>}>  $touchedBySource
+     * @param  array{systemIds: list<int>, containerIds: list<int>}  $touched
+     */
+    private static function addTouched(array &$touchedBySource, string $sourceId, array $touched): void
+    {
+        $previous = $touchedBySource[$sourceId] ?? ['systemIds' => [], 'containerIds' => []];
+
+        $touchedBySource[$sourceId] = [
+            'systemIds' => array_values(array_unique([...$previous['systemIds'], ...$touched['systemIds']])),
+            'containerIds' => array_values(array_unique([...$previous['containerIds'], ...$touched['containerIds']])),
+        ];
     }
 
     /**

@@ -20,4 +20,13 @@ interface EnumeratesInventory
 
     /** @return iterable<ContainerDto> */
     public function fetchRepositories(SystemDto $project): iterable;
+
+    /**
+     * The source id the enumerated projects are stored under. A provider whose projects are the
+     * very systems a Source already reports (AzDO Repos and the AzDO source list the same
+     * projects and repositories) returns that Source's id, so the inventory updates those rows
+     * instead of creating a second system and container per project and repository; a provider
+     * with no matching Source returns its own id.
+     */
+    public function inventorySourceId(): string;
 }
