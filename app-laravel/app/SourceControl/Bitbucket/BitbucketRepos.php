@@ -38,6 +38,12 @@ final class BitbucketRepos implements EnumeratesInventory, SourceControlProvider
         ];
     }
 
+    /** No Source reports Bitbucket projects, so the inventory keeps them under this provider. */
+    public function inventorySourceId(): string
+    {
+        return $this->id();
+    }
+
     public function testConnection(): TestResult
     {
         try {

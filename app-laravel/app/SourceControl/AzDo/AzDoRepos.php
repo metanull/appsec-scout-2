@@ -64,6 +64,12 @@ final class AzDoRepos implements EnumeratesInventory, ReportsLastCommit, SourceC
         }
     }
 
+    /** The AzDO source lists the same projects and repositories (same ids): one row each. */
+    public function inventorySourceId(): string
+    {
+        return AzDoNormalizer::SOURCE_ID;
+    }
+
     /** @return iterable<SystemDto> */
     public function fetchProjects(): iterable
     {

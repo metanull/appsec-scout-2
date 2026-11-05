@@ -361,6 +361,23 @@ Run with `--dry-run` first to review what would happen before applying it:
 .\scripts\invoke-app.ps1 -Artisan "local-findings:repair-file-paths"
 ```
 
+### Merging the Duplicate Systems and Containers of the AzDO Repos Inventory
+
+Before 1.1.4, *Sync inventory* stored every Azure DevOps project and repository the AzDO Repos
+credential sees under the `azdo-repos` source id, next to the identical rows the AzDO source
+already had: each repository was listed twice, the second copy empty. The inventory now updates
+the AzDO source's rows (`EnumeratesInventory::inventorySourceId()`).
+`assets:merge-inventory-duplicates {--dry-run}` folds the existing copies into those rows: the
+disabled flag, last commit, curated links, tracker project links and asset link move to the AzDO
+row, then the copy is deleted. A copy with no AzDO twin is re-keyed instead. A copy that holds
+alerts, findings, components or attachments is reported and left alone (the command then exits
+non-zero). The merge is audited (`source_control_inventory_duplicates_merged`):
+
+```powershell
+.\scripts\invoke-app.ps1 -Artisan "assets:merge-inventory-duplicates --dry-run"
+.\scripts\invoke-app.ps1 -Artisan "assets:merge-inventory-duplicates"
+```
+
 ## Development Verification
 
 ```powershell

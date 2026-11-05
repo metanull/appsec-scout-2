@@ -36,6 +36,7 @@ use App\Sources\Contracts\Source;
 use App\Sources\Registry as SourceRegistry;
 use App\Sync\InventorySyncService;
 use App\Sync\PendingSyncResolver;
+use App\Sync\SourceControlInventoryMerger;
 use App\Trackers\Registry as TrackerRegistry;
 use App\Triage\CodesearchService;
 use App\Users\UserAdminService;
@@ -1090,6 +1091,31 @@ Artisan::command('assets:restamp-hierarchy', function (SoftwareAssetService $ser
 
     return self::SUCCESS;
 })->purpose('One-off repair: re-point the denormalized software_asset_id of every local finding and software component at its system\'s current asset, fixing rows left stale by systems linked, moved or unlinked before re-stamping existed. Safe to re-run.');
+
+Artisan::command('assets:merge-inventory-duplicates {--dry-run}', function (SourceControlInventoryMerger $merger): int {
+    $dryRun = (bool) $this->option('dry-run');
+
+    if ($dryRun) {
+        $this->info('Running in --dry-run mode: no rows will be changed.');
+    }
+
+    $result = $merger->merge($dryRun);
+
+    foreach ($result['skipped'] as $skipped) {
+        $this->warn("Skipped {$skipped}.");
+    }
+
+    $this->info(sprintf(
+        'systems_merged=%d systems_rekeyed=%d containers_merged=%d containers_moved=%d skipped=%d',
+        $result['systems_merged'],
+        $result['systems_rekeyed'],
+        $result['containers_merged'],
+        $result['containers_moved'],
+        count($result['skipped']),
+    ));
+
+    return $result['skipped'] === [] ? self::SUCCESS : self::FAILURE;
+})->purpose('One-off repair: fold the duplicate systems and containers the inventory sync stored under a Source Control provider\'s own id (azdo-repos) into the rows of the Source it shares them with (azdo), keeping the disabled flag, last commit, operator links and asset link. A duplicate that holds alerts, findings, components or attachments is reported, never deleted. Use --dry-run first. Safe to re-run.');
 
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();

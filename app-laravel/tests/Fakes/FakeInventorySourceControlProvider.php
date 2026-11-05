@@ -22,9 +22,24 @@ class FakeInventorySourceControlProvider implements EnumeratesInventory, Reports
     /** @var array<string, CommitDto> keyed by repository id */
     private array $lastCommits = [];
 
+    private ?string $inventorySourceId = null;
+
     public function id(): string
     {
         return 'fake-inventory-repos';
+    }
+
+    public function inventorySourceId(): string
+    {
+        return $this->inventorySourceId ?? $this->id();
+    }
+
+    /** Stores the enumerated projects under that Source's id, as AzDO Repos does for the AzDO source. */
+    public function asInventoryOf(string $sourceId): self
+    {
+        $this->inventorySourceId = $sourceId;
+
+        return $this;
     }
 
     public function displayName(): string

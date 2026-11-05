@@ -102,6 +102,9 @@ final class AzDoSource implements QueuesEnrichmentJobs, ReadsUpstreamState, Sour
                 kind: $dto->kind,
                 url: $dto->url,
                 metadata: $dto->metadata,
+                // AzDO Repos stores the same container (inventorySourceId()): keep the flag it
+                // records instead of resetting it on every alert fetch.
+                isDisabled: $repo->isDisabled,
             );
         }
     }
