@@ -427,6 +427,7 @@ Run each one as `docker compose exec app php artisan <command>` (or
 | `events:recompute-pending-sync` | One-off repair for alerts stuck as "pending sync" |
 | `local-findings:repair-file-paths --dry-run` | One-off repair of old absolute or percent-encoded file paths on local findings (drop `--dry-run` to apply) |
 | `assets:merge-inventory-duplicates --dry-run` | One-off repair: fold the duplicate `azdo-repos` systems and containers made by *Sync inventory* before 1.1.4 into the AzDO rows (drop `--dry-run` to apply) |
+| `local-findings:prune --dry-run` | Runs daily: deletes stored C# compiler diagnostics and compacts closed local findings not reported for 90 days, keeping their status (drop `--dry-run` to apply) |
 
 ---
 

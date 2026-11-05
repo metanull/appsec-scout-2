@@ -830,3 +830,13 @@ it('resolves nothing when a report cannot be ingested completely', function () {
 
     expect(LocalFinding::query()->where('owner_id', $container->id)->sole()->status)->toBe(EventState::Open);
 });
+
+it('does not store the C# compiler diagnostics of a Roslynator report', function () {
+    $container = SecurityContainer::factory()->create();
+
+    app(AttachmentService::class)->attachTo($container, 'code-quality-dotnet', 'application/json', 'roslynator.sarif', codeQualitySarif('Roslynator', ['CS0246', 'CS8618', 'RCS1001', 'CA2100']));
+    app(AttachmentService::class)->attachTo($container, 'code-quality-opengrep', 'application/json', 'opengrep.sarif', codeQualitySarif('Opengrep', ['CS0246']));
+
+    expect(LocalFinding::query()->where('owner_id', $container->id)->orderBy('rule_id')->get()->map(fn (LocalFinding $finding): string => "{$finding->report_kind}:{$finding->rule_id}")->all())
+        ->toBe(['code-quality-dotnet:CA2100', 'code-quality-opengrep:CS0246', 'code-quality-dotnet:RCS1001']);
+});

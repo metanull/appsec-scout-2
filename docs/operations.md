@@ -108,7 +108,8 @@ List-page exports (the **Export** button above a list) also run on this queue. F
 export jobs write chunked CSV files and an XLSX to the `local` disk under
 `storage/app/private/filament_exports/`, and deliver the download links as a database
 notification (the bell icon). The daily `PruneExports` job deletes exports and their files
-older than `EXPORTS_RETAIN_DAYS` (default 7).
+older than `EXPORTS_RETAIN_DAYS` (default 7). The daily `local-findings:prune` run compacts
+closed local findings (see Pruning Closed Local Findings below).
 
 Manual checks:
 
@@ -360,6 +361,34 @@ Run with `--dry-run` first to review what would happen before applying it:
 .\scripts\invoke-app.ps1 -Artisan "local-findings:repair-file-paths --dry-run"
 .\scripts\invoke-app.ps1 -Artisan "local-findings:repair-file-paths"
 ```
+
+### Pruning Closed Local Findings
+
+A closed local finding cannot simply be deleted: the next scan that reports it would create it
+again as Open, and it would have to be triaged again. `local-findings:prune {--days=} {--dry-run}`
+runs daily from the scheduler and keeps the table small without that loop:
+
+- **Compiler diagnostics:** Roslynator passes the C# compiler's own diagnostics (`CS0246`,
+  `CS0518`, ...) through in its report, thousands per solution that did not build. Since 1.1.5 the
+  import skips them. The command deletes the ones stored before that. No scan reports them any
+  more, so they cannot come back. One that is linked to a work item is kept.
+- **Compaction:** a Dismissed or Resolved finding that no scan has reported for
+  `LOCAL_FINDING_COMPACT_AFTER_DAYS` days (default 90, or `--days`) is compacted, not deleted.
+  Its scanner metadata, its description and all its comments except the latest one are dropped.
+  The row keeps its identity, title, rule, location, status and that latest comment, which says
+  why it is closed. A scan that reports it again matches the same row: the decision stays and the
+  scan stores the details again. The status changes themselves stay in the audit log.
+
+Each run that changes something writes one audit entry (`local_findings_pruned`) with the counts.
+Run it by hand with `--dry-run` to see the counts first:
+
+```powershell
+.\scripts\invoke-app.ps1 -Artisan "local-findings:prune --dry-run"
+.\scripts\invoke-app.ps1 -Artisan "local-findings:prune"
+```
+
+On PostgreSQL, the space freed inside the table is reused by later rows. `VACUUM FULL local_findings`
+gives it back to the volume, but locks the table while it runs.
 
 ### Merging the Duplicate Systems and Containers of the AzDO Repos Inventory
 

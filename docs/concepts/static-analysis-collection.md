@@ -254,6 +254,11 @@ in [SbomScan's own section on this](sbom-and-static-analysis.md#from-attachment-
 `SarifFindingParser` already distinguished Roslynator/SpotBugs SARIF from Trivy's before this
 epic existed.
 
+One filter applies to `code-quality-dotnet` only: Roslynator also reports the C# compiler's own
+diagnostics (`CS` and four digits, e.g. `CS0246` for an unresolved type). They say whether the
+solution built, not anything about the code, so the import skips them (`App\Assets\CompilerDiagnostics`).
+Whether each solution restored and built is in the run's per-solution results.
+
 ## Run Tracking
 
 Each sweep is tracked as an `App\Models\StaticAnalysisRun` row (`static_analysis_runs` table) —
