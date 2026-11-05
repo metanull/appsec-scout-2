@@ -9,6 +9,7 @@ use App\Assets\DependencyTrack\DependencyTrackAdminClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackClientFactory;
 use App\Assets\DependencyTrack\DependencyTrackExporter;
 use App\Assets\LocalFindingFilePathRepairer;
+use App\Assets\LocalFindingPruner;
 use App\Assets\Sbom\ContainerSbomMerger;
 use App\Assets\Sbom\PendingSbomScanImporter;
 use App\Assets\Sbom\SbomScanStatusReporter;
@@ -1117,10 +1118,37 @@ Artisan::command('assets:merge-inventory-duplicates {--dry-run}', function (Sour
     return $result['skipped'] === [] ? self::SUCCESS : self::FAILURE;
 })->purpose('One-off repair: fold the duplicate systems and containers the inventory sync stored under a Source Control provider\'s own id (azdo-repos) into the rows of the Source it shares them with (azdo), keeping the disabled flag, last commit, operator links and asset link. A duplicate that holds alerts, findings, components or attachments is reported, never deleted. Use --dry-run first. Safe to re-run.');
 
+Artisan::command('local-findings:prune {--days= : Compact closed findings not reported for this many days (default: config local_findings.compact_after_days)} {--dry-run}', function (LocalFindingPruner $pruner): int {
+    $dryRun = (bool) $this->option('dry-run');
+    $days = $this->option('days') === null ? (int) config('local_findings.compact_after_days', 90) : (int) $this->option('days');
+
+    if ($days < 1) {
+        $this->error('--days must be at least 1.');
+
+        return self::FAILURE;
+    }
+
+    if ($dryRun) {
+        $this->info('Running in --dry-run mode: no rows will be changed.');
+    }
+
+    $result = $pruner->prune($days, $dryRun);
+
+    $this->info(sprintf(
+        'compiler_diagnostics_deleted=%d findings_compacted=%d comments_deleted=%d',
+        $result['compiler_diagnostics_deleted'],
+        $result['findings_compacted'],
+        $result['comments_deleted'],
+    ));
+
+    return self::SUCCESS;
+})->purpose('Delete the C# compiler diagnostics stored as local findings before the import skipped them, and compact Dismissed/Resolved local findings no scan has reported for --days days: drop their scanner metadata, description and all but their latest comment, keeping the row and its status so a later scan keeps the decision. Runs daily. Use --dry-run to see the counts.');
+
 Schedule::job(new PruneAuditLogs((int) config('audit.retain_days', 365)))->daily();
 Schedule::job(new PruneErrorLogs((int) config('logging.error_retain_days', 90)))->daily();
 Schedule::job(new PruneFailedJobs((int) config('queue.failed.retain_days', 90)))->daily();
 Schedule::job(new PruneToolInvocations((int) config('static_analysis_collection.tool_invocation_retain_days', 90)))->daily();
 Schedule::job(new PruneExports((int) config('exports.retain_days', 7)))->daily();
+Schedule::command('local-findings:prune')->daily()->withoutOverlapping()->name('local-findings:prune');
 Schedule::command('sbom:import-pending-scans')->everyMinute()->withoutOverlapping()->name('sbom:import-pending-scans');
 Schedule::command('staticanalysis:import-pending-scans')->everyMinute()->withoutOverlapping()->name('staticanalysis:import-pending-scans');
